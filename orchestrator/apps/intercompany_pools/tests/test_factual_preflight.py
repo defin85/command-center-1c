@@ -128,6 +128,11 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
                 "order_by": order_by,
             }
         )
+        if entity == "ChartOfAccounts_Хозрасчетный":
+            return [
+                {"Code": "62.01", "Ref_Key": "account-62"},
+                {"Code": "90.01", "Ref_Key": "account-90"},
+            ]
         if entity.startswith("AccountingRegister_Хозрасчетный/Turnovers("):
             return [{"Recorder_Key": "sale-1", "AmountTurnoverDt": "90.00"}]
         if entity == "InformationRegister_ДанныеПервичныхДокументов":
@@ -137,6 +142,10 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
     monkeypatch.setattr(
         "apps.intercompany_pools.factual_preflight._query_all_rows",
         _fake_query_all_rows,
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._probe_entity_rows",
+        lambda **kwargs: [{"Ref_Key": "probe-info"}],
     )
 
     report = run_pool_factual_sync_preflight(
@@ -158,12 +167,13 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
     assert database_report["live_probe"]["boundary_reads"]["information_register"] == 1
     assert database_report["live_probe"]["boundary_reads"]["Document_РеализацияТоваровУслуг"] == 1
     assert "Turnovers(" in database_report["live_probe"]["accounting_register_entity"]
-    assert any(
-        call["entity"] == "Document_РеализацияТоваровУслуг"
-        and "Organization_Key eq guid" in str(call["filter_query"])
-        and "Date ge datetime'2026-01-01T00:00:00'" in str(call["filter_query"])
-        for call in query_calls
+    assert "StartPeriod=datetime'2026-01-01T00:00:00'" in database_report["live_probe"]["accounting_register_entity"]
+    assert "EndPeriod=datetime'2026-03-31T23:59:59'" in database_report["live_probe"]["accounting_register_entity"]
+    assert "Condition='(Организация_Key eq guid''" in database_report["live_probe"]["accounting_register_entity"]
+    assert "AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90'''" in (
+        database_report["live_probe"]["accounting_register_entity"]
     )
+    assert any(call["entity"] == "ChartOfAccounts_Хозрасчетный" for call in query_calls)
 
 
 @pytest.mark.django_db
@@ -195,6 +205,10 @@ def test_run_pool_factual_sync_preflight_reports_no_go_when_required_surface_is_
         "apps.intercompany_pools.factual_preflight._query_all_rows",
         lambda **kwargs: query_calls.append(str(kwargs["entity"])) or [],
     )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._probe_entity_rows",
+        lambda **kwargs: [{"Ref_Key": "probe-info"}],
+    )
 
     report = run_pool_factual_sync_preflight(
         pool_id=str(pool.id),
@@ -208,6 +222,91 @@ def test_run_pool_factual_sync_preflight_reports_no_go_when_required_surface_is_
     assert checks["published_boundary"]["ok"] is False
     assert checks["live_probe"]["ok"] is False
     assert query_calls == []
+
+
+@pytest.mark.django_db
+def test_run_pool_factual_sync_preflight_uses_live_metadata_when_shared_snapshot_is_drifted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.intercompany_pools.business_configuration_profile import BUSINESS_CONFIGURATION_PROFILE_KEY
+    from apps.intercompany_pools.factual_preflight import run_pool_factual_sync_preflight
+
+    _, pool, database = _create_pool_with_single_database()
+    snapshot_payload = _valid_metadata_payload()
+    snapshot_payload["information_registers"] = []
+    snapshot = _snapshot_for(database, snapshot_payload)
+    database.metadata = {
+        BUSINESS_CONFIGURATION_PROFILE_KEY: {
+            "config_name": "Accounting",
+            "config_version": "3.0",
+            "observed_metadata_hash": "b" * 64,
+            "canonical_metadata_hash": "a" * 64,
+            "publication_drift": True,
+        }
+    }
+    database.save(update_fields=["metadata", "updated_at"])
+
+    query_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight.refresh_metadata_catalog_snapshot",
+        lambda **_: snapshot,
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight.describe_metadata_catalog_snapshot_resolution",
+        lambda **_: MetadataCatalogSnapshotResolution(
+            resolution_mode="shared_scope",
+            is_shared_snapshot=True,
+            provenance_database_id="peer-database",
+            provenance_confirmed_at=snapshot.fetched_at,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._fetch_live_catalog_payload",
+        lambda **_: _valid_metadata_payload(),
+    )
+
+    def _fake_query_all_rows(*, database, entity: str, filter_query: str | None, order_by: str | None):
+        query_calls.append(
+            {
+                "database_id": str(database.id),
+                "entity": entity,
+                "filter_query": filter_query,
+                "order_by": order_by,
+            }
+        )
+        if entity == "ChartOfAccounts_Хозрасчетный":
+            return [
+                {"Code": "62.01", "Ref_Key": "account-62"},
+                {"Code": "90.01", "Ref_Key": "account-90"},
+            ]
+        if entity.startswith("AccountingRegister_Хозрасчетный/Turnovers("):
+            return [{"Recorder_Key": "sale-1", "AmountTurnoverDt": "90.00"}]
+        if entity == "InformationRegister_ДанныеПервичныхДокументов":
+            return [{"Recorder_Key": "sale-1", "DocumentNumber": "123"}]
+        return [{"Ref_Key": "sale-1"}]
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._query_all_rows",
+        _fake_query_all_rows,
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._probe_entity_rows",
+        lambda **kwargs: [{"Ref_Key": "probe-info"}],
+    )
+
+    report = run_pool_factual_sync_preflight(
+        pool_id=str(pool.id),
+        quarter_start=date(2026, 1, 1),
+        requested_by_username="pilot-user",
+    )
+
+    assert report["decision"] == "go"
+    database_report = report["databases"][0]
+    checks = {item["key"]: item for item in database_report["checks"]}
+    assert checks["published_boundary"]["ok"] is True
+    assert checks["published_boundary"]["metadata_payload_source"] == "live_publication"
+    assert checks["live_probe"]["ok"] is True
+    assert query_calls
 
 
 @pytest.mark.django_db

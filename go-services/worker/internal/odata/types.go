@@ -1,7 +1,10 @@
 // go-services/worker/internal/odata/types.go
 package odata
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Auth contains authentication credentials
 type Auth struct {
@@ -51,6 +54,26 @@ type QueryRequest struct {
 // QueryResponse represents query result from OData
 type QueryResponse struct {
 	Value []map[string]interface{} `json:"value"`
+}
+
+func (r *QueryResponse) UnmarshalJSON(data []byte) error {
+	type queryResponseAlias QueryResponse
+	var alias queryResponseAlias
+	if err := json.Unmarshal(data, &alias); err == nil && alias.Value != nil {
+		r.Value = alias.Value
+		return nil
+	}
+
+	var single map[string]interface{}
+	if err := json.Unmarshal(data, &single); err != nil {
+		return err
+	}
+	if len(single) == 0 {
+		r.Value = nil
+		return nil
+	}
+	r.Value = []map[string]interface{}{single}
+	return nil
 }
 
 // ODataErrorResponse represents 1C OData error format

@@ -109,11 +109,21 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 	}
 
 	boundaryReads := map[string]int{}
+	accountRefs, err := resolveAccountCodeRefs(
+		ctx,
+		t.service,
+		odataCreds,
+		input.AccountingRegisterEntity,
+		input.AccountCodes,
+	)
+	if err != nil {
+		return nil, mapFactualODataError("chart_of_accounts", err)
+	}
 	accountingRows, err := queryAllFactualRows(
 		ctx,
 		t.service,
 		odataCreds,
-		buildAccountingRegisterEntity(input),
+		buildAccountingRegisterEntity(input, accountRefs),
 		nil,
 	)
 	if err != nil {
@@ -121,26 +131,30 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 	}
 	boundaryReads["accounting_register"] = len(accountingRows)
 
-	informationRows, err := queryAllFactualRows(
+	informationRows, err := queryFactualProbeRows(
 		ctx,
 		t.service,
 		odataCreds,
 		input.InformationRegister,
-		buildFactualInformationRegisterQuery(input),
 	)
 	if err != nil {
 		return nil, mapFactualODataError("information_register", err)
 	}
 	boundaryReads["information_register"] = len(informationRows)
 
+	documentRefsByEntity := collectRegisterDocumentRefsByEntity(accountingRows, input.DocumentEntities)
 	factualDocuments := make([]map[string]interface{}, 0)
 	for _, entity := range input.DocumentEntities {
-		rows, queryErr := queryAllFactualRows(
+		documentRefs := documentRefsByEntity[entity]
+		if len(documentRefs) == 0 {
+			boundaryReads[entity] = 0
+			continue
+		}
+		rows, queryErr := queryFactualEntityRefs(
 			ctx,
 			t.service,
 			odataCreds,
-			entity,
-			buildDocumentQuery(input, entity),
+			documentRefs,
 		)
 		if queryErr != nil {
 			return nil, mapFactualODataError(entity, queryErr)
@@ -155,6 +169,7 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 		factualDocuments,
 		accountingRows,
 		informationRows,
+		input.MovementKinds,
 	)
 
 	sort.Slice(factualDocuments, func(i, j int) bool {
@@ -244,96 +259,39 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 	}, nil
 }
 
-func buildAccountingRegisterEntity(input factualSyncInput) string {
+func buildAccountingRegisterEntity(input factualSyncInput, accountRefs []string) string {
 	start := input.QuarterStart.Format("2006-01-02T15:04:05")
 	end := input.QuarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
 	condition := buildAccountingRegisterCondition(input)
-	accountCondition := buildAccountingAccountCondition(input)
+	accountCondition := buildAccountingAccountCondition(accountRefs)
+	periodArguments := buildAccountingFunctionPeriodArguments(input.AccountingFunction, start, end)
 	return fmt.Sprintf(
-		"%s/%s(PeriodStart=datetime'%s',PeriodEnd=datetime'%s',Condition='%s',AccountCondition='%s')",
+		"%s/%s(%s,Condition='%s',AccountCondition='%s')",
 		input.AccountingRegisterEntity,
 		input.AccountingFunction,
-		start,
-		end,
+		periodArguments,
 		escapeODataFunctionString(condition),
 		escapeODataFunctionString(accountCondition),
 	)
 }
 
-func buildDocumentQuery(input factualSyncInput, entity string) *sharedodata.QueryParams {
-	temporalField := "Date"
-	if strings.HasPrefix(strings.TrimSpace(entity), "InformationRegister_") {
-		temporalField = "Period"
+func buildAccountingFunctionPeriodArguments(functionName, start, end string) string {
+	if strings.TrimSpace(functionName) == "Balance" {
+		return fmt.Sprintf("Period=datetime'%s'", end)
 	}
-	return &sharedodata.QueryParams{
-		Filter:  buildTemporalEntityFilter(temporalField, input.OrganizationIDs, input.QuarterStart, input.QuarterEnd),
-		OrderBy: fmt.Sprintf("%s desc", temporalField),
-		Top:     defaultFactualQueryPageSize,
-	}
-}
-
-func buildFactualInformationRegisterQuery(input factualSyncInput) *sharedodata.QueryParams {
-	return &sharedodata.QueryParams{
-		Filter:  buildTemporalEntityFilter("Period", input.OrganizationIDs, input.QuarterStart, input.QuarterEnd),
-		OrderBy: "Period desc",
-		Top:     defaultFactualQueryPageSize,
-	}
-}
-
-func buildTemporalEntityFilter(field string, organizationIDs []string, quarterStart, quarterEnd time.Time) string {
-	start := quarterStart.Format("2006-01-02T15:04:05")
-	end := quarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
-	parts := []string{
-		fmt.Sprintf(
-			"%s ge datetime'%s' and %s le datetime'%s'",
-			field,
-			start,
-			field,
-			end,
-		),
-	}
-	if orgFilter := buildOrganizationFilter(organizationIDs); orgFilter != "" {
-		parts = append(parts, fmt.Sprintf("(%s)", orgFilter))
-	}
-	return strings.Join(parts, " and ")
+	return fmt.Sprintf("StartPeriod=datetime'%s',EndPeriod=datetime'%s'", start, end)
 }
 
 func buildAccountingRegisterCondition(input factualSyncInput) string {
-	parts := make([]string, 0, 2)
-	if orgFilter := buildOrganizationFilter(input.OrganizationIDs); orgFilter != "" {
+	parts := make([]string, 0, 1)
+	if orgFilter := buildGuidOrFilter("Организация_Key", input.OrganizationIDs); orgFilter != "" {
 		parts = append(parts, fmt.Sprintf("(%s)", orgFilter))
-	}
-	if movementFilter := buildRecordTypeFilter(input.MovementKinds); movementFilter != "" {
-		parts = append(parts, movementFilter)
 	}
 	return strings.Join(parts, " and ")
 }
 
-func buildAccountingAccountCondition(input factualSyncInput) string {
-	return buildCodeFilter("Code", input.AccountCodes)
-}
-
-func buildOrganizationFilter(organizationIDs []string) string {
-	return buildGuidOrFilter("Organization_Key", organizationIDs)
-}
-
-func buildRecordTypeFilter(movementKinds []string) string {
-	if len(movementKinds) == 0 {
-		return ""
-	}
-	clauses := make([]string, 0, len(movementKinds))
-	for _, kind := range movementKinds {
-		switch strings.ToLower(strings.TrimSpace(kind)) {
-		case "credit":
-			clauses = append(clauses, "RecordType eq 'Credit'")
-		case "debit":
-			clauses = append(clauses, "RecordType eq 'Debit'")
-		}
-	}
-	if len(clauses) == 1 {
-		return clauses[0]
-	}
-	return fmt.Sprintf("(%s)", strings.Join(clauses, " or "))
+func buildAccountingAccountCondition(accountRefs []string) string {
+	return buildGuidOrFilter("Account_Key", accountRefs)
 }
 
 func buildGuidOrFilter(field string, values []string) string {
@@ -345,21 +303,6 @@ func buildGuidOrFilter(field string, values []string) string {
 		clauses = append(clauses, fmt.Sprintf("%s eq guid'%s'", field, value))
 	}
 	return strings.Join(clauses, " or ")
-}
-
-func buildCodeFilter(field string, values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	clauses := make([]string, 0, len(values))
-	for _, value := range values {
-		clauses = append(clauses, fmt.Sprintf("%s eq '%s'", field, escapeODataLiteral(value)))
-	}
-	return strings.Join(clauses, " or ")
-}
-
-func escapeODataLiteral(value string) string {
-	return strings.ReplaceAll(value, "'", "''")
 }
 
 func escapeODataFunctionString(value string) string {
@@ -389,6 +332,152 @@ func queryAllFactualRows(
 		skip += len(pageRows)
 	}
 	return rows, nil
+}
+
+func queryFactualProbeRows(
+	ctx context.Context,
+	service factualODataService,
+	creds sharedodata.ODataCredentials,
+	entity string,
+) ([]map[string]interface{}, error) {
+	return service.Query(
+		ctx,
+		creds,
+		entity,
+		&sharedodata.QueryParams{Top: 1},
+	)
+}
+
+func queryFactualEntityRefs(
+	ctx context.Context,
+	service factualODataService,
+	creds sharedodata.ODataCredentials,
+	entityRefs []string,
+) ([]map[string]interface{}, error) {
+	rows := make([]map[string]interface{}, 0, len(entityRefs))
+	for _, entityRef := range entityRefs {
+		entityRows, err := service.Query(ctx, creds, entityRef, nil)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, entityRows...)
+	}
+	return rows, nil
+}
+
+func resolveAccountCodeRefs(
+	ctx context.Context,
+	service factualODataService,
+	creds sharedodata.ODataCredentials,
+	accountingRegisterEntity string,
+	accountCodes []string,
+) ([]string, error) {
+	chartEntity := deriveChartOfAccountsEntity(accountingRegisterEntity)
+	query := &sharedodata.QueryParams{
+		Select: []string{"Ref_Key", "Code"},
+	}
+	rows, err := queryAllFactualRows(ctx, service, creds, chartEntity, query)
+	if err != nil {
+		return nil, err
+	}
+
+	codeToRef := make(map[string]string, len(accountCodes))
+	for _, row := range rows {
+		code := strings.TrimSpace(fmt.Sprintf("%v", firstNonEmpty(row["Code"], row["code"])))
+		refKey := strings.TrimSpace(fmt.Sprintf("%v", firstNonEmpty(row["Ref_Key"], row["ref_key"])))
+		if code == "" || refKey == "" {
+			continue
+		}
+		codeToRef[code] = refKey
+		if len(codeToRef) == len(accountCodes) {
+			break
+		}
+	}
+
+	missingCodes := make([]string, 0)
+	accountRefs := make([]string, 0, len(accountCodes))
+	for _, code := range accountCodes {
+		refKey, ok := codeToRef[code]
+		if !ok {
+			missingCodes = append(missingCodes, code)
+			continue
+		}
+		accountRefs = append(accountRefs, refKey)
+	}
+	if len(missingCodes) > 0 {
+		sort.Strings(missingCodes)
+		return nil, fmt.Errorf("chart of accounts is missing factual account codes: %s", strings.Join(missingCodes, ", "))
+	}
+	return accountRefs, nil
+}
+
+func deriveChartOfAccountsEntity(accountingRegisterEntity string) string {
+	entity := strings.TrimSpace(accountingRegisterEntity)
+	if entity == "" {
+		return "ChartOfAccounts_Хозрасчетный"
+	}
+	if strings.HasPrefix(entity, "AccountingRegister_") {
+		return strings.Replace(entity, "AccountingRegister_", "ChartOfAccounts_", 1)
+	}
+	return "ChartOfAccounts_Хозрасчетный"
+}
+
+func collectRegisterDocumentRefsByEntity(
+	accountingRows []map[string]interface{},
+	allowedEntities []string,
+) map[string][]string {
+	allowed := make(map[string]struct{}, len(allowedEntities))
+	for _, entity := range allowedEntities {
+		allowed[strings.TrimSpace(entity)] = struct{}{}
+	}
+	result := make(map[string][]string, len(allowedEntities))
+	seen := make(map[string]map[string]struct{}, len(allowedEntities))
+	for _, row := range accountingRows {
+		documentRef := strings.TrimSpace(
+			fmt.Sprintf(
+				"%v",
+				firstNonEmpty(
+					extractSourceDocumentRefFromRegisterDimensions(row),
+					row["Документ"],
+					row["Document"],
+					row["source_document_ref"],
+					row["document_ref"],
+				),
+			),
+		)
+		entity := extractSourceDocumentEntity(documentRef)
+		if entity == "" {
+			continue
+		}
+		if _, ok := allowed[entity]; !ok {
+			continue
+		}
+		if seen[entity] == nil {
+			seen[entity] = make(map[string]struct{})
+		}
+		if _, ok := seen[entity][documentRef]; ok {
+			continue
+		}
+		seen[entity][documentRef] = struct{}{}
+		result[entity] = append(result[entity], documentRef)
+	}
+	return result
+}
+
+func extractSourceDocumentEntity(sourceDocumentRef string) string {
+	ref := strings.TrimSpace(sourceDocumentRef)
+	if ref == "" {
+		return ""
+	}
+	openParen := strings.Index(ref, "(")
+	if openParen <= 0 {
+		return ""
+	}
+	entity := strings.TrimSpace(ref[:openParen])
+	if !strings.HasPrefix(entity, "Document_") {
+		return ""
+	}
+	return entity
 }
 
 func cloneQueryParams(query *sharedodata.QueryParams) *sharedodata.QueryParams {

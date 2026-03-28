@@ -16,6 +16,7 @@ func applyAuthoritativeRegisterAmounts(
 	factualDocuments []map[string]interface{},
 	accountingRows []map[string]interface{},
 	informationRows []map[string]interface{},
+	movementKinds []string,
 ) []map[string]interface{} {
 	if len(factualDocuments) == 0 || len(accountingRows) == 0 {
 		return factualDocuments
@@ -26,7 +27,7 @@ func applyAuthoritativeRegisterAmounts(
 		return factualDocuments
 	}
 
-	authoritativeAmounts := collectAuthoritativeRegisterAmounts(accountingRows, documentAliases)
+	authoritativeAmounts := collectAuthoritativeRegisterAmounts(accountingRows, documentAliases, movementKinds)
 	if len(authoritativeAmounts) == 0 {
 		return factualDocuments
 	}
@@ -89,11 +90,14 @@ func buildFactualDocumentAliasIndex(
 func collectAuthoritativeRegisterAmounts(
 	accountingRows []map[string]interface{},
 	documentAliases map[string]string,
+	movementKinds []string,
 ) map[string]float64 {
 	aggregates := make(map[string]*authoritativeRegisterAmount)
 	for _, row := range accountingRows {
+		registerDocumentRef := extractSourceDocumentRefFromRegisterDimensions(row)
 		sourceDocumentRef := resolveSourceDocumentRefAlias(
 			firstNonEmpty(
+				registerDocumentRef,
 				row["Recorder"],
 				row["Документ"],
 				row["Document"],
@@ -108,19 +112,8 @@ func collectAuthoritativeRegisterAmounts(
 			continue
 		}
 
-		amount := math.Abs(
-			mustParseFloat(
-				parseDecimalString(
-					firstNonEmpty(
-						row["amount_with_vat"],
-						row["AmountWithVAT"],
-						row["Amount"],
-						row["Сумма"],
-					),
-				),
-			),
-		)
-		if amount == 0 {
+		components := extractAuthoritativeRegisterAmountComponents(row, movementKinds)
+		if len(components) == 0 {
 			continue
 		}
 
@@ -132,10 +125,15 @@ func collectAuthoritativeRegisterAmounts(
 			}
 			aggregates[sourceDocumentRef] = aggregate
 		}
-		aggregate.sumAbs += amount
-		aggregate.distinctAmounts[parseDecimalString(amount)] = amount
-		if recordType := normalizeSourceDocumentAlias(firstNonEmpty(row["RecordType"], row["record_type"])); recordType != "" {
-			aggregate.recordTypes[recordType] = struct{}{}
+		for _, component := range components {
+			if component.amount <= 0 {
+				continue
+			}
+			aggregate.sumAbs += component.amount
+			aggregate.distinctAmounts[parseDecimalString(component.amount)] = component.amount
+			if component.recordType != "" {
+				aggregate.recordTypes[component.recordType] = struct{}{}
+			}
 		}
 	}
 
@@ -182,6 +180,87 @@ func applyAuthoritativeAmountToDocument(document map[string]interface{}, amountW
 	document["vat_amount"] = parseDecimalString(nextVATAmount)
 }
 
+type authoritativeRegisterAmountComponent struct {
+	amount     float64
+	recordType string
+}
+
+func extractAuthoritativeRegisterAmountComponents(
+	row map[string]interface{},
+	movementKinds []string,
+) []authoritativeRegisterAmountComponent {
+	explicitAmount := math.Abs(
+		mustParseFloat(
+			parseDecimalString(
+				firstNonEmpty(
+					row["amount_with_vat"],
+					row["AmountWithVAT"],
+					row["Amount"],
+					row["Сумма"],
+				),
+			),
+		),
+	)
+	explicitRecordType := normalizeSourceDocumentAlias(firstNonEmpty(row["RecordType"], row["record_type"]))
+	if explicitAmount > 0 {
+		return []authoritativeRegisterAmountComponent{
+			{
+				amount:     explicitAmount,
+				recordType: explicitRecordType,
+			},
+		}
+	}
+
+	selectedKinds := normalizeSelectedMovementKinds(movementKinds)
+	components := make([]authoritativeRegisterAmountComponent, 0, 2)
+	if _, includeDebit := selectedKinds["debit"]; includeDebit {
+		debitAmount := math.Abs(
+			mustParseFloat(
+				parseDecimalString(
+					firstNonEmpty(
+						row["СуммаTurnoverDr"],
+						row["AmountTurnoverDr"],
+						row["СуммаОборотДт"],
+					),
+				),
+			),
+		)
+		if debitAmount > 0 {
+			components = append(components, authoritativeRegisterAmountComponent{amount: debitAmount, recordType: "debit"})
+		}
+	}
+	if _, includeCredit := selectedKinds["credit"]; includeCredit {
+		creditAmount := math.Abs(
+			mustParseFloat(
+				parseDecimalString(
+					firstNonEmpty(
+						row["СуммаTurnoverCr"],
+						row["AmountTurnoverCr"],
+						row["СуммаОборотКт"],
+					),
+				),
+			),
+		)
+		if creditAmount > 0 {
+			components = append(components, authoritativeRegisterAmountComponent{amount: creditAmount, recordType: "credit"})
+		}
+	}
+	return components
+}
+
+func normalizeSelectedMovementKinds(values []string) map[string]struct{} {
+	selected := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "credit":
+			selected["credit"] = struct{}{}
+		case "debit":
+			selected["debit"] = struct{}{}
+		}
+	}
+	return selected
+}
+
 func addSourceDocumentAlias(aliases map[string]string, rawAlias, sourceDocumentRef string) {
 	alias := normalizeSourceDocumentAlias(rawAlias)
 	if alias == "" || strings.TrimSpace(sourceDocumentRef) == "" {
@@ -219,6 +298,49 @@ func normalizeSourceDocumentAlias(rawAlias string) string {
 	alias = strings.TrimPrefix(alias, "guid'")
 	alias = strings.TrimSuffix(alias, "'")
 	return strings.ToLower(strings.TrimSpace(alias))
+}
+
+func extractSourceDocumentRefFromRegisterDimensions(row map[string]interface{}) string {
+	dimensionPairs := [][2]string{
+		{"ExtDimension1", "ExtDimension1_Type"},
+		{"ExtDimension2", "ExtDimension2_Type"},
+		{"ExtDimension3", "ExtDimension3_Type"},
+		{"BalancedExtDimension1", "BalancedExtDimension1_Type"},
+		{"BalancedExtDimension2", "BalancedExtDimension2_Type"},
+		{"BalancedExtDimension3", "BalancedExtDimension3_Type"},
+	}
+	for _, pair := range dimensionPairs {
+		entityType := normalizeRegisterDocumentEntityType(firstNonEmpty(row[pair[1]], row[strings.ToLower(pair[1])]))
+		if entityType == "" {
+			continue
+		}
+		rawValue := strings.TrimSpace(fmt.Sprintf("%v", firstNonEmpty(row[pair[0]], row[strings.ToLower(pair[0])])))
+		if rawValue == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(rawValue), "(guid'") {
+			return rawValue
+		}
+		guid := normalizeSourceDocumentAlias(rawValue)
+		if guid == "" {
+			continue
+		}
+		return fmt.Sprintf("%s(guid'%s')", entityType, guid)
+	}
+	return ""
+}
+
+func normalizeRegisterDocumentEntityType(rawType string) string {
+	entityType := strings.TrimSpace(rawType)
+	if entityType == "" {
+		return ""
+	}
+	entityType = strings.TrimPrefix(entityType, "StandardODATA.")
+	entityType = strings.TrimPrefix(entityType, "standardodata.")
+	if !strings.HasPrefix(entityType, "Document_") {
+		return ""
+	}
+	return entityType
 }
 
 func extractSourceDocumentRefGUID(sourceDocumentRef string) string {

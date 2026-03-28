@@ -13,6 +13,7 @@ from apps.databases.odata import (
     resolve_database_odata_verify_tls,
 )
 
+from .business_configuration_profile import get_business_configuration_profile
 from .factual_read_boundary import build_factual_odata_read_boundary
 from .factual_source_profile import REQUIRED_FACTUAL_INFORMATION_REGISTER
 from .factual_sync_runtime import (
@@ -25,6 +26,7 @@ from .factual_workspace_runtime import (
     resolve_pool_factual_scope,
 )
 from .metadata_catalog import (
+    _fetch_live_catalog_payload,
     describe_metadata_catalog_snapshot_resolution,
     refresh_metadata_catalog_snapshot,
 )
@@ -153,6 +155,8 @@ def _run_database_preflight(
         )
 
     snapshot_payload: dict[str, Any] | None = None
+    boundary_payload: dict[str, Any] | None = None
+    boundary_payload_source = "metadata_snapshot"
     try:
         snapshot = refresh_metadata_catalog_snapshot(
             tenant_id=str(pool.tenant_id),
@@ -174,6 +178,12 @@ def _run_database_preflight(
             "is_shared_snapshot": bool(resolution.is_shared_snapshot),
             "provenance_database_id": resolution.provenance_database_id,
         }
+        boundary_payload, boundary_payload_source = _resolve_boundary_validation_payload(
+            database=database,
+            snapshot=snapshot,
+            requested_by_username=requested_by_username,
+        )
+        metadata_snapshot["validation_payload_source"] = boundary_payload_source
         checks.append(_check(key="published_metadata_refresh", ok=True, detail="metadata snapshot refreshed"))
     except Exception as exc:
         checks.append(_check(key="published_metadata_refresh", ok=False, detail=str(exc)))
@@ -192,13 +202,14 @@ def _run_database_preflight(
 
     boundary_ok = False
     try:
-        boundary = build_factual_odata_read_boundary(payload=snapshot_payload or {})
+        boundary = build_factual_odata_read_boundary(payload=boundary_payload or snapshot_payload or {})
         boundary_ok = True
         checks.append(
             _check(
                 key="published_boundary",
                 ok=True,
                 detail="required factual published surfaces are available",
+                metadata_payload_source=boundary_payload_source,
                 boundary_kind=boundary.boundary_kind,
                 direct_db_access=boundary.direct_db_access,
                 entity_allowlist=list(boundary.entity_allowlist),
@@ -256,6 +267,33 @@ def _run_database_preflight(
     )
 
 
+def _resolve_boundary_validation_payload(
+    *,
+    database: Database,
+    snapshot,
+    requested_by_username: str,
+) -> tuple[dict[str, Any], str]:
+    snapshot_payload = dict(snapshot.payload) if isinstance(snapshot.payload, dict) else {}
+    database.refresh_from_db(fields=["metadata"])
+    profile = get_business_configuration_profile(database=database) or {}
+    observed_metadata_hash = str(profile.get("observed_metadata_hash") or "").strip()
+    canonical_metadata_hash = str(
+        profile.get("canonical_metadata_hash") or getattr(snapshot, "metadata_hash", "") or ""
+    ).strip()
+
+    if observed_metadata_hash and canonical_metadata_hash and observed_metadata_hash != canonical_metadata_hash:
+        live_payload = _fetch_live_catalog_payload(
+            database=database,
+            requested_by_username=requested_by_username,
+        )
+        return (
+            dict(live_payload) if isinstance(live_payload, dict) else {},
+            "live_publication",
+        )
+
+    return snapshot_payload, "metadata_snapshot"
+
+
 def _database_report(
     *,
     database: Database,
@@ -288,45 +326,48 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
             detail="Database OData URL and service credentials must be configured for factual live probe.",
         )
 
-    accounting_entity = _build_accounting_register_entity(scope_contract=scope_contract)
+    account_code_refs = _resolve_account_code_refs(
+        database=database,
+        accounting_register_entity=scope_contract.accounting_register_entity,
+        account_codes=scope_contract.account_codes,
+    )
+    accounting_entity = _build_accounting_register_entity(
+        scope_contract=scope_contract,
+        account_code_refs=account_code_refs,
+    )
     accounting_rows = _query_all_rows(
         database=database,
         entity=accounting_entity,
         filter_query=None,
         order_by=None,
     )
-    information_rows = _query_all_rows(
+    information_rows = _probe_entity_rows(
         database=database,
         entity=scope_contract.information_register_entity,
-        filter_query=_build_temporal_entity_filter(
-            field="Period",
-            organization_ids=scope_contract.organization_ids,
-            quarter_start=scope_contract.quarter_start,
-            quarter_end=scope_contract.quarter_end,
-        ),
-        order_by="Period desc",
     )
     boundary_reads: dict[str, int] = {
         "accounting_register": len(accounting_rows),
         "information_register": len(information_rows),
     }
+    document_refs_by_entity = _collect_accounting_document_refs(
+        accounting_rows=accounting_rows,
+        allowed_entities=scope_contract.document_entities,
+    )
     for entity in scope_contract.document_entities:
-        rows = _query_all_rows(
-            database=database,
-            entity=entity,
-            filter_query=_build_temporal_entity_filter(
-                field="Date",
-                organization_ids=scope_contract.organization_ids,
-                quarter_start=scope_contract.quarter_start,
-                quarter_end=scope_contract.quarter_end,
-            ),
-            order_by="Date desc",
-        )
+        document_refs = document_refs_by_entity.get(str(entity), ())
+        if document_refs:
+            rows = _query_entity_refs(database=database, entity_refs=document_refs)
+        else:
+            rows = _probe_entity_rows(
+                database=database,
+                entity=entity,
+            )
         boundary_reads[str(entity)] = len(rows)
 
     return {
         "read_boundary_kind": "odata",
         "accounting_register_entity": accounting_entity,
+        "account_code_refs": account_code_refs,
         "information_register_entity": REQUIRED_FACTUAL_INFORMATION_REGISTER,
         "boundary_reads": boundary_reads,
     }
@@ -388,24 +429,78 @@ def _query_all_rows(
     return rows
 
 
-def _build_accounting_register_entity(*, scope_contract) -> str:
+def _probe_entity_rows(*, database: Database, entity: str) -> list[dict[str, Any]]:
+    with ODataQueryAdapter(
+        base_url=str(database.odata_url or ""),
+        username=str(database.username or ""),
+        password=str(database.password or ""),
+        timeout=database.connection_timeout,
+        verify_tls=resolve_database_odata_verify_tls(database=database),
+    ) as adapter:
+        try:
+            response = adapter.query(
+                entity_name=entity,
+                top=1,
+            )
+        except ODataQueryTransportError as exc:
+            raise FactualPreflightError(
+                code="POOL_FACTUAL_PREFLIGHT_ODATA_TRANSPORT_FAILED",
+                detail=f"{entity}: {exc}",
+            ) from exc
+        if response.status_code >= 400:
+            raise FactualPreflightError(
+                code="POOL_FACTUAL_PREFLIGHT_ODATA_QUERY_FAILED",
+                detail=f"{entity}: HTTP {response.status_code}: {_extract_response_detail(response)}",
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise FactualPreflightError(
+                code="POOL_FACTUAL_PREFLIGHT_ODATA_PAYLOAD_INVALID",
+                detail=f"{entity}: response is not valid JSON",
+            ) from exc
+        page_rows = payload.get("value", [])
+        if not isinstance(page_rows, list):
+            raise FactualPreflightError(
+                code="POOL_FACTUAL_PREFLIGHT_ODATA_PAYLOAD_INVALID",
+                detail=f"{entity}: response payload must contain JSON array 'value'",
+            )
+        return [item for item in page_rows if isinstance(item, dict)]
+
+
+def _build_accounting_register_entity(*, scope_contract, account_code_refs: dict[str, str]) -> str:
     start = f"{scope_contract.quarter_start.isoformat()}T00:00:00"
     end = f"{scope_contract.quarter_end.isoformat()}T23:59:59"
     condition = _build_accounting_register_condition(scope_contract=scope_contract)
-    account_condition = _build_code_filter(field="Code", values=scope_contract.account_codes)
+    account_condition = _build_guid_or_filter(
+        field="Account_Key",
+        values=tuple(account_code_refs[code] for code in scope_contract.account_codes if code in account_code_refs),
+    )
+    period_arguments = _build_accounting_function_period_arguments(
+        function_name=scope_contract.accounting_register_function,
+        start=start,
+        end=end,
+    )
     return (
         f"{scope_contract.accounting_register_entity}/{scope_contract.accounting_register_function}("
-        f"PeriodStart=datetime'{start}',"
-        f"PeriodEnd=datetime'{end}',"
+        f"{period_arguments},"
         f"Condition='{_escape_odata_function_string(condition)}',"
         f"AccountCondition='{_escape_odata_function_string(account_condition)}'"
         ")"
     )
 
 
+def _build_accounting_function_period_arguments(*, function_name: str, start: str, end: str) -> str:
+    normalized = str(function_name or "").strip()
+    if normalized == "Balance":
+        return f"Period=datetime'{end}'"
+    return f"StartPeriod=datetime'{start}',EndPeriod=datetime'{end}'"
+
+
 def _build_temporal_entity_filter(
     *,
     field: str,
+    organization_field: str,
     organization_ids: tuple[str, ...],
     quarter_start: date,
     quarter_end: date,
@@ -416,48 +511,177 @@ def _build_temporal_entity_filter(
             f"{field} le datetime'{quarter_end.isoformat()}T23:59:59'"
         )
     ]
-    organization_filter = _build_guid_or_filter(field="Organization_Key", values=organization_ids)
+    organization_filter = _build_guid_or_filter(field=organization_field, values=organization_ids)
     if organization_filter:
         parts.append(f"({organization_filter})")
     return " and ".join(parts)
+
+
+def _query_entity_refs(*, database: Database, entity_refs: Iterable[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    with ODataQueryAdapter(
+        base_url=str(database.odata_url or ""),
+        username=str(database.username or ""),
+        password=str(database.password or ""),
+        timeout=database.connection_timeout,
+        verify_tls=resolve_database_odata_verify_tls(database=database),
+    ) as adapter:
+        for entity_ref in entity_refs:
+            try:
+                response = adapter.query(entity_name=str(entity_ref), top=None)
+            except ODataQueryTransportError as exc:
+                raise FactualPreflightError(
+                    code="POOL_FACTUAL_PREFLIGHT_ODATA_TRANSPORT_FAILED",
+                    detail=f"{entity_ref}: {exc}",
+                ) from exc
+            if response.status_code >= 400:
+                raise FactualPreflightError(
+                    code="POOL_FACTUAL_PREFLIGHT_ODATA_QUERY_FAILED",
+                    detail=f"{entity_ref}: HTTP {response.status_code}: {_extract_response_detail(response)}",
+                )
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise FactualPreflightError(
+                    code="POOL_FACTUAL_PREFLIGHT_ODATA_PAYLOAD_INVALID",
+                    detail=f"{entity_ref}: response is not valid JSON",
+                ) from exc
+            if isinstance(payload, dict) and isinstance(payload.get("value"), list):
+                rows.extend(item for item in payload["value"] if isinstance(item, dict))
+                continue
+            if isinstance(payload, dict):
+                rows.append(payload)
+                continue
+            raise FactualPreflightError(
+                code="POOL_FACTUAL_PREFLIGHT_ODATA_PAYLOAD_INVALID",
+                detail=f"{entity_ref}: response payload must contain JSON object or array 'value'",
+            )
+    return rows
+
+
+def _collect_accounting_document_refs(
+    *,
+    accounting_rows: Iterable[dict[str, Any]],
+    allowed_entities: Iterable[str],
+) -> dict[str, tuple[str, ...]]:
+    allowed = {str(entity or "").strip() for entity in allowed_entities if str(entity or "").strip()}
+    collected: dict[str, list[str]] = {}
+    seen: dict[str, set[str]] = {}
+    for row in accounting_rows:
+        document_ref = _extract_document_ref_from_accounting_row(row)
+        entity_name = _extract_document_entity_name(document_ref)
+        if not entity_name or entity_name not in allowed:
+            continue
+        entity_seen = seen.setdefault(entity_name, set())
+        if document_ref in entity_seen:
+            continue
+        entity_seen.add(document_ref)
+        collected.setdefault(entity_name, []).append(document_ref)
+    return {entity: tuple(refs) for entity, refs in collected.items()}
+
+
+def _extract_document_ref_from_accounting_row(row: dict[str, Any]) -> str:
+    dimension_pairs = (
+        ("ExtDimension1", "ExtDimension1_Type"),
+        ("ExtDimension2", "ExtDimension2_Type"),
+        ("ExtDimension3", "ExtDimension3_Type"),
+        ("BalancedExtDimension1", "BalancedExtDimension1_Type"),
+        ("BalancedExtDimension2", "BalancedExtDimension2_Type"),
+        ("BalancedExtDimension3", "BalancedExtDimension3_Type"),
+    )
+    for value_field, type_field in dimension_pairs:
+        entity_type = _normalize_accounting_document_entity_type(row.get(type_field))
+        raw_value = str(row.get(value_field) or "").strip()
+        if not entity_type or not raw_value:
+            continue
+        if "(guid'" in raw_value.lower():
+            return raw_value
+        return f"{entity_type}(guid'{raw_value}')"
+    for field_name in ("Документ", "Document", "source_document_ref", "document_ref"):
+        raw_value = str(row.get(field_name) or "").strip()
+        if _extract_document_entity_name(raw_value):
+            return raw_value
+    return ""
+
+
+def _normalize_accounting_document_entity_type(raw_value: Any) -> str:
+    entity_type = str(raw_value or "").strip()
+    if entity_type.startswith("StandardODATA."):
+        entity_type = entity_type.removeprefix("StandardODATA.")
+    if entity_type.startswith("standardodata."):
+        entity_type = entity_type.removeprefix("standardodata.")
+    if not entity_type.startswith("Document_"):
+        return ""
+    return entity_type
+
+
+def _extract_document_entity_name(document_ref: str) -> str:
+    raw_value = str(document_ref or "").strip()
+    open_paren = raw_value.find("(")
+    if open_paren <= 0:
+        return ""
+    entity_name = raw_value[:open_paren].strip()
+    if not entity_name.startswith("Document_"):
+        return ""
+    return entity_name
 
 
 def _build_accounting_register_condition(*, scope_contract) -> str:
     parts: list[str] = []
     organization_filter = _build_guid_or_filter(
-        field="Organization_Key",
+        field="Организация_Key",
         values=scope_contract.organization_ids,
     )
     if organization_filter:
         parts.append(f"({organization_filter})")
-    record_type_filter = _build_record_type_filter(scope_contract.movement_kinds)
-    if record_type_filter:
-        parts.append(record_type_filter)
     return " and ".join(parts)
 
 
-def _build_record_type_filter(movement_kinds: Iterable[str]) -> str:
-    clauses: list[str] = []
-    for kind in movement_kinds:
-        normalized = str(kind or "").strip().lower()
-        if normalized == "credit":
-            clauses.append("RecordType eq 'Credit'")
-        elif normalized == "debit":
-            clauses.append("RecordType eq 'Debit'")
-    if not clauses:
-        return ""
-    if len(clauses) == 1:
-        return clauses[0]
-    return f"({' or '.join(clauses)})"
+def _resolve_account_code_refs(
+    *,
+    database: Database,
+    accounting_register_entity: str,
+    account_codes: Iterable[str],
+) -> dict[str, str]:
+    chart_entity = _derive_chart_of_accounts_entity(accounting_register_entity)
+    rows = _query_all_rows(
+        database=database,
+        entity=chart_entity,
+        filter_query=None,
+        order_by=None,
+    )
+    required_codes = tuple(str(code or "").strip() for code in account_codes if str(code or "").strip())
+    resolved: dict[str, str] = {}
+    for row in rows:
+        code = str(row.get("Code") or row.get("code") or "").strip()
+        ref_key = str(row.get("Ref_Key") or row.get("ref_key") or "").strip()
+        if not code or not ref_key or code not in required_codes:
+            continue
+        resolved[code] = ref_key
+        if len(resolved) == len(required_codes):
+            break
+
+    missing_codes = sorted(code for code in required_codes if code not in resolved)
+    if missing_codes:
+        raise FactualPreflightError(
+            code="POOL_FACTUAL_PREFLIGHT_ACCOUNT_CODES_UNRESOLVED",
+            detail=(
+                f"{chart_entity}: missing account codes required for factual scope: "
+                + ", ".join(missing_codes)
+            ),
+        )
+    return resolved
+
+
+def _derive_chart_of_accounts_entity(accounting_register_entity: str) -> str:
+    normalized = str(accounting_register_entity or "").strip()
+    if normalized.startswith("AccountingRegister_"):
+        return normalized.replace("AccountingRegister_", "ChartOfAccounts_", 1)
+    return "ChartOfAccounts_Хозрасчетный"
 
 
 def _build_guid_or_filter(*, field: str, values: Iterable[str]) -> str:
     clauses = [f"{field} eq guid'{value}'" for value in values if str(value).strip()]
-    return " or ".join(clauses)
-
-
-def _build_code_filter(*, field: str, values: Iterable[str]) -> str:
-    clauses = [f"{field} eq '{_escape_odata_literal(str(value))}'" for value in values if str(value).strip()]
     return " or ".join(clauses)
 
 

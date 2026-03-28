@@ -446,6 +446,45 @@ func TestClient_Query_WithSelect(t *testing.T) {
 	}
 }
 
+func TestClient_Query_DirectEntityElementResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("Expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/Document_Test(guid'12345')" {
+			t.Errorf("Unexpected path: %s", r.URL.Path)
+		}
+		response := map[string]interface{}{
+			"Ref_Key": "12345",
+			"Name":    "Direct Entity",
+		}
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("Encode response failed: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(ClientConfig{
+		BaseURL: server.URL,
+		Auth:    Auth{Username: "test", Password: "test"},
+	})
+
+	ctx := context.Background()
+	results, err := client.Query(ctx, QueryRequest{
+		Entity: "Document_Test(guid'12345')",
+	})
+
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
+	}
+	if results[0]["Name"] != "Direct Entity" {
+		t.Fatalf("Unexpected payload: %#v", results[0])
+	}
+}
+
 func TestClient_HealthCheck(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

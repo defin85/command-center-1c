@@ -87,13 +87,26 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_BoundsScopeAndNorma
 	}
 	service := &mockFactualODataService{
 		rowsByEntity: map[string][]map[string]interface{}{
-			"AccountingRegister_Хозрасчетный/Turnovers(PeriodStart=datetime'2026-01-01T00:00:00',PeriodEnd=datetime'2026-03-31T23:59:59',Condition='(Organization_Key eq guid''org-1'') and (RecordType eq ''Credit'' or RecordType eq ''Debit'')',AccountCondition='Code eq ''62.01'' or Code eq ''90.01''')": {
-				{"Amount": "100.00"},
+			"ChartOfAccounts_Хозрасчетный": {
+				{"Code": "62.01", "Ref_Key": "account-62"},
+				{"Code": "90.01", "Ref_Key": "account-90"},
+			},
+			"AccountingRegister_Хозрасчетный/Turnovers(StartPeriod=datetime'2026-01-01T00:00:00',EndPeriod=datetime'2026-03-31T23:59:59',Condition='(Организация_Key eq guid''org-1'')',AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90''')": {
+				{
+					"ExtDimension2":      "sale-1",
+					"ExtDimension2_Type": "StandardODATA.Document_РеализацияТоваровУслуг",
+					"Amount":             "100.00",
+				},
+				{
+					"ExtDimension2":      "corr-1",
+					"ExtDimension2_Type": "StandardODATA.Document_КорректировкаРеализации",
+					"Amount":             "15.00",
+				},
 			},
 			"InformationRegister_ДанныеПервичныхДокументов": {
 				{"Ref_Key": "info-1"},
 			},
-			"Document_РеализацияТоваровУслуг": {
+			"Document_РеализацияТоваровУслуг(guid'sale-1')": {
 				{
 					"Ref_Key":         "sale-1",
 					"Организация_Key": "org-1",
@@ -102,16 +115,8 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_BoundsScopeAndNorma
 					"Комментарий":     "CCPOOL:v=1;pool=pool-1;run=-;batch=batch-1;org=org-1;q=2026Q1;kind=sale||manual tail",
 					"Date":            "2026-03-27T10:00:00Z",
 				},
-				{
-					"Ref_Key":         "sale-out-of-scope",
-					"Организация_Key": "org-2",
-					"СуммаДокумента":  "999.00",
-					"СуммаНДС":        "0.00",
-					"Комментарий":     "CCPOOL:v=1;pool=pool-1;run=-;batch=batch-1;org=org-2;q=2026Q1;kind=sale",
-					"Date":            "2026-03-27T10:05:00Z",
-				},
 			},
-			"Document_КорректировкаРеализации": {
+			"Document_КорректировкаРеализации(guid'corr-1')": {
 				{
 					"Ref_Key":        "corr-1",
 					"OrganizationId": "org-1",
@@ -149,32 +154,35 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_BoundsScopeAndNorma
 	assert.Equal(t, "factual_sync_source_slice", out["step"])
 	assert.Equal(t, "completed", out["status"])
 	assert.Equal(t, "db-1", out["database_id"])
-	require.Len(t, service.queryCalls, 4)
+	require.Len(t, service.queryCalls, 5)
 
-	assert.Equal(t, "AccountingRegister_Хозрасчетный/Turnovers(PeriodStart=datetime'2026-01-01T00:00:00',PeriodEnd=datetime'2026-03-31T23:59:59',Condition='(Organization_Key eq guid''org-1'') and (RecordType eq ''Credit'' or RecordType eq ''Debit'')',AccountCondition='Code eq ''62.01'' or Code eq ''90.01''')", service.queryCalls[0].entity)
+	assert.Equal(t, "ChartOfAccounts_Хозрасчетный", service.queryCalls[0].entity)
+	assert.Equal(t, []string{"Ref_Key", "Code"}, service.queryCalls[0].query.Select)
 	assert.Equal(t, 500, service.queryCalls[0].query.Top)
 	assert.Equal(t, 0, service.queryCalls[0].query.Skip)
 
-	assert.Equal(t, "InformationRegister_ДанныеПервичныхДокументов", service.queryCalls[1].entity)
-	assert.Equal(t, "Period ge datetime'2026-01-01T00:00:00' and Period le datetime'2026-03-31T23:59:59' and (Organization_Key eq guid'org-1')", service.queryCalls[1].query.Filter)
-	assert.Equal(t, "Period desc", service.queryCalls[1].query.OrderBy)
+	assert.Equal(t, "AccountingRegister_Хозрасчетный/Turnovers(StartPeriod=datetime'2026-01-01T00:00:00',EndPeriod=datetime'2026-03-31T23:59:59',Condition='(Организация_Key eq guid''org-1'')',AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90''')", service.queryCalls[1].entity)
 	assert.Equal(t, 500, service.queryCalls[1].query.Top)
 	assert.Equal(t, 0, service.queryCalls[1].query.Skip)
 
-	assert.Equal(t, "Document_РеализацияТоваровУслуг", service.queryCalls[2].entity)
-	assert.Equal(t, "Date ge datetime'2026-01-01T00:00:00' and Date le datetime'2026-03-31T23:59:59' and (Organization_Key eq guid'org-1')", service.queryCalls[2].query.Filter)
-	assert.Equal(t, "Date desc", service.queryCalls[2].query.OrderBy)
-	assert.Equal(t, 500, service.queryCalls[2].query.Top)
+	assert.Equal(t, "InformationRegister_ДанныеПервичныхДокументов", service.queryCalls[2].entity)
+	assert.Equal(t, "", service.queryCalls[2].query.Filter)
+	assert.Equal(t, "", service.queryCalls[2].query.OrderBy)
+	assert.Equal(t, 1, service.queryCalls[2].query.Top)
 	assert.Equal(t, 0, service.queryCalls[2].query.Skip)
 
-	assert.Equal(t, "Document_КорректировкаРеализации", service.queryCalls[3].entity)
-	assert.Equal(t, "Date ge datetime'2026-01-01T00:00:00' and Date le datetime'2026-03-31T23:59:59' and (Organization_Key eq guid'org-1')", service.queryCalls[3].query.Filter)
+	assert.Equal(t, "Document_РеализацияТоваровУслуг(guid'sale-1')", service.queryCalls[3].entity)
+	assert.Equal(t, 0, service.queryCalls[3].query.Top)
+	assert.Equal(t, 0, service.queryCalls[3].query.Skip)
+
+	assert.Equal(t, "Document_КорректировкаРеализации(guid'corr-1')", service.queryCalls[4].entity)
 
 	boundaryReads, ok := out["boundary_reads"].(map[string]int)
 	require.True(t, ok)
-	assert.Equal(t, 1, boundaryReads["accounting_register"])
+	assert.Equal(t, 2, boundaryReads["accounting_register"])
 	assert.Equal(t, 1, boundaryReads["information_register"])
-	assert.Equal(t, 2, boundaryReads["Document_РеализацияТоваровУслуг"])
+	assert.Equal(t, 1, boundaryReads["Document_РеализацияТоваровУслуг"])
+	assert.Equal(t, 1, boundaryReads["Document_КорректировкаРеализации"])
 
 	factualDocuments, ok := out["factual_documents"].([]map[string]interface{})
 	require.True(t, ok)
@@ -197,19 +205,25 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_UsesRegisterBackedA
 	}
 	service := &mockFactualODataService{
 		rowsByEntity: map[string][]map[string]interface{}{
-			"AccountingRegister_Хозрасчетный/Turnovers(PeriodStart=datetime'2026-01-01T00:00:00',PeriodEnd=datetime'2026-03-31T23:59:59',Condition='(Organization_Key eq guid''org-1'') and (RecordType eq ''Credit'' or RecordType eq ''Debit'')',AccountCondition='Code eq ''62.01'' or Code eq ''90.01''')": {
+			"ChartOfAccounts_Хозрасчетный": {
+				{"Code": "62.01", "Ref_Key": "account-62"},
+				{"Code": "90.01", "Ref_Key": "account-90"},
+			},
+			"AccountingRegister_Хозрасчетный/Turnovers(StartPeriod=datetime'2026-01-01T00:00:00',EndPeriod=datetime'2026-03-31T23:59:59',Condition='(Организация_Key eq guid''org-1'')',AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90''')": {
 				{
-					"Recorder": "SALE-0001",
-					"Amount":   "90.00",
+					"ExtDimension2":      "sale-1",
+					"ExtDimension2_Type": "StandardODATA.Document_РеализацияТоваровУслуг",
+					"СуммаTurnoverCr":    "90.00",
+					"СуммаTurnoverDr":    "0.00",
+					"СуммаTurnover":      "90.00",
+					"Организация_Key":    "org-1",
+					"Account_Key":        "account-90",
 				},
 			},
 			"InformationRegister_ДанныеПервичныхДокументов": {
-				{
-					"Документ": "Document_РеализацияТоваровУслуг(guid'sale-1')",
-					"Номер":    "SALE-0001",
-				},
+				{"Ref_Key": "probe-only"},
 			},
-			"Document_РеализацияТоваровУслуг": {
+			"Document_РеализацияТоваровУслуг(guid'sale-1')": {
 				{
 					"Ref_Key":         "sale-1",
 					"Организация_Key": "org-1",
@@ -254,6 +268,73 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_UsesRegisterBackedA
 	require.True(t, ok)
 	require.Len(t, factualDocuments, 1)
 	assert.Equal(t, "Document_РеализацияТоваровУслуг(guid'sale-1')", factualDocuments[0]["source_document_ref"])
+	assert.Equal(t, "90.00", factualDocuments[0]["amount_with_vat"])
+	assert.Equal(t, "75.00", factualDocuments[0]["amount_without_vat"])
+	assert.Equal(t, "15.00", factualDocuments[0]["vat_amount"])
+}
+
+func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_DeduplicatesBalancedDebitCreditTurnover(t *testing.T) {
+	fetcher := &mockFactualCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockFactualODataService{
+		rowsByEntity: map[string][]map[string]interface{}{
+			"ChartOfAccounts_Хозрасчетный": {
+				{"Code": "62.01", "Ref_Key": "account-62"},
+				{"Code": "90.01", "Ref_Key": "account-90"},
+			},
+			"AccountingRegister_Хозрасчетный/Turnovers(StartPeriod=datetime'2026-01-01T00:00:00',EndPeriod=datetime'2026-03-31T23:59:59',Condition='(Организация_Key eq guid''org-1'')',AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90''')": {
+				{
+					"ExtDimension2":      "sale-1",
+					"ExtDimension2_Type": "StandardODATA.Document_РеализацияТоваровУслуг",
+					"СуммаTurnoverCr":    "90.00",
+					"СуммаTurnoverDr":    "90.00",
+				},
+			},
+			"InformationRegister_ДанныеПервичныхДокументов": {
+				{"Ref_Key": "probe-only"},
+			},
+			"Document_РеализацияТоваровУслуг(guid'sale-1')": {
+				{
+					"Ref_Key":         "sale-1",
+					"Организация_Key": "org-1",
+					"СуммаДокумента":  "120.00",
+					"СуммаНДС":        "20.00",
+					"Комментарий":     "CCPOOL:v=1;pool=pool-1;run=-;batch=batch-1;org=org-1;q=2026Q1;kind=sale",
+					"Date":            "2026-03-27T10:00:00Z",
+				},
+			},
+		},
+	}
+	transport := NewODataFactualTransport(fetcher, service, zap.NewNop())
+
+	out, err := transport.ExecuteFactualSyncSourceSlice(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.factual.sync_source_slice",
+		Payload: map[string]interface{}{
+			"pool_id":                      "pool-1",
+			"database_id":                  "db-1",
+			"lane":                         "read",
+			"quarter_start":                "2026-01-01",
+			"quarter_end":                  "2026-03-31",
+			"organization_ids":             "org-1",
+			"account_codes":                "90.01,62.01",
+			"movement_kinds":               "debit,credit",
+			"document_entities":            "Document_РеализацияТоваровУслуг",
+			"accounting_register_entity":   "AccountingRegister_Хозрасчетный",
+			"accounting_register_function": "Turnovers",
+			"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
+		},
+	})
+
+	require.NoError(t, err)
+	factualDocuments, ok := out["factual_documents"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, factualDocuments, 1)
 	assert.Equal(t, "90.00", factualDocuments[0]["amount_with_vat"])
 	assert.Equal(t, "75.00", factualDocuments[0]["amount_without_vat"])
 	assert.Equal(t, "15.00", factualDocuments[0]["vat_amount"])
@@ -312,6 +393,11 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_MapsODataFailure(t 
 		},
 	}
 	service := &mockFactualODataService{
+		rowsByEntity: map[string][]map[string]interface{}{
+			"ChartOfAccounts_Хозрасчетный": {
+				{"Code": "62.01", "Ref_Key": "account-62"},
+			},
+		},
 		errByEntity: map[string]error{
 			"InformationRegister_ДанныеПервичныхДокументов": errors.New("odata 503"),
 		},
