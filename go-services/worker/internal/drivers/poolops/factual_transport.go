@@ -19,7 +19,7 @@ import (
 
 const (
 	factualSyncCredentialsPurpose            = "pool_factual_odata"
-	defaultFactualQueryTop                   = 500
+	defaultFactualQueryPageSize              = 500
 	ErrorCodePoolFactualSyncPayloadInvalid   = "POOL_FACTUAL_SYNC_PAYLOAD_INVALID"
 	ErrorCodePoolFactualSyncCredentialsError = "POOL_FACTUAL_SYNC_CREDENTIALS_ERROR"
 	ErrorCodePoolFactualSyncODATAFailed      = "POOL_FACTUAL_SYNC_ODATA_FAILED"
@@ -47,6 +47,8 @@ type factualSyncInput struct {
 	QuarterStart             time.Time
 	QuarterEnd               time.Time
 	OrganizationIDs          []string
+	AccountCodes             []string
+	MovementKinds            []string
 	DocumentEntities         []string
 	AccountingRegisterEntity string
 	AccountingFunction       string
@@ -107,22 +109,24 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 	}
 
 	boundaryReads := map[string]int{}
-	accountingRows, err := t.service.Query(
+	accountingRows, err := queryAllFactualRows(
 		ctx,
+		t.service,
 		odataCreds,
 		buildAccountingRegisterEntity(input),
-		&sharedodata.QueryParams{Top: defaultFactualQueryTop},
+		nil,
 	)
 	if err != nil {
 		return nil, mapFactualODataError("accounting_register", err)
 	}
 	boundaryReads["accounting_register"] = len(accountingRows)
 
-	informationRows, err := t.service.Query(
+	informationRows, err := queryAllFactualRows(
 		ctx,
+		t.service,
 		odataCreds,
 		input.InformationRegister,
-		&sharedodata.QueryParams{Top: defaultFactualQueryTop},
+		buildFactualInformationRegisterQuery(input),
 	)
 	if err != nil {
 		return nil, mapFactualODataError("information_register", err)
@@ -131,15 +135,12 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 
 	factualDocuments := make([]map[string]interface{}, 0)
 	for _, entity := range input.DocumentEntities {
-		rows, queryErr := t.service.Query(
+		rows, queryErr := queryAllFactualRows(
 			ctx,
+			t.service,
 			odataCreds,
 			entity,
-			&sharedodata.QueryParams{
-				Filter:  buildDocumentDateFilter(input),
-				OrderBy: "Date desc",
-				Top:     defaultFactualQueryTop,
-			},
+			buildDocumentQuery(input, entity),
 		)
 		if queryErr != nil {
 			return nil, mapFactualODataError(entity, queryErr)
@@ -198,13 +199,39 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 			"document_entities must not be empty",
 		)
 	}
+	organizationIDs := normalizeScopeTokens(splitCSV(readRequiredString(payload, "organization_ids")))
+	if len(organizationIDs) == 0 {
+		return factualSyncInput{}, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"organization_ids must not be empty",
+		)
+	}
+	accountCodes := normalizeScopeTokens(splitCSV(readRequiredString(payload, "account_codes")))
+	if len(accountCodes) == 0 {
+		return factualSyncInput{}, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"account_codes must not be empty",
+		)
+	}
+	movementKinds, err := normalizeMovementKinds(splitCSV(readRequiredString(payload, "movement_kinds")))
+	if err != nil {
+		return factualSyncInput{}, err
+	}
+	if len(movementKinds) == 0 {
+		return factualSyncInput{}, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"movement_kinds must contain credit and/or debit",
+		)
+	}
 	return factualSyncInput{
 		PoolID:                   readRequiredString(payload, "pool_id"),
 		DatabaseID:               readRequiredString(payload, "database_id"),
 		Lane:                     strings.TrimSpace(fmt.Sprintf("%v", payload["lane"])),
 		QuarterStart:             quarterStart.UTC(),
 		QuarterEnd:               quarterEnd.UTC(),
-		OrganizationIDs:          splitCSV(readRequiredString(payload, "organization_ids")),
+		OrganizationIDs:          organizationIDs,
+		AccountCodes:             accountCodes,
+		MovementKinds:            movementKinds,
 		DocumentEntities:         documentEntities,
 		AccountingRegisterEntity: readRequiredString(payload, "accounting_register_entity"),
 		AccountingFunction:       readRequiredString(payload, "accounting_register_function"),
@@ -215,20 +242,165 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 func buildAccountingRegisterEntity(input factualSyncInput) string {
 	start := input.QuarterStart.Format("2006-01-02T15:04:05")
 	end := input.QuarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
+	condition := buildAccountingRegisterCondition(input)
+	accountCondition := buildAccountingAccountCondition(input)
 	return fmt.Sprintf(
-		"%s/%s(PeriodStart=datetime'%s',PeriodEnd=datetime'%s',Condition='')",
+		"%s/%s(PeriodStart=datetime'%s',PeriodEnd=datetime'%s',Condition='%s',AccountCondition='%s')",
 		input.AccountingRegisterEntity,
 		input.AccountingFunction,
 		start,
 		end,
+		escapeODataFunctionString(condition),
+		escapeODataFunctionString(accountCondition),
 	)
 }
 
+func buildDocumentQuery(input factualSyncInput, entity string) *sharedodata.QueryParams {
+	temporalField := "Date"
+	if strings.HasPrefix(strings.TrimSpace(entity), "InformationRegister_") {
+		temporalField = "Period"
+	}
+	return &sharedodata.QueryParams{
+		Filter:  buildTemporalEntityFilter(temporalField, input.OrganizationIDs, input.QuarterStart, input.QuarterEnd),
+		OrderBy: fmt.Sprintf("%s desc", temporalField),
+		Top:     defaultFactualQueryPageSize,
+	}
+}
+
+func buildFactualInformationRegisterQuery(input factualSyncInput) *sharedodata.QueryParams {
+	return &sharedodata.QueryParams{
+		Filter:  buildTemporalEntityFilter("Period", input.OrganizationIDs, input.QuarterStart, input.QuarterEnd),
+		OrderBy: "Period desc",
+		Top:     defaultFactualQueryPageSize,
+	}
+}
+
+func buildTemporalEntityFilter(field string, organizationIDs []string, quarterStart, quarterEnd time.Time) string {
+	start := quarterStart.Format("2006-01-02T15:04:05")
+	end := quarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
+	parts := []string{
+		fmt.Sprintf(
+			"%s ge datetime'%s' and %s le datetime'%s'",
+			field,
+			start,
+			field,
+			end,
+		),
+	}
+	if orgFilter := buildOrganizationFilter(organizationIDs); orgFilter != "" {
+		parts = append(parts, fmt.Sprintf("(%s)", orgFilter))
+	}
+	return strings.Join(parts, " and ")
+}
+
+func buildAccountingRegisterCondition(input factualSyncInput) string {
+	parts := make([]string, 0, 2)
+	if orgFilter := buildOrganizationFilter(input.OrganizationIDs); orgFilter != "" {
+		parts = append(parts, fmt.Sprintf("(%s)", orgFilter))
+	}
+	if movementFilter := buildRecordTypeFilter(input.MovementKinds); movementFilter != "" {
+		parts = append(parts, movementFilter)
+	}
+	return strings.Join(parts, " and ")
+}
+
+func buildAccountingAccountCondition(input factualSyncInput) string {
+	return buildCodeFilter("Code", input.AccountCodes)
+}
+
+func buildOrganizationFilter(organizationIDs []string) string {
+	return buildGuidOrFilter("Organization_Key", organizationIDs)
+}
+
+func buildRecordTypeFilter(movementKinds []string) string {
+	if len(movementKinds) == 0 {
+		return ""
+	}
+	clauses := make([]string, 0, len(movementKinds))
+	for _, kind := range movementKinds {
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "credit":
+			clauses = append(clauses, "RecordType eq 'Credit'")
+		case "debit":
+			clauses = append(clauses, "RecordType eq 'Debit'")
+		}
+	}
+	if len(clauses) == 1 {
+		return clauses[0]
+	}
+	return fmt.Sprintf("(%s)", strings.Join(clauses, " or "))
+}
+
+func buildGuidOrFilter(field string, values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	clauses := make([]string, 0, len(values))
+	for _, value := range values {
+		clauses = append(clauses, fmt.Sprintf("%s eq guid'%s'", field, value))
+	}
+	return strings.Join(clauses, " or ")
+}
+
+func buildCodeFilter(field string, values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	clauses := make([]string, 0, len(values))
+	for _, value := range values {
+		clauses = append(clauses, fmt.Sprintf("%s eq '%s'", field, escapeODataLiteral(value)))
+	}
+	return strings.Join(clauses, " or ")
+}
+
+func escapeODataLiteral(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
+
+func escapeODataFunctionString(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
+}
+
+func queryAllFactualRows(
+	ctx context.Context,
+	service factualODataService,
+	creds sharedodata.ODataCredentials,
+	entity string,
+	query *sharedodata.QueryParams,
+) ([]map[string]interface{}, error) {
+	rows := make([]map[string]interface{}, 0)
+	for skip := 0; ; {
+		pageQuery := cloneQueryParams(query)
+		pageQuery.Top = defaultFactualQueryPageSize
+		pageQuery.Skip = skip
+		pageRows, err := service.Query(ctx, creds, entity, pageQuery)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, pageRows...)
+		if len(pageRows) == 0 || len(pageRows) < defaultFactualQueryPageSize {
+			break
+		}
+		skip += len(pageRows)
+	}
+	return rows, nil
+}
+
+func cloneQueryParams(query *sharedodata.QueryParams) *sharedodata.QueryParams {
+	if query == nil {
+		return &sharedodata.QueryParams{}
+	}
+	copy := *query
+	return &copy
+}
+
 func buildDocumentDateFilter(input factualSyncInput) string {
+	start := input.QuarterStart.Format("2006-01-02T15:04:05")
+	end := input.QuarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
 	return fmt.Sprintf(
 		"Date ge datetime'%s' and Date le datetime'%s'",
-		input.QuarterStart.Format("2006-01-02T00:00:00"),
-		input.QuarterEnd.Format("2006-01-02T23:59:59"),
+		start,
+		end,
 	)
 }
 
@@ -251,6 +423,9 @@ func normalizeFactualDocumentRows(
 		if organizationID == "" && len(organizationIDs) == 1 {
 			organizationID = organizationIDs[0]
 		}
+		if len(organizationIDs) > 0 && !containsString(organizationIDs, organizationID) {
+			continue
+		}
 		vatAmount := parseDecimalString(firstNonEmpty(document["vat_amount"], document["VATAmount"], document["СуммаНДС"]))
 		amountWithVAT := parseDecimalString(firstNonEmpty(document["amount_with_vat"], document["Amount"], document["СуммаДокумента"], document["Сумма"]))
 		amountWithoutVAT := parseDecimalString(firstNonEmpty(document["amount_without_vat"], document["AmountWithoutVAT"], document["СуммаБезНДС"]))
@@ -271,6 +446,59 @@ func normalizeFactualDocumentRows(
 		})
 	}
 	return result
+}
+
+func normalizeScopeTokens(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		token := strings.TrimSpace(value)
+		if token == "" {
+			continue
+		}
+		if _, ok := seen[token]; ok {
+			continue
+		}
+		seen[token] = struct{}{}
+		normalized = append(normalized, token)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func normalizeMovementKinds(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		token := strings.ToLower(strings.TrimSpace(value))
+		switch token {
+		case "credit", "debit":
+			if _, ok := seen[token]; ok {
+				continue
+			}
+			seen[token] = struct{}{}
+			normalized = append(normalized, token)
+		default:
+			return nil, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				fmt.Sprintf("movement_kinds contains unsupported value '%s'", value),
+			)
+		}
+	}
+	sort.Strings(normalized)
+	return normalized, nil
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) == strings.TrimSpace(needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildSourceDocumentRef(entity string, row map[string]interface{}) string {
