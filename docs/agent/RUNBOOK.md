@@ -29,6 +29,14 @@ bd prime
 
 ## Pool Factual Monitoring
 
+- Quick entry for a fresh session:
+
+```bash
+rg -n "preflight_pool_factual_sync" docs/agent/RUNBOOK.md orchestrator/apps/intercompany_pools
+alias cc1c-factual-preflight='cd /home/egor/code/command-center-1c/orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync'
+cc1c-factual-preflight --help
+```
+
 - `worker-workflows` shipped default path now starts with `ENABLE_GO_SCHEDULER=true`, `ENABLE_POOLOPS_ROUTE=true` and `ENABLE_POOL_PUBLICATION_ODATA_CORE=true` from checked-in env/preset surfaces (`.env.example`, `.env.workflow`, `docker-compose.yml`, `scripts/lib/lifecycle.sh`).
 - Active-quarter factual refresh runs through scheduler + workspace default sync; closed-quarter reconcile runs through dedicated nightly scheduler entrypoint on the same `worker-workflows` runtime family.
 - Before widening pilot cohort, run factual published-surfaces preflight from Command Center against the target pool/quarter and a bounded set of pilot infobases. The command refreshes metadata through the canonical metadata path and then executes read-only bounded OData probes with the same default factual sync scope.
