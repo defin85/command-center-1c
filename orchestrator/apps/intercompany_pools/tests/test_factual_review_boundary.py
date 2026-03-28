@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -12,8 +13,11 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolBatch,
     PoolBatchKind,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
     PoolBatchSourceType,
     PoolEdgeVersion,
+    PoolFactualBalanceSnapshot,
     PoolFactualReviewItem,
     PoolFactualReviewReason,
     PoolNodeVersion,
@@ -154,6 +158,39 @@ def test_review_action_can_link_batch_without_mutating_run_status_or_batch_intak
         source_reference="receipt-boundary-001",
         raw_payload_ref="files/receipt-boundary-001.xlsx",
     )
+    settlement = PoolBatchSettlement.objects.create(
+        tenant=tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.INGESTED,
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+        edge=edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat="15.00",
+        amount_without_vat="12.50",
+        vat_amount="2.50",
+        incoming_amount="15.00",
+        outgoing_amount="0.00",
+        open_balance="15.00",
+    )
+    source_snapshot = PoolFactualBalanceSnapshot.objects.create(
+        tenant=tenant,
+        pool=pool,
+        organization=leaf,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat="-15.00",
+        amount_without_vat="-12.50",
+        vat_amount="-2.50",
+        incoming_amount="0.00",
+        outgoing_amount="15.00",
+        open_balance="-15.00",
+    )
     review_item = PoolFactualReviewItem.objects.create(
         tenant=tenant,
         pool=pool,
@@ -161,6 +198,13 @@ def test_review_action_can_link_batch_without_mutating_run_status_or_batch_intak
         quarter_start=date(2026, 1, 1),
         quarter_end=date(2026, 3, 31),
         reason=PoolFactualReviewReason.UNATTRIBUTED,
+        delta_payload={
+            "amount_with_vat": "15.00",
+            "amount_without_vat": "12.50",
+            "vat_amount": "2.50",
+            "kind": "sale",
+        },
+        metadata={"raw_organization_id": str(leaf.id)},
         source_document_ref="Document_РеализацияТоваровУслуг(guid'55555555-5555-5555-5555-555555555555')",
     )
     actor = User.objects.create_user(username=f"factual-review-isolation-{uuid4().hex[:6]}", password="pass")
@@ -176,6 +220,14 @@ def test_review_action_can_link_batch_without_mutating_run_status_or_batch_intak
         note="link unattributed sale to existing batch without changing execution state",
     )
 
+    snapshot = PoolFactualBalanceSnapshot.objects.get(
+        tenant=tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+    )
+    settlement.refresh_from_db()
+    assert not PoolFactualBalanceSnapshot.objects.filter(id=source_snapshot.id).exists()
     persisted_run = PoolRun.objects.values(
         "status",
         "runtime_projection_snapshot",
@@ -195,3 +247,11 @@ def test_review_action_can_link_batch_without_mutating_run_status_or_batch_intak
     assert persisted_batch["source_reference"] == "receipt-boundary-001"
     assert persisted_batch["raw_payload_ref"] == "files/receipt-boundary-001.xlsx"
     assert str(persisted_batch["run_id"]) == str(run.id)
+    assert snapshot.amount_with_vat == Decimal("0.00")
+    assert snapshot.amount_without_vat == Decimal("0.00")
+    assert snapshot.vat_amount == Decimal("0.00")
+    assert snapshot.incoming_amount == Decimal("15.00")
+    assert snapshot.outgoing_amount == Decimal("15.00")
+    assert snapshot.open_balance == Decimal("0.00")
+    assert settlement.status == PoolBatchSettlementStatus.CLOSED
+    assert settlement.summary["review_queue"]["summary"]["pending_total"] == 0

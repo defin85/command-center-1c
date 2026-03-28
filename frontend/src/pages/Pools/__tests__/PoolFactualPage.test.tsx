@@ -334,8 +334,6 @@ describe('PoolFactualPage', () => {
   it('shows reason-specific review actions and updates queue state from the factual review API', async () => {
     const user = userEvent.setup()
     mockListOrganizationPools.mockResolvedValue([buildPool()])
-    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
-
     const afterAttributeQueue = buildReviewQueue([
       buildReviewItem({
         status: 'attributed',
@@ -370,6 +368,46 @@ describe('PoolFactualPage', () => {
         resolved_at: '2026-03-27T10:10:00Z',
       }),
     ])
+    mockGetPoolFactualWorkspace
+      .mockResolvedValueOnce(buildWorkspace())
+      .mockResolvedValueOnce(buildWorkspace({
+        summary: {
+          quarter: '2026Q1',
+          quarter_start: '2026-01-01',
+          quarter_end: '2026-03-31',
+          incoming_amount: '170.00',
+          outgoing_amount: '115.00',
+          open_balance: '55.00',
+          pending_review_total: 1,
+          attention_required_total: 1,
+          freshness_state: 'fresh',
+          source_availability: 'available',
+          source_availability_detail: '',
+          last_synced_at: '2026-03-27T10:05:00Z',
+          settlement_total: 2,
+          checkpoint_total: 1,
+        },
+        review_queue: afterAttributeQueue,
+      }))
+      .mockResolvedValueOnce(buildWorkspace({
+        summary: {
+          quarter: '2026Q1',
+          quarter_start: '2026-01-01',
+          quarter_end: '2026-03-31',
+          incoming_amount: '170.00',
+          outgoing_amount: '115.00',
+          open_balance: '55.00',
+          pending_review_total: 0,
+          attention_required_total: 0,
+          freshness_state: 'fresh',
+          source_availability: 'available',
+          source_availability_detail: '',
+          last_synced_at: '2026-03-27T10:10:00Z',
+          settlement_total: 2,
+          checkpoint_total: 1,
+        },
+        review_queue: afterReconcileQueue,
+      }))
 
     mockApplyPoolFactualReviewAction
       .mockResolvedValueOnce({
@@ -404,10 +442,16 @@ describe('PoolFactualPage', () => {
     await waitFor(() => {
       expect(within(unattributedRow as HTMLElement).getByText('attributed')).toBeInTheDocument()
     })
+    await waitFor(() => {
+      expect(screen.getByText('1 pending')).toBeInTheDocument()
+    })
 
     await user.click(within(lateCorrectionRow as HTMLElement).getByRole('button', { name: 'Reconcile review item late-correction-pool-alpha' }))
     await waitFor(() => {
       expect(within(lateCorrectionRow as HTMLElement).getByText('reconciled')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('0 pending')).toBeInTheDocument()
     })
 
     expect(mockApplyPoolFactualReviewAction).toHaveBeenNthCalledWith(1, expect.objectContaining({
@@ -421,6 +465,8 @@ describe('PoolFactualPage', () => {
       review_item_id: 'late-correction-pool-alpha',
       action: 'reconcile',
     }))
+    expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(2, { poolId: '11111111-1111-1111-1111-111111111111' })
+    expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(3, { poolId: '11111111-1111-1111-1111-111111111111' })
   })
 
   it('shows an explicit error when the factual review API rejects a manual action', async () => {

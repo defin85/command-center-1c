@@ -186,19 +186,26 @@ export function PoolFactualWorkspaceDetail({
         organization_id: row.organizationId ?? undefined,
         note: 'Triggered from factual workspace',
       })
-      setWorkspace((current) => {
-        if (!current) {
-          return current
-        }
-        return {
-          ...current,
-          review_queue: response.review_queue,
-          summary: {
-            ...current.summary,
-            pending_review_total: response.review_queue.summary.pending_total,
-          },
-        }
-      })
+      try {
+        const refreshedWorkspace = await getPoolFactualWorkspace({ poolId: selectedPool.id })
+        setWorkspace(refreshedWorkspace)
+      } catch (error) {
+        const resolved = resolveApiError(error, 'Factual review action succeeded but workspace refresh failed.')
+        setReviewActionError(resolved.message)
+        setWorkspace((current) => {
+          if (!current) {
+            return current
+          }
+          return {
+            ...current,
+            review_queue: response.review_queue,
+            summary: {
+              ...current.summary,
+              pending_review_total: response.review_queue.summary.pending_total,
+            },
+          }
+        })
+      }
     } catch (error) {
       const resolved = resolveApiError(error, 'Failed to apply factual review action.')
       setReviewActionError(resolved.message)

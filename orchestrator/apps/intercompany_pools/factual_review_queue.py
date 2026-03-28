@@ -89,6 +89,9 @@ def apply_pool_factual_review_action(
 
     actor = User.objects.get(id=actor_id)
     resolved_at = now or timezone.now()
+    original_batch_id = str(review_item.batch_id) if review_item.batch_id else None
+    original_edge_id = str(review_item.edge_id) if review_item.edge_id else None
+    original_organization_id = str(review_item.organization_id) if review_item.organization_id else None
 
     batch = _load_batch(batch_id=batch_id, tenant_id=tenant_id)
     edge = _load_edge(edge_id=edge_id, pool_id=str(review_item.pool_id))
@@ -119,6 +122,16 @@ def apply_pool_factual_review_action(
         organization_id=str(organization.id) if organization is not None else None,
     )
     review_item.save()
+    from .factual_result_projection import apply_pool_factual_review_resolution_to_projection
+
+    apply_pool_factual_review_resolution_to_projection(
+        review_item=review_item,
+        action=normalized_action,
+        original_batch_id=original_batch_id,
+        original_edge_id=original_edge_id,
+        original_organization_id=original_organization_id,
+        applied_at=resolved_at,
+    )
     _refresh_factual_rollout_telemetry(timestamp=resolved_at)
     return review_item
 
