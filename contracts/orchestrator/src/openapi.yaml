@@ -290,6 +290,12 @@ paths:
     $ref: paths/api_v2_pools_organizations_sync_.yaml
   /api/v2/pools/organizations/upsert/:
     $ref: paths/api_v2_pools_organizations_upsert_.yaml
+  /api/v2/pools/batches/:
+    $ref: paths/api_v2_pools_batches_.yaml
+  /api/v2/pools/factual/workspace/:
+    $ref: paths/api_v2_pools_factual_workspace_.yaml
+  /api/v2/pools/factual/review-actions/:
+    $ref: paths/api_v2_pools_factual_review-actions_.yaml
   /api/v2/pools/runs/:
     $ref: paths/api_v2_pools_runs_.yaml
   /api/v2/pools/runs/{run_id}/:

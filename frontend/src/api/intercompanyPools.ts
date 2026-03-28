@@ -518,6 +518,156 @@ export type PoolRunReport = {
   attempts_by_status: Record<string, number>
 }
 
+export type PoolBatchKind = 'receipt' | 'sale'
+export type PoolBatchSourceType = 'schema_template_upload' | 'integration' | 'manual'
+export type PoolBatchSettlementStatus =
+  | 'ingested'
+  | 'distributed'
+  | 'partially_closed'
+  | 'closed'
+  | 'carried_forward'
+  | 'attention_required'
+
+export type PoolBatchSettlement = {
+  id: string
+  tenant_id: string
+  batch_id: string
+  status: PoolBatchSettlementStatus
+  incoming_amount: string
+  outgoing_amount: string
+  open_balance: string
+  summary: Record<string, unknown>
+  freshness_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PoolBatch = {
+  id: string
+  tenant_id: string
+  pool_id: string
+  batch_kind: PoolBatchKind
+  source_type: PoolBatchSourceType
+  schema_template_id: string | null
+  start_organization_id: string | null
+  run_id: string | null
+  workflow_execution_id: string | null
+  operation_id: string | null
+  workflow_status: string
+  period_start: string
+  period_end: string | null
+  source_reference: string
+  raw_payload_ref: string
+  content_hash: string
+  source_metadata: Record<string, unknown>
+  normalization_summary: Record<string, unknown>
+  publication_summary: Record<string, unknown>
+  last_error_code: string
+  last_error: string
+  created_by_id: string | null
+  created_at: string
+  updated_at: string
+  settlement: PoolBatchSettlement | null
+}
+
+export type PoolFactualReviewReason = 'unattributed' | 'late_correction'
+export type PoolFactualReviewStatus = 'pending' | 'attributed' | 'reconciled' | 'resolved_without_change'
+export type PoolFactualReviewAction = 'attribute' | 'reconcile' | 'resolve_without_change'
+
+export type PoolFactualSummary = {
+  quarter: string
+  quarter_start: string
+  quarter_end: string
+  incoming_amount: string
+  outgoing_amount: string
+  open_balance: string
+  pending_review_total: number
+  attention_required_total: number
+  freshness_state: string
+  source_availability: string
+  source_availability_detail: string
+  last_synced_at: string | null
+  settlement_total: number
+  checkpoint_total: number
+}
+
+export type PoolFactualEdgeBalance = {
+  id: string
+  pool_id: string
+  batch_id: string | null
+  organization_id: string
+  organization_name: string
+  edge_id: string | null
+  parent_node_id: string | null
+  child_node_id: string | null
+  quarter: string
+  quarter_start: string
+  quarter_end: string
+  amount_with_vat: string
+  amount_without_vat: string
+  vat_amount: string
+  incoming_amount: string
+  outgoing_amount: string
+  open_balance: string
+  freshness_at: string | null
+  metadata: Record<string, unknown>
+}
+
+export type PoolFactualReviewQueueItem = {
+  id: string
+  pool_id: string
+  batch_id: string | null
+  organization_id: string | null
+  edge_id: string | null
+  reason: PoolFactualReviewReason
+  status: PoolFactualReviewStatus
+  quarter: string
+  source_document_ref: string
+  allowed_actions: PoolFactualReviewAction[]
+  attention_required: boolean
+  resolved_at: string | null
+}
+
+export type PoolFactualReviewQueue = {
+  contract_version: string
+  subsystem: string
+  summary: {
+    pending_total: number
+    unattributed_total: number
+    late_correction_total: number
+    attention_required_total: number
+  }
+  items: PoolFactualReviewQueueItem[]
+}
+
+export type PoolFactualWorkspace = {
+  pool_id: string
+  summary: PoolFactualSummary
+  settlements: PoolBatch[]
+  edge_balances: PoolFactualEdgeBalance[]
+  review_queue: PoolFactualReviewQueue
+}
+
+export type GetPoolFactualWorkspaceParams = {
+  poolId: string
+  quarterStart?: string
+}
+
+export type ApplyPoolFactualReviewActionPayload = {
+  review_item_id: string
+  action: PoolFactualReviewAction
+  batch_id?: string
+  edge_id?: string
+  organization_id?: string
+  note?: string
+  metadata?: Record<string, unknown>
+}
+
+export type PoolFactualReviewActionResponse = {
+  review_item: PoolFactualReviewQueueItem
+  review_queue: PoolFactualReviewQueue
+}
+
 export type PoolRunSafeCommandType = 'confirm-publication' | 'abort-publication'
 
 export type PoolRunSafeCommandResponse = {
@@ -863,6 +1013,31 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
     { skipGlobalError: true }
   )
   return response.data.pools ?? []
+}
+
+export async function getPoolFactualWorkspace(
+  params: GetPoolFactualWorkspaceParams
+): Promise<PoolFactualWorkspace> {
+  const query: Record<string, string> = { pool_id: params.poolId }
+  if (params.quarterStart) {
+    query.quarter_start = params.quarterStart
+  }
+  const response = await apiClient.get<PoolFactualWorkspace>(
+    '/api/v2/pools/factual/workspace/',
+    { params: query, skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function applyPoolFactualReviewAction(
+  payload: ApplyPoolFactualReviewActionPayload
+): Promise<PoolFactualReviewActionResponse> {
+  const response = await apiClient.post<PoolFactualReviewActionResponse>(
+    '/api/v2/pools/factual/review-actions/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
 }
 
 export async function listPoolTopologyTemplates(): Promise<PoolTopologyTemplate[]> {

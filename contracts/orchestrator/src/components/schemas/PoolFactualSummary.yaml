@@ -1,0 +1,51 @@
+type: object
+properties:
+  quarter:
+    type: string
+  quarter_start:
+    type: string
+    format: date
+  quarter_end:
+    type: string
+    format: date
+  incoming_amount:
+    type: string
+  outgoing_amount:
+    type: string
+  open_balance:
+    type: string
+  pending_review_total:
+    type: integer
+    minimum: 0
+  attention_required_total:
+    type: integer
+    minimum: 0
+  freshness_state:
+    type: string
+  source_availability:
+    type: string
+  source_availability_detail:
+    type: string
+  last_synced_at:
+    type: string
+    format: date-time
+    nullable: true
+  settlement_total:
+    type: integer
+    minimum: 0
+  checkpoint_total:
+    type: integer
+    minimum: 0
+required:
+  - attention_required_total
+  - checkpoint_total
+  - freshness_state
+  - incoming_amount
+  - open_balance
+  - outgoing_amount
+  - pending_review_total
+  - quarter
+  - quarter_end
+  - quarter_start
+  - settlement_total
+  - source_availability

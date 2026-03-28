@@ -1,0 +1,23 @@
+type: object
+properties:
+  execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  operation_id:
+    type: string
+    format: uuid
+    nullable: true
+  enqueue_success:
+    type: boolean
+  enqueue_status:
+    type: string
+  enqueue_error:
+    type: string
+    nullable: true
+  created_execution:
+    type: boolean
+required:
+  - created_execution
+  - enqueue_status
+  - enqueue_success

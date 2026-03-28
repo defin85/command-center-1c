@@ -244,6 +244,54 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, "confirm_publication", captured.PublicationAuth.Source)
 	})
 
+	t.Run("factual sync node payload falls back to execution context", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Factual Sync", "pool.factual.sync_source_slice")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		execCtx = execCtx.Set("contract_version", "pool_factual_sync_workflow.v1")
+		execCtx = execCtx.Set("tenant_id", "tenant-1")
+		execCtx = execCtx.Set("pool_id", "pool-1")
+		execCtx = execCtx.Set("database_id", "db-1")
+		execCtx = execCtx.Set("checkpoint_id", "checkpoint-1")
+		execCtx = execCtx.Set("lane", "read")
+		execCtx = execCtx.Set("quarter_start", "2026-01-01")
+		execCtx = execCtx.Set("quarter_end", "2026-03-31")
+		execCtx = execCtx.Set("organization_ids", "org-1")
+		execCtx = execCtx.Set("account_codes", "62.01,90.01")
+		execCtx = execCtx.Set("movement_kinds", "credit,debit")
+		execCtx = execCtx.Set("activity", "active")
+		execCtx = execCtx.Set("correlation_id", "corr-1")
+		execCtx = execCtx.Set("origin_system", "cc")
+		execCtx = execCtx.Set("origin_event_id", "event-1")
+		execCtx = execCtx.Set(
+			"document_entities",
+			"Document_РеализацияТоваровУслуг,Document_КорректировкаРеализации",
+		)
+		execCtx = execCtx.Set("accounting_register_entity", "AccountingRegister_Хозрасчетный")
+		execCtx = execCtx.Set("accounting_register_function", "Turnovers")
+		execCtx = execCtx.Set("information_register_entity", "InformationRegister_ДанныеПервичныхДокументов")
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		assert.Equal(t, "pool.factual.sync_source_slice", captured.OperationType)
+		assert.Equal(t, "db-1", captured.Payload["database_id"])
+		assert.Equal(t, "2026-01-01", captured.Payload["quarter_start"])
+		assert.Equal(t, "Document_РеализацияТоваровУслуг,Document_КорректировкаРеализации", captured.Payload["document_entities"])
+	})
+
 	t.Run("publication node payload prioritizes reconciliation node result", func(t *testing.T) {
 		var captured *OperationRequest
 		mockExec := &mockOperationExecutor{

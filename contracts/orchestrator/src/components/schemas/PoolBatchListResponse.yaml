@@ -1,0 +1,11 @@
+type: object
+properties:
+  batches:
+    type: array
+    items:
+      $ref: ./PoolBatch.yaml
+  count:
+    type: integer
+required:
+  - batches
+  - count

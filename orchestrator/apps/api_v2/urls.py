@@ -343,6 +343,17 @@ urlpatterns = [
         pool_document_policy_migrations.migrate_pool_edge_document_policy,
         name='pools-document-policy-migrations',
     ),
+    path(
+        'pools/factual/workspace/',
+        intercompany_pools.get_pool_factual_workspace,
+        name='pools-factual-workspace',
+    ),
+    path(
+        'pools/factual/review-actions/',
+        intercompany_pools.apply_pool_factual_review_action_view,
+        name='pools-factual-review-actions',
+    ),
+    path('pools/batches/', intercompany_pools.list_or_create_pool_batches, name='pools-batches'),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),
     path(

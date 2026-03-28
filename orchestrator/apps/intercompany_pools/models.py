@@ -2006,6 +2006,8 @@ from . import factual_models as _factual_models  # noqa: E402
 
 PoolBatch = _factual_models.PoolBatch
 PoolBatchKind = _factual_models.PoolBatchKind
+PoolBatchPublicationAttempt = _factual_models.PoolBatchPublicationAttempt
+PoolBatchPublicationAttemptStatus = _factual_models.PoolBatchPublicationAttemptStatus
 PoolBatchSettlement = _factual_models.PoolBatchSettlement
 PoolBatchSettlementStatus = _factual_models.PoolBatchSettlementStatus
 PoolBatchSourceType = _factual_models.PoolBatchSourceType

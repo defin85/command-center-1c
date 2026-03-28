@@ -11,7 +11,7 @@
  */
 export interface ProblemDetailsReferentialError {
   code: string;
-  path?: string;
+  path: string;
   detail: string;
   slot_key?: string;
   decision_table_id?: string;

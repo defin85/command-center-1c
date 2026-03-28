@@ -79,6 +79,8 @@ const (
 	ErrorCodePoolRuntimeRouteDisabled = "POOL_RUNTIME_ROUTE_DISABLED"
 	// ErrorCodePoolRuntimePublicationPathDisabled indicates publication path is fail-closed and must not fallback to bridge.
 	ErrorCodePoolRuntimePublicationPathDisabled = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
+	// ErrorCodePoolRuntimeFactualPathDisabled indicates factual sync path is fail-closed and must not fallback to bridge.
+	ErrorCodePoolRuntimeFactualPathDisabled = "POOL_RUNTIME_FACTUAL_PATH_DISABLED"
 	// ErrorCodePoolRuntimeBridgeRetryBudgetExhausted indicates bridge transport retries exhausted execution budget.
 	ErrorCodePoolRuntimeBridgeRetryBudgetExhausted = "POOL_RUNTIME_BRIDGE_RETRY_BUDGET_EXHAUSTED"
 )

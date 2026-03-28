@@ -1,0 +1,50 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  pool_id:
+    type: string
+    format: uuid
+  batch_id:
+    type: string
+    format: uuid
+    nullable: true
+  organization_id:
+    type: string
+    format: uuid
+    nullable: true
+  edge_id:
+    type: string
+    format: uuid
+    nullable: true
+  reason:
+    type: string
+  status:
+    type: string
+  quarter:
+    type: string
+  source_document_ref:
+    type: string
+  allowed_actions:
+    type: array
+    items:
+      type: string
+      enum:
+        - attribute
+        - reconcile
+        - resolve_without_change
+  attention_required:
+    type: boolean
+  resolved_at:
+    type: string
+    format: date-time
+    nullable: true
+required:
+  - allowed_actions
+  - attention_required
+  - id
+  - pool_id
+  - quarter
+  - reason
+  - status

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from datetime import date, datetime, timezone as dt_timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID, uuid4
@@ -46,6 +47,8 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolBatch,
     PoolBatchKind,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
     PoolBatchSourceType,
     PoolWorkflowBinding,
     PoolMasterParty,
@@ -248,6 +251,29 @@ def _create_batch_backed_top_down_scope(
         source_reference=f"receipt-{uuid4().hex[:8]}",
     )
     return start_organization, leaf_organization, batch
+
+
+def _create_batch_schema_template(
+    *,
+    tenant: Tenant,
+    code: str,
+) -> PoolSchemaTemplate:
+    return PoolSchemaTemplate.objects.create(
+        tenant=tenant,
+        code=code,
+        name=code.replace("-", " ").title(),
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema={
+            "columns": {
+                "organization_inn": "inn",
+                "amount_with_vat": "amount",
+                "external_id": "external_id",
+            }
+        },
+        metadata={},
+    )
 
 
 def _create_database(
@@ -4645,6 +4671,176 @@ def test_create_pool_run_accepts_batch_backed_top_down_and_links_batch(
     }
     assert batch.run_id == run.id
     assert batch.start_organization_id == start_organization.id
+
+
+@pytest.mark.django_db
+def test_create_pool_batch_receipt_intake_persists_batch_settlement_and_linked_run(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, _, _ = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+    schema_template = _create_batch_schema_template(
+        tenant=pool.tenant,
+        code=f"receipt-batch-{uuid4().hex[:6]}",
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=lambda *args, **kwargs: SimpleNamespace(run=kwargs["run"]),
+    ) as start_run_mock:
+        response = authenticated_client.post(
+            "/api/v2/pools/batches/",
+            {
+                "pool_id": str(pool.id),
+                "batch_kind": PoolBatchKind.RECEIPT,
+                "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                "schema_template_id": str(schema_template.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "start_organization_id": str(start_organization.id),
+                "period_start": "2026-01-01",
+                "period_end": "2026-03-31",
+                "source_reference": "receipt-q1",
+                "raw_payload_ref": "files/receipt-q1.json",
+                "json_payload": [
+                    {
+                        "inn": start_organization.inn,
+                        "amount": "125.50",
+                        "external_id": "receipt-001",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    batch = PoolBatch.objects.get(id=payload["batch"]["id"])
+    settlement = PoolBatchSettlement.objects.get(batch=batch)
+    run = PoolRun.objects.get(id=payload["run"]["id"])
+
+    assert batch.batch_kind == PoolBatchKind.RECEIPT
+    assert batch.start_organization_id == start_organization.id
+    assert batch.run_id == run.id
+    assert batch.normalization_summary["total_amount_with_vat"] == "125.50"
+    assert settlement.status == PoolBatchSettlementStatus.INGESTED
+    assert settlement.incoming_amount == Decimal(batch.normalization_summary["total_amount_with_vat"])
+    assert settlement.open_balance == Decimal(batch.normalization_summary["total_amount_with_vat"])
+    assert run.direction == PoolRunDirection.TOP_DOWN
+    assert run.run_input == {
+        "batch_id": str(batch.id),
+        "start_organization_id": str(start_organization.id),
+    }
+    start_run_mock.assert_called_once()
+
+
+@pytest.mark.django_db
+def test_create_pool_batch_sale_intake_persists_batch_and_starts_closing_workflow(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    root = Organization.objects.create(
+        tenant=pool.tenant,
+        name=f"Sale Batch Root {uuid4().hex[:6]}",
+        inn=f"76{uuid4().int % 10**10:010d}",
+    )
+    leaf_database = _create_database(
+        tenant=pool.tenant,
+        name=f"sale-batch-db-{uuid4().hex[:6]}",
+    )
+    leaf = Organization.objects.create(
+        tenant=pool.tenant,
+        database=leaf_database,
+        name=f"Sale Batch Leaf {uuid4().hex[:6]}",
+        inn=f"77{uuid4().int % 10**10:010d}",
+    )
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf,
+        effective_from=date(2026, 1, 1),
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+    )
+    schema_template = _create_batch_schema_template(
+        tenant=pool.tenant,
+        code=f"sale-batch-{uuid4().hex[:6]}",
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_sale_batch_closing_workflow_execution",
+        return_value=SimpleNamespace(
+            batch=None,
+            execution_id=str(uuid4()),
+            operation_id=str(uuid4()),
+            enqueue_success=True,
+            enqueue_status="queued",
+            enqueue_error=None,
+            created_execution=True,
+        ),
+    ) as start_closing_mock:
+        response = authenticated_client.post(
+            "/api/v2/pools/batches/",
+            {
+                "pool_id": str(pool.id),
+                "batch_kind": PoolBatchKind.SALE,
+                "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                "schema_template_id": str(schema_template.id),
+                "period_start": "2026-01-01",
+                "period_end": "2026-03-31",
+                "source_reference": "sales-q1",
+                "raw_payload_ref": "files/sales-q1.json",
+                "json_payload": [
+                    {
+                        "inn": leaf.inn,
+                        "amount": "85.40",
+                        "external_id": "sale-001",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    batch = PoolBatch.objects.get(id=payload["batch"]["id"])
+    settlement = PoolBatchSettlement.objects.get(batch=batch)
+
+    assert batch.batch_kind == PoolBatchKind.SALE
+    assert batch.run_id is None
+    assert settlement.status == PoolBatchSettlementStatus.INGESTED
+    assert payload["sale_closing"]["enqueue_success"] is True
+    assert payload["sale_closing"]["created_execution"] is True
+    start_closing_mock.assert_called_once()
+    _, start_kwargs = start_closing_mock.call_args
+    assert start_kwargs["batch"].id == batch.id
+    assert start_kwargs["requested_by"].username == "pool-api-user"
 
 
 @pytest.mark.django_db

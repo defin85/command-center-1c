@@ -238,6 +238,139 @@ def test_pool_run_top_down_input_schema_supports_manual_and_batch_backed_modes()
     assert mixed_payload.is_valid() is False
 
 
+def test_pool_batch_path_and_schemas_are_in_contract_with_runtime_serializer_fields() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    path = "/api/v2/pools/batches/"
+    path_item = paths.get(path)
+    assert isinstance(path_item, dict), f"path missing: {path}"
+
+    get_operation = path_item.get("get")
+    assert isinstance(get_operation, dict)
+    assert get_operation.get("operationId") == "v2_pools_batches_list"
+    get_responses = get_operation.get("responses")
+    assert isinstance(get_responses, dict)
+    assert get_responses["200"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolBatchListResponse"
+    )
+
+    post_operation = path_item.get("post")
+    assert isinstance(post_operation, dict)
+    assert post_operation.get("operationId") == "v2_pools_batches_create"
+    post_responses = post_operation.get("responses")
+    assert isinstance(post_responses, dict)
+    assert post_responses["201"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolBatchCreateResponse"
+    )
+
+    batch_schema = _schema(contract, "PoolBatch")
+    batch_properties = batch_schema.get("properties")
+    assert isinstance(batch_properties, dict)
+    runtime_batch_fields = set(pools_view.PoolBatchSerializer().fields.keys())
+    assert runtime_batch_fields.issubset(set(batch_properties.keys()))
+
+    settlement_schema = _schema(contract, "PoolBatchSettlement")
+    settlement_properties = settlement_schema.get("properties")
+    assert isinstance(settlement_properties, dict)
+    runtime_settlement_fields = set(pools_view.PoolBatchSettlementSerializer().fields.keys())
+    assert runtime_settlement_fields.issubset(set(settlement_properties.keys()))
+
+    create_request_schema = _schema(contract, "PoolBatchCreateRequest")
+    create_request_properties = create_request_schema.get("properties")
+    assert isinstance(create_request_properties, dict)
+    runtime_create_request_fields = set(pools_view.PoolBatchCreateRequestSerializer().fields.keys())
+    assert runtime_create_request_fields.issubset(set(create_request_properties.keys()))
+
+    create_response_schema = _schema(contract, "PoolBatchCreateResponse")
+    create_response_properties = create_response_schema.get("properties")
+    assert isinstance(create_response_properties, dict)
+    runtime_create_response_fields = set(pools_view.PoolBatchCreateResponseSerializer().fields.keys())
+    assert runtime_create_response_fields.issubset(set(create_response_properties.keys()))
+
+    sale_closing_schema = _schema(contract, "PoolSaleClosingStartResponse")
+    sale_closing_properties = sale_closing_schema.get("properties")
+    assert isinstance(sale_closing_properties, dict)
+    runtime_sale_closing_fields = set(pools_view.PoolSaleClosingStartResponseSerializer().fields.keys())
+    assert runtime_sale_closing_fields.issubset(set(sale_closing_properties.keys()))
+
+
+def test_pool_factual_paths_and_schemas_are_in_contract_with_runtime_serializer_fields() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    workspace_path = "/api/v2/pools/factual/workspace/"
+    workspace_path_item = paths.get(workspace_path)
+    assert isinstance(workspace_path_item, dict), f"path missing: {workspace_path}"
+    workspace_get = workspace_path_item.get("get")
+    assert isinstance(workspace_get, dict)
+    assert workspace_get.get("operationId") == "v2_pools_factual_workspace"
+    workspace_parameters = workspace_get.get("parameters")
+    assert isinstance(workspace_parameters, list)
+    assert any(
+        isinstance(item, dict)
+        and item.get("name") == "pool_id"
+        and item.get("in") == "query"
+        and item.get("required") is True
+        for item in workspace_parameters
+    )
+    workspace_responses = workspace_get.get("responses")
+    assert isinstance(workspace_responses, dict)
+    assert workspace_responses["200"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolFactualWorkspaceResponse"
+    )
+
+    review_actions_path = "/api/v2/pools/factual/review-actions/"
+    review_actions_path_item = paths.get(review_actions_path)
+    assert isinstance(review_actions_path_item, dict), f"path missing: {review_actions_path}"
+    review_actions_post = review_actions_path_item.get("post")
+    assert isinstance(review_actions_post, dict)
+    assert review_actions_post.get("operationId") == "v2_pools_factual_review_actions"
+    review_actions_responses = review_actions_post.get("responses")
+    assert isinstance(review_actions_responses, dict)
+    assert review_actions_responses["200"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolFactualReviewActionResponse"
+    )
+
+    workspace_schema = _schema(contract, "PoolFactualWorkspaceResponse")
+    workspace_properties = workspace_schema.get("properties")
+    assert isinstance(workspace_properties, dict)
+    runtime_workspace_fields = set(pools_view.PoolFactualWorkspaceResponseSerializer().fields.keys())
+    assert runtime_workspace_fields.issubset(set(workspace_properties.keys()))
+
+    summary_schema = _schema(contract, "PoolFactualSummary")
+    summary_properties = summary_schema.get("properties")
+    assert isinstance(summary_properties, dict)
+    runtime_summary_fields = set(pools_view.PoolFactualSummarySerializer().fields.keys())
+    assert runtime_summary_fields.issubset(set(summary_properties.keys()))
+
+    balance_schema = _schema(contract, "PoolFactualBalanceSnapshot")
+    balance_properties = balance_schema.get("properties")
+    assert isinstance(balance_properties, dict)
+    runtime_balance_fields = set(pools_view.PoolFactualBalanceSnapshotSerializer().fields.keys())
+    assert runtime_balance_fields.issubset(set(balance_properties.keys()))
+
+    review_item_schema = _schema(contract, "PoolFactualReviewQueueItem")
+    review_item_properties = review_item_schema.get("properties")
+    assert isinstance(review_item_properties, dict)
+    runtime_review_item_fields = set(pools_view.PoolFactualReviewQueueItemSerializer().fields.keys())
+    assert runtime_review_item_fields.issubset(set(review_item_properties.keys()))
+
+    review_action_request_schema = _schema(contract, "PoolFactualReviewActionRequest")
+    review_action_request_properties = review_action_request_schema.get("properties")
+    assert isinstance(review_action_request_properties, dict)
+    runtime_review_action_request_fields = set(pools_view.PoolFactualReviewActionRequestSerializer().fields.keys())
+    assert runtime_review_action_request_fields.issubset(set(review_action_request_properties.keys()))
+
+    review_action_response_schema = _schema(contract, "PoolFactualReviewActionResponse")
+    review_action_response_properties = review_action_response_schema.get("properties")
+    assert isinstance(review_action_response_properties, dict)
+    runtime_review_action_response_fields = set(pools_view.PoolFactualReviewActionResponseSerializer().fields.keys())
+    assert runtime_review_action_response_fields.issubset(set(review_action_response_properties.keys()))
+
+
 def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional_for_create_requests() -> None:
     contract = _load_openapi_contract()
     binding_schema = _schema(contract, "PoolWorkflowBindingInput")

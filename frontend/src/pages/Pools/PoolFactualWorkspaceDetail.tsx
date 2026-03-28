@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react'
-import { Button, Descriptions, Space, Typography } from 'antd'
+import { Alert, Button, Descriptions, Space, Typography } from 'antd'
 
-import type { OrganizationPool } from '../../api/intercompanyPools'
+import {
+  applyPoolFactualReviewAction as applyPoolFactualReviewActionRequest,
+  getPoolFactualWorkspace,
+  type OrganizationPool,
+  type PoolBatch,
+  type PoolFactualEdgeBalance,
+  type PoolFactualReviewQueue,
+  type PoolFactualReviewQueueItem,
+  type PoolFactualSummary,
+  type PoolFactualWorkspace,
+} from '../../api/intercompanyPools'
 import { EntityTable, RouteButton, StatusBadge } from '../../components/platform'
 import {
-  applyPoolFactualReviewAction,
-  buildDemoPoolFactualReviewQueue,
   getPoolFactualReviewActionLabel,
   getPoolFactualReviewReasonLabel,
   getPoolFactualReviewStatusTone,
   type PoolFactualReviewAction,
   type PoolFactualReviewRow,
 } from './poolFactualReviewQueue'
+import { resolveApiError } from './masterData/errorUtils'
 
 
 const { Text } = Typography
@@ -24,49 +33,90 @@ type PoolFactualWorkspaceDetailProps = {
   runWorkspaceHref: string
 }
 
-type EmptyRow = {
-  id: string
+type ReviewRowWithTargets = PoolFactualReviewRow & {
+  batchId: string | null
+  edgeId: string | null
+  organizationId: string | null
 }
 
-const EMPTY_ROWS: EmptyRow[] = []
+const formatShortId = (value: string | null | undefined) => {
+  if (!value) {
+    return '-'
+  }
+  return value.slice(0, 8)
+}
 
-const settlementColumns = [
-  {
-    title: 'Batch',
-    dataIndex: 'id',
-    key: 'id',
-    render: () => <Text type="secondary">Pending factual API</Text>,
-  },
-  {
-    title: 'Status',
-    key: 'status',
-    render: () => <StatusBadge status="unknown" label="pending" />,
-  },
-  {
-    title: 'Open balance',
-    key: 'open_balance',
-    render: () => <Text type="secondary">Awaiting projection</Text>,
-  },
-]
+const formatTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return '-'
+  }
+  return value.replace('T', ' ').replace('Z', ' UTC')
+}
 
-const edgeColumns = [
-  {
-    title: 'Edge',
-    dataIndex: 'id',
-    key: 'id',
-    render: () => <Text type="secondary">Awaiting edge balances</Text>,
-  },
-  {
-    title: 'Incoming',
-    key: 'incoming',
-    render: () => <Text type="secondary">Pending factual API</Text>,
-  },
-  {
-    title: 'Open balance',
-    key: 'open_balance',
-    render: () => <Text type="secondary">Pending factual API</Text>,
-  },
-]
+const buildReviewSummary = (item: PoolFactualReviewQueueItem) => {
+  if (item.reason === 'late_correction') {
+    return 'Frozen-quarter correction requires manual reconcile before close.'
+  }
+  return 'Operator must confirm attribution before settlement can close on the default path.'
+}
+
+const mapReviewRows = (queue: PoolFactualReviewQueue | null | undefined): ReviewRowWithTargets[] => (
+  queue?.items.map((item) => ({
+    id: item.id,
+    reason: item.reason,
+    status: item.status,
+    quarter: item.quarter,
+    sourceDocumentRef: item.source_document_ref,
+    summary: buildReviewSummary(item),
+    attentionRequired: item.attention_required,
+    allowedActions: item.allowed_actions,
+    batchId: item.batch_id,
+    edgeId: item.edge_id,
+    organizationId: item.organization_id,
+  })) ?? []
+)
+
+const getFreshnessTone = (summary: PoolFactualSummary | null) => {
+  if (!summary) {
+    return 'unknown'
+  }
+  if (summary.source_availability !== 'available') {
+    return 'error'
+  }
+  if (summary.freshness_state === 'stale') {
+    return 'warning'
+  }
+  return summary.last_synced_at ? 'active' : 'unknown'
+}
+
+const getSettlementHandoffTone = (workspace: PoolFactualWorkspace | null) => {
+  if (!workspace || workspace.settlements.length === 0) {
+    return 'unknown'
+  }
+  if (workspace.summary.attention_required_total > 0) {
+    return 'warning'
+  }
+  return 'active'
+}
+
+const getSettlementStatusTone = (status: string | null | undefined) => {
+  switch (status) {
+    case 'closed':
+      return 'active'
+    case 'attention_required':
+    case 'partially_closed':
+    case 'carried_forward':
+      return 'warning'
+    case 'distributed':
+      return 'active'
+    default:
+      return 'unknown'
+  }
+}
+
+const buildEdgeLabel = (row: PoolFactualEdgeBalance) => (
+  row.edge_id ? `${row.organization_name} · ${formatShortId(row.edge_id)}` : row.organization_name
+)
 
 export function PoolFactualWorkspaceDetail({
   selectedPool,
@@ -75,21 +125,86 @@ export function PoolFactualWorkspaceDetail({
   poolCatalogHref,
   runWorkspaceHref,
 }: PoolFactualWorkspaceDetailProps) {
-  const [reviewRows, setReviewRows] = useState<PoolFactualReviewRow[]>(() =>
-    buildDemoPoolFactualReviewQueue(selectedPool.code)
-  )
+  const [workspace, setWorkspace] = useState<PoolFactualWorkspace | null>(null)
+  const [loadingWorkspace, setLoadingWorkspace] = useState(true)
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [reviewActionError, setReviewActionError] = useState<string | null>(null)
+  const [pendingReviewItemId, setPendingReviewItemId] = useState<string | null>(null)
 
   useEffect(() => {
-    setReviewRows(buildDemoPoolFactualReviewQueue(selectedPool.code))
-  }, [selectedPool.code, selectedPool.id])
+    let cancelled = false
+
+    const loadWorkspace = async () => {
+      setLoadingWorkspace(true)
+      setWorkspaceError(null)
+      setReviewActionError(null)
+
+      try {
+        const data = await getPoolFactualWorkspace({ poolId: selectedPool.id })
+        if (cancelled) {
+          return
+        }
+        setWorkspace(data)
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
+        setWorkspace(null)
+        setWorkspaceError(resolved.message)
+      } finally {
+        if (!cancelled) {
+          setLoadingWorkspace(false)
+        }
+      }
+    }
+
+    void loadWorkspace()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPool.id])
+
+  const reviewRows = mapReviewRows(workspace?.review_queue)
 
   const reviewSummary = {
-    pendingTotal: reviewRows.filter((row) => row.status === 'pending').length,
-    attentionRequiredTotal: reviewRows.filter((row) => row.attentionRequired).length,
+    pendingTotal: workspace?.review_queue.summary.pending_total ?? 0,
+    attentionRequiredTotal: workspace?.review_queue.summary.attention_required_total ?? 0,
   }
 
-  const handleReviewAction = (itemId: string, action: PoolFactualReviewAction) => {
-    setReviewRows((current) => applyPoolFactualReviewAction(current, itemId, action))
+  const handleReviewAction = async (row: ReviewRowWithTargets, action: PoolFactualReviewAction) => {
+    setPendingReviewItemId(row.id)
+    setReviewActionError(null)
+
+    try {
+      const response = await applyPoolFactualReviewActionRequest({
+        review_item_id: row.id,
+        action,
+        batch_id: row.batchId ?? undefined,
+        edge_id: row.edgeId ?? undefined,
+        organization_id: row.organizationId ?? undefined,
+        note: 'Triggered from factual workspace',
+      })
+      setWorkspace((current) => {
+        if (!current) {
+          return current
+        }
+        return {
+          ...current,
+          review_queue: response.review_queue,
+          summary: {
+            ...current.summary,
+            pending_review_total: response.review_queue.summary.pending_total,
+          },
+        }
+      })
+    } catch (error) {
+      const resolved = resolveApiError(error, 'Failed to apply factual review action.')
+      setReviewActionError(resolved.message)
+    } finally {
+      setPendingReviewItemId(null)
+    }
   }
 
   const reviewColumns = [
@@ -137,8 +252,9 @@ export function PoolFactualWorkspaceDetail({
                 key={action}
                 size="small"
                 type={action === 'resolve_without_change' ? 'default' : 'primary'}
+                loading={pendingReviewItemId === row.id}
                 aria-label={`${getPoolFactualReviewActionLabel(action)} review item ${row.id}`}
-                onClick={() => handleReviewAction(row.id, action)}
+                onClick={() => void handleReviewAction(row as ReviewRowWithTargets, action)}
               >
                 {getPoolFactualReviewActionLabel(action)}
               </Button>
@@ -193,6 +309,15 @@ export function PoolFactualWorkspaceDetail({
         </div>
       ) : null}
 
+      {workspaceError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Factual workspace data is unavailable"
+          description={workspaceError}
+        />
+      ) : null}
+
       <div
         style={{
           display: 'grid',
@@ -211,10 +336,19 @@ export function PoolFactualWorkspaceDetail({
           <Text strong>Quarter summary</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
-              <StatusBadge status="unknown" label="awaiting API" />
-              <Text type="secondary">
-                Inbound, closed, and carry-forward totals will land here once the factual read-model route is wired.
-              </Text>
+              <StatusBadge
+                status={workspace ? 'active' : 'unknown'}
+                label={workspace ? workspace.summary.quarter : (loadingWorkspace ? 'loading' : 'awaiting data')}
+              />
+              {workspace ? (
+                <Text type="secondary">
+                  Incoming {workspace.summary.incoming_amount}, outgoing {workspace.summary.outgoing_amount}, open balance {workspace.summary.open_balance}.
+                </Text>
+              ) : (
+                <Text type="secondary">
+                  Incoming, outgoing, and open-balance totals appear here after the factual workspace payload loads.
+                </Text>
+              )}
             </Space>
           </div>
         </div>
@@ -229,10 +363,19 @@ export function PoolFactualWorkspaceDetail({
           <Text strong>Freshness</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
-              <StatusBadge status="warning" label="not connected" />
-              <Text type="secondary">
-                This card will surface near-real-time lag, blocked external sessions, and maintenance windows.
-              </Text>
+              <StatusBadge
+                status={getFreshnessTone(workspace?.summary ?? null)}
+                label={workspace ? workspace.summary.freshness_state : 'not connected'}
+              />
+              {workspace ? (
+                <Text type="secondary">
+                  Source {workspace.summary.source_availability}; last sync {formatTimestamp(workspace.summary.last_synced_at)}.
+                </Text>
+              ) : (
+                <Text type="secondary">
+                  This card surfaces source availability and the latest factual sync timestamp.
+                </Text>
+              )}
             </Space>
           </div>
         </div>
@@ -247,10 +390,19 @@ export function PoolFactualWorkspaceDetail({
           <Text strong>Settlement handoff</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
-              <StatusBadge status="unknown" label="batch queue pending" />
-              <Text type="secondary">
-                Receipt distribution and closing sale handoff stays visible here without mixing execution diagnostics.
-              </Text>
+              <StatusBadge
+                status={getSettlementHandoffTone(workspace)}
+                label={workspace ? `${workspace.summary.attention_required_total} attention required` : 'batch queue pending'}
+              />
+              {workspace ? (
+                <Text type="secondary">
+                  {workspace.settlements.length} batch settlement row(s) are active for {workspace.summary.quarter}.
+                </Text>
+              ) : (
+                <Text type="secondary">
+                  Receipt distribution and closing sale handoff stays visible here without mixing execution diagnostics.
+                </Text>
+              )}
             </Space>
           </div>
         </div>
@@ -286,28 +438,92 @@ export function PoolFactualWorkspaceDetail({
             <RouteButton to={runWorkspaceHref}>Open linked run context</RouteButton>
           </Space>
         )}
-        dataSource={EMPTY_ROWS}
-        columns={settlementColumns}
+        loading={loadingWorkspace}
+        dataSource={workspace?.settlements ?? []}
+        columns={[
+          {
+            title: 'Batch',
+            dataIndex: 'id',
+            key: 'id',
+            render: (_: string, row: PoolBatch) => (
+              <Space direction="vertical" size={4}>
+                <Text>{row.source_reference || formatShortId(row.id)}</Text>
+                <Text type="secondary">{row.batch_kind} · {row.period_start}</Text>
+                {row.run_id ? <Text type="secondary">run {formatShortId(row.run_id)}</Text> : null}
+              </Space>
+            ),
+          },
+          {
+            title: 'Status',
+            key: 'status',
+            render: (_: unknown, row: PoolBatch) => (
+              <StatusBadge
+                status={getSettlementStatusTone(row.settlement?.status)}
+                label={row.settlement?.status ?? 'pending'}
+              />
+            ),
+          },
+          {
+            title: 'Open balance',
+            key: 'open_balance',
+            render: (_: unknown, row: PoolBatch) => (
+              <Text>{row.settlement?.open_balance ?? '-'}</Text>
+            ),
+          },
+        ]}
         rowKey="id"
-        emptyDescription="Settlement summary appears here once factual read-model API is connected."
+        emptyDescription="No batch settlements were recorded for this quarter."
       />
 
       <EntityTable
         title="Edge drill-down"
         extra={<RouteButton to={poolCatalogHref}>Open pool topology context</RouteButton>}
-        dataSource={EMPTY_ROWS}
-        columns={edgeColumns}
+        loading={loadingWorkspace}
+        dataSource={workspace?.edge_balances ?? []}
+        columns={[
+          {
+            title: 'Edge',
+            dataIndex: 'id',
+            key: 'id',
+            render: (_: string, row: PoolFactualEdgeBalance) => (
+              <Space direction="vertical" size={4}>
+                <Text>{buildEdgeLabel(row)}</Text>
+                <Text type="secondary">{row.quarter}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: 'Incoming',
+            key: 'incoming',
+            render: (_: unknown, row: PoolFactualEdgeBalance) => <Text>{row.incoming_amount}</Text>,
+          },
+          {
+            title: 'Open balance',
+            key: 'open_balance',
+            render: (_: unknown, row: PoolFactualEdgeBalance) => <Text>{row.open_balance}</Text>,
+          },
+        ]}
         rowKey="id"
-        emptyDescription="Edge-level incoming, outgoing, and stuck balance diagnostics appear here when projection data is available."
+        emptyDescription="No edge-level factual balances were projected for this quarter."
       />
+
+      {reviewActionError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Manual review action failed"
+          description={reviewActionError}
+        />
+      ) : null}
 
       <EntityTable
         title="Manual review queue"
         extra={focus === 'review' ? <StatusBadge status="active" label="review focus" /> : null}
+        loading={loadingWorkspace}
         dataSource={reviewRows}
         columns={reviewColumns}
         rowKey="id"
-        emptyDescription="Unattributed and late-correction review stays isolated here until the review API is delivered."
+        emptyDescription="No pending factual review items were recorded for this quarter."
       />
     </Space>
   )

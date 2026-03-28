@@ -1,21 +1,37 @@
 import { StrictMode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
-import type { OrganizationPool } from '../../../api/intercompanyPools'
-import { PoolFactualPage } from '../PoolFactualPage'
+import type {
+  OrganizationPool,
+  PoolFactualReviewActionResponse,
+  PoolFactualReviewQueue,
+  PoolFactualReviewQueueItem,
+  PoolFactualWorkspace,
+} from '../../../api/intercompanyPools'
 import { resetQueryClient } from '../../../lib/queryClient'
+import { PoolFactualPage } from '../PoolFactualPage'
 import { buildPoolFactualRoute } from '../routes'
 
 
 const mockListOrganizationPools = vi.fn()
+const mockGetPoolFactualWorkspace = vi.fn()
+const mockApplyPoolFactualReviewAction = vi.fn()
 
-vi.mock('../../../api/intercompanyPools', () => ({
-  listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
-}))
+vi.mock('../../../api/intercompanyPools', async () => {
+  const actual = await vi.importActual<typeof import('../../../api/intercompanyPools')>(
+    '../../../api/intercompanyPools'
+  )
+  return {
+    ...actual,
+    listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
+    getPoolFactualWorkspace: (...args: unknown[]) => mockGetPoolFactualWorkspace(...args),
+    applyPoolFactualReviewAction: (...args: unknown[]) => mockApplyPoolFactualReviewAction(...args),
+  }
+})
 
 function buildPool(overrides: Partial<OrganizationPool> = {}): OrganizationPool {
   return {
@@ -26,6 +42,184 @@ function buildPool(overrides: Partial<OrganizationPool> = {}): OrganizationPool 
     is_active: true,
     metadata: {},
     updated_at: '2026-03-27T00:00:00Z',
+    ...overrides,
+  }
+}
+
+function buildReviewItem(overrides: Partial<PoolFactualReviewQueueItem> = {}): PoolFactualReviewQueueItem {
+  return {
+    id: 'unattributed-pool-alpha',
+    pool_id: '11111111-1111-1111-1111-111111111111',
+    batch_id: 'batch-receipt-1',
+    organization_id: 'organization-leaf-1',
+    edge_id: 'edge-alpha-1',
+    reason: 'unattributed',
+    status: 'pending',
+    quarter: '2026Q1',
+    source_document_ref: "Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')",
+    allowed_actions: ['attribute', 'resolve_without_change'],
+    attention_required: false,
+    resolved_at: null,
+    ...overrides,
+  }
+}
+
+function buildReviewQueue(items?: PoolFactualReviewQueueItem[]): PoolFactualReviewQueue {
+  const resolvedItems = items ?? [
+    buildReviewItem(),
+    buildReviewItem({
+      id: 'late-correction-pool-alpha',
+      reason: 'late_correction',
+      batch_id: null,
+      source_document_ref: "Document_КорректировкаРеализации(guid'pool-alpha-late')",
+      allowed_actions: ['reconcile', 'resolve_without_change'],
+      attention_required: true,
+    }),
+  ]
+
+  return {
+    contract_version: 'pool_factual_review_queue.v1',
+    subsystem: 'reconcile_review',
+    summary: {
+      pending_total: resolvedItems.filter((item) => item.status === 'pending').length,
+      unattributed_total: resolvedItems.filter(
+        (item) => item.status === 'pending' && item.reason === 'unattributed'
+      ).length,
+      late_correction_total: resolvedItems.filter(
+        (item) => item.status === 'pending' && item.reason === 'late_correction'
+      ).length,
+      attention_required_total: resolvedItems.filter((item) => item.attention_required).length,
+    },
+    items: resolvedItems,
+  }
+}
+
+function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFactualWorkspace {
+  const poolId = overrides.pool_id ?? '11111111-1111-1111-1111-111111111111'
+  const reviewQueue = overrides.review_queue ?? buildReviewQueue()
+
+  return {
+    pool_id: poolId,
+    summary: {
+      quarter: '2026Q1',
+      quarter_start: '2026-01-01',
+      quarter_end: '2026-03-31',
+      incoming_amount: '170.00',
+      outgoing_amount: '115.00',
+      open_balance: '55.00',
+      pending_review_total: reviewQueue.summary.pending_total,
+      attention_required_total: 1,
+      freshness_state: 'fresh',
+      source_availability: 'available',
+      source_availability_detail: '',
+      last_synced_at: '2026-03-27T10:00:00Z',
+      settlement_total: 2,
+      checkpoint_total: 1,
+    },
+    settlements: [
+      {
+        id: 'batch-receipt-1',
+        tenant_id: 'tenant-1',
+        pool_id: poolId,
+        batch_kind: 'receipt',
+        source_type: 'manual',
+        schema_template_id: null,
+        start_organization_id: 'org-root-1',
+        run_id: 'run-001',
+        workflow_execution_id: null,
+        operation_id: null,
+        workflow_status: '',
+        period_start: '2026-01-01',
+        period_end: '2026-03-31',
+        source_reference: 'receipt-q1',
+        raw_payload_ref: '',
+        content_hash: 'hash-1',
+        source_metadata: {},
+        normalization_summary: {},
+        publication_summary: {},
+        last_error_code: '',
+        last_error: '',
+        created_by_id: null,
+        created_at: '2026-03-27T09:00:00Z',
+        updated_at: '2026-03-27T09:30:00Z',
+        settlement: {
+          id: 'settlement-receipt-1',
+          tenant_id: 'tenant-1',
+          batch_id: 'batch-receipt-1',
+          status: 'partially_closed',
+          incoming_amount: '120.00',
+          outgoing_amount: '80.00',
+          open_balance: '40.00',
+          summary: {},
+          freshness_at: '2026-03-27T10:00:00Z',
+          created_at: '2026-03-27T09:00:00Z',
+          updated_at: '2026-03-27T09:30:00Z',
+        },
+      },
+      {
+        id: 'batch-sale-1',
+        tenant_id: 'tenant-1',
+        pool_id: poolId,
+        batch_kind: 'sale',
+        source_type: 'manual',
+        schema_template_id: null,
+        start_organization_id: null,
+        run_id: null,
+        workflow_execution_id: 'workflow-sale-1',
+        operation_id: 'operation-sale-1',
+        workflow_status: 'completed',
+        period_start: '2026-01-01',
+        period_end: '2026-03-31',
+        source_reference: 'sale-q1',
+        raw_payload_ref: '',
+        content_hash: 'hash-2',
+        source_metadata: {},
+        normalization_summary: {},
+        publication_summary: {},
+        last_error_code: '',
+        last_error: '',
+        created_by_id: null,
+        created_at: '2026-03-27T09:00:00Z',
+        updated_at: '2026-03-27T09:30:00Z',
+        settlement: {
+          id: 'settlement-sale-1',
+          tenant_id: 'tenant-1',
+          batch_id: 'batch-sale-1',
+          status: 'attention_required',
+          incoming_amount: '50.00',
+          outgoing_amount: '35.00',
+          open_balance: '15.00',
+          summary: {},
+          freshness_at: '2026-03-27T10:00:00Z',
+          created_at: '2026-03-27T09:00:00Z',
+          updated_at: '2026-03-27T09:30:00Z',
+        },
+      },
+    ],
+    edge_balances: [
+      {
+        id: 'edge-balance-1',
+        pool_id: poolId,
+        batch_id: 'batch-receipt-1',
+        organization_id: 'organization-leaf-1',
+        organization_name: 'Leaf Alpha',
+        edge_id: 'edge-alpha-1',
+        parent_node_id: 'parent-node-1',
+        child_node_id: 'child-node-1',
+        quarter: '2026Q1',
+        quarter_start: '2026-01-01',
+        quarter_end: '2026-03-31',
+        amount_with_vat: '120.00',
+        amount_without_vat: '100.00',
+        vat_amount: '20.00',
+        incoming_amount: '120.00',
+        outgoing_amount: '80.00',
+        open_balance: '40.00',
+        freshness_at: '2026-03-27T10:00:00Z',
+        metadata: {},
+      },
+    ],
+    review_queue: reviewQueue,
     ...overrides,
   }
 }
@@ -52,9 +246,11 @@ describe('PoolFactualPage', () => {
   beforeEach(() => {
     resetQueryClient()
     mockListOrganizationPools.mockReset()
+    mockGetPoolFactualWorkspace.mockReset()
+    mockApplyPoolFactualReviewAction.mockReset()
   })
 
-  it('renders factual summary, settlement, drill-down, and review sections for the selected pool', async () => {
+  it('renders live factual summary, settlement, drill-down, and review sections for the selected pool', async () => {
     mockListOrganizationPools.mockResolvedValue([
       buildPool(),
       buildPool({
@@ -63,17 +259,22 @@ describe('PoolFactualPage', () => {
         name: 'Pool Beta',
       }),
     ])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&run=run-001&focus=settlement&detail=1')
 
     await screen.findByText('Factual operator workspace')
-    await waitFor(() => expect(screen.getByText('Quarter summary')).toBeInTheDocument())
+    await screen.findByText('receipt-q1')
 
     expect(screen.getByText('Batch settlement')).toBeInTheDocument()
     expect(screen.getByText('Edge drill-down')).toBeInTheDocument()
     expect(screen.getByText('Manual review queue')).toBeInTheDocument()
     expect(screen.getByText('Linked run: run-001')).toBeInTheDocument()
     expect(screen.getByText('Run-linked settlement handoff')).toBeInTheDocument()
+    expect(screen.getByText('Incoming 170.00, outgoing 115.00, open balance 55.00.')).toBeInTheDocument()
+    expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
+    expect(screen.getByText('sale-q1')).toBeInTheDocument()
+    expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()
     expect(screen.getByText("Document_КорректировкаРеализации(guid'pool-alpha-late')")).toBeInTheDocument()
   })
@@ -88,6 +289,18 @@ describe('PoolFactualPage', () => {
         name: 'Pool Beta',
       }),
     ])
+    mockGetPoolFactualWorkspace.mockImplementation(
+      async ({ poolId }: { poolId: string }) => buildWorkspace({
+        pool_id: poolId,
+        settlements: [
+          {
+            ...buildWorkspace().settlements[0],
+            pool_id: poolId,
+            source_reference: poolId === '22222222-2222-2222-2222-222222222222' ? 'receipt-beta' : 'receipt-alpha',
+          },
+        ],
+      })
+    )
 
     renderPage('/pools/factual')
 
@@ -97,15 +310,20 @@ describe('PoolFactualPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pool-factual-location').textContent).toContain('/pools/factual?pool=22222222-2222-2222-2222-222222222222&detail=1')
     })
-    expect(screen.getByText('Quarter summary')).toBeInTheDocument()
+    await screen.findByText('receipt-beta')
+
+    expect(mockGetPoolFactualWorkspace).toHaveBeenLastCalledWith({
+      poolId: '22222222-2222-2222-2222-222222222222',
+    })
   })
 
   it('keeps execution controls out of the factual workspace', async () => {
     mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
 
-    await screen.findByText('Factual operator workspace')
+    await screen.findByText('receipt-q1')
 
     expect(screen.getByText('Quarter summary')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Pool Runs' })).toBeInTheDocument()
@@ -113,13 +331,60 @@ describe('PoolFactualPage', () => {
     expect(screen.queryByText('Create Run')).not.toBeInTheDocument()
   })
 
-  it('shows reason-specific review actions and updates queue state inside the factual workspace', async () => {
+  it('shows reason-specific review actions and updates queue state from the factual review API', async () => {
     const user = userEvent.setup()
     mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
+
+    const afterAttributeQueue = buildReviewQueue([
+      buildReviewItem({
+        status: 'attributed',
+        allowed_actions: [],
+        attention_required: false,
+        resolved_at: '2026-03-27T10:05:00Z',
+      }),
+      buildReviewItem({
+        id: 'late-correction-pool-alpha',
+        reason: 'late_correction',
+        batch_id: null,
+        source_document_ref: "Document_КорректировкаРеализации(guid'pool-alpha-late')",
+        allowed_actions: ['reconcile', 'resolve_without_change'],
+        attention_required: true,
+      }),
+    ])
+    const afterReconcileQueue = buildReviewQueue([
+      buildReviewItem({
+        status: 'attributed',
+        allowed_actions: [],
+        attention_required: false,
+        resolved_at: '2026-03-27T10:05:00Z',
+      }),
+      buildReviewItem({
+        id: 'late-correction-pool-alpha',
+        reason: 'late_correction',
+        status: 'reconciled',
+        batch_id: null,
+        source_document_ref: "Document_КорректировкаРеализации(guid'pool-alpha-late')",
+        allowed_actions: [],
+        attention_required: false,
+        resolved_at: '2026-03-27T10:10:00Z',
+      }),
+    ])
+
+    mockApplyPoolFactualReviewAction
+      .mockResolvedValueOnce({
+        review_item: afterAttributeQueue.items[0],
+        review_queue: afterAttributeQueue,
+      } satisfies PoolFactualReviewActionResponse)
+      .mockResolvedValueOnce({
+        review_item: afterReconcileQueue.items[1],
+        review_queue: afterReconcileQueue,
+      } satisfies PoolFactualReviewActionResponse)
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&focus=review&detail=1')
 
     await screen.findByText('Manual review queue')
+    await screen.findByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
 
     const unattributedRow = screen
       .getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
@@ -144,6 +409,57 @@ describe('PoolFactualPage', () => {
     await waitFor(() => {
       expect(within(lateCorrectionRow as HTMLElement).getByText('reconciled')).toBeInTheDocument()
     })
+
+    expect(mockApplyPoolFactualReviewAction).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      review_item_id: 'unattributed-pool-alpha',
+      action: 'attribute',
+      batch_id: 'batch-receipt-1',
+      edge_id: 'edge-alpha-1',
+      organization_id: 'organization-leaf-1',
+    }))
+    expect(mockApplyPoolFactualReviewAction).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      review_item_id: 'late-correction-pool-alpha',
+      action: 'reconcile',
+    }))
+  })
+
+  it('shows an explicit error when the factual review API rejects a manual action', async () => {
+    const user = userEvent.setup()
+    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
+      review_queue: buildReviewQueue([
+        buildReviewItem({
+          batch_id: null,
+          edge_id: null,
+          organization_id: null,
+        }),
+      ]),
+    }))
+    mockApplyPoolFactualReviewAction.mockRejectedValue({
+      response: {
+        data: {
+          title: 'Validation Error',
+          detail: 'POOL_FACTUAL_REVIEW_QUEUE_INVALID: attribute action requires at least one attribution target',
+        },
+      },
+    })
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&focus=review&detail=1')
+
+    await screen.findByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
+
+    const unattributedRow = screen
+      .getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
+      .closest('tr')
+    expect(unattributedRow).not.toBeNull()
+
+    await user.click(within(unattributedRow as HTMLElement).getByRole('button', { name: 'Attribute review item unattributed-pool-alpha' }))
+
+    await screen.findByText('Manual review action failed')
+    expect(
+      screen.getByText('POOL_FACTUAL_REVIEW_QUEUE_INVALID: attribute action requires at least one attribution target')
+    ).toBeInTheDocument()
+    expect(within(unattributedRow as HTMLElement).getByText('pending')).toBeInTheDocument()
   })
 
   it('builds a focus-aware factual route for settlement handoff from run report', () => {

@@ -199,10 +199,11 @@ curl --noproxy '*' -k -sS \
 
 ## Подготовленный live/dev-цикл: `batch-backed run -> factual workspace`
 
-Статус на `2026-03-27`:
-- live-часть готова для `receipt batch -> distribution/publication -> run report`;
-- operator route `/pools/factual` уже доступен и отделён от `/pools/runs`;
-- public factual refresh/review API пока не опубликован, поэтому шаги `refreshed summary` и `manual reconcile late correction` остаются `dev-bridge` через `./debug/eval-django.sh`, а сам factual workspace пока показывает contract-driven preview вместо backend-fed summary.
+Статус на `2026-03-28`:
+- `receipt batch -> distribution/publication -> run report` идёт по live path;
+- operator route `/pools/factual` и public factual API опубликованы;
+- `GET /api/v2/pools/factual/workspace/` теперь сам поднимает worker-backed factual refresh на default path, если checkpoint отсутствует или протух;
+- manual review идёт через `POST /api/v2/pools/factual/review-actions/`, без `dev-bridge` для штатного operator path.
 
 Минимальные env vars:
 
@@ -267,22 +268,36 @@ printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus
 printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
 ```
 
-5. `Dev-bridge` до public factual API: материализовать минимальный settlement/projection slice для batch:
+5. Дополлить factual workspace API до появления checkpoint/sync summary:
 
 ```bash
-./debug/eval-django.sh "from datetime import date; from apps.intercompany_pools.models import PoolBatch, PoolBatchSettlement, PoolBatchSettlementStatus, PoolFactualBalanceSnapshot; batch = PoolBatch.objects.get(id='$CC1C_BATCH_ID'); settlement, _ = PoolBatchSettlement.objects.update_or_create(batch=batch, defaults={'tenant_id': batch.tenant_id, 'status': PoolBatchSettlementStatus.DISTRIBUTED, 'incoming_amount': '120.00', 'outgoing_amount': '0.00', 'open_balance': '120.00', 'summary': {'verification_scenario': 'factual-dev-bridge', 'run_id': '$RUN_ID'}}); snapshot, _ = PoolFactualBalanceSnapshot.objects.update_or_create(tenant_id=batch.tenant_id, pool_id=batch.pool_id, batch_id=batch.id, edge_id='$CC1C_EDGE_ID', organization_id='$CC1C_START_ORGANIZATION_ID', quarter_start=batch.period_start, quarter_end=batch.period_end, defaults={'amount_with_vat': '120.00', 'amount_without_vat': '100.00', 'vat_amount': '20.00', 'incoming_amount': '120.00', 'outgoing_amount': '0.00', 'open_balance': '120.00', 'metadata': {'verification_scenario': 'factual-dev-bridge'}}); print({'settlement_id': str(settlement.id), 'snapshot_id': str(snapshot.id)})"
+curl --noproxy '*' -sS \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  "$CC1C_BASE_URL/api/v2/pools/factual/workspace/?pool_id=$CC1C_POOL_ID"
 ```
 
-6. `Dev-bridge`: смоделировать `manual sale capture` и `late correction` через domain objects:
+Ожидаемое поведение:
+- при первом вызове endpoint создаёт/подхватывает `PoolFactualSyncCheckpoint` и стартует worker-backed sync;
+- при повторных вызовах возвращает backend-fed summary / settlement / review queue;
+- если checkpoint свежий или уже `running`, лишний workflow не стартует.
+
+6. Открыть operator-facing factual route из browser и дождаться backend-fed summary:
 
 ```bash
-./debug/eval-django.sh "from apps.intercompany_pools.models import PoolBatch, PoolFactualReviewItem, PoolFactualReviewReason; batch = PoolBatch.objects.get(id='$CC1C_BATCH_ID'); review_item, _ = PoolFactualReviewItem.objects.update_or_create(tenant_id=batch.tenant_id, pool_id=batch.pool_id, source_document_ref='Document_КорректировкаРеализации(guid''debug-late-correction'')', defaults={'quarter_start': batch.period_start, 'quarter_end': batch.period_end, 'reason': PoolFactualReviewReason.LATE_CORRECTION, 'organization_id': '$CC1C_START_ORGANIZATION_ID', 'metadata': {'verification_scenario': 'factual-dev-bridge', 'delta_payload': {'amount_with_vat': '15.00'}}}); print({'review_item_id': str(review_item.id), 'reason': review_item.reason})"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
 ```
 
-7. `Dev-bridge`: выполнить manual reconcile через backend contract:
+7. Выполнить operator action по review item через public API:
 
 ```bash
-./debug/eval-django.sh "from django.contrib.auth import get_user_model; from apps.intercompany_pools.factual_review_queue import FACTUAL_REVIEW_ACTION_RECONCILE, apply_pool_factual_review_action; User = get_user_model(); actor = User.objects.get(username='$CC1C_UI_USER'); print(apply_pool_factual_review_action(review_item_id='<review-item-uuid>', tenant_id='$CC1C_TENANT_ID', actor_id=str(actor.id), action=FACTUAL_REVIEW_ACTION_RECONCILE, note='debug factual reconcile').status)"
+curl --noproxy '*' -sS -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
+  -H 'Content-Type: application/json' \
+  -d "{\"review_item_id\":\"<review-item-uuid>\",\"action\":\"reconcile\",\"note\":\"debug factual reconcile\"}" \
+  "$CC1C_BASE_URL/api/v2/pools/factual/review-actions/"
 ```
 
 Rollout telemetry и actionable alerts, которые должны быть зелёными перед расширением cohort:
@@ -307,11 +322,8 @@ Failure-isolation policy:
 - `create run` и `confirm-publication` проходят по batch-backed пути без manual amount payload;
 - report доходит до execution-terminal state;
 - `/pools/factual?...focus=settlement` и `/pools/factual?...focus=review` открываются как отдельный workspace из того же pool/run context;
-- domain-level dev bridge создаёт `PoolBatchSettlement`, `PoolFactualBalanceSnapshot` и `PoolFactualReviewItem` без мутации `PoolRun.status`;
-- `apply_pool_factual_review_action(...)` переводит review item в terminal review status.
-
-Текущий blocker до полного live E2E:
-- factual summary/drill-down и review queue ещё не питаются от public backend API, поэтому шаги `refreshed summary` и `manual reconcile late correction` в UI пока можно подготовить и проверить только через `dev-bridge`, а не через полноценно опубликованный runtime path.
+- `GET /api/v2/pools/factual/workspace/` возвращает backend-fed summary / settlements / review queue и при необходимости сам поднимает refresh workflow;
+- `POST /api/v2/pools/factual/review-actions/` переводит review item в terminal review status без мутации `PoolRun.status`.
 
 ## Важные замечания
 

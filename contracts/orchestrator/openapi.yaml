@@ -7489,6 +7489,199 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/pools/batches/:
+    get:
+      operationId: v2_pools_batches_list
+      summary: List pool batches
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolBatchListResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: pool_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: batch_kind
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - receipt
+              - sale
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+    post:
+      operationId: v2_pools_batches_create
+      summary: Create canonical pool batch and start downstream processing
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolBatchCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolBatchCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolBatchCreateRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolBatchCreateResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+  /api/v2/pools/factual/workspace/:
+    get:
+      operationId: v2_pools_factual_workspace
+      summary: Get pool factual workspace read model
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolFactualWorkspaceResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: pool_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: quarter_start
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+  /api/v2/pools/factual/review-actions/:
+    post:
+      operationId: v2_pools_factual_review_actions
+      summary: Apply manual review action in factual workspace
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolFactualReviewActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolFactualReviewActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolFactualReviewActionRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolFactualReviewActionResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
   /api/v2/pools/runs/:
     get:
       operationId: v2_pools_runs_list
@@ -17237,7 +17430,6 @@ components:
           type: string
       required:
         - code
-        - path
         - detail
     ExecutionPackTopologyCompatibilitySummary:
       type: object
@@ -20163,6 +20355,198 @@ components:
       required:
         - created
         - organization
+    PoolBatchSettlement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - ingested
+            - distributed
+            - partially_closed
+            - closed
+            - carried_forward
+            - attention_required
+        incoming_amount:
+          type: string
+        outgoing_amount:
+          type: string
+        open_balance:
+          type: string
+        summary: {}
+        freshness_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - batch_id
+        - id
+        - incoming_amount
+        - open_balance
+        - outgoing_amount
+        - status
+        - tenant_id
+    PoolBatch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        batch_kind:
+          type: string
+          enum:
+            - receipt
+            - sale
+        source_type:
+          type: string
+          enum:
+            - schema_template_upload
+            - integration
+            - manual
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        start_organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflow_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        workflow_status:
+          type: string
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        source_reference:
+          type: string
+        raw_payload_ref:
+          type: string
+        content_hash:
+          type: string
+        source_metadata: {}
+        normalization_summary: {}
+        publication_summary: {}
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        created_by_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        settlement:
+          $ref: '#/components/schemas/PoolBatchSettlement'
+          nullable: true
+      required:
+        - batch_kind
+        - id
+        - period_start
+        - pool_id
+        - source_type
+        - tenant_id
+    PoolBatchListResponse:
+      type: object
+      properties:
+        batches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolBatch'
+        count:
+          type: integer
+      required:
+        - batches
+        - count
+    PoolBatchCreateRequest:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        batch_kind:
+          type: string
+          enum:
+            - receipt
+            - sale
+        source_type:
+          type: string
+          enum:
+            - schema_template_upload
+            - integration
+            - manual
+        schema_template_id:
+          type: string
+          format: uuid
+          nullable: true
+        pool_workflow_binding_id:
+          type: string
+        start_organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        source_reference:
+          type: string
+        raw_payload_ref:
+          type: string
+        source_metadata: {}
+        integration_reference:
+          type: string
+        json_payload: {}
+        xlsx_base64:
+          type: string
+      required:
+        - batch_kind
+        - period_start
+        - pool_id
+        - source_type
     PoolRunMasterDataGate:
       type: object
       properties:
@@ -20537,6 +20921,323 @@ components:
         - pool_id
         - status
         - tenant_id
+    PoolSaleClosingStartResponse:
+      type: object
+      properties:
+        execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        enqueue_success:
+          type: boolean
+        enqueue_status:
+          type: string
+        enqueue_error:
+          type: string
+          nullable: true
+        created_execution:
+          type: boolean
+      required:
+        - created_execution
+        - enqueue_status
+        - enqueue_success
+    PoolBatchCreateResponse:
+      type: object
+      properties:
+        batch:
+          $ref: '#/components/schemas/PoolBatch'
+        settlement:
+          $ref: '#/components/schemas/PoolBatchSettlement'
+        run:
+          $ref: '#/components/schemas/PoolRun'
+          nullable: true
+        created:
+          type: boolean
+        sale_closing:
+          $ref: '#/components/schemas/PoolSaleClosingStartResponse'
+          nullable: true
+      required:
+        - batch
+        - created
+        - settlement
+    PoolFactualSummary:
+      type: object
+      properties:
+        quarter:
+          type: string
+        quarter_start:
+          type: string
+          format: date
+        quarter_end:
+          type: string
+          format: date
+        incoming_amount:
+          type: string
+        outgoing_amount:
+          type: string
+        open_balance:
+          type: string
+        pending_review_total:
+          type: integer
+          minimum: 0
+        attention_required_total:
+          type: integer
+          minimum: 0
+        freshness_state:
+          type: string
+        source_availability:
+          type: string
+        source_availability_detail:
+          type: string
+        last_synced_at:
+          type: string
+          format: date-time
+          nullable: true
+        settlement_total:
+          type: integer
+          minimum: 0
+        checkpoint_total:
+          type: integer
+          minimum: 0
+      required:
+        - attention_required_total
+        - checkpoint_total
+        - freshness_state
+        - incoming_amount
+        - open_balance
+        - outgoing_amount
+        - pending_review_total
+        - quarter
+        - quarter_end
+        - quarter_start
+        - settlement_total
+        - source_availability
+    PoolFactualBalanceSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        organization_id:
+          type: string
+          format: uuid
+        organization_name:
+          type: string
+        edge_id:
+          type: string
+          format: uuid
+          nullable: true
+        parent_node_id:
+          type: string
+          format: uuid
+          nullable: true
+        child_node_id:
+          type: string
+          format: uuid
+          nullable: true
+        quarter:
+          type: string
+        quarter_start:
+          type: string
+          format: date
+        quarter_end:
+          type: string
+          format: date
+        amount_with_vat:
+          type: string
+        amount_without_vat:
+          type: string
+        vat_amount:
+          type: string
+        incoming_amount:
+          type: string
+        outgoing_amount:
+          type: string
+        open_balance:
+          type: string
+        freshness_at:
+          type: string
+          format: date-time
+          nullable: true
+        metadata: {}
+      required:
+        - amount_with_vat
+        - amount_without_vat
+        - id
+        - incoming_amount
+        - open_balance
+        - organization_id
+        - organization_name
+        - outgoing_amount
+        - pool_id
+        - quarter
+        - quarter_end
+        - quarter_start
+        - vat_amount
+    PoolFactualReviewQueueSummary:
+      type: object
+      properties:
+        pending_total:
+          type: integer
+          minimum: 0
+        unattributed_total:
+          type: integer
+          minimum: 0
+        late_correction_total:
+          type: integer
+          minimum: 0
+        attention_required_total:
+          type: integer
+          minimum: 0
+      required:
+        - attention_required_total
+        - late_correction_total
+        - pending_total
+        - unattributed_total
+    PoolFactualReviewQueueItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pool_id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        edge_id:
+          type: string
+          format: uuid
+          nullable: true
+        reason:
+          type: string
+        status:
+          type: string
+        quarter:
+          type: string
+        source_document_ref:
+          type: string
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum:
+              - attribute
+              - reconcile
+              - resolve_without_change
+        attention_required:
+          type: boolean
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - allowed_actions
+        - attention_required
+        - id
+        - pool_id
+        - quarter
+        - reason
+        - status
+    PoolFactualReviewQueue:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        subsystem:
+          type: string
+        summary:
+          $ref: '#/components/schemas/PoolFactualReviewQueueSummary'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolFactualReviewQueueItem'
+      required:
+        - contract_version
+        - items
+        - subsystem
+        - summary
+    PoolFactualWorkspaceResponse:
+      type: object
+      properties:
+        pool_id:
+          type: string
+          format: uuid
+        summary:
+          $ref: '#/components/schemas/PoolFactualSummary'
+        settlements:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolBatch'
+        edge_balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolFactualBalanceSnapshot'
+        review_queue:
+          $ref: '#/components/schemas/PoolFactualReviewQueue'
+      required:
+        - edge_balances
+        - pool_id
+        - review_queue
+        - settlements
+        - summary
+    PoolFactualReviewActionRequest:
+      type: object
+      properties:
+        review_item_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          enum:
+            - attribute
+            - reconcile
+            - resolve_without_change
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+        edge_id:
+          type: string
+          format: uuid
+          nullable: true
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        note:
+          type: string
+        metadata: {}
+      required:
+        - action
+        - review_item_id
+    PoolFactualReviewActionResponse:
+      type: object
+      properties:
+        review_item:
+          $ref: '#/components/schemas/PoolFactualReviewQueueItem'
+        review_queue:
+          $ref: '#/components/schemas/PoolFactualReviewQueue'
+      required:
+        - review_item
+        - review_queue
     PoolRunListResponse:
       type: object
       properties:

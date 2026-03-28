@@ -1,0 +1,29 @@
+type: object
+properties:
+  review_item_id:
+    type: string
+    format: uuid
+  action:
+    type: string
+    enum:
+      - attribute
+      - reconcile
+      - resolve_without_change
+  batch_id:
+    type: string
+    format: uuid
+    nullable: true
+  edge_id:
+    type: string
+    format: uuid
+    nullable: true
+  organization_id:
+    type: string
+    format: uuid
+    nullable: true
+  note:
+    type: string
+  metadata: {}
+required:
+  - action
+  - review_item_id

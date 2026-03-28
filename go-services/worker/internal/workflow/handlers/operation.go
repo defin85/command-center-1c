@@ -16,6 +16,7 @@ import (
 
 const (
 	poolPublicationOperationType     = "pool.publication_odata"
+	poolFactualSyncOperationType     = "pool.factual.sync_source_slice"
 	poolPublicationPayloadContextKey = "pool_runtime_publication_payload"
 	poolMasterDataGateNodeID         = "master_data_gate"
 	poolDistributionNodeID           = "distribution_calculation"
@@ -304,7 +305,13 @@ func resolveOperationPayloadFromContext(
 	operationType string,
 	execCtx *wfcontext.ExecutionContext,
 ) map[string]interface{} {
-	if execCtx == nil || operationType != poolPublicationOperationType {
+	if execCtx == nil {
+		return nil
+	}
+	if operationType == poolFactualSyncOperationType {
+		return resolvePoolFactualPayloadFromContext(execCtx)
+	}
+	if operationType != poolPublicationOperationType {
 		return nil
 	}
 	if payload := resolvePoolPublicationPayloadFromNodeResult(execCtx, poolMasterDataGateNodeID); payload != nil {
@@ -322,6 +329,68 @@ func resolveOperationPayloadFromContext(
 	}
 	payload, ok := rawPayload.(map[string]interface{})
 	if !ok || len(payload) == 0 {
+		return nil
+	}
+	return payload
+}
+
+func resolvePoolFactualPayloadFromContext(execCtx *wfcontext.ExecutionContext) map[string]interface{} {
+	if execCtx == nil {
+		return nil
+	}
+	fields := []string{
+		"contract_version",
+		"tenant_id",
+		"pool_id",
+		"database_id",
+		"checkpoint_id",
+		"lane",
+		"quarter_start",
+		"quarter_end",
+		"organization_ids",
+		"account_codes",
+		"movement_kinds",
+		"activity",
+		"freeze_quarter",
+		"correlation_id",
+		"origin_system",
+		"origin_event_id",
+		"document_entities",
+		"accounting_register_entity",
+		"accounting_register_function",
+		"information_register_entity",
+		"source_profile",
+		"freshness_target_seconds",
+		"scope_fingerprint",
+		"subsystem",
+		"read_boundary_kind",
+		"direct_db_access",
+		"read_boundary_entity_allowlist",
+		"read_boundary_function_allowlist",
+		"read_boundary_service_name",
+		"read_boundary_endpoint_path",
+		"read_boundary_operation_name",
+		"factual_use_case",
+		"priority",
+		"role",
+		"deadline_at",
+		"per_database_cap",
+		"per_cluster_cap",
+		"global_cap",
+		"polling_tier",
+		"poll_interval_seconds",
+		"quarter_scope",
+		"schedule_window",
+		"server_affinity",
+		"server_affinity_source",
+	}
+	payload := make(map[string]interface{}, len(fields))
+	for _, field := range fields {
+		if value, ok := execCtx.Get(field); ok {
+			payload[field] = value
+		}
+	}
+	if len(payload) == 0 {
 		return nil
 	}
 	return payload

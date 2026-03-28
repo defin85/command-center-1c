@@ -1,0 +1,45 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  batch_id:
+    type: string
+    format: uuid
+  status:
+    type: string
+    enum:
+      - ingested
+      - distributed
+      - partially_closed
+      - closed
+      - carried_forward
+      - attention_required
+  incoming_amount:
+    type: string
+  outgoing_amount:
+    type: string
+  open_balance:
+    type: string
+  summary: {}
+  freshness_at:
+    type: string
+    format: date-time
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - batch_id
+  - id
+  - incoming_amount
+  - open_balance
+  - outgoing_amount
+  - status
+  - tenant_id

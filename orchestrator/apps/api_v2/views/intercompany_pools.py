@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import re
 from collections.abc import Mapping
@@ -27,6 +29,14 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolBatch,
     PoolBatchKind,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
+    PoolBatchSourceType,
+    PoolFactualBalanceSnapshot,
+    PoolFactualLane,
+    PoolFactualReviewItem,
+    PoolFactualReviewStatus,
+    PoolFactualSyncCheckpoint,
     PoolMasterParty,
     PoolODataMetadataCatalogSnapshot,
     PoolPublicationAttempt,
@@ -99,7 +109,19 @@ from apps.intercompany_pools.publication_policy import (
     MAX_RETRY_INTERVAL_SECONDS,
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
+from apps.intercompany_pools.batch_intake_normalization import normalize_pool_batch_intake
+from apps.intercompany_pools.factual_review_queue import (
+    FACTUAL_REVIEW_ACTION_ATTRIBUTE,
+    FACTUAL_REVIEW_ACTION_RECONCILE,
+    FACTUAL_REVIEW_ACTION_RESOLVE_WITHOUT_CHANGE,
+    apply_pool_factual_review_action,
+    build_pool_factual_review_queue_snapshot,
+)
 from apps.intercompany_pools.runs import upsert_pool_run
+from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
+from apps.intercompany_pools.sale_batch_workflow_runtime import (
+    start_pool_sale_batch_closing_workflow_execution,
+)
 from apps.intercompany_pools.workflow_runtime import (
     POOL_RUNTIME_WORKFLOW_BINDING_CONTEXT_KEY,
     resolve_pool_runtime_schema_template,
@@ -2206,6 +2228,307 @@ def _serialize_schema_template(template: PoolSchemaTemplate) -> dict[str, Any]:
     }
 
 
+def _serialize_pool_batch(batch: PoolBatch) -> dict[str, Any]:
+    settlement = getattr(batch, "settlement", None)
+    return {
+        "id": str(batch.id),
+        "tenant_id": str(batch.tenant_id),
+        "pool_id": str(batch.pool_id),
+        "batch_kind": batch.batch_kind,
+        "source_type": batch.source_type,
+        "schema_template_id": str(batch.schema_template_id) if batch.schema_template_id else None,
+        "start_organization_id": str(batch.start_organization_id) if batch.start_organization_id else None,
+        "run_id": str(batch.run_id) if batch.run_id else None,
+        "workflow_execution_id": str(batch.workflow_execution_id) if batch.workflow_execution_id else None,
+        "operation_id": str(batch.operation_id) if batch.operation_id else None,
+        "workflow_status": str(batch.workflow_status or "").strip(),
+        "period_start": batch.period_start,
+        "period_end": batch.period_end,
+        "source_reference": batch.source_reference,
+        "raw_payload_ref": batch.raw_payload_ref,
+        "content_hash": batch.content_hash,
+        "source_metadata": batch.source_metadata if isinstance(batch.source_metadata, dict) else {},
+        "normalization_summary": batch.normalization_summary if isinstance(batch.normalization_summary, dict) else {},
+        "publication_summary": batch.publication_summary if isinstance(batch.publication_summary, dict) else {},
+        "last_error_code": str(batch.last_error_code or "").strip(),
+        "last_error": str(batch.last_error or "").strip(),
+        "created_by_id": str(batch.created_by_id) if batch.created_by_id else None,
+        "created_at": batch.created_at,
+        "updated_at": batch.updated_at,
+        "settlement": (
+            _serialize_pool_batch_settlement(settlement)
+            if isinstance(settlement, PoolBatchSettlement)
+            else None
+        ),
+    }
+
+
+def _serialize_pool_batch_settlement(settlement: PoolBatchSettlement) -> dict[str, Any]:
+    return {
+        "id": str(settlement.id),
+        "tenant_id": str(settlement.tenant_id),
+        "batch_id": str(settlement.batch_id),
+        "status": settlement.status,
+        "incoming_amount": _decimal_to_api_string(settlement.incoming_amount),
+        "outgoing_amount": _decimal_to_api_string(settlement.outgoing_amount),
+        "open_balance": _decimal_to_api_string(settlement.open_balance),
+        "summary": settlement.summary if isinstance(settlement.summary, dict) else {},
+        "freshness_at": settlement.freshness_at,
+        "created_at": settlement.created_at,
+        "updated_at": settlement.updated_at,
+    }
+
+
+def _serialize_pool_factual_balance_snapshot(snapshot: PoolFactualBalanceSnapshot) -> dict[str, Any]:
+    edge = snapshot.edge
+    parent_node = getattr(edge, "parent_node", None)
+    child_node = getattr(edge, "child_node", None)
+    return {
+        "id": str(snapshot.id),
+        "pool_id": str(snapshot.pool_id),
+        "batch_id": str(snapshot.batch_id) if snapshot.batch_id else None,
+        "organization_id": str(snapshot.organization_id),
+        "organization_name": snapshot.organization.name,
+        "edge_id": str(snapshot.edge_id) if snapshot.edge_id else None,
+        "parent_node_id": str(parent_node.id) if parent_node is not None else None,
+        "child_node_id": str(child_node.id) if child_node is not None else None,
+        "quarter": _format_quarter_label(snapshot.quarter_start),
+        "quarter_start": snapshot.quarter_start,
+        "quarter_end": snapshot.quarter_end,
+        "amount_with_vat": _decimal_to_api_string(snapshot.amount_with_vat),
+        "amount_without_vat": _decimal_to_api_string(snapshot.amount_without_vat),
+        "vat_amount": _decimal_to_api_string(snapshot.vat_amount),
+        "incoming_amount": _decimal_to_api_string(snapshot.incoming_amount),
+        "outgoing_amount": _decimal_to_api_string(snapshot.outgoing_amount),
+        "open_balance": _decimal_to_api_string(snapshot.open_balance),
+        "freshness_at": snapshot.freshness_at,
+        "metadata": snapshot.metadata if isinstance(snapshot.metadata, dict) else {},
+    }
+
+
+def _serialize_pool_factual_review_item(item: PoolFactualReviewItem) -> dict[str, Any]:
+    return build_pool_factual_review_queue_snapshot(review_items=[item])["items"][0]
+
+
+def _format_quarter_label(quarter_start: date) -> str:
+    quarter = ((quarter_start.month - 1) // 3) + 1
+    return f"{quarter_start.year}Q{quarter}"
+
+
+def _normalize_quarter_start_date(value: date) -> date:
+    normalized_month = ((value.month - 1) // 3) * 3 + 1
+    return date(value.year, normalized_month, 1)
+
+
+def _resolve_quarter_end(quarter_start: date) -> date:
+    if quarter_start.month == 10:
+        next_quarter_start = date(quarter_start.year + 1, 1, 1)
+    else:
+        next_quarter_start = date(quarter_start.year, quarter_start.month + 3, 1)
+    return next_quarter_start - timedelta(days=1)
+
+
+def _resolve_pool_factual_quarter_start(
+    *,
+    tenant_id: str,
+    pool: OrganizationPool,
+    requested_quarter_start: date | None,
+) -> date:
+    if requested_quarter_start is not None:
+        return _normalize_quarter_start_date(requested_quarter_start)
+
+    candidates: list[date] = []
+    snapshot_quarter = (
+        PoolFactualBalanceSnapshot.objects.filter(tenant_id=tenant_id, pool=pool)
+        .order_by("-quarter_start")
+        .values_list("quarter_start", flat=True)
+        .first()
+    )
+    if snapshot_quarter is not None:
+        candidates.append(_normalize_quarter_start_date(snapshot_quarter))
+
+    review_quarter = (
+        PoolFactualReviewItem.objects.filter(tenant_id=tenant_id, pool=pool)
+        .order_by("-quarter_start")
+        .values_list("quarter_start", flat=True)
+        .first()
+    )
+    if review_quarter is not None:
+        candidates.append(_normalize_quarter_start_date(review_quarter))
+
+    checkpoint_quarter = (
+        PoolFactualSyncCheckpoint.objects.filter(
+            tenant_id=tenant_id,
+            pool=pool,
+            lane=PoolFactualLane.READ,
+        )
+        .order_by("-quarter_start")
+        .values_list("quarter_start", flat=True)
+        .first()
+    )
+    if checkpoint_quarter is not None:
+        candidates.append(_normalize_quarter_start_date(checkpoint_quarter))
+
+    batch_period_start = (
+        PoolBatch.objects.filter(tenant_id=tenant_id, pool=pool)
+        .order_by("-period_start")
+        .values_list("period_start", flat=True)
+        .first()
+    )
+    if batch_period_start is not None:
+        candidates.append(_normalize_quarter_start_date(batch_period_start))
+
+    if candidates:
+        return max(candidates)
+    return _normalize_quarter_start_date(timezone.localdate())
+
+
+def _build_pool_factual_workspace_summary(
+    *,
+    quarter_start: date,
+    settlements: list[PoolBatch],
+    checkpoints: list[PoolFactualSyncCheckpoint],
+    review_queue: dict[str, Any],
+) -> dict[str, Any]:
+    incoming_amount = Decimal("0.00")
+    outgoing_amount = Decimal("0.00")
+    open_balance = Decimal("0.00")
+    attention_required_total = 0
+    latest_settlement_freshness_at = None
+
+    for batch in settlements:
+        settlement = getattr(batch, "settlement", None)
+        if not isinstance(settlement, PoolBatchSettlement):
+            continue
+        incoming_amount += settlement.incoming_amount
+        outgoing_amount += settlement.outgoing_amount
+        open_balance += settlement.open_balance
+        if settlement.status == PoolBatchSettlementStatus.ATTENTION_REQUIRED:
+            attention_required_total += 1
+        if settlement.freshness_at and (
+            latest_settlement_freshness_at is None or settlement.freshness_at > latest_settlement_freshness_at
+        ):
+            latest_settlement_freshness_at = settlement.freshness_at
+
+    latest_checkpoint = next(
+        (
+            checkpoint
+            for checkpoint in sorted(
+                checkpoints,
+                key=lambda item: (item.last_synced_at or datetime.min.replace(tzinfo=dt_timezone.utc), item.updated_at),
+                reverse=True,
+            )
+        ),
+        None,
+    )
+    checkpoint_metadata = (
+        latest_checkpoint.metadata
+        if latest_checkpoint is not None and isinstance(latest_checkpoint.metadata, dict)
+        else {}
+    )
+    review_summary = review_queue.get("summary") if isinstance(review_queue, dict) else {}
+    last_synced_at = (
+        latest_checkpoint.last_synced_at
+        if latest_checkpoint is not None and latest_checkpoint.last_synced_at is not None
+        else latest_settlement_freshness_at
+    )
+
+    return {
+        "quarter": _format_quarter_label(quarter_start),
+        "quarter_start": quarter_start,
+        "quarter_end": _resolve_quarter_end(quarter_start),
+        "incoming_amount": _decimal_to_api_string(incoming_amount),
+        "outgoing_amount": _decimal_to_api_string(outgoing_amount),
+        "open_balance": _decimal_to_api_string(open_balance),
+        "pending_review_total": int(review_summary.get("pending_total") or 0),
+        "attention_required_total": attention_required_total,
+        "freshness_state": str(checkpoint_metadata.get("freshness_state") or "unknown"),
+        "source_availability": str(checkpoint_metadata.get("source_availability") or "unknown"),
+        "source_availability_detail": str(checkpoint_metadata.get("source_availability_detail") or ""),
+        "last_synced_at": last_synced_at,
+        "settlement_total": len(settlements),
+        "checkpoint_total": len(checkpoints),
+    }
+
+
+def _decimal_to_api_string(value: Any) -> str:
+    if isinstance(value, Decimal):
+        return format(value, "f")
+    try:
+        return format(Decimal(str(value)), "f")
+    except (InvalidOperation, TypeError, ValueError):
+        return "0.00"
+
+
+def _decode_batch_xlsx_payload(raw_value: str | None) -> bytes | None:
+    token = str(raw_value or "").strip()
+    if not token:
+        return None
+    try:
+        return base64.b64decode(token, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise DjangoValidationError("xlsx_base64 must contain a valid base64 payload.") from exc
+
+
+def _build_pool_batch_source_metadata(
+    *,
+    normalized_batch,
+) -> dict[str, Any]:
+    provenance = normalized_batch.provenance
+    metadata = dict(provenance.source_metadata or {})
+    if provenance.schema_reference is not None:
+        metadata["schema_reference"] = dict(provenance.schema_reference)
+    if provenance.integration_reference is not None:
+        metadata["integration_reference"] = dict(provenance.integration_reference)
+    return metadata
+
+
+def _create_pool_batch_and_settlement(
+    *,
+    pool: OrganizationPool,
+    batch_kind: str,
+    source_type: str,
+    normalized_batch,
+    schema_template: PoolSchemaTemplate | None,
+    start_organization: Organization | None,
+    created_by,
+) -> tuple[PoolBatch, PoolBatchSettlement]:
+    total_amount = Decimal(str(normalized_batch.normalization_summary.get("total_amount_with_vat") or "0.00"))
+    batch = PoolBatch.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        batch_kind=batch_kind,
+        source_type=source_type,
+        schema_template=schema_template,
+        start_organization=start_organization,
+        period_start=normalized_batch.period_start,
+        period_end=normalized_batch.period_end,
+        source_reference=normalized_batch.provenance.source_reference,
+        raw_payload_ref=normalized_batch.provenance.raw_payload_ref,
+        content_hash=normalized_batch.provenance.content_hash,
+        source_metadata=_build_pool_batch_source_metadata(normalized_batch=normalized_batch),
+        normalization_summary={
+            **dict(normalized_batch.normalization_summary),
+            "total_amount_with_vat": _decimal_to_api_string(total_amount),
+        },
+        created_by=created_by,
+    )
+    settlement = PoolBatchSettlement.objects.create(
+        tenant=pool.tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.INGESTED,
+        incoming_amount=total_amount if batch_kind == PoolBatchKind.RECEIPT else Decimal("0.00"),
+        outgoing_amount=Decimal("0.00"),
+        open_balance=total_amount if batch_kind == PoolBatchKind.RECEIPT else Decimal("0.00"),
+        summary={
+            "normalized_rows": int(normalized_batch.normalization_summary.get("normalized_rows") or 0),
+            "processed_rows": int(normalized_batch.normalization_summary.get("processed_rows") or 0),
+            "total_amount_with_vat": _decimal_to_api_string(total_amount),
+        },
+    )
+    return batch, settlement
+
+
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
     metadata = dict(pool.metadata) if isinstance(pool.metadata, dict) else {}
     metadata.pop("workflow_bindings", None)
@@ -2620,6 +2943,234 @@ class PoolRunDetailResponseSerializer(serializers.Serializer):
     run = PoolRunSerializer()
     publication_attempts = PoolPublicationAttemptSerializer(many=True)
     audit_events = PoolRunAuditEventSerializer(many=True)
+
+
+class PoolBatchSettlementSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.UUIDField()
+    batch_id = serializers.UUIDField()
+    status = serializers.ChoiceField(choices=PoolBatchSettlementStatus.values)
+    incoming_amount = serializers.CharField()
+    outgoing_amount = serializers.CharField()
+    open_balance = serializers.CharField()
+    summary = serializers.JSONField(required=False)
+    freshness_at = serializers.DateTimeField(required=False, allow_null=True)
+    created_at = serializers.DateTimeField(required=False)
+    updated_at = serializers.DateTimeField(required=False)
+
+
+class PoolBatchSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.UUIDField()
+    pool_id = serializers.UUIDField()
+    batch_kind = serializers.ChoiceField(choices=PoolBatchKind.values)
+    source_type = serializers.ChoiceField(choices=PoolBatchSourceType.values)
+    schema_template_id = serializers.UUIDField(required=False, allow_null=True)
+    start_organization_id = serializers.UUIDField(required=False, allow_null=True)
+    run_id = serializers.UUIDField(required=False, allow_null=True)
+    workflow_execution_id = serializers.UUIDField(required=False, allow_null=True)
+    operation_id = serializers.UUIDField(required=False, allow_null=True)
+    workflow_status = serializers.CharField(required=False, allow_blank=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField(required=False, allow_null=True)
+    source_reference = serializers.CharField(required=False, allow_blank=True)
+    raw_payload_ref = serializers.CharField(required=False, allow_blank=True)
+    content_hash = serializers.CharField(required=False, allow_blank=True)
+    source_metadata = serializers.JSONField(required=False)
+    normalization_summary = serializers.JSONField(required=False)
+    publication_summary = serializers.JSONField(required=False)
+    last_error_code = serializers.CharField(required=False, allow_blank=True)
+    last_error = serializers.CharField(required=False, allow_blank=True)
+    created_by_id = serializers.UUIDField(required=False, allow_null=True)
+    created_at = serializers.DateTimeField(required=False)
+    updated_at = serializers.DateTimeField(required=False)
+    settlement = PoolBatchSettlementSerializer(required=False, allow_null=True)
+
+
+class PoolSaleClosingStartResponseSerializer(serializers.Serializer):
+    execution_id = serializers.UUIDField(required=False, allow_null=True)
+    operation_id = serializers.UUIDField(required=False, allow_null=True)
+    enqueue_success = serializers.BooleanField()
+    enqueue_status = serializers.CharField()
+    enqueue_error = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    created_execution = serializers.BooleanField()
+
+
+class PoolBatchCreateRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    batch_kind = serializers.ChoiceField(choices=PoolBatchKind.values)
+    source_type = serializers.ChoiceField(choices=PoolBatchSourceType.values)
+    schema_template_id = serializers.UUIDField(required=False, allow_null=True)
+    pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
+    start_organization_id = serializers.UUIDField(required=False, allow_null=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField(required=False, allow_null=True)
+    source_reference = serializers.CharField(required=False, allow_blank=True, default="")
+    raw_payload_ref = serializers.CharField(required=False, allow_blank=True, default="")
+    source_metadata = serializers.JSONField(required=False, default=dict)
+    integration_reference = serializers.CharField(required=False, allow_blank=True, default="")
+    json_payload = serializers.JSONField(required=False)
+    xlsx_base64 = serializers.CharField(required=False, allow_blank=False)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid payload type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        batch_kind = attrs.get("batch_kind")
+        source_type = attrs.get("source_type")
+        if source_type == PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD and attrs.get("schema_template_id") is None:
+            raise serializers.ValidationError(
+                {"schema_template_id": "schema_template_id is required for schema_template_upload intake."}
+            )
+        if source_type == PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD:
+            has_json_payload = "json_payload" in attrs
+            has_xlsx_payload = bool(attrs.get("xlsx_base64"))
+            if not has_json_payload and not has_xlsx_payload:
+                raise serializers.ValidationError(
+                    {"json_payload": "schema_template_upload intake requires json_payload or xlsx_base64."}
+                )
+        if batch_kind == PoolBatchKind.RECEIPT:
+            if not str(attrs.get("pool_workflow_binding_id") or "").strip():
+                raise serializers.ValidationError(
+                    {"pool_workflow_binding_id": "receipt intake requires pool_workflow_binding_id."}
+                )
+            if attrs.get("start_organization_id") is None:
+                raise serializers.ValidationError(
+                    {"start_organization_id": "receipt intake requires start_organization_id."}
+                )
+        else:
+            attrs.pop("pool_workflow_binding_id", None)
+            attrs.pop("start_organization_id", None)
+        return attrs
+
+
+class PoolBatchCreateResponseSerializer(serializers.Serializer):
+    batch = PoolBatchSerializer()
+    settlement = PoolBatchSettlementSerializer()
+    run = PoolRunSerializer(required=False, allow_null=True)
+    created = serializers.BooleanField()
+    sale_closing = PoolSaleClosingStartResponseSerializer(required=False, allow_null=True)
+
+
+class PoolBatchListResponseSerializer(serializers.Serializer):
+    batches = PoolBatchSerializer(many=True)
+    count = serializers.IntegerField()
+
+
+class PoolFactualWorkspaceQuerySerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    quarter_start = serializers.DateField(required=False, allow_null=True)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid query type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+
+class PoolFactualSummarySerializer(serializers.Serializer):
+    quarter = serializers.CharField()
+    quarter_start = serializers.DateField()
+    quarter_end = serializers.DateField()
+    incoming_amount = serializers.CharField()
+    outgoing_amount = serializers.CharField()
+    open_balance = serializers.CharField()
+    pending_review_total = serializers.IntegerField(min_value=0)
+    attention_required_total = serializers.IntegerField(min_value=0)
+    freshness_state = serializers.CharField()
+    source_availability = serializers.CharField()
+    source_availability_detail = serializers.CharField(required=False, allow_blank=True)
+    last_synced_at = serializers.DateTimeField(required=False, allow_null=True)
+    settlement_total = serializers.IntegerField(min_value=0)
+    checkpoint_total = serializers.IntegerField(min_value=0)
+
+
+class PoolFactualBalanceSnapshotSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    pool_id = serializers.UUIDField()
+    batch_id = serializers.UUIDField(required=False, allow_null=True)
+    organization_id = serializers.UUIDField()
+    organization_name = serializers.CharField()
+    edge_id = serializers.UUIDField(required=False, allow_null=True)
+    parent_node_id = serializers.UUIDField(required=False, allow_null=True)
+    child_node_id = serializers.UUIDField(required=False, allow_null=True)
+    quarter = serializers.CharField()
+    quarter_start = serializers.DateField()
+    quarter_end = serializers.DateField()
+    amount_with_vat = serializers.CharField()
+    amount_without_vat = serializers.CharField()
+    vat_amount = serializers.CharField()
+    incoming_amount = serializers.CharField()
+    outgoing_amount = serializers.CharField()
+    open_balance = serializers.CharField()
+    freshness_at = serializers.DateTimeField(required=False, allow_null=True)
+    metadata = serializers.JSONField(required=False)
+
+
+class PoolFactualReviewQueueItemSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    pool_id = serializers.UUIDField()
+    batch_id = serializers.UUIDField(required=False, allow_null=True)
+    organization_id = serializers.UUIDField(required=False, allow_null=True)
+    edge_id = serializers.UUIDField(required=False, allow_null=True)
+    reason = serializers.CharField()
+    status = serializers.CharField()
+    quarter = serializers.CharField()
+    source_document_ref = serializers.CharField(required=False, allow_blank=True)
+    allowed_actions = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    attention_required = serializers.BooleanField()
+    resolved_at = serializers.DateTimeField(required=False, allow_null=True)
+
+
+class PoolFactualReviewQueueSerializer(serializers.Serializer):
+    contract_version = serializers.CharField()
+    subsystem = serializers.CharField()
+    summary = serializers.JSONField()
+    items = PoolFactualReviewQueueItemSerializer(many=True)
+
+
+class PoolFactualWorkspaceResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    summary = PoolFactualSummarySerializer()
+    settlements = PoolBatchSerializer(many=True)
+    edge_balances = PoolFactualBalanceSnapshotSerializer(many=True)
+    review_queue = PoolFactualReviewQueueSerializer()
+
+
+class PoolFactualReviewActionRequestSerializer(serializers.Serializer):
+    review_item_id = serializers.UUIDField()
+    action = serializers.ChoiceField(
+        choices=[
+            FACTUAL_REVIEW_ACTION_ATTRIBUTE,
+            FACTUAL_REVIEW_ACTION_RECONCILE,
+            FACTUAL_REVIEW_ACTION_RESOLVE_WITHOUT_CHANGE,
+        ]
+    )
+    batch_id = serializers.UUIDField(required=False, allow_null=True)
+    edge_id = serializers.UUIDField(required=False, allow_null=True)
+    organization_id = serializers.UUIDField(required=False, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid payload type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+
+class PoolFactualReviewActionResponseSerializer(serializers.Serializer):
+    review_item = PoolFactualReviewQueueItemSerializer()
+    review_queue = PoolFactualReviewQueueSerializer()
 
 
 class PoolRunRetryRequestSerializer(serializers.Serializer):
@@ -4883,6 +5434,485 @@ def get_pool_run_report(request, run_id: UUID):
         "attempts_by_status": attempts_by_status,
     }
     return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_batches_list",
+    summary="List pool batches",
+    responses={
+        200: PoolBatchListResponseSerializer,
+        400: ErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+    methods=["GET"],
+)
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_batches_create",
+    summary="Create canonical pool batch and start downstream processing",
+    request=PoolBatchCreateRequestSerializer,
+    responses={
+        201: PoolBatchCreateResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+    methods=["POST"],
+)
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def list_or_create_pool_batches(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == "GET":
+        queryset = (
+            PoolBatch.objects.filter(tenant_id=tenant_id)
+            .select_related("schema_template", "start_organization", "run", "settlement")
+        )
+        pool_id = str(request.query_params.get("pool_id", "")).strip()
+        batch_kind = str(request.query_params.get("batch_kind", "")).strip().lower()
+        if pool_id:
+            queryset = queryset.filter(pool_id=pool_id)
+        if batch_kind:
+            queryset = queryset.filter(batch_kind=batch_kind)
+        limit = _parse_limit(request.query_params.get("limit"))
+        batches = list(queryset.order_by("-created_at")[:limit])
+        return Response(
+            {
+                "batches": [_serialize_pool_batch(batch) for batch in batches],
+                "count": len(batches),
+            },
+            status=http_status.HTTP_200_OK,
+        )
+
+    serializer = PoolBatchCreateRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    schema_template = None
+    schema_template_id = data.get("schema_template_id")
+    if schema_template_id is not None:
+        schema_template = PoolSchemaTemplate.objects.filter(id=schema_template_id, tenant_id=tenant_id).first()
+        if schema_template is None:
+            return _problem(
+                code="SCHEMA_TEMPLATE_NOT_FOUND",
+                title="Schema Template Not Found",
+                detail="Schema template not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+
+    try:
+        xlsx_bytes = _decode_batch_xlsx_payload(data.get("xlsx_base64"))
+        normalized_batch = normalize_pool_batch_intake(
+            pool=pool,
+            batch_kind=data["batch_kind"],
+            source_type=data["source_type"],
+            period_start=data["period_start"],
+            period_end=data.get("period_end"),
+            schema_template=schema_template,
+            integration_reference=str(data.get("integration_reference") or "").strip() or None,
+            json_payload=data.get("json_payload"),
+            xlsx_bytes=xlsx_bytes,
+            raw_payload_ref=str(data.get("raw_payload_ref") or "").strip(),
+            source_reference=str(data.get("source_reference") or "").strip(),
+            source_metadata=data.get("source_metadata"),
+        )
+    except (DjangoValidationError, ValueError) as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=_validation_message(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    created_by = request.user if request.user and request.user.is_authenticated else None
+    requested_start_organization = None
+    resolved_workflow_binding_payload: dict[str, Any] | None = None
+    resolved_workflow_binding = None
+    if data["batch_kind"] == PoolBatchKind.RECEIPT:
+        requested_start_organization = Organization.objects.filter(
+            id=data["start_organization_id"],
+            tenant_id=tenant_id,
+        ).first()
+        if requested_start_organization is None:
+            return _problem(
+                code="VALIDATION_ERROR",
+                title="Validation Error",
+                detail="receipt intake requires an existing start_organization in current tenant context.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
+                raw_bindings=list_attached_pool_workflow_bindings(pool=pool),
+                requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
+                direction=PoolRunDirection.TOP_DOWN,
+                mode=PoolRunMode.SAFE,
+                period_start=data["period_start"],
+            )
+        except PoolWorkflowBindingStoreError as exc:
+            error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+            title = (
+                "Pool Runtime Configuration Error"
+                if error_code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES
+                else "Pool Workflow Binding Resolution Failed"
+            )
+            return _problem(
+                code=error_code,
+                title=title,
+                detail=detail,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        except PoolWorkflowBindingResolutionError as exc:
+            return _problem(
+                code=exc.code,
+                title="Pool Workflow Binding Resolution Failed",
+                detail=str(exc),
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                errors=exc.errors,
+            )
+        if resolved_workflow_binding is None:
+            return _problem(
+                code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+                title="Pool Workflow Binding Resolution Failed",
+                detail="No pool workflow bindings are configured for this pool.",
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                errors=[],
+            )
+        resolved_workflow_binding_payload = resolved_workflow_binding.model_dump(mode="json", exclude_none=True)
+
+    run_record = None
+    run_created = True
+    sale_closing_result = None
+    try:
+        with transaction.atomic():
+            batch, settlement = _create_pool_batch_and_settlement(
+                pool=pool,
+                batch_kind=data["batch_kind"],
+                source_type=data["source_type"],
+                normalized_batch=normalized_batch,
+                schema_template=schema_template,
+                start_organization=requested_start_organization,
+                created_by=created_by,
+            )
+
+            if data["batch_kind"] == PoolBatchKind.RECEIPT:
+                source_batch, start_organization = _resolve_batch_backed_top_down_scope(
+                    tenant_id=tenant_id,
+                    pool=pool,
+                    period_start=data["period_start"],
+                    period_end=data.get("period_end"),
+                    run_input={
+                        "batch_id": str(batch.id),
+                        "start_organization_id": str(data["start_organization_id"]),
+                    },
+                )
+                run_result = upsert_pool_run(
+                    tenant=pool.tenant,
+                    pool=pool,
+                    direction=PoolRunDirection.TOP_DOWN,
+                    period_start=data["period_start"],
+                    period_end=data.get("period_end"),
+                    workflow_binding_id=resolved_workflow_binding.binding_id,
+                    workflow_binding_revision=resolved_workflow_binding.revision,
+                    binding_profile_revision_id=resolved_workflow_binding.binding_profile_revision_id,
+                    run_input={
+                        "batch_id": str(batch.id),
+                        "start_organization_id": str(start_organization.id),
+                    },
+                    source_batch=source_batch,
+                    start_organization=start_organization,
+                    mode=PoolRunMode.SAFE,
+                    schema_template=schema_template,
+                    created_by=created_by,
+                )
+                runtime_result = start_pool_run_workflow_execution(
+                    run=run_result.run,
+                    requested_by=created_by,
+                    workflow_binding=resolved_workflow_binding_payload,
+                )
+                run_record = runtime_result.run
+                run_created = run_result.created
+            else:
+                closing_contract = build_sale_batch_closing_contract(
+                    pool=pool,
+                    normalized_batch=normalized_batch,
+                )
+                sale_closing_result = start_pool_sale_batch_closing_workflow_execution(
+                    batch=batch,
+                    closing_contract=closing_contract,
+                    requested_by=created_by,
+                )
+                if isinstance(getattr(sale_closing_result, "batch", None), PoolBatch):
+                    batch = sale_closing_result.batch
+                    settlement = getattr(batch, "settlement", settlement)
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        title = (
+            "Pool Runtime Configuration Error"
+            if error_code in _POOL_RUNTIME_START_FAIL_CLOSED_CODES
+            else "Validation Error"
+        )
+        return _problem(
+            code=error_code,
+            title=title,
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    except (DjangoValidationError, ValueError) as exc:
+        error_code, detail = _resolve_pool_runtime_start_error(exc)
+        return _problem(
+            code=error_code,
+            title="Validation Error",
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    payload: dict[str, Any] = {
+        "batch": _serialize_pool_batch(batch),
+        "settlement": _serialize_pool_batch_settlement(settlement),
+        "created": True,
+    }
+    if run_record is not None:
+        payload["run"] = _serialize_run(
+            run_record,
+            publication_hardening_cutoff_utc=_resolve_publication_hardening_cutoff_utc(tenant_id=tenant_id),
+        )
+        payload["created"] = run_created
+    if sale_closing_result is not None:
+        payload["sale_closing"] = {
+            "execution_id": sale_closing_result.execution_id,
+            "operation_id": sale_closing_result.operation_id,
+            "enqueue_success": sale_closing_result.enqueue_success,
+            "enqueue_status": sale_closing_result.enqueue_status,
+            "enqueue_error": sale_closing_result.enqueue_error,
+            "created_execution": sale_closing_result.created_execution,
+        }
+    return Response(payload, status=http_status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_factual_workspace",
+    summary="Get pool factual workspace read model",
+    parameters=[PoolFactualWorkspaceQuerySerializer],
+    responses={
+        200: PoolFactualWorkspaceResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_pool_factual_workspace(request):
+    from apps.intercompany_pools.factual_workspace_runtime import (
+        ensure_pool_factual_workspace_default_sync,
+    )
+
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolFactualWorkspaceQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    quarter_start = _resolve_pool_factual_quarter_start(
+        tenant_id=tenant_id,
+        pool=pool,
+        requested_quarter_start=data.get("quarter_start"),
+    )
+    quarter_end = _resolve_quarter_end(quarter_start)
+    ensure_pool_factual_workspace_default_sync(
+        pool=pool,
+        quarter_start=quarter_start,
+    )
+
+    batches = list(
+        PoolBatch.objects.filter(
+            tenant_id=tenant_id,
+            pool=pool,
+            period_start__gte=quarter_start,
+            period_start__lte=quarter_end,
+        )
+        .select_related("schema_template", "start_organization", "run", "settlement")
+        .order_by("-period_start", "-created_at")
+    )
+    edge_balances = list(
+        PoolFactualBalanceSnapshot.objects.filter(
+            tenant_id=tenant_id,
+            pool=pool,
+            quarter_start=quarter_start,
+        )
+        .select_related(
+            "organization",
+            "batch",
+            "edge",
+            "edge__parent_node",
+            "edge__child_node",
+        )
+        .order_by("-freshness_at", "-created_at")
+    )
+    checkpoints = list(
+        PoolFactualSyncCheckpoint.objects.filter(
+            tenant_id=tenant_id,
+            pool=pool,
+            lane=PoolFactualLane.READ,
+            quarter_start=quarter_start,
+        )
+        .order_by("-last_synced_at", "-updated_at")
+    )
+    review_items = list(
+        PoolFactualReviewItem.objects.filter(
+            tenant_id=tenant_id,
+            pool=pool,
+            quarter_start=quarter_start,
+        ).order_by("-created_at", "-updated_at")
+    )
+    review_queue = build_pool_factual_review_queue_snapshot(review_items=review_items)
+
+    payload = {
+        "pool_id": str(pool.id),
+        "summary": _build_pool_factual_workspace_summary(
+            quarter_start=quarter_start,
+            settlements=batches,
+            checkpoints=checkpoints,
+            review_queue=review_queue,
+        ),
+        "settlements": [_serialize_pool_batch(batch) for batch in batches],
+        "edge_balances": [_serialize_pool_factual_balance_snapshot(snapshot) for snapshot in edge_balances],
+        "review_queue": review_queue,
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_factual_review_actions",
+    summary="Apply manual review action in factual workspace",
+    request=PoolFactualReviewActionRequestSerializer,
+    responses={
+        200: PoolFactualReviewActionResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def apply_pool_factual_review_action_view(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolFactualReviewActionRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    try:
+        review_item = apply_pool_factual_review_action(
+            review_item_id=str(data["review_item_id"]),
+            tenant_id=tenant_id,
+            actor_id=str(request.user.id),
+            action=data["action"],
+            batch_id=str(data["batch_id"]) if data.get("batch_id") else None,
+            edge_id=str(data["edge_id"]) if data.get("edge_id") else None,
+            organization_id=str(data["organization_id"]) if data.get("organization_id") else None,
+            note=str(data.get("note") or ""),
+            metadata=dict(data.get("metadata") or {}),
+        )
+    except PoolFactualReviewItem.DoesNotExist:
+        return _problem(
+            code="REVIEW_ITEM_NOT_FOUND",
+            title="Review Item Not Found",
+            detail="Factual review item not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    except (PoolBatch.DoesNotExist, PoolEdgeVersion.DoesNotExist, Organization.DoesNotExist, ValueError) as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    review_queue = build_pool_factual_review_queue_snapshot(
+        review_items=PoolFactualReviewItem.objects.filter(
+            tenant_id=tenant_id,
+            pool_id=review_item.pool_id,
+            quarter_start=review_item.quarter_start,
+            quarter_end=review_item.quarter_end,
+        )
+    )
+    return Response(
+        {
+            "review_item": _serialize_pool_factual_review_item(review_item),
+            "review_queue": review_queue,
+        },
+        status=http_status.HTTP_200_OK,
+    )
 
 
 @extend_schema(

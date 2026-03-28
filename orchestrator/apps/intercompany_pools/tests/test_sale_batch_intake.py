@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
 
 from apps.databases.models import Database
 from apps.intercompany_pools.batch_intake_normalization import (
@@ -16,12 +17,18 @@ from apps.intercompany_pools.batch_intake_normalization import (
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
+    PoolBatch,
     PoolBatchKind,
     PoolBatchSourceType,
     PoolEdgeVersion,
     PoolNodeVersion,
 )
+from apps.operations.services.operations_service.types import EnqueueResult
+from apps.templates.workflow.models import WorkflowExecution
 from apps.tenancy.models import Tenant
+
+
+User = get_user_model()
 
 
 def _create_database(*, tenant: Tenant, suffix: str) -> Database:
@@ -232,3 +239,160 @@ def test_build_sale_batch_closing_contract_rejects_non_sale_batch_kind(
 
     with pytest.raises(ValidationError, match="sale"):
         build_sale_batch_closing_contract(pool=pool, normalized_batch=receipt_batch)
+
+
+@pytest.mark.django_db
+def test_start_pool_sale_batch_closing_workflow_execution_publishes_traceable_leaf_payload(
+    sale_topology_scope: dict[str, object],
+) -> None:
+    from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
+    from apps.intercompany_pools.sale_batch_workflow_runtime import (
+        start_pool_sale_batch_closing_workflow_execution,
+    )
+
+    pool = sale_topology_scope["pool"]
+    leaf_left = sale_topology_scope["leaf_left"]
+    leaf_right = sale_topology_scope["leaf_right"]
+    sale_batch = _build_sale_batch(
+        pool=pool,
+        lines=[
+            CanonicalPoolBatchLine(
+                line_no=1,
+                organization_inn=leaf_left.inn,
+                amount_with_vat=Decimal("30.00"),
+                external_id="sale-001",
+            ),
+            CanonicalPoolBatchLine(
+                line_no=2,
+                organization_inn=leaf_right.inn,
+                amount_with_vat=Decimal("15.50"),
+                external_id="sale-002",
+            ),
+        ],
+    )
+    batch = PoolBatch.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.SALE,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        period_start=sale_batch.period_start,
+        period_end=sale_batch.period_end,
+        source_reference=sale_batch.provenance.source_reference,
+        raw_payload_ref=sale_batch.provenance.raw_payload_ref,
+        content_hash=sale_batch.provenance.content_hash,
+        source_metadata=sale_batch.provenance.source_metadata,
+        normalization_summary={
+            "processed_rows": 2,
+            "normalized_rows": 2,
+            "total_amount_with_vat": "45.50",
+        },
+    )
+    requested_by = User.objects.create_user(username="sale-batch-operator", password="secret")
+    closing_contract = build_sale_batch_closing_contract(pool=pool, normalized_batch=sale_batch)
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            "apps.intercompany_pools.sale_batch_workflow_runtime.OperationsService.enqueue_workflow_execution",
+            lambda **kwargs: EnqueueResult(
+                success=True,
+                operation_id=str(uuid4()),
+                status="queued",
+                error=None,
+                error_code=None,
+            ),
+        )
+        result = start_pool_sale_batch_closing_workflow_execution(
+            batch=batch,
+            closing_contract=closing_contract,
+            requested_by=requested_by,
+        )
+
+    assert result.batch.id == batch.id
+    assert result.enqueue_success is True
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    publication_payload = execution.input_context["pool_runtime_publication_payload"]["pool_runtime"]
+    assert publication_payload["entity_name"] == "Document_РеализацияТоваровУслуг"
+    assert execution.input_context["target_database_ids"] == sorted(
+        [
+            str(leaf_left.database_id),
+            str(leaf_right.database_id),
+        ]
+    )
+    left_document = publication_payload["documents_by_database"][str(leaf_left.database_id)][0]
+    right_document = publication_payload["documents_by_database"][str(leaf_right.database_id)][0]
+    assert left_document["Amount"] == "30.00"
+    assert right_document["Amount"] == "15.50"
+    assert left_document["Comment"].startswith(
+        f"CCPOOL:v=1;pool={pool.id};run=-;batch={batch.id};org={leaf_left.id};q=2026Q1;kind=sale"
+    )
+    assert execution.input_context["publication_auth"] == {
+        "strategy": "actor",
+        "actor_username": "sale-batch-operator",
+        "source": "sale_batch_intake",
+    }
+
+
+@pytest.mark.django_db
+def test_start_pool_sale_batch_closing_workflow_execution_reuses_existing_batch_execution(
+    sale_topology_scope: dict[str, object],
+) -> None:
+    from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
+    from apps.intercompany_pools.sale_batch_workflow_runtime import (
+        start_pool_sale_batch_closing_workflow_execution,
+    )
+
+    pool = sale_topology_scope["pool"]
+    leaf_left = sale_topology_scope["leaf_left"]
+    sale_batch = _build_sale_batch(
+        pool=pool,
+        lines=[
+            CanonicalPoolBatchLine(
+                line_no=1,
+                organization_inn=leaf_left.inn,
+                amount_with_vat=Decimal("30.00"),
+                external_id="sale-001",
+            ),
+        ],
+    )
+    batch = PoolBatch.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.SALE,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        period_start=sale_batch.period_start,
+        period_end=sale_batch.period_end,
+        normalization_summary={"total_amount_with_vat": "30.00"},
+    )
+    requested_by = User.objects.create_user(username="sale-batch-reuse", password="secret")
+    closing_contract = build_sale_batch_closing_contract(pool=pool, normalized_batch=sale_batch)
+    operation_id = str(uuid4())
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            "apps.intercompany_pools.sale_batch_workflow_runtime.OperationsService.enqueue_workflow_execution",
+            lambda **kwargs: EnqueueResult(
+                success=True,
+                operation_id=operation_id,
+                status="queued",
+                error=None,
+                error_code=None,
+            ),
+        )
+        first = start_pool_sale_batch_closing_workflow_execution(
+            batch=batch,
+            closing_contract=closing_contract,
+            requested_by=requested_by,
+        )
+        second = start_pool_sale_batch_closing_workflow_execution(
+            batch=batch,
+            closing_contract=closing_contract,
+            requested_by=requested_by,
+        )
+
+    batch.refresh_from_db()
+    assert first.created_execution is True
+    assert second.created_execution is False
+    assert second.execution_id == first.execution_id
+    assert str(batch.workflow_execution_id) == first.execution_id
+    assert str(batch.operation_id) == operation_id
+    assert WorkflowExecution.objects.filter(id=first.execution_id).count() == 1

@@ -47,6 +47,11 @@ type PublicationTransport interface {
 	ExecutePublicationOData(ctx context.Context, req *handlers.OperationRequest) (map[string]interface{}, error)
 }
 
+// FactualTransport executes factual OData reads locally in worker.
+type FactualTransport interface {
+	ExecuteFactualSyncSourceSlice(ctx context.Context, req *handlers.OperationRequest) (map[string]interface{}, error)
+}
+
 // BridgeOperationRef carries operation binding provenance to bridge payload.
 type BridgeOperationRef struct {
 	Alias                    string
@@ -66,6 +71,7 @@ type BridgePublicationAuth struct {
 type Adapter struct {
 	bridge                         BridgeClient
 	publicationTransport           PublicationTransport
+	factualTransport               FactualTransport
 	logger                         *zap.Logger
 	poolRouteEnabledProvider       func() bool
 	publicationRouteEnabled        func() bool
@@ -78,6 +84,7 @@ type AdapterConfig struct {
 	PoolRouteEnabled                bool
 	PoolRouteEnabledProvider        func() bool
 	PublicationTransport            PublicationTransport
+	FactualTransport                FactualTransport
 	PublicationRouteEnabled         bool
 	PublicationRouteEnabledProvider func() bool
 }
@@ -109,6 +116,7 @@ func NewAdapterWithConfig(bridge BridgeClient, logger *zap.Logger, cfg AdapterCo
 	return &Adapter{
 		bridge:                   bridge,
 		publicationTransport:     cfg.PublicationTransport,
+		factualTransport:         cfg.FactualTransport,
 		logger:                   logger.Named("poolops_adapter"),
 		poolRouteEnabledProvider: routeProvider,
 		publicationRouteEnabled:  publicationRouteProvider,
@@ -152,6 +160,15 @@ func (a *Adapter) Execute(ctx context.Context, req *handlers.OperationRequest) (
 			)
 		}
 		return a.publicationTransport.ExecutePublicationOData(ctx, req)
+	}
+	if operationType == "pool.factual.sync_source_slice" {
+		if a.factualTransport == nil {
+			return nil, handlers.NewOperationExecutionError(
+				handlers.ErrorCodePoolRuntimeFactualPathDisabled,
+				"pool.factual.sync_source_slice transport is not configured",
+			)
+		}
+		return a.factualTransport.ExecuteFactualSyncSourceSlice(ctx, req)
 	}
 
 	if a.bridge == nil {

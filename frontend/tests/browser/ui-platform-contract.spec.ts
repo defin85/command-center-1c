@@ -931,6 +931,155 @@ const POOL_RUN_REPORT = {
   attempts_by_status: { failed: 1 },
 }
 
+const POOL_FACTUAL_WORKSPACE = {
+  pool_id: POOL_WITH_ATTACHMENT.id,
+  summary: {
+    quarter: '2026Q1',
+    quarter_start: '2026-01-01',
+    quarter_end: '2026-03-31',
+    incoming_amount: '170.00',
+    outgoing_amount: '115.00',
+    open_balance: '55.00',
+    pending_review_total: 1,
+    attention_required_total: 1,
+    freshness_state: 'fresh',
+    source_availability: 'available',
+    source_availability_detail: '',
+    last_synced_at: NOW,
+    settlement_total: 2,
+    checkpoint_total: 1,
+  },
+  settlements: [
+    {
+      id: 'batch-receipt-1',
+      tenant_id: TENANT_ID,
+      pool_id: POOL_WITH_ATTACHMENT.id,
+      batch_kind: 'receipt',
+      source_type: 'manual',
+      schema_template_id: null,
+      start_organization_id: 'organization-main',
+      run_id: POOL_RUN.id,
+      workflow_execution_id: null,
+      operation_id: null,
+      workflow_status: '',
+      period_start: '2026-01-01',
+      period_end: '2026-03-31',
+      source_reference: 'receipt-q1',
+      raw_payload_ref: '',
+      content_hash: 'receipt-hash-1',
+      source_metadata: {},
+      normalization_summary: {},
+      publication_summary: {},
+      last_error_code: '',
+      last_error: '',
+      created_by_id: null,
+      created_at: NOW,
+      updated_at: NOW,
+      settlement: {
+        id: 'settlement-receipt-1',
+        tenant_id: TENANT_ID,
+        batch_id: 'batch-receipt-1',
+        status: 'partially_closed',
+        incoming_amount: '120.00',
+        outgoing_amount: '80.00',
+        open_balance: '40.00',
+        summary: {},
+        freshness_at: NOW,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    },
+    {
+      id: 'batch-sale-1',
+      tenant_id: TENANT_ID,
+      pool_id: POOL_WITH_ATTACHMENT.id,
+      batch_kind: 'sale',
+      source_type: 'manual',
+      schema_template_id: null,
+      start_organization_id: null,
+      run_id: null,
+      workflow_execution_id: 'workflow-sale-1',
+      operation_id: 'operation-sale-1',
+      workflow_status: 'completed',
+      period_start: '2026-01-01',
+      period_end: '2026-03-31',
+      source_reference: 'sale-q1',
+      raw_payload_ref: '',
+      content_hash: 'sale-hash-1',
+      source_metadata: {},
+      normalization_summary: {},
+      publication_summary: {},
+      last_error_code: '',
+      last_error: '',
+      created_by_id: null,
+      created_at: NOW,
+      updated_at: NOW,
+      settlement: {
+        id: 'settlement-sale-1',
+        tenant_id: TENANT_ID,
+        batch_id: 'batch-sale-1',
+        status: 'attention_required',
+        incoming_amount: '50.00',
+        outgoing_amount: '35.00',
+        open_balance: '15.00',
+        summary: {},
+        freshness_at: NOW,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    },
+  ],
+  edge_balances: [
+    {
+      id: 'edge-balance-1',
+      pool_id: POOL_WITH_ATTACHMENT.id,
+      batch_id: 'batch-receipt-1',
+      organization_id: 'organization-leaf-1',
+      organization_name: 'Leaf Alpha',
+      edge_id: 'edge-alpha-1',
+      parent_node_id: 'node-root',
+      child_node_id: 'node-child',
+      quarter: '2026Q1',
+      quarter_start: '2026-01-01',
+      quarter_end: '2026-03-31',
+      amount_with_vat: '120.00',
+      amount_without_vat: '100.00',
+      vat_amount: '20.00',
+      incoming_amount: '120.00',
+      outgoing_amount: '80.00',
+      open_balance: '40.00',
+      freshness_at: NOW,
+      metadata: {},
+    },
+  ],
+  review_queue: {
+    contract_version: 'pool_factual_review_queue.v1',
+    subsystem: 'reconcile_review',
+    summary: {
+      pending_total: 1,
+      unattributed_total: 1,
+      late_correction_total: 0,
+      attention_required_total: 1,
+    },
+    items: [
+      {
+        id: 'unattributed-pool-main',
+        pool_id: POOL_WITH_ATTACHMENT.id,
+        batch_id: 'batch-receipt-1',
+        organization_id: 'organization-leaf-1',
+        edge_id: 'edge-alpha-1',
+        reason: 'unattributed',
+        status: 'pending',
+        quarter: '2026Q1',
+        source_document_ref: "Document_РеализацияТоваровУслуг(guid'pool-main-sale')",
+        allowed_actions: ['attribute', 'resolve_without_change'],
+        attention_required: true,
+        resolved_at: null,
+      },
+    ],
+  },
+}
+
 const WORKFLOW_EXECUTION_DETAIL = {
   id: POOL_RUN.workflow_execution_id,
   workflow_template: WORKFLOW.id,
@@ -1384,6 +1533,7 @@ async function setupUiPlatformMocks(
   const topologyTemplates = [
     JSON.parse(JSON.stringify(TOPOLOGY_TEMPLATE)) as typeof TOPOLOGY_TEMPLATE,
   ]
+  const factualWorkspace = JSON.parse(JSON.stringify(POOL_FACTUAL_WORKSPACE)) as typeof POOL_FACTUAL_WORKSPACE
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -1784,6 +1934,52 @@ async function setupUiPlatformMocks(
         counts.poolRunReports += 1
       }
       return fulfillJson(route, POOL_RUN_REPORT)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/factual/workspace/') {
+      if (url.searchParams.get('pool_id') && url.searchParams.get('pool_id') !== POOL_WITH_ATTACHMENT.id) {
+        return fulfillJson(route, { detail: 'Pool factual workspace not found.' }, 404)
+      }
+      return fulfillJson(route, factualWorkspace)
+    }
+
+    if (method === 'POST' && path === '/api/v2/pools/factual/review-actions/') {
+      const payload = request.postDataJSON() as {
+        review_item_id?: string
+        action?: 'attribute' | 'reconcile' | 'resolve_without_change'
+      } | null
+      const reviewItemId = String(payload?.review_item_id || '')
+      const action = payload?.action
+      const reviewItem = factualWorkspace.review_queue.items.find((item) => item.id === reviewItemId)
+      if (!reviewItem || !action) {
+        return fulfillJson(route, { detail: 'Review item not found.' }, 404)
+      }
+      reviewItem.status = action === 'attribute'
+        ? 'attributed'
+        : action === 'reconcile'
+          ? 'reconciled'
+          : 'resolved_without_change'
+      reviewItem.allowed_actions = []
+      reviewItem.attention_required = false
+      reviewItem.resolved_at = NOW
+      factualWorkspace.review_queue.summary.pending_total = factualWorkspace.review_queue.items.filter(
+        (item) => item.status === 'pending'
+      ).length
+      factualWorkspace.review_queue.summary.unattributed_total = factualWorkspace.review_queue.items.filter(
+        (item) => item.status === 'pending' && item.reason === 'unattributed'
+      ).length
+      factualWorkspace.review_queue.summary.late_correction_total = factualWorkspace.review_queue.items.filter(
+        (item) => item.status === 'pending' && item.reason === 'late_correction'
+      ).length
+      factualWorkspace.review_queue.summary.attention_required_total = factualWorkspace.review_queue.items.filter(
+        (item) => item.attention_required
+      ).length
+      factualWorkspace.summary.pending_review_total = factualWorkspace.review_queue.summary.pending_total
+      factualWorkspace.summary.attention_required_total = factualWorkspace.review_queue.summary.attention_required_total
+      return fulfillJson(route, {
+        review_item: reviewItem,
+        review_queue: factualWorkspace.review_queue,
+      })
     }
 
     const topologySnapshotsMatch = path.match(/^\/api\/v2\/pools\/([^/]+)\/topology-snapshots\/$/)

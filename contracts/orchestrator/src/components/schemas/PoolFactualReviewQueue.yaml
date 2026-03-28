@@ -1,0 +1,17 @@
+type: object
+properties:
+  contract_version:
+    type: string
+  subsystem:
+    type: string
+  summary:
+    $ref: ./PoolFactualReviewQueueSummary.yaml
+  items:
+    type: array
+    items:
+      $ref: ./PoolFactualReviewQueueItem.yaml
+required:
+  - contract_version
+  - items
+  - subsystem
+  - summary

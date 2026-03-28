@@ -1,0 +1,84 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  pool_id:
+    type: string
+    format: uuid
+  batch_kind:
+    type: string
+    enum:
+      - receipt
+      - sale
+  source_type:
+    type: string
+    enum:
+      - schema_template_upload
+      - integration
+      - manual
+  schema_template_id:
+    type: string
+    format: uuid
+    nullable: true
+  start_organization_id:
+    type: string
+    format: uuid
+    nullable: true
+  run_id:
+    type: string
+    format: uuid
+    nullable: true
+  workflow_execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  operation_id:
+    type: string
+    format: uuid
+    nullable: true
+  workflow_status:
+    type: string
+  period_start:
+    type: string
+    format: date
+  period_end:
+    type: string
+    format: date
+    nullable: true
+  source_reference:
+    type: string
+  raw_payload_ref:
+    type: string
+  content_hash:
+    type: string
+  source_metadata: {}
+  normalization_summary: {}
+  publication_summary: {}
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  created_by_id:
+    type: string
+    format: uuid
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+  settlement:
+    $ref: ./PoolBatchSettlement.yaml
+    nullable: true
+required:
+  - batch_kind
+  - id
+  - period_start
+  - pool_id
+  - source_type
+  - tenant_id

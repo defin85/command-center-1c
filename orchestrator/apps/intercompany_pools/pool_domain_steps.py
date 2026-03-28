@@ -47,7 +47,7 @@ from .master_data_gate import (
     execute_master_data_resolve_upsert_gate,
     publication_payload_requires_master_data_resolution,
 )
-from .models import Organization, PoolMasterParty, PoolRun, PoolRunDirection, PoolRunMode
+from .models import Organization, PoolBatch, PoolMasterParty, PoolRun, PoolRunDirection, PoolRunMode
 from .organization_party_binding_backfill import (
     REMEDIATION_REASON_AMBIGUOUS_MATCH,
     REMEDIATION_REASON_CANDIDATE_ALREADY_BOUND,
@@ -928,7 +928,36 @@ def _build_readiness_blocker_from_error(exc: ValueError) -> dict[str, Any] | Non
 
 
 def _run_input(run: PoolRun) -> dict[str, Any]:
-    return sanitize_run_input_for_runtime_contract(run_input=run.run_input)
+    payload = sanitize_run_input_for_runtime_contract(run_input=run.run_input)
+    if run.direction != PoolRunDirection.TOP_DOWN:
+        return payload
+
+    if _parse_decimal(payload.get("starting_amount")) is not None:
+        return payload
+
+    source_batch = _resolve_source_batch_for_runtime(run=run, run_input=payload)
+    if source_batch is None:
+        return payload
+
+    normalization_summary = (
+        source_batch.normalization_summary
+        if isinstance(source_batch.normalization_summary, Mapping)
+        else {}
+    )
+    starting_amount = _parse_decimal(normalization_summary.get("total_amount_with_vat"))
+    if starting_amount is None:
+        return payload
+
+    payload["starting_amount"] = _decimal_to_string(starting_amount)
+    return payload
+
+
+def _resolve_source_batch_for_runtime(*, run: PoolRun, run_input: dict[str, Any]) -> PoolBatch | None:
+    batch_id = str(run_input.get("batch_id") or "").strip()
+    queryset = PoolBatch.objects.only("id", "normalization_summary", "run_id")
+    if batch_id:
+        return queryset.filter(id=batch_id, tenant_id=run.tenant_id, pool_id=run.pool_id).first()
+    return queryset.filter(run_id=run.id).first()
 
 
 def _source_rows(*, run_input: dict[str, Any]) -> list[dict[str, Any]]:

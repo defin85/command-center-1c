@@ -2,6 +2,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
@@ -1231,6 +1232,364 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     )
 
 
+def _project_pool_batch_publication_attempts_from_result(*, execution, result_payload: object) -> None:
+    from apps.databases.models import Database
+    from apps.intercompany_pools.models import (
+        PoolBatch,
+        PoolBatchPublicationAttempt,
+        PoolBatchPublicationAttemptStatus,
+        PoolBatchSettlementStatus,
+    )
+
+    if str(execution.execution_consumer or "") != "pools":
+        return
+
+    publication_results = _extract_publication_result_payloads(result_payload)
+    if not publication_results:
+        return
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    pool_batch_id = str(
+        publication_results[0].get("pool_batch_id")
+        or execution_context.get("pool_batch_id")
+        or ""
+    ).strip()
+    if not pool_batch_id:
+        return
+
+    try:
+        pool_batch_uuid = uuid.UUID(pool_batch_id)
+    except ValueError:
+        logger.warning(
+            "Skipping batch publication projection: invalid pool batch id",
+            extra={"execution_id": str(execution.id), "pool_batch_id": pool_batch_id},
+        )
+        return
+
+    batch = PoolBatch.objects.select_related("settlement").filter(id=pool_batch_uuid).first()
+    if batch is None:
+        logger.warning(
+            "Skipping batch publication projection: pool batch is missing",
+            extra={"execution_id": str(execution.id), "pool_batch_id": pool_batch_id},
+        )
+        return
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(batch.tenant_id) != execution_tenant_id:
+        logger.warning(
+            "Skipping batch publication projection due to tenant mismatch",
+            extra={
+                "execution_id": str(execution.id),
+                "pool_batch_id": str(batch.id),
+                "batch_tenant_id": str(batch.tenant_id),
+                "execution_tenant_id": execution_tenant_id,
+            },
+        )
+        return
+
+    target_databases: list[str] = []
+    documents_count_by_database: dict[str, int] = {}
+    failed_databases: dict[str, str] = {}
+    failed_databases_diagnostics: dict[str, dict[str, object]] = {}
+    attempt_rows: list[dict[str, object]] = []
+    entity_name = "Document_РеализацияТоваровУслуг"
+    max_attempts = 1
+    document_entities_by_database = _collect_document_entities_by_database(
+        input_context=execution.input_context if isinstance(execution.input_context, Mapping) else None,
+    )
+
+    publication_results = sorted(
+        publication_results,
+        key=lambda item: str(item.get("_projection_key") or ""),
+    )
+
+    for publication_result in publication_results:
+        raw_targets = publication_result.get("target_databases")
+        if isinstance(raw_targets, list):
+            for raw_value in raw_targets:
+                normalized = str(raw_value or "").strip()
+                if normalized and normalized not in target_databases:
+                    target_databases.append(normalized)
+
+        raw_documents_count = publication_result.get("documents_count_by_database")
+        if isinstance(raw_documents_count, Mapping):
+            for raw_database_id, raw_count in raw_documents_count.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id:
+                    continue
+                documents_count_by_database[database_id] = documents_count_by_database.get(database_id, 0) + _parse_positive_int(
+                    raw_count,
+                    default=1,
+                )
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        raw_failed_databases = publication_result.get("failed_databases")
+        if isinstance(raw_failed_databases, Mapping):
+            for raw_database_id, raw_error in raw_failed_databases.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id:
+                    continue
+                failed_databases[database_id] = str(raw_error or "").strip()
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        raw_failed_diagnostics = publication_result.get("failed_databases_diagnostics")
+        if isinstance(raw_failed_diagnostics, Mapping):
+            for raw_database_id, raw_diagnostics in raw_failed_diagnostics.items():
+                database_id = str(raw_database_id or "").strip()
+                if not database_id or not isinstance(raw_diagnostics, Mapping):
+                    continue
+                failed_databases_diagnostics[database_id] = dict(raw_diagnostics)
+                if database_id not in target_databases:
+                    target_databases.append(database_id)
+
+        normalized_entity_name = str(publication_result.get("entity_name") or "").strip()
+        if normalized_entity_name:
+            entity_name = normalized_entity_name
+        max_attempts = max(
+            max_attempts,
+            _parse_positive_int(publication_result.get("max_attempts"), default=1),
+        )
+        projection_key = str(publication_result.get("_projection_key") or "").strip()
+
+        normalized_attempt_rows = _normalize_publication_attempt_rows(
+            raw_attempts=publication_result.get("attempts"),
+            entity_name=entity_name,
+            documents_count_by_database=documents_count_by_database,
+            projection_key=projection_key,
+            document_entities_by_database=document_entities_by_database,
+        )
+        if not normalized_attempt_rows and target_databases:
+            normalized_attempt_rows = _synthesize_publication_attempt_rows(
+                target_databases=target_databases,
+                entity_name=entity_name,
+                documents_count_by_database=documents_count_by_database,
+                failed_databases=failed_databases,
+                failed_databases_diagnostics=failed_databases_diagnostics,
+                max_attempts=max_attempts,
+                projection_key=projection_key,
+            )
+        attempt_rows.extend(normalized_attempt_rows)
+
+    database_ids: set[str] = set(target_databases)
+    for row in attempt_rows:
+        database_ids.add(str(row.get("target_database") or "").strip())
+    database_ids = {value for value in database_ids if value}
+    valid_database_ids: set[str] = set()
+    for database_id in database_ids:
+        try:
+            valid_database_ids.add(str(uuid.UUID(database_id)))
+        except ValueError:
+            logger.warning(
+                "Skipping batch publication projection for invalid database id",
+                extra={
+                    "execution_id": str(execution.id),
+                    "pool_batch_id": str(batch.id),
+                    "target_database_id": database_id,
+                },
+            )
+
+    databases = {
+        str(db.id): db
+        for db in Database.objects.filter(
+            id__in=list(valid_database_ids),
+            tenant=batch.tenant,
+        )
+    }
+
+    if attempt_rows:
+        projected_attempt_rows: list[dict[str, object]] = []
+        projection_identities_by_database: dict[str, set[str]] = {}
+        for row in attempt_rows:
+            database_id = str(row.get("target_database") or "").strip()
+            if not database_id:
+                continue
+            projection_key = str(row.get("_projection_key") or "").strip()
+            projection_attempt_key = str(row.get("_projection_attempt_key") or "").strip()
+            projection_identity = _build_publication_projection_identity(
+                execution_id=str(execution.id),
+                database_id=database_id,
+                projection_key=projection_key,
+                projection_attempt_key=projection_attempt_key,
+            )
+            projected_row = dict(row)
+            projected_row["_projection_identity"] = projection_identity
+            projected_attempt_rows.append(projected_row)
+            projection_identities_by_database.setdefault(database_id, set()).add(projection_identity)
+
+        projected_database_ids = sorted(
+            {
+                str(row.get("target_database") or "").strip()
+                for row in projected_attempt_rows
+                if str(row.get("target_database") or "").strip() in databases
+            }
+        )
+        existing_attempts = list(
+            PoolBatchPublicationAttempt.objects.filter(
+                batch=batch,
+                target_database_id__in=projected_database_ids,
+            )
+        )
+        stale_attempt_ids: list[str] = []
+        existing_attempts_by_identity: dict[tuple[str, str], PoolBatchPublicationAttempt] = {}
+        next_attempt_number_by_database: dict[str, int] = {}
+        current_execution_identity_prefix = (
+            f"{WORKFLOW_PROJECTION_IDENTITY_PREFIX}:{str(execution.id)}:"
+        )
+        for attempt in existing_attempts:
+            database_id = str(attempt.target_database_id)
+            next_attempt_number_by_database[database_id] = max(
+                next_attempt_number_by_database.get(database_id, 0),
+                int(attempt.attempt_number or 0),
+            )
+            if attempt.identity_strategy != WORKFLOW_PROJECTION_IDENTITY_STRATEGY:
+                continue
+            identity = str(attempt.external_document_identity or "").strip()
+            if not identity.startswith(current_execution_identity_prefix):
+                continue
+            if identity in projection_identities_by_database.get(database_id, set()):
+                existing_attempts_by_identity[(database_id, identity)] = attempt
+                continue
+            stale_attempt_ids.append(str(attempt.id))
+
+        if stale_attempt_ids:
+            PoolBatchPublicationAttempt.objects.filter(id__in=stale_attempt_ids).delete()
+
+        for database_id, identities in projection_identities_by_database.items():
+            preserved_attempt_numbers = {
+                int(existing_attempts_by_identity[(database_id, identity)].attempt_number or 0)
+                for identity in identities
+                if (database_id, identity) in existing_attempts_by_identity
+            }
+            next_attempt_number_by_database[database_id] = max(
+                (
+                    int(attempt.attempt_number or 0)
+                    for attempt in existing_attempts
+                    if str(attempt.target_database_id) == database_id
+                    and str(attempt.id) not in stale_attempt_ids
+                    and int(attempt.attempt_number or 0) not in preserved_attempt_numbers
+                ),
+                default=0,
+            )
+
+        projection_timestamp = timezone.now()
+        for row in projected_attempt_rows:
+            database_id = str(row.get("target_database") or "").strip()
+            target_database = databases.get(database_id)
+            if target_database is None:
+                logger.warning(
+                    "Skipping batch publication attempt projection: database is missing",
+                    extra={
+                        "execution_id": str(execution.id),
+                        "pool_batch_id": str(batch.id),
+                        "target_database_id": database_id,
+                    },
+                )
+                continue
+
+            status_value = str(row.get("status") or "").strip().lower()
+            if status_value not in {
+                PoolBatchPublicationAttemptStatus.SUCCESS,
+                PoolBatchPublicationAttemptStatus.FAILED,
+            }:
+                status_value = PoolBatchPublicationAttemptStatus.FAILED
+            projection_identity = str(row.get("_projection_identity") or "").strip()
+            existing_attempt = existing_attempts_by_identity.get((database_id, projection_identity))
+            if existing_attempt is not None:
+                attempt_number = int(existing_attempt.attempt_number or 0)
+            else:
+                attempt_number = next_attempt_number_by_database.get(database_id, 0) + 1
+                next_attempt_number_by_database[database_id] = attempt_number
+
+            PoolBatchPublicationAttempt.objects.update_or_create(
+                batch=batch,
+                target_database=target_database,
+                attempt_number=attempt_number,
+                defaults={
+                    "tenant": batch.tenant,
+                    "status": status_value,
+                    "entity_name": str(row.get("entity_name") or entity_name).strip() or entity_name,
+                    "documents_count": _parse_positive_int(
+                        row.get("documents_count"),
+                        default=1,
+                    ),
+                    "external_document_identity": projection_identity,
+                    "identity_strategy": WORKFLOW_PROJECTION_IDENTITY_STRATEGY,
+                    "posted": bool(row.get("posted")),
+                    "http_status": row.get("http_status"),
+                    "error_code": str(row.get("error_code") or "").strip(),
+                    "error_message": str(row.get("error_message") or "").strip(),
+                    "request_summary": dict(row.get("request_summary") or {}),
+                    "response_summary": dict(row.get("response_summary") or {}),
+                    "started_at": projection_timestamp,
+                    "finished_at": projection_timestamp,
+                },
+            )
+    else:
+        projection_timestamp = timezone.now()
+
+    failed_target_ids = {
+        str(database_id or "").strip()
+        for database_id in failed_databases.keys()
+        if str(database_id or "").strip()
+    }
+    failed_target_ids.update(
+        str(row.get("target_database") or "").strip()
+        for row in attempt_rows
+        if str(row.get("status") or "").strip().lower() == PoolBatchPublicationAttemptStatus.FAILED
+    )
+    failed_target_ids.discard("")
+    total_targets = len({database_id for database_id in target_databases if database_id})
+    failed_targets = len(failed_target_ids)
+    succeeded_targets = max(total_targets - failed_targets, 0)
+    batch.publication_summary = {
+        "total_targets": total_targets,
+        "succeeded_targets": succeeded_targets,
+        "failed_targets": failed_targets,
+        "max_attempts": max_attempts,
+    }
+    batch.workflow_execution_id = execution.id
+    batch.workflow_status = str(execution.status or "").strip()
+    batch.last_error_code = ""
+    batch.last_error = ""
+    batch.save(
+        update_fields=[
+            "workflow_execution_id",
+            "workflow_status",
+            "publication_summary",
+            "last_error_code",
+            "last_error",
+            "updated_at",
+        ]
+    )
+
+    settlement = getattr(batch, "settlement", None)
+    if settlement is not None:
+        settlement_summary = dict(settlement.summary or {})
+        settlement_summary["publication_summary"] = dict(batch.publication_summary)
+        settlement.summary = settlement_summary
+        settlement.freshness_at = projection_timestamp
+        settlement_update_fields = ["summary", "freshness_at", "updated_at"]
+        if failed_targets > 0:
+            settlement.status = PoolBatchSettlementStatus.ATTENTION_REQUIRED
+            settlement_update_fields.append("status")
+        elif total_targets > 0 and succeeded_targets == total_targets:
+            settlement.status = PoolBatchSettlementStatus.CLOSED
+            settlement.outgoing_amount = settlement.incoming_amount
+            settlement.open_balance = Decimal("0.00")
+            settlement_update_fields.extend(["status", "outgoing_amount", "open_balance"])
+        settlement.save(update_fields=settlement_update_fields)
+
+    current_publication_state = str(
+        execution_context.get("publication_step_state") or ""
+    ).strip().lower()
+    if current_publication_state != PUBLICATION_STEP_STATE_COMPLETED:
+        updated_context = dict(execution_context)
+        updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_COMPLETED
+        execution.input_context = updated_context
+
+
 def _project_pool_publication_verification_from_result(
     *,
     execution,
@@ -1293,6 +1652,54 @@ def _reconcile_pool_publication_step_state_from_persisted_attempts(*, execution)
     publication_summary = run.publication_summary if isinstance(run.publication_summary, dict) else {}
     has_publication_summary = bool(publication_summary)
     has_publication_attempts = PoolPublicationAttempt.objects.filter(run=run).exists()
+    if not has_publication_summary and not has_publication_attempts:
+        return False
+
+    updated_context = dict(execution_context)
+    updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_COMPLETED
+    execution.input_context = updated_context
+    return True
+
+
+def _reconcile_pool_batch_publication_step_state_from_persisted_attempts(*, execution) -> bool:
+    from apps.intercompany_pools.models import PoolBatch, PoolBatchPublicationAttempt
+
+    if str(execution.execution_consumer or "") != "pools":
+        return False
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if not execution_context:
+        return False
+
+    current_publication_state = str(
+        execution_context.get("publication_step_state") or ""
+    ).strip().lower()
+    if current_publication_state == PUBLICATION_STEP_STATE_COMPLETED:
+        return False
+
+    approval_state = str(execution_context.get("approval_state") or "").strip().lower()
+    if approval_state not in {APPROVAL_STATE_APPROVED, APPROVAL_STATE_NOT_REQUIRED}:
+        return False
+
+    pool_batch_id = str(execution_context.get("pool_batch_id") or "").strip()
+    if not pool_batch_id:
+        return False
+    try:
+        pool_batch_uuid = uuid.UUID(pool_batch_id)
+    except ValueError:
+        return False
+
+    batch = PoolBatch.objects.filter(id=pool_batch_uuid).first()
+    if batch is None:
+        return False
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(batch.tenant_id) != execution_tenant_id:
+        return False
+
+    publication_summary = batch.publication_summary if isinstance(batch.publication_summary, dict) else {}
+    has_publication_summary = bool(publication_summary)
+    has_publication_attempts = PoolBatchPublicationAttempt.objects.filter(batch=batch).exists()
     if not has_publication_summary and not has_publication_attempts:
         return False
 
@@ -1416,6 +1823,82 @@ def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> N
         run.save(update_fields=sorted(update_fields))
 
 
+def _sync_pool_batch_workflow_state_from_execution(*, execution) -> None:
+    from apps.intercompany_pools.models import PoolBatch, PoolBatchSettlementStatus
+
+    if str(execution.execution_consumer or "") != "pools":
+        return
+
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    pool_batch_id = str(execution_context.get("pool_batch_id") or "").strip()
+    if not pool_batch_id:
+        return
+
+    try:
+        pool_batch_uuid = uuid.UUID(pool_batch_id)
+    except ValueError:
+        return
+
+    batch = PoolBatch.objects.select_related("settlement").filter(id=pool_batch_uuid).first()
+    if batch is None:
+        return
+
+    execution_tenant_id = str(getattr(execution, "tenant_id", "") or "").strip()
+    if execution_tenant_id and str(batch.tenant_id) != execution_tenant_id:
+        return
+
+    update_fields: set[str] = set()
+    if batch.workflow_execution_id != execution.id:
+        batch.workflow_execution_id = execution.id
+        update_fields.add("workflow_execution_id")
+
+    normalized_workflow_status = str(execution.status or "").strip()
+    if batch.workflow_status != normalized_workflow_status:
+        batch.workflow_status = normalized_workflow_status
+        update_fields.add("workflow_status")
+
+    next_error_code = ""
+    next_error_message = ""
+    if normalized_workflow_status == "failed":
+        next_error_code = str(getattr(execution, "error_code", "") or "").strip()
+        next_error_message = str(getattr(execution, "error_message", "") or "").strip()
+    if batch.last_error_code != next_error_code:
+        batch.last_error_code = next_error_code
+        update_fields.add("last_error_code")
+    if batch.last_error != next_error_message:
+        batch.last_error = next_error_message
+        update_fields.add("last_error")
+
+    if update_fields:
+        update_fields.add("updated_at")
+        batch.save(update_fields=sorted(update_fields))
+
+    if normalized_workflow_status == "failed":
+        settlement = getattr(batch, "settlement", None)
+        if settlement is not None and settlement.status != PoolBatchSettlementStatus.ATTENTION_REQUIRED:
+            settlement.status = PoolBatchSettlementStatus.ATTENTION_REQUIRED
+            settlement.save(update_fields=["status", "updated_at"])
+
+
+def _sync_pool_factual_projection_for_execution_update(*, execution, result_payload=None) -> None:
+    from apps.intercompany_pools.factual_result_projection import (
+        mark_pool_factual_execution_failed,
+        project_pool_factual_result_from_execution,
+        sync_pool_factual_checkpoint_state_from_execution,
+    )
+    from apps.templates.workflow.models import WorkflowExecution
+
+    sync_pool_factual_checkpoint_state_from_execution(execution=execution)
+
+    if execution.status == WorkflowExecution.STATUS_COMPLETED:
+        project_pool_factual_result_from_execution(
+            execution=execution,
+            result_payload=result_payload or execution.final_result or {},
+        )
+    elif execution.status == WorkflowExecution.STATUS_FAILED:
+        mark_pool_factual_execution_failed(execution=execution)
+
+
 def _reconcile_pool_publication_projection_for_execution_update(*, execution) -> bool:
     from apps.templates.workflow.models import WorkflowExecution
 
@@ -1439,16 +1922,44 @@ def _reconcile_pool_publication_projection_for_execution_update(*, execution) ->
                 execution=execution,
                 result_payload=execution.final_result or {},
             )
+            _project_pool_batch_publication_attempts_from_result(
+                execution=execution,
+                result_payload=execution.final_result or {},
+            )
             publication_state_reconciled = True
         else:
             publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
                 execution=execution,
             )
+            publication_state_reconciled = (
+                _reconcile_pool_batch_publication_step_state_from_persisted_attempts(
+                    execution=execution,
+                )
+                or publication_state_reconciled
+            )
         _sync_pool_run_terminal_state_from_publication_projection(
+            execution=execution,
+        )
+        _sync_pool_batch_workflow_state_from_execution(
+            execution=execution,
+        )
+        _sync_pool_factual_projection_for_execution_update(
             execution=execution,
         )
     else:
         publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
+            execution=execution,
+        )
+        publication_state_reconciled = (
+            _reconcile_pool_batch_publication_step_state_from_persisted_attempts(
+                execution=execution,
+            )
+            or publication_state_reconciled
+        )
+        _sync_pool_batch_workflow_state_from_execution(
+            execution=execution,
+        )
+        _sync_pool_factual_projection_for_execution_update(
             execution=execution,
         )
 
@@ -2125,14 +2636,31 @@ def update_workflow_execution_status(request):
                     execution=execution,
                     result_payload=result_payload,
                 )
+                _project_pool_batch_publication_attempts_from_result(
+                    execution=execution,
+                    result_payload=result_payload,
+                )
                 publication_state_reconciled = True
             else:
                 publication_state_reconciled = _reconcile_pool_publication_step_state_from_persisted_attempts(
                     execution=execution,
                 )
+                publication_state_reconciled = (
+                    _reconcile_pool_batch_publication_step_state_from_persisted_attempts(
+                        execution=execution,
+                    )
+                    or publication_state_reconciled
+                )
 
             _sync_pool_run_terminal_state_from_publication_projection(
                 execution=execution,
+            )
+            _sync_pool_batch_workflow_state_from_execution(
+                execution=execution,
+            )
+            _sync_pool_factual_projection_for_execution_update(
+                execution=execution,
+                result_payload=result_payload,
             )
 
             if publication_state_reconciled:
@@ -2144,6 +2672,9 @@ def update_workflow_execution_status(request):
                 if next_input_context != previous_input_context:
                     update_fields.append("input_context")
 
+        if target_status == WorkflowExecution.STATUS_FAILED:
+            _sync_pool_batch_workflow_state_from_execution(execution=execution)
+            _sync_pool_factual_projection_for_execution_update(execution=execution)
         if update_fields:
             execution.save(update_fields=update_fields)
         _sync_workflow_root_projection_from_execution(execution=execution)
@@ -2162,6 +2693,9 @@ def update_workflow_execution_status(request):
                 return Response({"success": False, "error": "Execution is not pending"}, status=status.HTTP_409_CONFLICT)
             execution.start()
             update_fields.update({"status", "started_at"})
+            _sync_pool_batch_workflow_state_from_execution(
+                execution=execution,
+            )
 
         elif target_status == WorkflowExecution.STATUS_COMPLETED:
             if execution.status == WorkflowExecution.STATUS_PENDING:
@@ -2175,11 +2709,25 @@ def update_workflow_execution_status(request):
                 execution=execution,
                 result_payload=result_payload,
             )
+            _project_pool_batch_publication_attempts_from_result(
+                execution=execution,
+                result_payload=result_payload,
+            )
             _reconcile_pool_publication_step_state_from_persisted_attempts(
+                execution=execution,
+            )
+            _reconcile_pool_batch_publication_step_state_from_persisted_attempts(
                 execution=execution,
             )
             _sync_pool_run_terminal_state_from_publication_projection(
                 execution=execution,
+            )
+            _sync_pool_batch_workflow_state_from_execution(
+                execution=execution,
+            )
+            _sync_pool_factual_projection_for_execution_update(
+                execution=execution,
+                result_payload=result_payload,
             )
 
         elif target_status == WorkflowExecution.STATUS_FAILED:
@@ -2196,12 +2744,24 @@ def update_workflow_execution_status(request):
             if error_details_provided:
                 execution.error_details = error_details
                 update_fields.add("error_details")
+            _sync_pool_batch_workflow_state_from_execution(
+                execution=execution,
+            )
+            _sync_pool_factual_projection_for_execution_update(
+                execution=execution,
+            )
 
         elif target_status == WorkflowExecution.STATUS_CANCELLED:
             if execution.status not in [WorkflowExecution.STATUS_PENDING, WorkflowExecution.STATUS_RUNNING]:
                 return Response({"success": False, "error": "Execution cannot be cancelled"}, status=status.HTTP_409_CONFLICT)
             execution.cancel()
             update_fields.update({"status", "completed_at"})
+            _sync_pool_batch_workflow_state_from_execution(
+                execution=execution,
+            )
+            _sync_pool_factual_projection_for_execution_update(
+                execution=execution,
+            )
         else:
             return Response({"success": False, "error": "Unsupported status"}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -1,0 +1,18 @@
+type: object
+properties:
+  batch:
+    $ref: ./PoolBatch.yaml
+  settlement:
+    $ref: ./PoolBatchSettlement.yaml
+  run:
+    $ref: ./PoolRun.yaml
+    nullable: true
+  created:
+    type: boolean
+  sale_closing:
+    $ref: ./PoolSaleClosingStartResponse.yaml
+    nullable: true
+required:
+  - batch
+  - created
+  - settlement

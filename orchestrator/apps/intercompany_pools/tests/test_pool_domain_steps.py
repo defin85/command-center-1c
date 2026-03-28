@@ -29,6 +29,9 @@ from apps.intercompany_pools.master_data_feature_flags import MasterDataGateConf
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSourceType,
     PoolEdgeVersion,
     PoolMasterContract,
     PoolMasterItem,
@@ -367,6 +370,63 @@ def test_prepare_input_updates_safe_context_states() -> None:
     assert output["publication_step_state"] == "not_enqueued"
     assert execution.input_context.get("approval_state") == "preparing"
     assert execution.input_context.get("publication_step_state") == "not_enqueued"
+
+
+@pytest.mark.django_db
+def test_prepare_input_derives_starting_amount_from_batch_backed_top_down_run() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={},
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 3, 31),
+    )
+    start_organization = Organization.objects.create(
+        tenant=run.tenant,
+        name=f"Batch Start {uuid4().hex[:6]}",
+        inn=f"79{uuid4().int % 10**10:010d}",
+    )
+    batch = PoolBatch.objects.create(
+        tenant=run.tenant,
+        pool=run.pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        start_organization=start_organization,
+        run=run,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 3, 31),
+        source_reference="receipt-q1",
+        normalization_summary={
+            "processed_rows": 1,
+            "normalized_rows": 1,
+            "total_amount_with_vat": "125.50",
+        },
+    )
+    run.run_input = {
+        "batch_id": str(batch.id),
+        "start_organization_id": str(start_organization.id),
+    }
+    run.save(update_fields=["run_input", "updated_at"])
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "approval_state": "not_required",
+            "publication_step_state": "queued",
+            "approved_at": None,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.prepare_input",
+        rendered_data={"pool_runtime": {"step_id": "prepare_input"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert output["prepared_input"]["starting_amount"] == "125.50"
+    assert execution.input_context["pool_runtime_prepared_input"]["starting_amount"] == "125.50"
 
 
 @pytest.mark.django_db

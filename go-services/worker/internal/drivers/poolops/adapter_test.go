@@ -43,6 +43,22 @@ func (m *mockPublicationTransport) ExecutePublicationOData(
 	return m.res, m.err
 }
 
+type mockFactualTransport struct {
+	callCount int
+	lastReq   *handlers.OperationRequest
+	res       map[string]interface{}
+	err       error
+}
+
+func (m *mockFactualTransport) ExecuteFactualSyncSourceSlice(
+	ctx context.Context,
+	req *handlers.OperationRequest,
+) (map[string]interface{}, error) {
+	m.callCount++
+	m.lastReq = req
+	return m.res, m.err
+}
+
 func TestIsPoolOperation(t *testing.T) {
 	assert.True(t, IsPoolOperation("pool.publication_odata"))
 	assert.True(t, IsPoolOperation("pool.prepare_input"))
@@ -275,6 +291,54 @@ func TestAdapter_ExecutePublicationOperationRouteDisabledFailsClosed(t *testing.
 	require.True(t, errors.As(err, &opErr))
 	assert.Equal(t, handlers.ErrorCodePoolRuntimePublicationPathDisabled, opErr.Code)
 	assert.Equal(t, 0, publicationTransport.callCount)
+	assert.Equal(t, 0, bridge.callCount)
+}
+
+func TestAdapter_ExecuteFactualOperationUsesLocalTransport(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "bridge"},
+		},
+	}
+	factualTransport := &mockFactualTransport{
+		res: map[string]interface{}{"status": "local"},
+	}
+
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabled: true,
+		FactualTransport: factualTransport,
+	})
+
+	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.factual.sync_source_slice",
+		ExecutionID:   "exec-1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "local", out["status"])
+	assert.Equal(t, 1, factualTransport.callCount)
+	assert.Equal(t, 0, bridge.callCount)
+}
+
+func TestAdapter_ExecuteFactualOperationDoesNotFallbackToBridgeWhenTransportMissing(t *testing.T) {
+	bridge := &mockBridgeClient{
+		res: &BridgeResponse{
+			Result: map[string]interface{}{"status": "bridge"},
+		},
+	}
+	adapter := NewAdapterWithConfig(bridge, zap.NewNop(), AdapterConfig{
+		PoolRouteEnabled: true,
+	})
+
+	out, err := adapter.Execute(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.factual.sync_source_slice",
+		ExecutionID:   "exec-1",
+	})
+
+	var opErr *handlers.OperationExecutionError
+	require.Error(t, err)
+	assert.Nil(t, out)
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, handlers.ErrorCodePoolRuntimeFactualPathDisabled, opErr.Code)
 	assert.Equal(t, 0, bridge.callCount)
 }
 

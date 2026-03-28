@@ -1,0 +1,23 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  summary:
+    $ref: ./PoolFactualSummary.yaml
+  settlements:
+    type: array
+    items:
+      $ref: ./PoolBatch.yaml
+  edge_balances:
+    type: array
+    items:
+      $ref: ./PoolFactualBalanceSnapshot.yaml
+  review_queue:
+    $ref: ./PoolFactualReviewQueue.yaml
+required:
+  - edge_balances
+  - pool_id
+  - review_queue
+  - settlements
+  - summary

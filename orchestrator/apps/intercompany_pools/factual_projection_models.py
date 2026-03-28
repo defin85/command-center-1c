@@ -117,6 +117,9 @@ class PoolFactualSyncCheckpoint(models.Model):
         related_name="pool_factual_sync_checkpoints",
     )
     lane = models.CharField(max_length=16, choices=PoolFactualLane.choices, db_index=True)
+    workflow_execution_id = models.UUIDField(null=True, blank=True, db_index=True)
+    operation_id = models.UUIDField(null=True, blank=True, db_index=True)
+    workflow_status = models.CharField(max_length=32, blank=True, default="", db_index=True)
     quarter_start = models.DateField(db_index=True)
     quarter_end = models.DateField(db_index=True)
     source_checkpoint_token = models.CharField(max_length=255, blank=True, default="")

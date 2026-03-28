@@ -1,0 +1,19 @@
+type: object
+properties:
+  pending_total:
+    type: integer
+    minimum: 0
+  unattributed_total:
+    type: integer
+    minimum: 0
+  late_correction_total:
+    type: integer
+    minimum: 0
+  attention_required_total:
+    type: integer
+    minimum: 0
+required:
+  - attention_required_total
+  - late_correction_total
+  - pending_total
+  - unattributed_total

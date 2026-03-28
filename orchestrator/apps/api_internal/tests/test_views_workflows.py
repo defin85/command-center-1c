@@ -17,7 +17,23 @@ from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY,
 )
 from apps.intercompany_pools.models import (
+    Organization,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchPublicationAttempt,
+    PoolBatchPublicationAttemptStatus,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
+    PoolBatchSourceType,
+    PoolEdgeVersion,
+    PoolFactualBalanceSnapshot,
+    PoolFactualLane,
+    PoolFactualReviewItem,
+    PoolFactualReviewReason,
+    PoolFactualReviewStatus,
+    PoolFactualSyncCheckpoint,
+    PoolNodeVersion,
     PoolPublicationAttempt,
     PoolPublicationAttemptStatus,
     PoolRun,
@@ -121,6 +137,148 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         run.save(update_fields=["workflow_execution_id", "workflow_status", "execution_backend", "updated_at"])
 
         return tenant, run, execution, template
+
+    def _create_pool_batch_publication_fixture(self):
+        tenant = Tenant.objects.create(slug=f"tenant-pool-batch-{uuid4().hex[:8]}", name="Tenant Pool Batch")
+        pool = OrganizationPool.objects.create(
+            tenant=tenant,
+            code=f"pool-batch-{uuid4().hex[:8]}",
+            name="Pool Batch Runtime",
+        )
+        batch = PoolBatch.objects.create(
+            tenant=tenant,
+            pool=pool,
+            batch_kind=PoolBatchKind.SALE,
+            source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 3, 31),
+            source_reference="sales-q1",
+            normalization_summary={"total_amount_with_vat": "45.50"},
+        )
+        PoolBatchSettlement.objects.create(
+            tenant=tenant,
+            batch=batch,
+            status=PoolBatchSettlementStatus.INGESTED,
+        )
+        template = self._create_template()
+        execution = template.create_execution(
+            {
+                "tenant_id": str(tenant.id),
+                "pool_id": str(pool.id),
+                "pool_batch_id": str(batch.id),
+                "publication_step_state": "queued",
+            },
+            tenant=tenant,
+            execution_consumer="pools",
+        )
+        return tenant, batch, execution, template
+
+    def _create_pool_factual_fixture(self):
+        tenant = Tenant.objects.create(slug=f"tenant-pool-factual-{uuid4().hex[:8]}", name="Tenant Pool Factual")
+        pool = OrganizationPool.objects.create(
+            tenant=tenant,
+            code=f"pool-factual-{uuid4().hex[:8]}",
+            name="Pool Factual Runtime",
+        )
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"factual-db-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/factual-runtime.odata",
+            username="admin",
+            password="secret",
+        )
+        root = Organization.objects.create(
+            tenant=tenant,
+            name="Root factual org",
+            inn=f"77{uuid4().int % 10**10:010d}",
+        )
+        leaf = Organization.objects.create(
+            tenant=tenant,
+            database=database,
+            name="Leaf factual org",
+            inn=f"78{uuid4().int % 10**10:010d}",
+        )
+        root_node = PoolNodeVersion.objects.create(
+            pool=pool,
+            organization=root,
+            effective_from=date(2026, 1, 1),
+            is_root=True,
+        )
+        leaf_node = PoolNodeVersion.objects.create(
+            pool=pool,
+            organization=leaf,
+            effective_from=date(2026, 1, 1),
+        )
+        edge = PoolEdgeVersion.objects.create(
+            pool=pool,
+            parent_node=root_node,
+            child_node=leaf_node,
+            effective_from=date(2026, 1, 1),
+        )
+        batch = PoolBatch.objects.create(
+            tenant=tenant,
+            pool=pool,
+            batch_kind=PoolBatchKind.RECEIPT,
+            source_type=PoolBatchSourceType.MANUAL,
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 3, 31),
+            source_reference="receipt-q1",
+        )
+        PoolBatchSettlement.objects.create(
+            tenant=tenant,
+            batch=batch,
+            status=PoolBatchSettlementStatus.INGESTED,
+        )
+        checkpoint = PoolFactualSyncCheckpoint.objects.create(
+            tenant=tenant,
+            pool=pool,
+            database=database,
+            lane=PoolFactualLane.READ,
+            quarter_start=date(2026, 1, 1),
+            quarter_end=date(2026, 3, 31),
+        )
+        template = WorkflowTemplate.objects.create(
+            name=f"pool-factual-runtime-{uuid4().hex[:8]}",
+            description="",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "factual_sync_source_slice",
+                        "name": "Factual Sync Source Slice",
+                        "type": "operation",
+                        "template_id": "pool.factual.sync_source_slice",
+                    }
+                ],
+                "edges": [],
+            },
+            is_valid=True,
+            is_active=True,
+        )
+        execution = template.create_execution(
+            {
+                "contract_version": "pool_factual_sync_workflow.v1",
+                "tenant_id": str(tenant.id),
+                "pool_id": str(pool.id),
+                "database_id": str(database.id),
+                "checkpoint_id": str(checkpoint.id),
+                "lane": "read",
+                "quarter_start": "2026-01-01",
+                "quarter_end": "2026-03-31",
+                "organization_ids": str(leaf.id),
+                "account_codes": "62.01,90.01",
+                "movement_kinds": "credit,debit",
+                "activity": "active",
+                "freeze_quarter": False,
+                "correlation_id": "corr-1",
+                "origin_system": "cc",
+                "origin_event_id": "event-1",
+            },
+            tenant=tenant,
+            execution_consumer="pools",
+        )
+        return tenant, pool, database, batch, edge, leaf, checkpoint, execution
 
     @staticmethod
     def _mark_run_validated(run: PoolRun) -> None:
@@ -1073,6 +1231,100 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {str(db_first.id), str(db_second.id)},
         )
 
+    def test_update_workflow_status_completed_projects_sale_batch_publication_attempts(self):
+        tenant, batch, execution, _ = self._create_pool_batch_publication_fixture()
+        db_success = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-batch-success-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/batch-success.odata",
+            username="admin",
+            password="secret",
+        )
+        db_failed = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-batch-failed-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/batch-failed.odata",
+            username="admin",
+            password="secret",
+        )
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "sale_closing_publication": {
+                            "step": "publication_odata",
+                            "status": "partial_success",
+                            "entity_name": "Document_РеализацияТоваровУслуг",
+                            "documents_targets": 2,
+                            "succeeded_targets": 1,
+                            "failed_targets": 1,
+                            "max_attempts": 2,
+                            "target_databases": [str(db_success.id), str(db_failed.id)],
+                            "documents_count_by_database": {
+                                str(db_success.id): 1,
+                                str(db_failed.id): 2,
+                            },
+                            "attempts": [
+                                {
+                                    "target_database": str(db_success.id),
+                                    "attempt_number": 1,
+                                    "status": "success",
+                                    "entity_name": "Document_РеализацияТоваровУслуг",
+                                    "documents_count": 1,
+                                    "posted": True,
+                                },
+                                {
+                                    "target_database": str(db_failed.id),
+                                    "attempt_number": 1,
+                                    "status": "failed",
+                                    "entity_name": "Document_РеализацияТоваровУслуг",
+                                    "documents_count": 2,
+                                    "posted": False,
+                                    "error_code": "POOL_RUNTIME_PUBLICATION_ODATA_FAILED",
+                                    "error_message": "target unavailable",
+                                    "http_status": 503,
+                                },
+                            ],
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        batch.refresh_from_db()
+        settlement = PoolBatchSettlement.objects.get(batch=batch)
+        saved_execution = WorkflowExecution.objects.get(id=execution.id)
+        self.assertEqual(saved_execution.input_context.get("publication_step_state"), "completed")
+        self.assertEqual(batch.workflow_status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(str(batch.workflow_execution_id), str(execution.id))
+        self.assertEqual(batch.publication_summary.get("total_targets"), 2)
+        self.assertEqual(batch.publication_summary.get("succeeded_targets"), 1)
+        self.assertEqual(batch.publication_summary.get("failed_targets"), 1)
+        self.assertEqual(settlement.status, PoolBatchSettlementStatus.ATTENTION_REQUIRED)
+
+        success_attempt = PoolBatchPublicationAttempt.objects.get(
+            batch=batch,
+            target_database=db_success,
+            attempt_number=1,
+        )
+        self.assertEqual(success_attempt.status, PoolBatchPublicationAttemptStatus.SUCCESS)
+        failed_attempt = PoolBatchPublicationAttempt.objects.get(
+            batch=batch,
+            target_database=db_failed,
+            attempt_number=1,
+        )
+        self.assertEqual(failed_attempt.status, PoolBatchPublicationAttemptStatus.FAILED)
+        self.assertEqual(failed_attempt.http_status, 503)
+
     def test_update_workflow_status_completed_preserves_same_database_attempts_from_atomic_publication_nodes(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         database = Database.objects.create(
@@ -1591,6 +1843,117 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         self.assertEqual(failed_attempt["http_error"]["status"], 503)
         self.assertEqual(failed_attempt["payload_summary"]["documents_count"], 1)
         self.assertFalse(failed_attempt["posted"])
+
+    def test_update_workflow_status_projects_pool_factual_result_into_checkpoint_and_review_queue(self):
+        tenant, pool, database, batch, edge, leaf, checkpoint, execution = self._create_pool_factual_fixture()
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "factual_sync_source_slice": {
+                            "step": "factual_sync_source_slice",
+                            "pool_id": str(pool.id),
+                            "database_id": str(database.id),
+                            "lane": "read",
+                            "quarter_start": "2026-01-01",
+                            "quarter_end": "2026-03-31",
+                            "boundary_reads": {
+                                "accounting_register": 1,
+                                "information_register": 1,
+                                "Document_РеализацияТоваровУслуг": 2,
+                            },
+                            "source_checkpoint_token": "cp-factual-001",
+                            "factual_documents": [
+                                {
+                                    "source_document_ref": "Document_РеализацияТоваровУслуг(guid'sale-1')",
+                                    "organization_id": str(leaf.id),
+                                    "batch_id": str(batch.id),
+                                    "edge_id": str(edge.id),
+                                    "amount_with_vat": "120.00",
+                                    "amount_without_vat": "100.00",
+                                    "vat_amount": "20.00",
+                                    "comment": (
+                                        f"CCPOOL:v=1;pool={pool.id};run=-;batch={batch.id};"
+                                        f"org={leaf.id};q=2026Q1;kind=sale"
+                                    ),
+                                    "kind": "sale",
+                                    "modified_at": "2026-03-27T10:00:00Z",
+                                },
+                                {
+                                    "source_document_ref": "Document_РеализацияТоваровУслуг(guid'sale-2')",
+                                    "organization_id": str(leaf.id),
+                                    "batch_id": str(batch.id),
+                                    "edge_id": str(edge.id),
+                                    "amount_with_vat": "15.00",
+                                    "amount_without_vat": "12.50",
+                                    "vat_amount": "2.50",
+                                    "comment": "manual unattributed sale",
+                                    "kind": "sale",
+                                    "modified_at": "2026-03-28T10:00:00Z",
+                                },
+                            ],
+                        }
+                    }
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        execution = WorkflowExecution.objects.get(id=execution.id)
+        checkpoint.refresh_from_db()
+        batch.refresh_from_db()
+        settlement = batch.settlement
+        settlement.refresh_from_db()
+        review_item = PoolFactualReviewItem.objects.get(
+            tenant=tenant,
+            pool=pool,
+            reason=PoolFactualReviewReason.UNATTRIBUTED,
+        )
+        snapshot = PoolFactualBalanceSnapshot.objects.get(
+            tenant=tenant,
+            pool=pool,
+            batch=batch,
+            organization=leaf,
+            edge=edge,
+        )
+
+        self.assertEqual(execution.status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(checkpoint.workflow_execution_id, execution.id)
+        self.assertEqual(checkpoint.workflow_status, WorkflowExecution.STATUS_COMPLETED)
+        self.assertEqual(checkpoint.source_checkpoint_token, "cp-factual-001")
+        self.assertIsNotNone(checkpoint.last_synced_at)
+        self.assertEqual(snapshot.metadata["database_id"], str(database.id))
+        self.assertEqual(snapshot.outgoing_amount, snapshot.amount_with_vat.copy_abs())
+        self.assertEqual(review_item.status, PoolFactualReviewStatus.PENDING)
+        self.assertEqual(review_item.organization_id, leaf.id)
+        self.assertEqual(review_item.metadata["database_id"], str(database.id))
+        self.assertEqual(settlement.status, PoolBatchSettlementStatus.ATTENTION_REQUIRED)
+        self.assertEqual(settlement.summary["review_queue"]["summary"]["pending_total"], 1)
+
+    def test_update_workflow_status_marks_pool_factual_checkpoint_failed(self):
+        _, _, _, _, _, _, checkpoint, execution = self._create_pool_factual_fixture()
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "failed",
+                "error_message": "source unavailable",
+                "error_code": "POOL_FACTUAL_SYNC_FAILED",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        checkpoint.refresh_from_db()
+        self.assertEqual(checkpoint.workflow_status, WorkflowExecution.STATUS_FAILED)
+        self.assertEqual(checkpoint.last_error_code, "POOL_FACTUAL_SYNC_FAILED")
+        self.assertIn("source unavailable", checkpoint.last_error)
 
     def test_worker_publication_projection_e2e_regression_run_500_on_3_targets(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()

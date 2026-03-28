@@ -1,0 +1,68 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  pool_id:
+    type: string
+    format: uuid
+  batch_id:
+    type: string
+    format: uuid
+    nullable: true
+  organization_id:
+    type: string
+    format: uuid
+  organization_name:
+    type: string
+  edge_id:
+    type: string
+    format: uuid
+    nullable: true
+  parent_node_id:
+    type: string
+    format: uuid
+    nullable: true
+  child_node_id:
+    type: string
+    format: uuid
+    nullable: true
+  quarter:
+    type: string
+  quarter_start:
+    type: string
+    format: date
+  quarter_end:
+    type: string
+    format: date
+  amount_with_vat:
+    type: string
+  amount_without_vat:
+    type: string
+  vat_amount:
+    type: string
+  incoming_amount:
+    type: string
+  outgoing_amount:
+    type: string
+  open_balance:
+    type: string
+  freshness_at:
+    type: string
+    format: date-time
+    nullable: true
+  metadata: {}
+required:
+  - amount_with_vat
+  - amount_without_vat
+  - id
+  - incoming_amount
+  - open_balance
+  - organization_id
+  - organization_name
+  - outgoing_amount
+  - pool_id
+  - quarter
+  - quarter_end
+  - quarter_start
+  - vat_amount

@@ -1,6 +1,8 @@
 from .batch_intake_models import (
     PoolBatch,
     PoolBatchKind,
+    PoolBatchPublicationAttempt,
+    PoolBatchPublicationAttemptStatus,
     PoolBatchSettlement,
     PoolBatchSettlementStatus,
     PoolBatchSourceType,
@@ -20,6 +22,8 @@ from .factual_review_models import (
 __all__ = [
     "PoolBatch",
     "PoolBatchKind",
+    "PoolBatchPublicationAttempt",
+    "PoolBatchPublicationAttemptStatus",
     "PoolBatchSettlement",
     "PoolBatchSettlementStatus",
     "PoolBatchSourceType",

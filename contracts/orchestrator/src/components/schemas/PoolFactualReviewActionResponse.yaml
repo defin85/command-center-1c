@@ -1,0 +1,9 @@
+type: object
+properties:
+  review_item:
+    $ref: ./PoolFactualReviewQueueItem.yaml
+  review_queue:
+    $ref: ./PoolFactualReviewQueue.yaml
+required:
+  - review_item
+  - review_queue

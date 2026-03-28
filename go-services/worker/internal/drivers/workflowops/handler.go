@@ -91,6 +91,7 @@ func NewWorkflowHandler(
 		bridgeClient = poolops.NewOrchestratorBridgeClient(workflowAdapter.Client(), logger)
 	}
 	var publicationTransport poolops.PublicationTransport
+	var factualTransport poolops.FactualTransport
 	if credsClient != nil && odataService != nil {
 		publicationTransport = poolops.NewODataPublicationTransport(
 			credsClient,
@@ -105,6 +106,11 @@ func NewWorkflowHandler(
 				CompatibilityReleaseProfileVersion: cfg.ODataCompatibilityReleaseProfileVersion,
 			},
 		)
+		factualTransport = poolops.NewODataFactualTransport(
+			credsClient,
+			odataService,
+			logger,
+		)
 	}
 	poolAdapter := poolops.NewAdapterWithConfig(
 		bridgeClient,
@@ -113,6 +119,7 @@ func NewWorkflowHandler(
 			PoolRouteEnabled:                cfg.PoolRouteEnabled,
 			PoolRouteEnabledProvider:        cfg.PoolRouteEnabledProvider,
 			PublicationTransport:            publicationTransport,
+			FactualTransport:                factualTransport,
 			PublicationRouteEnabled:         cfg.PublicationRouteEnabled,
 			PublicationRouteEnabledProvider: cfg.PublicationRouteEnabledProvider,
 		},

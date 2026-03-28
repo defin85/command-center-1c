@@ -117,6 +117,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         description="System-managed pool runtime step: finalize master-data sync job state.",
         display_order=70,
     ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.factual.sync_source_slice",
+        label="Pool Factual Sync Source Slice",
+        step_id="factual.sync_source_slice",
+        description="System-managed pool runtime step: bounded factual read/reconcile source sync.",
+        display_order=75,
+    ),
 )
 
 
