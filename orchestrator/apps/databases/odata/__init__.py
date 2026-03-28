@@ -10,6 +10,7 @@ OData Client для работы с 1С:Предприятие 8.3 OData API.
 from .client import ODataClient
 from .document_adapter import ODataDocumentAdapter, ODataDocumentTransportError
 from .metadata_adapter import ODataMetadataAdapter, ODataMetadataTransportError
+from .query_adapter import ODataQueryAdapter, ODataQueryTransportError
 from .session_manager import ODataSessionManager, session_manager
 from .transport_options import resolve_database_odata_verify_tls
 from .exceptions import (
@@ -27,6 +28,8 @@ __all__ = [
     'ODataDocumentTransportError',
     'ODataMetadataAdapter',
     'ODataMetadataTransportError',
+    'ODataQueryAdapter',
+    'ODataQueryTransportError',
     'ODataSessionManager',
     'resolve_database_odata_verify_tls',
     'session_manager',

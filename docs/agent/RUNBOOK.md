@@ -31,6 +31,7 @@ bd prime
 
 - `worker-workflows` shipped default path now starts with `ENABLE_GO_SCHEDULER=true`, `ENABLE_POOLOPS_ROUTE=true` and `ENABLE_POOL_PUBLICATION_ODATA_CORE=true` from checked-in env/preset surfaces (`.env.example`, `.env.workflow`, `docker-compose.yml`, `scripts/lib/lifecycle.sh`).
 - Active-quarter factual refresh runs through scheduler + workspace default sync; closed-quarter reconcile runs through dedicated nightly scheduler entrypoint on the same `worker-workflows` runtime family.
+- Before widening pilot cohort, run factual published-surfaces preflight from Command Center against the target pool/quarter and a bounded set of pilot infobases. The command refreshes metadata through the canonical metadata path and then executes read-only bounded OData probes with the same default factual sync scope.
 - Fast sanity checks:
 
 ```bash
@@ -39,6 +40,22 @@ curl -sS http://localhost:9092/health
 ./debug/eval-django.sh "from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_active_sync_window; print(trigger_pool_factual_active_sync_window())"
 ./debug/eval-django.sh \"from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_closed_quarter_reconcile_window; print(trigger_pool_factual_closed_quarter_reconcile_window())\"
 ```
+
+- Pilot/preflight gate:
+
+```bash
+cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
+  --pool-id <pool-uuid> \
+  --quarter-start 2026-01-01 \
+  --requested-by-username <rbac-username-or-empty-when-service-mapping-exists> \
+  --database-id <pilot-db-uuid> \
+  --database-id <pilot-db-uuid-2> \
+  --json \
+  --strict
+```
+
+- `decision=go` means the cohort passed all mandatory checks: source availability, metadata refresh, required published surfaces, bounded quarter/org/account/movement scope, and live read-only OData probes for the accounting register, information register, and factual documents.
+- Save the JSON output as the pilot evidence bundle for task `0.3`; repository docs describe the command, but tenant-specific go/no-go still comes from running it on the target pilot infobases.
 
 - Operator-facing route:
 

@@ -61,10 +61,23 @@ cd go-services/worker && go test ./...
 
 ```bash
 ./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_scheduler_runtime.py apps/api_internal/tests/test_views_pools_factual.py
+./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_preflight.py apps/intercompany_pools/tests/test_factual_preflight_command.py
 cd go-services/shared && go test ./config
 cd go-services/worker && go test ./internal/drivers/poolops ./internal/orchestrator ./internal/scheduler/... ./cmd
 cd frontend && npm run test:run -- src/pages/Pools/__tests__/PoolFactualPage.test.tsx
 ./scripts/dev/check-agent-doc-freshness.sh
+```
+
+Live contour preflight before cohort widening:
+
+```bash
+cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
+  --pool-id <pool-uuid> \
+  --quarter-start 2026-01-01 \
+  --requested-by-username <rbac-username-or-empty-when-service-mapping-exists> \
+  --database-id <pilot-db-uuid> \
+  --json \
+  --strict
 ```
 
 ## Runtime-Test Reference

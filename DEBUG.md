@@ -234,7 +234,24 @@ ACCESS_TOKEN=$(curl --noproxy '*' -sS -H 'Content-Type: application/json' \
   "$CC1C_BASE_URL/api/token" | python -c "import json,sys; print(json.load(sys.stdin)['access'])")
 ```
 
-2. Создать `safe` batch-backed `top_down` run:
+2. Перед расширением pilot cohort прогнать published-surfaces preflight на тех же ИБ:
+
+```bash
+cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
+  --pool-id "$CC1C_POOL_ID" \
+  --quarter-start "$CC1C_PERIOD_START" \
+  --requested-by-username "$CC1C_UI_USER" \
+  --database-id <pilot-db-uuid> \
+  --json \
+  --strict
+```
+
+Ожидаемое поведение:
+- metadata refresh проходит через canonical Command Center path;
+- decision `go` означает, что required published surfaces доступны и live bounded read probe завершился без direct DB path;
+- JSON output сохраняем как pilot/preflight evidence для rollout gate `0.3`.
+
+3. Создать `safe` batch-backed `top_down` run:
 
 ```bash
 RUN_ID=$(curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -244,7 +261,7 @@ RUN_ID=$(curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
   "$CC1C_BASE_URL/api/v2/pools/runs/" | python -c "import json,sys; print(json.load(sys.stdin)['run']['id'])")
 ```
 
-3. Подтвердить публикацию и дополлить report до terminal execution state:
+4. Подтвердить публикацию и дополлить report до terminal execution state:
 
 ```bash
 curl --noproxy '*' -sS -X POST \
@@ -261,14 +278,14 @@ curl --noproxy '*' -sS \
   "$CC1C_BASE_URL/api/v2/pools/runs/$RUN_ID/report/"
 ```
 
-4. Открыть operator-facing factual route из run context:
+5. Открыть operator-facing factual route из run context:
 
 ```bash
 printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
 printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
 ```
 
-5. Дополлить factual workspace API до появления checkpoint/sync summary:
+6. Дополлить factual workspace API до появления checkpoint/sync summary:
 
 ```bash
 curl --noproxy '*' -sS \
@@ -282,14 +299,14 @@ curl --noproxy '*' -sS \
 - при повторных вызовах возвращает backend-fed summary / settlement / review queue;
 - если checkpoint свежий или уже `running`, лишний workflow не стартует.
 
-6. Открыть operator-facing factual route из browser и дождаться backend-fed summary:
+7. Открыть operator-facing factual route из browser и дождаться backend-fed summary:
 
 ```bash
 printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
 printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
 ```
 
-7. Выполнить operator action по review item через public API:
+8. Выполнить operator action по review item через public API:
 
 ```bash
 curl --noproxy '*' -sS -X POST \
