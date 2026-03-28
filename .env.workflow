@@ -28,6 +28,7 @@ REDIS_PASSWORD=
 SERVER_HOST=0.0.0.0
 SERVER_PORT=8180  # API Gateway: +100 offset (was 8080)
 ORCHESTRATOR_URL=http://localhost:8100  # Orchestrator: +100 offset (was 8000)
+INTERNAL_API_TOKEN=dev-internal-token-change-in-production
 
 # JWT
 JWT_SECRET=workflow-jwt-secret
@@ -38,10 +39,15 @@ JWT_ISSUER=commandcenter1c-workflow
 WORKER_POOL_SIZE=50
 WORKER_MAX_RETRIES=3
 WORKER_TIMEOUT=5m
-ENABLE_POOLOPS_ROUTE=false
+ENABLE_GO_SCHEDULER=true
+ENABLE_POOLOPS_ROUTE=true
 POOLOPS_ROUTE_ROLLOUT_PERCENT=1.0
 POOLOPS_ROUTE_ROLLOUT_SEED=
 POOLOPS_ROUTE_KILL_SWITCH=false
+ENABLE_POOL_PUBLICATION_ODATA_CORE=true
+POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT=1.0
+POOL_PUBLICATION_ODATA_CORE_ROLLOUT_SEED=
+POOL_PUBLICATION_ODATA_CORE_KILL_SWITCH=false
 # Projection hardening cutoff is configured in Orchestrator runtime settings:
 # pools.projection.publication_hardening_cutoff_utc
 

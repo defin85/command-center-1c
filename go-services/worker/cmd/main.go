@@ -336,11 +336,13 @@ func main() {
 
 	if schedConfig.Enabled {
 		log.WithFields(map[string]interface{}{
-			"enabled":              schedConfig.Enabled,
-			"cleanup_history_cron": schedConfig.CleanupHistoryCron,
-			"cleanup_events_cron":  schedConfig.CleanupEventsCron,
-			"database_health_cron": schedConfig.DatabaseHealthCron,
-			"artifacts_purge_cron": schedConfig.ArtifactsPurgeCron,
+			"enabled":                                    schedConfig.Enabled,
+			"cleanup_history_cron":                       schedConfig.CleanupHistoryCron,
+			"cleanup_events_cron":                        schedConfig.CleanupEventsCron,
+			"database_health_cron":                       schedConfig.DatabaseHealthCron,
+			"artifacts_purge_cron":                       schedConfig.ArtifactsPurgeCron,
+			"pool_factual_active_sync_cron":              schedConfig.PoolFactualActiveSyncCron,
+			"pool_factual_closed_quarter_reconcile_cron": schedConfig.PoolFactualClosedQuarterReconcileCron,
 		}).Info("initializing Go scheduler")
 
 		// Reuse zapLog created above for scheduler
@@ -434,6 +436,27 @@ func main() {
 					log.Info("artifacts purge job registered",
 						zap.String("cron", schedConfig.ArtifactsPurgeCron),
 						zap.Int("max_jobs_per_run", schedConfig.ArtifactsPurgeMaxJobs),
+					)
+				}
+
+				poolFactualActiveSyncJob := jobs.NewPoolFactualActiveSyncJob(orchestratorClient, zapLog)
+				if err := sched.RegisterJob(schedConfig.PoolFactualActiveSyncCron, poolFactualActiveSyncJob); err != nil {
+					log.WithError(err).Error("failed to register pool factual active sync job")
+				} else {
+					log.Info("pool factual active sync job registered",
+						zap.String("cron", schedConfig.PoolFactualActiveSyncCron),
+					)
+				}
+
+				poolFactualClosedQuarterReconcileJob := jobs.NewPoolFactualClosedQuarterReconcileJob(orchestratorClient, zapLog)
+				if err := sched.RegisterJob(
+					schedConfig.PoolFactualClosedQuarterReconcileCron,
+					poolFactualClosedQuarterReconcileJob,
+				); err != nil {
+					log.WithError(err).Error("failed to register pool factual closed-quarter reconcile job")
+				} else {
+					log.Info("pool factual closed-quarter reconcile job registered",
+						zap.String("cron", schedConfig.PoolFactualClosedQuarterReconcileCron),
 					)
 				}
 			}

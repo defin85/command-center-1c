@@ -366,13 +366,23 @@ _start_go_service() {
         local stream_name="${WORKER_WORKFLOWS_STREAM_NAME:-commands:worker:workflows}"
         local consumer_group="${WORKER_WORKFLOWS_CONSUMER_GROUP:-worker-workflows}"
         local metrics_port="${WORKER_WORKFLOWS_METRICS_PORT:-9092}"
-        local scheduler_enabled="${WORKER_WORKFLOWS_ENABLE_SCHEDULER:-false}"
+        local scheduler_enabled="${WORKER_WORKFLOWS_ENABLE_SCHEDULER:-${ENABLE_GO_SCHEDULER:-true}}"
+        local internal_api_token="${WORKER_WORKFLOWS_INTERNAL_API_TOKEN:-${INTERNAL_API_TOKEN:-dev-internal-token-change-in-production}}"
+        local poolops_route_enabled="${WORKER_WORKFLOWS_ENABLE_POOLOPS_ROUTE:-${ENABLE_POOLOPS_ROUTE:-true}}"
+        local poolops_route_rollout_percent="${WORKER_WORKFLOWS_POOLOPS_ROUTE_ROLLOUT_PERCENT:-${POOLOPS_ROUTE_ROLLOUT_PERCENT:-1.0}}"
+        local publication_core_enabled="${WORKER_WORKFLOWS_ENABLE_POOL_PUBLICATION_ODATA_CORE:-${ENABLE_POOL_PUBLICATION_ODATA_CORE:-true}}"
+        local publication_core_rollout_percent="${WORKER_WORKFLOWS_POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT:-${POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT:-1.0}}"
         nohup env \
             WORKER_ID="$worker_id" \
             WORKER_STREAM_NAME="$stream_name" \
             WORKER_CONSUMER_GROUP="$consumer_group" \
             WORKER_METRICS_PORT="$metrics_port" \
             ENABLE_GO_SCHEDULER="$scheduler_enabled" \
+            INTERNAL_API_TOKEN="$internal_api_token" \
+            ENABLE_POOLOPS_ROUTE="$poolops_route_enabled" \
+            POOLOPS_ROUTE_ROLLOUT_PERCENT="$poolops_route_rollout_percent" \
+            ENABLE_POOL_PUBLICATION_ODATA_CORE="$publication_core_enabled" \
+            POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT="$publication_core_rollout_percent" \
             "$binary_path" > "$log_file" 2>&1 &
     else
         nohup "$binary_path" > "$log_file" 2>&1 &

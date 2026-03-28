@@ -29,6 +29,8 @@ class AuthenticationTests(InternalAPIV2BaseTestCase):
             ("post", "/api/v2/internal/cleanup-failed-events"),
             ("get", "/api/v2/internal/get-template?template_id=test"),
             ("post", "/api/v2/internal/render-template?template_id=test"),
+            ("post", "/api/v2/internal/pools/factual/trigger-active-sync-window"),
+            ("post", "/api/v2/internal/pools/factual/trigger-closed-quarter-reconcile-window"),
         ]
 
         for method, url in endpoints:
@@ -54,4 +56,3 @@ class AuthenticationTests(InternalAPIV2BaseTestCase):
         client = APIClient()
         response = client.get("/api/v2/internal/list-databases-for-health-check")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-

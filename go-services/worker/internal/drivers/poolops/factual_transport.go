@@ -151,6 +151,11 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 			normalizeFactualDocumentRows(entity, rows, input.OrganizationIDs)...,
 		)
 	}
+	factualDocuments = applyAuthoritativeRegisterAmounts(
+		factualDocuments,
+		accountingRows,
+		informationRows,
+	)
 
 	sort.Slice(factualDocuments, func(i, j int) bool {
 		left := strings.TrimSpace(fmt.Sprintf("%v", factualDocuments[i]["source_document_ref"]))
@@ -394,16 +399,6 @@ func cloneQueryParams(query *sharedodata.QueryParams) *sharedodata.QueryParams {
 	return &copy
 }
 
-func buildDocumentDateFilter(input factualSyncInput) string {
-	start := input.QuarterStart.Format("2006-01-02T15:04:05")
-	end := input.QuarterEnd.Add(23*time.Hour + 59*time.Minute + 59*time.Second).Format("2006-01-02T15:04:05")
-	return fmt.Sprintf(
-		"Date ge datetime'%s' and Date le datetime'%s'",
-		start,
-		end,
-	)
-}
-
 func normalizeFactualDocumentRows(
 	entity string,
 	rows []map[string]interface{},
@@ -544,7 +539,14 @@ func buildFactualSourceCheckpointToken(boundaryReads map[string]int, documents [
 		_, _ = hasher.Write([]byte(fmt.Sprintf("%s:%d|", key, boundaryReads[key])))
 	}
 	for _, document := range documents {
-		_, _ = hasher.Write([]byte(fmt.Sprintf("%v|%v|", document["source_document_ref"], document["modified_at"])))
+		_, _ = hasher.Write([]byte(fmt.Sprintf(
+			"%v|%v|%v|%v|%v|",
+			document["source_document_ref"],
+			document["modified_at"],
+			document["amount_with_vat"],
+			document["amount_without_vat"],
+			document["vat_amount"],
+		)))
 	}
 	return hex.EncodeToString(hasher.Sum(nil))
 }

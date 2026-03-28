@@ -12,11 +12,13 @@ type SchedulerConfig struct {
 	Enabled bool
 
 	// Cron expressions for jobs
-	CleanupHistoryCron string // cleanup_old_status_history
-	CleanupEventsCron  string // cleanup_old_replayed_events
-	DatabaseHealthCron string // periodic_database_health_check
-	EventReplayCron    string // replay_failed_events
-	ArtifactsPurgeCron string // purge_artifacts
+	CleanupHistoryCron                    string // cleanup_old_status_history
+	CleanupEventsCron                     string // cleanup_old_replayed_events
+	DatabaseHealthCron                    string // periodic_database_health_check
+	EventReplayCron                       string // replay_failed_events
+	ArtifactsPurgeCron                    string // purge_artifacts
+	PoolFactualActiveSyncCron             string // pool_factual_active_sync
+	PoolFactualClosedQuarterReconcileCron string // pool_factual_closed_quarter_reconcile
 
 	// Lock configuration
 	LockTTL        time.Duration // TTL for distributed locks
@@ -42,21 +44,23 @@ type SchedulerConfig struct {
 // DefaultConfig returns scheduler configuration with defaults
 func DefaultConfig() *SchedulerConfig {
 	return &SchedulerConfig{
-		Enabled:                     false,
-		CleanupHistoryCron:          "0 3 * * *",   // Daily at 3:00 AM
-		CleanupEventsCron:           "0 4 * * *",   // Daily at 4:00 AM
-		DatabaseHealthCron:          "@every 120s", // Every 120 seconds
-		EventReplayCron:             "@every 60s",  // Every 60 seconds
-		ArtifactsPurgeCron:          "@every 10s",  // Every 10 seconds
-		LockTTL:                     5 * time.Minute,
-		LockRetryDelay:              100 * time.Millisecond,
-		LockMaxRetries:              3,
-		OrchestratorURL:             "http://localhost:8200",
-		CleanupHistoryRetentionDays: 30,
-		CleanupEventsRetentionDays:  7,
-		EventReplayBatchSize:        100,
-		EventReplayEnabled:          false, // Disabled by default
-		ArtifactsPurgeMaxJobs:       3,
+		Enabled:                               false,
+		CleanupHistoryCron:                    "0 3 * * *",   // Daily at 3:00 AM
+		CleanupEventsCron:                     "0 4 * * *",   // Daily at 4:00 AM
+		DatabaseHealthCron:                    "@every 120s", // Every 120 seconds
+		EventReplayCron:                       "@every 60s",  // Every 60 seconds
+		ArtifactsPurgeCron:                    "@every 10s",  // Every 10 seconds
+		PoolFactualActiveSyncCron:             "@every 120s", // Every 120 seconds
+		PoolFactualClosedQuarterReconcileCron: "0 2 * * *",   // Nightly at 2:00 AM
+		LockTTL:                               5 * time.Minute,
+		LockRetryDelay:                        100 * time.Millisecond,
+		LockMaxRetries:                        3,
+		OrchestratorURL:                       "http://localhost:8200",
+		CleanupHistoryRetentionDays:           30,
+		CleanupEventsRetentionDays:            7,
+		EventReplayBatchSize:                  100,
+		EventReplayEnabled:                    false, // Disabled by default
+		ArtifactsPurgeMaxJobs:                 3,
 	}
 }
 
@@ -82,6 +86,12 @@ func LoadConfigFromEnv() *SchedulerConfig {
 	}
 	if v := os.Getenv("SCHEDULER_ARTIFACTS_PURGE"); v != "" {
 		cfg.ArtifactsPurgeCron = v
+	}
+	if v := os.Getenv("SCHEDULER_POOL_FACTUAL_ACTIVE_SYNC"); v != "" {
+		cfg.PoolFactualActiveSyncCron = v
+	}
+	if v := os.Getenv("SCHEDULER_POOL_FACTUAL_CLOSED_QUARTER_RECONCILE"); v != "" {
+		cfg.PoolFactualClosedQuarterReconcileCron = v
 	}
 
 	// Lock configuration

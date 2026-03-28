@@ -11,6 +11,10 @@ from .views_artifacts import claim_artifact_purge_job, complete_artifact_purge_j
 from .views_clusters import update_cluster_health
 from .views_databases import get_database_cluster_info, list_databases_for_health_check, update_database_health
 from .views_failed_events import cleanup_failed_events, list_pending_failed_events, mark_event_failed, mark_event_replayed
+from .views_pools_factual import (
+    trigger_pool_factual_active_sync_window_view,
+    trigger_pool_factual_closed_quarter_reconcile_window_view,
+)
 from .views_runtime_settings import list_runtime_settings
 from .views_scheduler import complete_scheduler_run, start_scheduler_run
 from .views_tasks import complete_task, start_task
@@ -47,6 +51,8 @@ __all__ = [
     "render_template",
     "start_scheduler_run",
     "start_task",
+    "trigger_pool_factual_active_sync_window_view",
+    "trigger_pool_factual_closed_quarter_reconcile_window_view",
     "update_artifact_purge_job",
     "update_cluster_health",
     "update_database_health",

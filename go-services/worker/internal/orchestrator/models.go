@@ -43,6 +43,20 @@ type SchedulerJobRunResponse struct {
 	Status  string `json:"status"` // running, success, failed, skipped
 }
 
+// PoolFactualSyncWindowResponse represents response from internal factual scheduler endpoints.
+type PoolFactualSyncWindowResponse struct {
+	Success                     bool   `json:"success,omitempty"`
+	QuarterStart                string `json:"quarter_start,omitempty"`
+	QuarterCutoffStart          string `json:"quarter_cutoff_start,omitempty"`
+	PoolsScanned                int    `json:"pools_scanned,omitempty"`
+	CheckpointsTouched          int    `json:"checkpoints_touched,omitempty"`
+	CheckpointsRunning          int    `json:"checkpoints_running,omitempty"`
+	ReadCheckpointsScanned      int    `json:"read_checkpoints_scanned,omitempty"`
+	ReconcileCheckpointsTouched int    `json:"reconcile_checkpoints_touched,omitempty"`
+	ReconcileCheckpointsCreated int    `json:"reconcile_checkpoints_created,omitempty"`
+	ReconcileCheckpointsRunning int    `json:"reconcile_checkpoints_running,omitempty"`
+}
+
 // ============================================================================
 // Task Execution Schemas
 // ============================================================================

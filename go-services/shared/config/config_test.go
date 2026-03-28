@@ -237,3 +237,21 @@ func TestConfig_IsPoolPublicationODataCoreEnabledForWorker_RolloutAndKillSwitch(
 		t.Fatalf("expected publication transport disabled when kill-switch is enabled")
 	}
 }
+
+func TestConfig_DefaultCheckedInWorkflowWorkerPoolRuntimePathsEnabled(t *testing.T) {
+	t.Setenv("WORKER_ID", "worker-workflows-1")
+	t.Setenv("ENABLE_POOLOPS_ROUTE", "true")
+	t.Setenv("POOLOPS_ROUTE_ROLLOUT_PERCENT", "1.0")
+	t.Setenv("POOLOPS_ROUTE_KILL_SWITCH", "false")
+	t.Setenv("ENABLE_POOL_PUBLICATION_ODATA_CORE", "true")
+	t.Setenv("POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT", "1.0")
+	t.Setenv("POOL_PUBLICATION_ODATA_CORE_KILL_SWITCH", "false")
+
+	cfg := LoadFromEnv()
+	if !cfg.IsPoolOpsRouteEnabledForWorker() {
+		t.Fatalf("expected checked-in workflow worker defaults to enable poolops route")
+	}
+	if !cfg.IsPoolPublicationODataCoreEnabledForWorker() {
+		t.Fatalf("expected checked-in workflow worker defaults to enable publication core path")
+	}
+}

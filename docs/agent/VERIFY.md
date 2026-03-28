@@ -57,6 +57,16 @@ cd go-services/worker && go test ./...
 ./debug/probe.sh all
 ```
 
+### Pool Factual Monitoring
+
+```bash
+./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_scheduler_runtime.py apps/api_internal/tests/test_views_pools_factual.py
+cd go-services/shared && go test ./config
+cd go-services/worker && go test ./internal/drivers/poolops ./internal/orchestrator ./internal/scheduler/... ./cmd
+cd frontend && npm run test:run -- src/pages/Pools/__tests__/PoolFactualPage.test.tsx
+./scripts/dev/check-agent-doc-freshness.sh
+```
+
 ## Runtime-Test Reference
 
 Source of truth: `./debug/runtime-inventory.sh --json`

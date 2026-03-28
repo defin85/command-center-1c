@@ -146,10 +146,16 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ORCHESTRATOR_URL=http://orchestrator:8000
+      - INTERNAL_API_TOKEN=dev-internal-token-change-in-production
       - WORKER_ID=worker-workflows-1
       - WORKER_POOL_SIZE=50
       - WORKER_STREAM_NAME=commands:worker:workflows
       - WORKER_CONSUMER_GROUP=worker-workflows
+      - ENABLE_GO_SCHEDULER=true
+      - ENABLE_POOLOPS_ROUTE=true
+      - POOLOPS_ROUTE_ROLLOUT_PERCENT=1.0
+      - ENABLE_POOL_PUBLICATION_ODATA_CORE=true
+      - POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT=1.0
       - LOG_LEVEL=debug
       - LOG_FORMAT=text
     depends_on:

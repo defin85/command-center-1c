@@ -186,6 +186,79 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_BoundsScopeAndNorma
 	assert.NotEmpty(t, out["source_checkpoint_token"])
 }
 
+func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_UsesRegisterBackedAmountsForMatchedDocument(t *testing.T) {
+	fetcher := &mockFactualCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockFactualODataService{
+		rowsByEntity: map[string][]map[string]interface{}{
+			"AccountingRegister_Хозрасчетный/Turnovers(PeriodStart=datetime'2026-01-01T00:00:00',PeriodEnd=datetime'2026-03-31T23:59:59',Condition='(Organization_Key eq guid''org-1'') and (RecordType eq ''Credit'' or RecordType eq ''Debit'')',AccountCondition='Code eq ''62.01'' or Code eq ''90.01''')": {
+				{
+					"Recorder": "SALE-0001",
+					"Amount":   "90.00",
+				},
+			},
+			"InformationRegister_ДанныеПервичныхДокументов": {
+				{
+					"Документ": "Document_РеализацияТоваровУслуг(guid'sale-1')",
+					"Номер":    "SALE-0001",
+				},
+			},
+			"Document_РеализацияТоваровУслуг": {
+				{
+					"Ref_Key":         "sale-1",
+					"Организация_Key": "org-1",
+					"СуммаДокумента":  "120.00",
+					"СуммаНДС":        "20.00",
+					"Комментарий":     "CCPOOL:v=1;pool=pool-1;run=-;batch=batch-1;org=org-1;q=2026Q1;kind=sale",
+					"Date":            "2026-03-27T10:00:00Z",
+				},
+				{
+					"Ref_Key":         "sale-unmatched",
+					"Организация_Key": "org-1",
+					"СуммаДокумента":  "15.00",
+					"СуммаНДС":        "2.50",
+					"Комментарий":     "CCPOOL:v=1;pool=pool-1;run=-;batch=batch-2;org=org-1;q=2026Q1;kind=sale",
+					"Date":            "2026-03-27T11:00:00Z",
+				},
+			},
+		},
+	}
+	transport := NewODataFactualTransport(fetcher, service, zap.NewNop())
+
+	out, err := transport.ExecuteFactualSyncSourceSlice(context.Background(), &handlers.OperationRequest{
+		OperationType: "pool.factual.sync_source_slice",
+		Payload: map[string]interface{}{
+			"pool_id":                      "pool-1",
+			"database_id":                  "db-1",
+			"lane":                         "read",
+			"quarter_start":                "2026-01-01",
+			"quarter_end":                  "2026-03-31",
+			"organization_ids":             "org-1",
+			"account_codes":                "90.01,62.01",
+			"movement_kinds":               "debit,credit",
+			"document_entities":            "Document_РеализацияТоваровУслуг",
+			"accounting_register_entity":   "AccountingRegister_Хозрасчетный",
+			"accounting_register_function": "Turnovers",
+			"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
+		},
+	})
+
+	require.NoError(t, err)
+	factualDocuments, ok := out["factual_documents"].([]map[string]interface{})
+	require.True(t, ok)
+	require.Len(t, factualDocuments, 1)
+	assert.Equal(t, "Document_РеализацияТоваровУслуг(guid'sale-1')", factualDocuments[0]["source_document_ref"])
+	assert.Equal(t, "90.00", factualDocuments[0]["amount_with_vat"])
+	assert.Equal(t, "75.00", factualDocuments[0]["amount_without_vat"])
+	assert.Equal(t, "15.00", factualDocuments[0]["vat_amount"])
+}
+
 func TestQueryAllFactualRows_PaginatesThroughAllRows(t *testing.T) {
 	service := &mockFactualODataService{
 		rowsByEntityAndSkip: map[string]map[int][]map[string]interface{}{

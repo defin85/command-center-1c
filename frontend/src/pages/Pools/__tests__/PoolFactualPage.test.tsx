@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -277,6 +277,45 @@ describe('PoolFactualPage', () => {
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()
     expect(screen.getByText("Document_КорректировкаРеализации(guid'pool-alpha-late')")).toBeInTheDocument()
+  })
+
+  it('polls the factual workspace on the default 120-second interval', async () => {
+    const pollHandlers: Array<() => void> = []
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((handler: TimerHandler, timeout?: number) => {
+      if (typeof handler !== 'function') {
+        throw new Error('Expected polling handler to be a function')
+      }
+      if (timeout === 120000) {
+        pollHandlers.push(() => {
+          handler()
+        })
+      }
+      return 1 as unknown as number
+    }) as typeof window.setInterval)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
+
+    try {
+      mockListOrganizationPools.mockResolvedValue([buildPool()])
+      mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
+
+      renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111')
+
+      await waitFor(() => expect(mockGetPoolFactualWorkspace).toHaveBeenCalledTimes(1))
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 120000)
+      const runPoll = pollHandlers[pollHandlers.length - 1]
+      if (runPoll === undefined) {
+        throw new Error('Expected polling handler to be a function')
+      }
+
+      await act(async () => {
+        runPoll()
+      })
+
+      await waitFor(() => expect(mockGetPoolFactualWorkspace).toHaveBeenCalledTimes(2))
+    } finally {
+      setIntervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+    }
   })
 
   it('updates the factual route query when the operator selects a pool from the compact master pane', async () => {

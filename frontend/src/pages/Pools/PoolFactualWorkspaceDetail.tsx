@@ -39,6 +39,8 @@ type ReviewRowWithTargets = PoolFactualReviewRow & {
   organizationId: string | null
 }
 
+const FACTUAL_WORKSPACE_POLL_INTERVAL_MS = 120_000
+
 const formatShortId = (value: string | null | undefined) => {
   if (!value) {
     return '-'
@@ -134,9 +136,11 @@ export function PoolFactualWorkspaceDetail({
   useEffect(() => {
     let cancelled = false
 
-    const loadWorkspace = async () => {
-      setLoadingWorkspace(true)
-      setWorkspaceError(null)
+    const loadWorkspace = async ({ background = false }: { background?: boolean } = {}) => {
+      if (!background) {
+        setLoadingWorkspace(true)
+        setWorkspaceError(null)
+      }
       setReviewActionError(null)
 
       try {
@@ -150,19 +154,25 @@ export function PoolFactualWorkspaceDetail({
           return
         }
         const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
-        setWorkspace(null)
         setWorkspaceError(resolved.message)
+        if (!background) {
+          setWorkspace(null)
+        }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !background) {
           setLoadingWorkspace(false)
         }
       }
     }
 
     void loadWorkspace()
+    const pollId = window.setInterval(() => {
+      void loadWorkspace({ background: true })
+    }, FACTUAL_WORKSPACE_POLL_INTERVAL_MS)
 
     return () => {
       cancelled = true
+      window.clearInterval(pollId)
     }
   }, [selectedPool.id])
 

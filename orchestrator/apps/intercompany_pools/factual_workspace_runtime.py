@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from django.db.models import Q
@@ -15,12 +16,70 @@ DEFAULT_FACTUAL_MOVEMENT_KINDS = ("credit", "debit")
 FACTUAL_WORKSPACE_ORIGIN_SYSTEM = "pools_factual_workspace"
 
 
+@dataclass(frozen=True)
+class PoolFactualScope:
+    organization_ids: tuple[str, ...]
+    databases: tuple
+    quarter_end: date
+    freeze_quarter: bool
+
+
 def ensure_pool_factual_workspace_default_sync(
     *,
     pool,
     quarter_start: date,
     now: datetime | None = None,
 ) -> tuple[PoolFactualSyncCheckpoint, ...]:
+    timestamp = now or timezone.now()
+    scope = resolve_pool_factual_scope(
+        pool=pool,
+        quarter_start=quarter_start,
+        now=timestamp,
+    )
+    if not scope.organization_ids or not scope.databases:
+        return tuple()
+    checkpoints: list[PoolFactualSyncCheckpoint] = []
+
+    for database in scope.databases:
+        checkpoint, _ = PoolFactualSyncCheckpoint.objects.get_or_create(
+            tenant=pool.tenant,
+            pool=pool,
+            database=database,
+            lane=PoolFactualLane.READ,
+            quarter_start=quarter_start,
+            defaults={
+                "quarter_end": scope.quarter_end,
+                "metadata": {
+                    "default_entrypoint": "pools_factual_workspace",
+                },
+            },
+        )
+        checkpoints.append(checkpoint)
+        if not _checkpoint_requires_sync(checkpoint=checkpoint, now=timestamp):
+            continue
+        result = start_pool_factual_sync_workflow(
+            checkpoint=checkpoint,
+            database=database,
+            organization_ids=scope.organization_ids,
+            account_codes=DEFAULT_FACTUAL_ACCOUNT_CODES,
+            movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
+            correlation_id=f"workspace:{pool.id}:{quarter_start.isoformat()}",
+            origin_system=FACTUAL_WORKSPACE_ORIGIN_SYSTEM,
+            origin_event_id=f"pool:{pool.id}:quarter:{quarter_start.isoformat()}",
+            activity="active",
+            freeze_quarter=scope.freeze_quarter,
+        )
+        checkpoints[-1] = result.checkpoint
+
+    return tuple(checkpoints)
+
+
+def resolve_pool_factual_scope(
+    *,
+    pool,
+    quarter_start: date,
+    now: datetime | None = None,
+) -> PoolFactualScope:
     timestamp = now or timezone.now()
     active_nodes = list(
         PoolNodeVersion.objects.filter(
@@ -38,52 +97,21 @@ def ensure_pool_factual_workspace_default_sync(
             }
         )
     )
-    databases = [
-        node.organization.database
-        for node in active_nodes
-        if getattr(node.organization, "database_id", None) and node.organization.database.tenant_id == pool.tenant_id
-    ]
-    databases = list({str(database.id): database for database in databases}.values())
-
-    if not organization_ids or not databases:
-        return tuple()
-
+    databases = tuple(
+        {str(database.id): database for database in [
+            node.organization.database
+            for node in active_nodes
+            if getattr(node.organization, "database_id", None) and node.organization.database.tenant_id == pool.tenant_id
+        ]}.values()
+    )
     quarter_end = _resolve_quarter_end(quarter_start)
     freeze_quarter = quarter_end < _current_quarter_start(timestamp.date())
-    checkpoints: list[PoolFactualSyncCheckpoint] = []
-
-    for database in databases:
-        checkpoint, _ = PoolFactualSyncCheckpoint.objects.get_or_create(
-            tenant=pool.tenant,
-            pool=pool,
-            database=database,
-            lane=PoolFactualLane.READ,
-            quarter_start=quarter_start,
-            defaults={
-                "quarter_end": quarter_end,
-                "metadata": {
-                    "default_entrypoint": "pools_factual_workspace",
-                },
-            },
-        )
-        checkpoints.append(checkpoint)
-        if not _checkpoint_requires_sync(checkpoint=checkpoint, now=timestamp):
-            continue
-        result = start_pool_factual_sync_workflow(
-            checkpoint=checkpoint,
-            database=database,
-            organization_ids=organization_ids,
-            account_codes=DEFAULT_FACTUAL_ACCOUNT_CODES,
-            movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
-            correlation_id=f"workspace:{pool.id}:{quarter_start.isoformat()}",
-            origin_system=FACTUAL_WORKSPACE_ORIGIN_SYSTEM,
-            origin_event_id=f"pool:{pool.id}:quarter:{quarter_start.isoformat()}",
-            activity="active",
-            freeze_quarter=freeze_quarter,
-        )
-        checkpoints[-1] = result.checkpoint
-
-    return tuple(checkpoints)
+    return PoolFactualScope(
+        organization_ids=organization_ids,
+        databases=databases,
+        quarter_end=quarter_end,
+        freeze_quarter=freeze_quarter,
+    )
 
 
 def _checkpoint_requires_sync(*, checkpoint: PoolFactualSyncCheckpoint, now: datetime) -> bool:
@@ -122,5 +150,7 @@ __all__ = [
     "DEFAULT_FACTUAL_ACCOUNT_CODES",
     "DEFAULT_FACTUAL_MOVEMENT_KINDS",
     "FACTUAL_WORKSPACE_ORIGIN_SYSTEM",
+    "PoolFactualScope",
     "ensure_pool_factual_workspace_default_sync",
+    "resolve_pool_factual_scope",
 ]

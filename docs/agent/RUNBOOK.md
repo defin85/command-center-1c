@@ -27,6 +27,25 @@ bd prime
 ./debug/probe.sh all
 ```
 
+## Pool Factual Monitoring
+
+- `worker-workflows` shipped default path now starts with `ENABLE_GO_SCHEDULER=true`, `ENABLE_POOLOPS_ROUTE=true` and `ENABLE_POOL_PUBLICATION_ODATA_CORE=true` from checked-in env/preset surfaces (`.env.example`, `.env.workflow`, `docker-compose.yml`, `scripts/lib/lifecycle.sh`).
+- Active-quarter factual refresh runs through scheduler + workspace default sync; closed-quarter reconcile runs through dedicated nightly scheduler entrypoint on the same `worker-workflows` runtime family.
+- Fast sanity checks:
+
+```bash
+./scripts/dev/restart.sh worker-workflows
+curl -sS http://localhost:9092/health
+./debug/eval-django.sh "from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_active_sync_window; print(trigger_pool_factual_active_sync_window())"
+./debug/eval-django.sh \"from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_closed_quarter_reconcile_window; print(trigger_pool_factual_closed_quarter_reconcile_window())\"
+```
+
+- Operator-facing route:
+
+```bash
+printf '%s\n' "http://localhost:15173/pools/factual?pool=<pool-uuid>"
+```
+
 ## Runtime Control
 
 | Runtime | Start / Restart | Health | Eval |
@@ -59,4 +78,3 @@ bd prime
 - `README.md` — broader human-readable project overview
 - `DEBUG.md` — detailed live-debug and incident recipes
 - `scripts/dev/README.md` — long-form notes on dev scripts
-

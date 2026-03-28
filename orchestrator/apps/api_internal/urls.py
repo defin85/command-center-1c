@@ -179,4 +179,14 @@ urlpatterns = [
         views.list_runtime_settings,
         name='runtime-settings'
     ),
+    path(
+        'pools/factual/trigger-active-sync-window',
+        views.trigger_pool_factual_active_sync_window_view,
+        name='pools-factual-trigger-active-sync-window'
+    ),
+    path(
+        'pools/factual/trigger-closed-quarter-reconcile-window',
+        views.trigger_pool_factual_closed_quarter_reconcile_window_view,
+        name='pools-factual-trigger-closed-quarter-reconcile-window'
+    ),
 ]
