@@ -53,3 +53,7 @@
 - [x] 6.3 Подготовить rollout envelope для 700 ИБ: separate read/write worker lanes внутри текущего worker runtime family, per-IB cap `1`, per-cluster cap `2`, global read cap `8`, polling tiers `120 сек / 10 мин / 60 мин`, отдельный ночной reconcile для закрытых кварталов.
 - [x] 6.4 Зафиксировать KPI telemetry и actionable alerts для freshness lag, read backlog, unattributed volume и late-correction queue перед rollout на 700 ИБ.
 - [x] 6.5 Зафиксировать failure-isolation policy между тремя подсистемами: backlog/staleness в `read/projection` и `reconcile/review` поднимают сигналы и алерты, но не выключают `intake` без явного operator decision.
+
+## Evidence
+- Pilot/preflight bundle: `artifacts/2026-03-29-pilot-preflight-evidence.json`
+- Live default-path acceptance snapshot: `artifacts/2026-03-29-live-default-path-evidence.md`

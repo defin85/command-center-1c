@@ -1,7 +1,7 @@
 # pool-distribution-runs Specification
 
 ## Purpose
-TBD - created by archiving change add-intercompany-pool-distribution-module. Update Purpose after archive.
+Определяет execution-centric lifecycle `PoolRun`, manual и batch-backed launch modes, publication reporting и explicit handoff из run report в factual workspace.
 ## Requirements
 ### Requirement: Distribution runs MUST поддерживать фиксированный lifecycle и режимы безопасности
 Система ДОЛЖНА (SHALL) поддерживать lifecycle run в состояниях:
@@ -287,4 +287,3 @@ Heavy diagnostics ДОЛЖНЫ (SHALL) оставаться progressive disclosu
 - **WHEN** он переходит между create, inspect и retry/remediation
 - **THEN** secondary detail и diagnostics открываются в mobile-safe fallback surface или отдельном stage context
 - **AND** основной lifecycle flow остаётся читаемым без page-wide horizontal scroll
-

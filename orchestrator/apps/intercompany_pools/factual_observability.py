@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, Iterable
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -66,14 +66,18 @@ def record_pool_factual_rollout_telemetry(*, now: datetime | None = None) -> dic
     }
 
 
-def _build_factual_read_summary(*, now: datetime) -> dict[str, Any]:
-    checkpoints = list(PoolFactualSyncCheckpoint.objects.filter(lane=PoolFactualLane.READ))
+def build_pool_factual_read_summary(
+    *,
+    checkpoints: Iterable[PoolFactualSyncCheckpoint],
+    now: datetime,
+) -> dict[str, Any]:
+    checkpoint_list = list(checkpoints)
     source_state_totals: Counter[str] = Counter()
     backlog_total = 0
     freshness_lag_seconds = 0.0
     max_freshness_target_seconds = 0
 
-    for checkpoint in checkpoints:
+    for checkpoint in checkpoint_list:
         metadata = checkpoint.metadata if isinstance(checkpoint.metadata, dict) else {}
         source_state = str(metadata.get("source_availability") or "available").strip().lower() or "available"
         freshness_state = str(metadata.get("freshness_state") or "").strip().lower()
@@ -98,12 +102,19 @@ def _build_factual_read_summary(*, now: datetime) -> dict[str, Any]:
         freshness_lag_seconds = max(freshness_lag_seconds, checkpoint_lag_seconds)
 
     return {
-        "checkpoint_total": len(checkpoints),
+        "checkpoint_total": len(checkpoint_list),
         "freshness_lag_seconds": freshness_lag_seconds,
         "backlog_total": backlog_total,
         "source_state_totals": dict(source_state_totals),
         "max_freshness_target_seconds": max_freshness_target_seconds,
     }
+
+
+def _build_factual_read_summary(*, now: datetime) -> dict[str, Any]:
+    return build_pool_factual_read_summary(
+        checkpoints=PoolFactualSyncCheckpoint.objects.filter(lane=PoolFactualLane.READ),
+        now=now,
+    )
 
 
 def _build_factual_review_summary() -> dict[str, Any]:

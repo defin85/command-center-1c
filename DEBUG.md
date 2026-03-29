@@ -257,7 +257,7 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 Ожидаемое поведение:
 - metadata refresh проходит через canonical Command Center path;
 - decision `go` означает, что required published surfaces доступны и live bounded read probe завершился без direct DB path;
-- JSON output сохраняем как pilot/preflight evidence для rollout gate `0.3`.
+- JSON output сохраняем как pilot/preflight evidence для rollout gate `0.3`; reference bundle см. в `openspec/changes/archive/2026-03-29-add-pool-factual-balance-monitoring/artifacts/2026-03-29-pilot-preflight-evidence.json`.
 
 3. Создать canonical `receipt` batch и получить связанный `safe` `top_down` run:
 
@@ -307,7 +307,9 @@ curl --noproxy '*' -sS \
 Ожидаемое поведение:
 - при первом вызове endpoint создаёт/подхватывает `PoolFactualSyncCheckpoint` и стартует worker-backed sync;
 - при повторных вызовах возвращает backend-fed summary / settlement / review queue;
-- если checkpoint свежий или уже `running`, лишний workflow не стартует.
+- если checkpoint свежий или уже `running`, лишний workflow не стартует;
+- `summary.backlog_total` присутствует в payload и не скрывает stale/read-backlog состояние за одним только `source_availability`;
+- reference snapshot для live default path см. в `openspec/changes/archive/2026-03-29-add-pool-factual-balance-monitoring/artifacts/2026-03-29-live-default-path-evidence.md`.
 
 7. Открыть operator-facing factual route из browser и дождаться backend-fed summary:
 

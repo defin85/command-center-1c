@@ -20990,6 +20990,9 @@ components:
         attention_required_total:
           type: integer
           minimum: 0
+        backlog_total:
+          type: integer
+          minimum: 0
         freshness_state:
           type: string
         source_availability:
@@ -21008,6 +21011,7 @@ components:
           minimum: 0
       required:
         - attention_required_total
+        - backlog_total
         - checkpoint_total
         - freshness_state
         - amount_with_vat

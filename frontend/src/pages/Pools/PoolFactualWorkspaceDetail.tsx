@@ -90,10 +90,23 @@ const getFreshnessTone = (summary: PoolFactualSummary | null) => {
   if (summary.source_availability !== 'available') {
     return 'error'
   }
+  if (summary.backlog_total > 0) {
+    return 'warning'
+  }
   if (summary.freshness_state === 'stale') {
     return 'warning'
   }
   return summary.last_synced_at ? 'active' : 'unknown'
+}
+
+const getBacklogCopy = (summary: PoolFactualSummary | null) => {
+  if (!summary) {
+    return 'This card surfaces source availability, read backlog, and the latest factual sync timestamp.'
+  }
+  if (summary.backlog_total > 0) {
+    return `Read backlog has ${summary.backlog_total} overdue checkpoint(s) on the default sync lane.`
+  }
+  return 'Read backlog is clear on the default sync lane.'
 }
 
 const getSettlementHandoffTone = (workspace: PoolFactualWorkspace | null) => {
@@ -440,12 +453,15 @@ export function PoolFactualWorkspaceDetail({
                 label={workspace ? workspace.summary.freshness_state : 'not connected'}
               />
               {workspace ? (
-                <Text type="secondary">
-                  Source {workspace.summary.source_availability}; last sync {formatTimestamp(workspace.summary.last_synced_at)}.
-                </Text>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">
+                    Source {workspace.summary.source_availability}; last sync {formatTimestamp(workspace.summary.last_synced_at)}.
+                  </Text>
+                  <Text type="secondary">{getBacklogCopy(workspace.summary)}</Text>
+                </Space>
               ) : (
                 <Text type="secondary">
-                  This card surfaces source availability and the latest factual sync timestamp.
+                  {getBacklogCopy(null)}
                 </Text>
               )}
             </Space>

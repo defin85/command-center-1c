@@ -2391,6 +2391,8 @@ def _build_pool_factual_workspace_summary(
     checkpoints: list[PoolFactualSyncCheckpoint],
     review_queue: dict[str, Any],
 ) -> dict[str, Any]:
+    from apps.intercompany_pools.factual_observability import build_pool_factual_read_summary
+
     amount_with_vat = Decimal("0.00")
     amount_without_vat = Decimal("0.00")
     vat_amount = Decimal("0.00")
@@ -2436,6 +2438,7 @@ def _build_pool_factual_workspace_summary(
         else {}
     )
     review_summary = review_queue.get("summary") if isinstance(review_queue, dict) else {}
+    read_summary = build_pool_factual_read_summary(checkpoints=checkpoints, now=timezone.now())
     last_synced_at = (
         latest_checkpoint.last_synced_at
         if latest_checkpoint is not None and latest_checkpoint.last_synced_at is not None
@@ -2454,6 +2457,7 @@ def _build_pool_factual_workspace_summary(
         "open_balance": _decimal_to_api_string(open_balance),
         "pending_review_total": int(review_summary.get("pending_total") or 0),
         "attention_required_total": attention_required_total,
+        "backlog_total": int(read_summary.get("backlog_total") or 0),
         "freshness_state": str(checkpoint_metadata.get("freshness_state") or "unknown"),
         "source_availability": str(checkpoint_metadata.get("source_availability") or "unknown"),
         "source_availability_detail": str(checkpoint_metadata.get("source_availability_detail") or ""),
@@ -3098,6 +3102,7 @@ class PoolFactualSummarySerializer(serializers.Serializer):
     open_balance = serializers.CharField()
     pending_review_total = serializers.IntegerField(min_value=0)
     attention_required_total = serializers.IntegerField(min_value=0)
+    backlog_total = serializers.IntegerField(min_value=0)
     freshness_state = serializers.CharField()
     source_availability = serializers.CharField()
     source_availability_detail = serializers.CharField(required=False, allow_blank=True)

@@ -111,7 +111,7 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
     default_tenant: Tenant,
 ) -> None:
     pool, leaf, edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace")
-    synced_at = datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc)
+    synced_at = datetime.now(dt_timezone.utc)
 
     receipt_batch = PoolBatch.objects.create(
         tenant=default_tenant,
@@ -216,6 +216,7 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
     assert payload["summary"]["open_balance"] == "55.00"
     assert payload["summary"]["pending_review_total"] == 2
     assert payload["summary"]["attention_required_total"] == 1
+    assert payload["summary"]["backlog_total"] == 0
     assert payload["summary"]["freshness_state"] == "fresh"
     assert payload["summary"]["source_availability"] == "available"
     assert len(payload["settlements"]) == 2
@@ -628,3 +629,56 @@ def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_miss
     assert kwargs["movement_kinds"] == ("credit", "debit")
     payload = response.json()
     assert payload["summary"]["checkpoint_total"] == 1
+
+
+@pytest.mark.django_db
+def test_get_pool_factual_workspace_surfaces_read_backlog_in_summary(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool, _leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-backlog")
+    stale_synced_at = datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc)
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="cp-backlog-001",
+        last_synced_at=stale_synced_at,
+        metadata={
+            "freshness_state": "stale",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow"
+    ) as start_workflow:
+        def _fake_start(**kwargs):
+            checkpoint = kwargs["checkpoint"]
+            checkpoint.workflow_status = "running"
+            checkpoint.save(update_fields=["workflow_status", "updated_at"])
+            return PoolFactualSyncWorkflowStartResult(
+                checkpoint=checkpoint,
+                execution_id="33333333-3333-3333-3333-333333333333",
+                operation_id="44444444-4444-4444-4444-444444444444",
+                enqueue_success=True,
+                enqueue_status="running",
+                enqueue_error=None,
+                created_execution=True,
+            )
+
+        start_workflow.side_effect = _fake_start
+
+        response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["checkpoint_total"] == 1
+    assert payload["summary"]["backlog_total"] == 1
+    assert payload["summary"]["freshness_state"] == "stale"
+    assert payload["summary"]["source_availability"] == "available"

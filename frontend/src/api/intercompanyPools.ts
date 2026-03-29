@@ -623,6 +623,7 @@ export type PoolFactualSummary = {
   open_balance: string
   pending_review_total: number
   attention_required_total: number
+  backlog_total: number
   freshness_state: string
   source_availability: string
   source_availability_detail: string

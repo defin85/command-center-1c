@@ -1,0 +1,86 @@
+{
+  "captured_at": "2026-03-29T14:53:17Z",
+  "change_id": "add-pool-factual-balance-monitoring",
+  "command": "cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync --pool-id 5e843d4c-f1d1-4de9-a8c2-594cc7572330 --quarter-start 2026-04-01 --requested-by-username admin --database-id 8fe09f1a-ceac-486a-883d-c4b68f76adf2 --database-id 4e67a533-729d-4512-a7ae-e3460d46f276 --database-id 76272ef7-4788-4106-abb6-db989704ed8d --database-id 74a23c10-6fbd-40d7-b43b-cbfd81511e7c --json --strict",
+  "decision": "go",
+  "pool": {
+    "id": "5e843d4c-f1d1-4de9-a8c2-594cc7572330",
+    "code": "top-down-pool-20260325143110"
+  },
+  "tenant_id": "4d29aa0d-3fcc-41b2-878a-28f84f6f75ec",
+  "quarter": {
+    "start": "2026-04-01",
+    "end": "2026-06-30"
+  },
+  "summary": {
+    "database_count": 4,
+    "failed_databases": 0,
+    "go_databases": 4
+  },
+  "databases": [
+    {
+      "database_id": "8fe09f1a-ceac-486a-883d-c4b68f76adf2",
+      "database_name": "yuridicheskiy_tsentr_magistr_7725324990",
+      "decision": "go",
+      "source_availability": "available",
+      "boundary_kind": "odata",
+      "direct_db_access": false,
+      "scope_fingerprint": "fa65367bbb08154a42f98367dd699a7c8d60c929f9711149977ce4ea4cc4eb91",
+      "boundary_reads": {
+        "accounting_register": 0,
+        "information_register": 1,
+        "Document_ВозвратТоваровОтПокупателя": 0,
+        "Document_КорректировкаРеализации": 0,
+        "Document_РеализацияТоваровУслуг": 1
+      }
+    },
+    {
+      "database_id": "4e67a533-729d-4512-a7ae-e3460d46f276",
+      "database_name": "dom_lesa_7726446503",
+      "decision": "go",
+      "source_availability": "available",
+      "boundary_kind": "odata",
+      "direct_db_access": false,
+      "scope_fingerprint": "fa65367bbb08154a42f98367dd699a7c8d60c929f9711149977ce4ea4cc4eb91",
+      "boundary_reads": {
+        "accounting_register": 0,
+        "information_register": 1,
+        "Document_ВозвратТоваровОтПокупателя": 0,
+        "Document_КорректировкаРеализации": 0,
+        "Document_РеализацияТоваровУслуг": 1
+      }
+    },
+    {
+      "database_id": "76272ef7-4788-4106-abb6-db989704ed8d",
+      "database_name": "sokolniki",
+      "decision": "go",
+      "source_availability": "available",
+      "boundary_kind": "odata",
+      "direct_db_access": false,
+      "scope_fingerprint": "fa65367bbb08154a42f98367dd699a7c8d60c929f9711149977ce4ea4cc4eb91",
+      "boundary_reads": {
+        "accounting_register": 0,
+        "information_register": 1,
+        "Document_ВозвратТоваровОтПокупателя": 0,
+        "Document_КорректировкаРеализации": 0,
+        "Document_РеализацияТоваровУслуг": 1
+      }
+    },
+    {
+      "database_id": "74a23c10-6fbd-40d7-b43b-cbfd81511e7c",
+      "database_name": "uyutny_dom_basenumber0007",
+      "decision": "go",
+      "source_availability": "available",
+      "boundary_kind": "odata",
+      "direct_db_access": false,
+      "scope_fingerprint": "fa65367bbb08154a42f98367dd699a7c8d60c929f9711149977ce4ea4cc4eb91",
+      "boundary_reads": {
+        "accounting_register": 0,
+        "information_register": 1,
+        "Document_ВозвратТоваровОтПокупателя": 0,
+        "Document_КорректировкаРеализации": 0,
+        "Document_РеализацияТоваровУслуг": 0
+      }
+    }
+  ]
+}

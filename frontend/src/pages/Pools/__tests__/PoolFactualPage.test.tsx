@@ -112,6 +112,7 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       open_balance: '55.00',
       pending_review_total: reviewQueue.summary.pending_total,
       attention_required_total: 1,
+      backlog_total: 0,
       freshness_state: 'fresh',
       source_availability: 'available',
       source_availability_detail: '',
@@ -300,10 +301,26 @@ describe('PoolFactualPage', () => {
       screen.getByText('Matched run-linked settlement receipt-q1 is partially_closed with open balance 40.00.')
     ).toBeInTheDocument()
     expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
+    expect(screen.getByText('Read backlog is clear on the default sync lane.')).toBeInTheDocument()
     expect(screen.getByText('sale-q1')).toBeInTheDocument()
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()
     expect(screen.getByText("Document_КорректировкаРеализации(guid'pool-alpha-late')")).toBeInTheDocument()
+  })
+
+  it('surfaces explicit read backlog details in the factual freshness card', async () => {
+    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    const workspace = buildWorkspace()
+    workspace.summary.backlog_total = 2
+    workspace.summary.freshness_state = 'stale'
+    mockGetPoolFactualWorkspace.mockResolvedValue(workspace)
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
+
+    await screen.findByText('Source available; last sync 2026-03-27 10:00:00 UTC.')
+    expect(
+      screen.queryAllByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.').length
+    ).toBeGreaterThan(0)
   })
 
   it('polls the factual workspace on the default 120-second interval', async () => {

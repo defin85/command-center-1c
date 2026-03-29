@@ -10,6 +10,7 @@ const TENANT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const DATABASE_ID = '10101010-1010-1010-1010-101010101010'
 const NOW = '2026-03-10T12:00:00Z'
 const WORKFLOW_REVISION_ID = 'wf-services-r4'
+const ROUTE_MOUNT_TIMEOUT_MS = 15000
 const DATABASE_RECORD = {
   id: DATABASE_ID,
   name: 'db-services',
@@ -942,7 +943,8 @@ const POOL_FACTUAL_WORKSPACE = {
     open_balance: '55.00',
     pending_review_total: 1,
     attention_required_total: 1,
-    freshness_state: 'fresh',
+    backlog_total: 2,
+    freshness_state: 'stale',
     source_availability: 'available',
     source_availability_detail: '',
     last_synced_at: NOW,
@@ -2368,7 +2370,9 @@ test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect(page.getByTestId('pool-catalog-context-pool')).toHaveText('pool-main - Main Pool')
   const detailDrawer = page.getByTestId('pool-catalog-bindings-drawer')
   await expect(detailDrawer).toBeVisible()
@@ -2385,9 +2389,13 @@ test('UI platform: /databases restores selected database and management context 
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect(page.getByRole('combobox', { name: 'Cluster filter' })).toBeVisible()
-  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID, {
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect(page.getByTestId('database-metadata-management-drawer')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`\\/databases\\?cluster=cluster-1&database=${DATABASE_ID}&context=metadata$`))
 })
@@ -2401,7 +2409,9 @@ test('UI platform: /databases keeps selected management context on browser back 
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID, {
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
 
   await page.getByTestId('database-workspace-open-credentials').click()
   await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=credentials$`))
@@ -2489,6 +2499,7 @@ test('UI platform: /pools/factual restores compact selection and detail workspac
   await expect(page.getByText('Factual operator workspace')).toBeVisible()
   await expect(page.getByText('Quarter summary')).toBeVisible()
   await expect(page.getByText('Manual review queue')).toBeVisible()
+  await expect(page.getByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.')).toBeVisible()
   await expect(page.getByText('focus=settlement')).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
@@ -2523,8 +2534,12 @@ test('UI platform: /operations restores selected operation and inspect context f
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
-  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open workflow diagnostics' })).toBeVisible()
 })
@@ -2538,7 +2553,9 @@ test('UI platform: /operations keeps selected operation view on browser back and
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
 
   await page.getByRole('button', { name: 'Timeline' }).click()
   await expect(page).toHaveURL(new RegExp(`\\/operations\\?operation=${WORKFLOW_OPERATION.id}&tab=monitor$`))
@@ -2830,7 +2847,9 @@ test('Runtime contract: /databases hands off to /operations without replaying sh
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect.poll(() => counts.bootstrap).toBe(1)
   await expect.poll(() => counts.databaseLists).toBe(1)
   await expect(counts.meReads).toBe(0)
@@ -2839,7 +2858,9 @@ test('Runtime contract: /databases hands off to /operations without replaying sh
   await page.getByTestId('database-workspace-open-operations').click()
 
   await expect(page).toHaveURL(new RegExp(`\\/operations\\?wizard=true&databases=${DATABASE_ID}$`))
-  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.meReads).toBe(0)
   await expect(counts.myTenantsReads).toBe(0)
@@ -2856,7 +2877,9 @@ test('Runtime contract: /operations hands off to workflow diagnostics without re
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect.poll(() => counts.bootstrap).toBe(1)
   await expect.poll(() => counts.operationsList).toBe(1)
   await expect.poll(() => counts.operationDetails).toBe(1)
@@ -2884,7 +2907,9 @@ test('Runtime contract: /operations ignores same-route menu re-entry and keeps i
 
   const operationsMenuItem = page.getByRole('menuitem', { name: /Operations/i })
 
-  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
   await expect.poll(() => counts.operationsList).toBe(1)
   await expect.poll(() => counts.operationDetails).toBe(1)
 

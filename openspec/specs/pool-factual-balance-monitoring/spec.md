@@ -1,7 +1,7 @@
 # pool-factual-balance-monitoring Specification
 
 ## Purpose
-TBD - created by archiving change add-pool-factual-balance-monitoring. Update Purpose after archive.
+Определяет bounded factual sync, materialized balance projection, operator workspace и manual review queue для контроля фактических остатков по пулу и кварталу.
 ## Requirements
 ### Requirement: Variant B architecture MUST разделять factual monitoring на три изолированные подсистемы внутри текущих runtime boundaries
 Система ДОЛЖНА (SHALL) реализовывать этот change внутри текущих `frontend -> api-gateway -> orchestrator -> worker -> 1C` boundaries без нового top-level service, нового primary runtime или отдельного frontend app.
@@ -192,4 +192,3 @@ Projection ДОЛЖЕН (SHALL) хранить derived показатели:
 - **WHEN** `read worker` обнаруживает изменение
 - **THEN** projection помечает late correction как `attention_required`
 - **AND** historical quarter и следующий carry-forward не меняются автоматически
-

@@ -1,7 +1,7 @@
 # pool-batch-intake Specification
 
 ## Purpose
-TBD - created by archiving change add-pool-factual-balance-monitoring. Update Purpose after archive.
+Определяет canonical `PoolBatch` intake для внешних `receipt`/`sale` реестров, schema-driven normalization, provenance и batch-backed kickoff linked pool runs.
 ## Requirements
 ### Requirement: Pool batch intake MUST нормализовать внешние реестры в canonical batch
 Система ДОЛЖНА (SHALL) принимать внешние реестры поступлений и реализаций как canonical `PoolBatch`, scoped к конкретному `pool`, с сохранением provenance:
@@ -69,4 +69,3 @@ Idempotency fingerprint для batch-backed create-run ДОЛЖЕН (SHALL) вк
 - **WHEN** оператор загружает `sale` batch для этого leaf-узла
 - **THEN** система создаёт closing documents
 - **AND** дальнейшая factual projection уменьшает открытый остаток без line-level pairing с исходным `receipt` batch
-
