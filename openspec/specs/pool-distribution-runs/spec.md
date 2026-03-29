@@ -72,15 +72,22 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 
 ### Requirement: Reporting MUST предоставлять сводный и детализированный баланс
 Система ДОЛЖНА (SHALL) формировать:
-- сводный отчёт по узлам/уровням пула,
-- детальный отчёт по парам продажа/покупка.
+- сводный runtime-отчёт по узлам/уровням пула;
+- детальный runtime-отчёт по парам продажа/покупка.
 
 Система ДОЛЖНА (SHALL) рассчитывать строгую проверку сходимости сумм по выбранному периоду и отображать диагностику при разбеге.
 
-#### Scenario: Пользователь получает два представления отчёта
-- **WHEN** пользователь открывает отчёт run
-- **THEN** доступны агрегатный и детализированный режимы
+Runtime report ДОЛЖЕН (SHALL) оставаться отчётом по расчётным/published artifact-ам конкретного run и НЕ ДОЛЖЕН (SHALL NOT) подменять centralized factual balance monitoring по реальным документам и регистрам ИБ.
+
+Для batch-backed run система ДОЛЖНА (SHALL) показывать из run report явную ссылку или reference на соответствующий batch settlement/factual balance context.
+
+`/pools/runs` ДОЛЖЕН (SHALL) оставаться execution-centric surface и НЕ ДОЛЖЕН (SHALL NOT) становиться primary workspace для factual monitoring, `unattributed` review или late-correction reconcile.
+
+#### Scenario: Оператор отличает run-local отчёт от factual balance dashboard
+- **WHEN** оператор открывает отчёт batch-backed run
+- **THEN** доступны агрегатный и детализированный runtime режимы отчёта
 - **AND** отчёт содержит явный статус сходимости сумм
+- **AND** оператор видит ссылку на factual balance context, не смешивая runtime convergence с фактическим остатком в ИБ
 
 ### Requirement: Module MUST предоставить внешние API для запуска и дозаписи
 Система ДОЛЖНА (SHALL) предоставить внешние endpoint'ы для:
@@ -102,7 +109,19 @@ TBD - created by archiving change add-intercompany-pool-distribution-module. Upd
 - выбирает явный `pool_workflow_binding`;
 - запрашивает и валидирует direction-specific входные данные.
 
-Для `top_down` система ДОЛЖНА (SHALL) требовать ввод стартовой суммы распределения пользователем.
+Для `top_down` система ДОЛЖНА (SHALL) поддерживать два operator-facing режима запуска:
+- прямой ввод стартовой суммы пользователем;
+- batch-backed запуск от canonical `receipt` batch с явным выбором `start_organization`.
+
+Для batch-backed `top_down` система ДОЛЖНА (SHALL):
+- требовать явную ссылку на batch;
+- требовать явную стартовую организацию из активной topology пула на период run;
+- передавать `batch_id` и `start_organization_id` как explicit direction-specific input на public request boundary;
+- трактовать `one batch = one pool_run`;
+- использовать batch-aware idempotency fingerprint, который различает batch-backed path и manual `starting_amount` path;
+- сохранять batch/run lineage в read model и provenance run.
+
+Для документов, создаваемых в результате batch-backed run, система ДОЛЖНА (SHALL) публиковать machine-readable comment marker, совместимый с factual balance monitoring contract.
 
 Для `bottom_up` система ДОЛЖНА (SHALL) поддерживать выбор шаблона импорта и ввод/загрузку источника данных из UI.
 
@@ -116,11 +135,12 @@ Selector-based matching МОЖЕТ (MAY) использоваться тольк
 
 Preview/create-run path ДОЛЖЕН (SHALL) резолвить attachment только из canonical attachment store и сохранять attachment lineage snapshot, `attachment revision` и pinned `binding_profile_revision_id` на `PoolRun`/execution в момент запуска.
 
-#### Scenario: Top-down run запускается из UI с выбранным attachment и стартовой суммой
-- **GIVEN** оператор выбрал pool, attachment и направление `top_down`
-- **WHEN** оператор вводит стартовую сумму и отправляет форму запуска
-- **THEN** run создаётся через `/api/v2/pools/runs/` с explicit `pool_workflow_binding_id` и direction-specific входными данными
-- **AND** runtime резолвит pinned `binding_profile_revision_id` через выбранный attachment
+#### Scenario: Top-down run запускается от `receipt` batch и выбранной стартовой организации
+- **GIVEN** оператор выбрал pool, attachment, направление `top_down`, canonical `receipt` batch и стартовую организацию
+- **WHEN** оператор отправляет форму запуска
+- **THEN** run создаётся через `/api/v2/pools/runs/` с explicit `pool_workflow_binding_id` и batch-backed direction-specific входными данными
+- **AND** batch-backed input содержит явные `batch_id` и `start_organization_id`
+- **AND** runtime сохраняет batch/run lineage и selected `start_organization`
 - **AND** запуск не требует ручного формирования payload во внешнем API-клиенте
 
 ### Requirement: Pool runs UI MUST поддерживать полный операторский lifecycle run
