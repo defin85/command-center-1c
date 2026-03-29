@@ -307,6 +307,44 @@ def test_enqueue_workflow_execution_sync_contract_persists_scheduling_metadata()
 
 
 @pytest.mark.django_db
+def test_enqueue_workflow_execution_sync_contract_accepts_factual_read_role():
+    execution_id = str(uuid4())
+    sync_job_id = str(uuid4())
+    deadline_at = (
+        timezone.now().astimezone(dt_timezone.utc) + timedelta(minutes=5)
+    ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    with (
+        patch("apps.operations.services.operations_service.workflow.redis_client") as mock_redis_client,
+        patch("apps.operations.services.operations_service.workflow.event_publisher") as mock_event_publisher,
+    ):
+        mock_redis_client.enqueue_operation_stream.return_value = "1702389123888-0"
+
+        result = OperationsService.enqueue_workflow_execution(
+            execution_id=execution_id,
+            workflow_config={
+                "sync_job_id": sync_job_id,
+                "execution_consumer": "pools",
+                "priority": "p1",
+                "role": "read",
+                "server_affinity": "srv-1c-a",
+                "deadline_at": deadline_at,
+            },
+        )
+
+    assert result.success is True
+    message = mock_redis_client.enqueue_operation_stream.call_args.args[0]
+    assert message["payload"]["data"]["role"] == "read"
+    assert message["metadata"]["role"] == "read"
+    assert message["execution_config"]["priority"] == "p1"
+    mock_event_publisher.publish.assert_called_once()
+
+    root = BatchOperation.objects.get(id=execution_id)
+    assert root.status == BatchOperation.STATUS_QUEUED
+    assert root.metadata.get("role") == "read"
+
+
+@pytest.mark.django_db
 def test_enqueue_workflow_execution_sync_contract_invalid_rejects_without_side_effects():
     execution_id = str(uuid4())
     sync_job_id = str(uuid4())

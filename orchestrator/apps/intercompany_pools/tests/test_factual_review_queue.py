@@ -193,6 +193,53 @@ def test_apply_pool_factual_review_action_rejects_attribute_for_late_correction_
 
 
 @pytest.mark.django_db
+def test_apply_pool_factual_review_action_resolves_without_change_without_rewriting_targets() -> None:
+    from apps.intercompany_pools.factual_review_queue import (
+        FACTUAL_REVIEW_ACTION_RESOLVE_WITHOUT_CHANGE,
+        apply_pool_factual_review_action,
+    )
+
+    tenant = Tenant.objects.create(
+        slug=f"factual-review-resolve-{uuid4().hex[:6]}",
+        name="Factual Review Resolve",
+    )
+    pool, _, leaf = _create_pool_scope(tenant=tenant, suffix="004")
+    actor = User.objects.create_user(username=f"factual-review-resolve-{uuid4().hex[:6]}", password="pass")
+    review_item = PoolFactualReviewItem.objects.create(
+        tenant=tenant,
+        pool=pool,
+        organization=leaf,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.UNATTRIBUTED,
+        source_document_ref="Document_РеализацияТоваровУслуг(guid'55555555-5555-5555-5555-555555555555')",
+        metadata={"raw_organization_id": str(leaf.id)},
+    )
+
+    updated = apply_pool_factual_review_action(
+        review_item_id=str(review_item.id),
+        tenant_id=str(tenant.id),
+        actor_id=str(actor.id),
+        action=FACTUAL_REVIEW_ACTION_RESOLVE_WITHOUT_CHANGE,
+        note="accepted as external-only correction",
+        metadata={"resolution_code": "NO_ATTRIBUTION_REQUIRED"},
+    )
+
+    updated.refresh_from_db()
+    assert updated.status == PoolFactualReviewStatus.RESOLVED_WITHOUT_CHANGE
+    assert updated.batch_id is None
+    assert updated.edge_id is None
+    assert updated.organization_id == leaf.id
+    assert updated.resolved_by_id == actor.id
+    assert updated.metadata["operator_actions"][-1]["action"] == FACTUAL_REVIEW_ACTION_RESOLVE_WITHOUT_CHANGE
+    assert updated.metadata["operator_actions"][-1]["note"] == "accepted as external-only correction"
+    assert (
+        updated.metadata["operator_actions"][-1]["metadata"]["resolution_code"]
+        == "NO_ATTRIBUTION_REQUIRED"
+    )
+
+
+@pytest.mark.django_db
 def test_build_pool_factual_review_queue_snapshot_exposes_reason_specific_actions_and_summary() -> None:
     from apps.intercompany_pools.factual_review_queue import (
         FACTUAL_REVIEW_ACTION_ATTRIBUTE,

@@ -124,6 +124,34 @@ func TestOperationMessage_Validate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid sync scheduling contract with factual read role",
+			msg: OperationMessage{
+				Version:         "2.0",
+				OperationID:     "test-123",
+				OperationType:   "execute_workflow",
+				TargetDatabases: []TargetDatabase{},
+				Payload: OperationPayload{
+					Data: map[string]interface{}{
+						"sync_job_id":      "job-1",
+						"server_affinity":  "srv-1c-a",
+						"deadline_at":      "2026-03-03T12:02:00Z",
+						"role":             "read",
+						"workflow_context": "factual",
+					},
+				},
+				ExecConfig: ExecutionConfig{
+					Priority: "p1",
+				},
+				Metadata: MessageMetadata{
+					Priority:       "p1",
+					Role:           "read",
+					ServerAffinity: "srv-1c-a",
+					DeadlineAt:     "2026-03-03T12:02:00Z",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "invalid sync scheduling priority",
 			msg: OperationMessage{
 				Version:         "2.0",

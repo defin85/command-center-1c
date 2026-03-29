@@ -373,6 +373,153 @@ def test_apply_pool_factual_review_action_endpoint_updates_queue(
 
 
 @pytest.mark.django_db
+def test_apply_pool_factual_review_action_endpoint_resolve_without_change_keeps_open_balance(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    user: User,
+) -> None:
+    pool, leaf, edge, database = _create_pool_scope(tenant=default_tenant, suffix="review-resolve")
+    batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        source_reference="receipt-q1-resolve",
+    )
+    settlement = PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.ATTENTION_REQUIRED,
+        incoming_amount=Decimal("15.00"),
+        outgoing_amount=Decimal("0.00"),
+        open_balance=Decimal("15.00"),
+        summary={},
+        freshness_at=datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc),
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+        edge=edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat=Decimal("15.00"),
+        amount_without_vat=Decimal("12.50"),
+        vat_amount=Decimal("2.50"),
+        incoming_amount=Decimal("15.00"),
+        outgoing_amount=Decimal("0.00"),
+        open_balance=Decimal("15.00"),
+        freshness_at=datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc),
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        organization=leaf,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat=Decimal("-15.00"),
+        amount_without_vat=Decimal("-12.50"),
+        vat_amount=Decimal("-2.50"),
+        incoming_amount=Decimal("0.00"),
+        outgoing_amount=Decimal("15.00"),
+        open_balance=Decimal("-15.00"),
+        freshness_at=datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc),
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="cp-review-resolve-001",
+        last_synced_at=datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc),
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+        },
+    )
+    review_item = PoolFactualReviewItem.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        organization=leaf,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.UNATTRIBUTED,
+        status=PoolFactualReviewStatus.PENDING,
+        source_document_ref="Document_РеализацияТоваровУслуг(guid'review-resolve-sale')",
+        delta_payload={
+            "amount_with_vat": "15.00",
+            "amount_without_vat": "12.50",
+            "vat_amount": "2.50",
+            "kind": "sale",
+        },
+        metadata={"raw_organization_id": str(leaf.id)},
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/factual/review-actions/",
+        {
+            "review_item_id": str(review_item.id),
+            "action": "resolve_without_change",
+            "note": "accepted as external-only correction",
+            "metadata": {"resolution_code": "NO_ATTRIBUTION_REQUIRED"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    review_item.refresh_from_db()
+
+    assert payload["review_item"]["id"] == str(review_item.id)
+    assert payload["review_item"]["status"] == "resolved_without_change"
+    assert payload["review_queue"]["summary"]["pending_total"] == 0
+    assert review_item.status == PoolFactualReviewStatus.RESOLVED_WITHOUT_CHANGE
+    assert review_item.batch_id is None
+    assert review_item.edge_id is None
+    assert review_item.resolved_by_id == user.id
+    assert review_item.metadata["last_resolution"]["note"] == "accepted as external-only correction"
+    settlement.refresh_from_db()
+    assert settlement.status == PoolBatchSettlementStatus.DISTRIBUTED
+    assert settlement.incoming_amount == Decimal("15.00")
+    assert settlement.outgoing_amount == Decimal("0.00")
+    assert settlement.open_balance == Decimal("15.00")
+    assert settlement.summary["review_queue"]["summary"]["pending_total"] == 0
+
+    workspace_response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+
+    assert workspace_response.status_code == 200
+    workspace_payload = workspace_response.json()
+    assert workspace_payload["summary"]["pending_review_total"] == 0
+    assert workspace_payload["summary"]["attention_required_total"] == 0
+    assert workspace_payload["summary"]["incoming_amount"] == "15.00"
+    assert workspace_payload["summary"]["outgoing_amount"] == "0.00"
+    assert workspace_payload["summary"]["open_balance"] == "15.00"
+    assert len(workspace_payload["settlements"]) == 1
+    assert workspace_payload["settlements"][0]["settlement"]["status"] == PoolBatchSettlementStatus.DISTRIBUTED
+    assert workspace_payload["settlements"][0]["settlement"]["outgoing_amount"] == "0.00"
+    assert workspace_payload["settlements"][0]["settlement"]["open_balance"] == "15.00"
+    assert workspace_payload["review_queue"]["summary"]["pending_total"] == 0
+    assert len(workspace_payload["edge_balances"]) == 2
+    edge_balances_by_batch = {
+        item["batch_id"]: item for item in workspace_payload["edge_balances"]
+    }
+    assert edge_balances_by_batch[str(batch.id)]["edge_id"] == str(edge.id)
+    assert edge_balances_by_batch[str(batch.id)]["incoming_amount"] == "15.00"
+    assert edge_balances_by_batch[str(batch.id)]["outgoing_amount"] == "0.00"
+    assert edge_balances_by_batch[str(batch.id)]["open_balance"] == "15.00"
+    assert edge_balances_by_batch[None]["batch_id"] is None
+    assert edge_balances_by_batch[None]["edge_id"] is None
+    assert edge_balances_by_batch[None]["incoming_amount"] == "0.00"
+    assert edge_balances_by_batch[None]["outgoing_amount"] == "15.00"
+    assert edge_balances_by_batch[None]["open_balance"] == "-15.00"
+
+
+@pytest.mark.django_db
 def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_missing(
     authenticated_client: APIClient,
     default_tenant: Tenant,

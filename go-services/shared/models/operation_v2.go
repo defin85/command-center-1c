@@ -124,6 +124,7 @@ var schedulingPriorityEnum = map[string]bool{
 var schedulingRoleEnum = map[string]bool{
 	"inbound":            true,
 	"outbound":           true,
+	"read":               true,
 	"reconcile":          true,
 	"manual_remediation": true,
 }

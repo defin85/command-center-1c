@@ -16909,6 +16909,7 @@ components:
           enum:
             - inbound
             - outbound
+            - read
             - reconcile
             - manual_remediation
           nullable: true

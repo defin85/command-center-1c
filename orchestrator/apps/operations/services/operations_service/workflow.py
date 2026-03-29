@@ -15,7 +15,9 @@ from .types import EnqueueResult, classify_enqueue_error_code, logger
 
 class OperationsServiceWorkflowMixin:
     SYNC_SCHEDULING_PRIORITY_ENUM = frozenset(("p0", "p1", "p2", "p3"))
-    SYNC_SCHEDULING_ROLE_ENUM = frozenset(("inbound", "outbound", "reconcile", "manual_remediation"))
+    SYNC_SCHEDULING_ROLE_ENUM = frozenset(
+        ("inbound", "outbound", "read", "reconcile", "manual_remediation")
+    )
 
     @staticmethod
     def _extract_actor_username_from_input_context(input_context: dict[str, Any] | None) -> str:
