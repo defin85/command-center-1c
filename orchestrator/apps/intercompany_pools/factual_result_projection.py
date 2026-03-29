@@ -498,7 +498,8 @@ def refresh_pool_factual_batch_settlement_snapshots(
     for batch in PoolBatch.objects.filter(
         tenant=tenant,
         pool=pool,
-        period_start=quarter_start,
+        period_start__gte=quarter_start,
+        period_start__lte=quarter_end,
     ).select_related("settlement"):
         settlement = getattr(batch, "settlement", None)
         if settlement is None:
@@ -522,8 +523,11 @@ def refresh_pool_factual_batch_settlement_snapshots(
             quarter_end=quarter_end,
             status=PoolFactualReviewStatus.PENDING,
         ).exists()
+        carry_forward_summary = dict(settlement.summary or {}).get("carry_forward")
         if pending_review_exists:
             next_status = PoolBatchSettlementStatus.ATTENTION_REQUIRED
+        elif isinstance(carry_forward_summary, dict) and carry_forward_summary:
+            next_status = PoolBatchSettlementStatus.CARRIED_FORWARD
         elif open_balance == Decimal("0.00") and outgoing_amount > Decimal("0.00"):
             next_status = PoolBatchSettlementStatus.CLOSED
         elif outgoing_amount > Decimal("0.00"):

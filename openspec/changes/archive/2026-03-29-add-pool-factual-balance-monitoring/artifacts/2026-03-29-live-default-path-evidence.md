@@ -22,9 +22,11 @@ curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
   "http://localhost:8200/api/v2/pools/factual/workspace/?pool_id=5e843d4c-f1d1-4de9-a8c2-594cc7572330&quarter_start=2026-04-01"
 ```
 
-Note:
-- local evidence was captured from the orchestrator HTTP boundary after applying the code change;
-- the default frontend/api-gateway path is covered by the shipped API/browser tests and uses the same public payload contract.
+Follow-up recheck:
+- `2026-03-29` post-review closure reran the default public path through `8180` and `15173`.
+- `POST /api/token` followed by `GET /api/v2/pools/runs/<run>/report/` returned `200` via `8180`.
+- `POST /api/token` followed by `GET /api/v2/pools/factual/workspace/` returned `200` via both `8180` and `15173`.
+- the live default-path regression turned out to be a gateway fallback-config drift: Go default `JWT_SECRET` did not match Django `SIMPLE_JWT` default until the post-review fix aligned them.
 
 ## Report Excerpt
 
@@ -84,4 +86,5 @@ Note:
 
 - The default live path produced a linked published run for the canonical receipt batch.
 - The factual workspace exposed explicit `backlog_total` together with `freshness_state=stale`, so read backlog is no longer hidden behind source availability alone.
+- The public frontend/api-gateway/orchestrator path was rechecked after the post-review fix and now returns `200` for both the linked run report and the factual workspace.
 - The same cohort also passed the published-surfaces preflight gate recorded in `2026-03-29-pilot-preflight-evidence.json`.

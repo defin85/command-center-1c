@@ -14,6 +14,19 @@ func TestLoadFromEnv_EnablePoolOpsRoute_DefaultFalse(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnv_JWTDefaultsMatchDjango(t *testing.T) {
+	t.Setenv("JWT_SECRET", "")
+	t.Setenv("JWT_ISSUER", "")
+
+	cfg := LoadFromEnv()
+	if cfg.JWTSecret != "your-jwt-secret-change-in-production" {
+		t.Fatalf("expected JWTSecret default to match Django SimpleJWT default, got %q", cfg.JWTSecret)
+	}
+	if cfg.JWTIssuer != "commandcenter1c" {
+		t.Fatalf("expected JWTIssuer default to match Django SimpleJWT default, got %q", cfg.JWTIssuer)
+	}
+}
+
 func TestLoadFromEnv_WorkerFairnessDefaults(t *testing.T) {
 	t.Setenv("WORKER_FAIRNESS_OLDEST_AGE_THRESHOLD", "")
 	t.Setenv("WORKER_FAIRNESS_MANUAL_RESERVE_SLOTS", "")

@@ -5,8 +5,13 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth import get_user_model
 
 from apps.databases.models import Database
+from apps.intercompany_pools.factual_review_queue import (
+    FACTUAL_REVIEW_ACTION_RECONCILE,
+    apply_pool_factual_review_action,
+)
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
@@ -17,9 +22,15 @@ from apps.intercompany_pools.models import (
     PoolBatchSourceType,
     PoolEdgeVersion,
     PoolFactualBalanceSnapshot,
+    PoolFactualReviewItem,
+    PoolFactualReviewReason,
+    PoolFactualReviewStatus,
     PoolNodeVersion,
 )
 from apps.tenancy.models import Tenant
+
+
+User = get_user_model()
 
 
 def _create_database(*, tenant: Tenant, suffix: str) -> Database:
@@ -238,3 +249,63 @@ def test_materialize_factual_carry_forward_is_idempotent_for_same_source_snapsho
     assert first.target_snapshot.id == second.target_snapshot.id
     assert first.created is True
     assert second.created is False
+
+
+@pytest.mark.django_db
+def test_reconcile_late_correction_keeps_carried_forward_settlement_status() -> None:
+    from apps.intercompany_pools.factual_carry_forward import materialize_factual_carry_forward
+
+    tenant = Tenant.objects.create(slug=f"carry-forward-review-{uuid4().hex[:6]}", name="Carry Forward Review")
+    pool, root, leaf, _database, edge = _create_scope(tenant=tenant, suffix="004")
+    batch, settlement = _create_batch_with_settlement(
+        tenant=tenant,
+        pool=pool,
+        start_organization=root,
+    )
+    source_snapshot = PoolFactualBalanceSnapshot.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+        edge=edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat="45.00",
+        amount_without_vat="37.50",
+        vat_amount="7.50",
+        incoming_amount="120.00",
+        outgoing_amount="75.00",
+        open_balance="45.00",
+        freshness_at=datetime(2026, 3, 31, 20, 15, tzinfo=dt_timezone.utc),
+    )
+    materialize_factual_carry_forward(
+        source_snapshot=source_snapshot,
+        applied_at=datetime(2026, 4, 1, 0, 5, tzinfo=dt_timezone.utc),
+    )
+    review_item = PoolFactualReviewItem.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+        edge=edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.LATE_CORRECTION,
+        status=PoolFactualReviewStatus.PENDING,
+        source_document_ref="Document_КорректировкаРеализации(guid'carry-forward-review-1')",
+        delta_payload={"amount_with_vat": "10.00"},
+        metadata={"change_type": "changed"},
+    )
+    actor = User.objects.create_user(username=f"carry-forward-review-{uuid4().hex[:6]}", password="pass")
+
+    apply_pool_factual_review_action(
+        review_item_id=str(review_item.id),
+        tenant_id=str(tenant.id),
+        actor_id=str(actor.id),
+        action=FACTUAL_REVIEW_ACTION_RECONCILE,
+        note="manual reconcile after carry forward",
+    )
+
+    settlement.refresh_from_db()
+    assert settlement.status == PoolBatchSettlementStatus.CARRIED_FORWARD
+    assert settlement.summary["carry_forward"]["source_snapshot_id"] == str(source_snapshot.id)

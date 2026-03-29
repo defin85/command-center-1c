@@ -139,7 +139,7 @@ func LoadFromEnv() *Config {
 		ServerPort: getEnv("SERVER_PORT", "8180"),
 
 		// JWT
-		JWTSecret:     getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+		JWTSecret:     getEnv("JWT_SECRET", "your-jwt-secret-change-in-production"),
 		JWTExpireTime: getDurationEnv("JWT_EXPIRE_TIME", 24*time.Hour),
 		JWTIssuer:     getEnv("JWT_ISSUER", "commandcenter1c"),
 

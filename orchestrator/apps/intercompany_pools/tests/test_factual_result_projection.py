@@ -20,6 +20,8 @@ from apps.intercompany_pools.models import (
     OrganizationPool,
     PoolBatch,
     PoolBatchKind,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
     PoolBatchSourceType,
     PoolEdgeVersion,
     PoolFactualBalanceSnapshot,
@@ -376,6 +378,89 @@ def test_project_pool_factual_result_from_execution_reuses_resolved_unattributed
         reason=PoolFactualReviewReason.UNATTRIBUTED,
         status=PoolFactualReviewStatus.PENDING,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_project_pool_factual_result_from_execution_refreshes_settlement_for_batch_inside_quarter() -> None:
+    from apps.intercompany_pools.factual_result_projection import project_pool_factual_result_from_execution
+
+    tenant = Tenant.objects.create(slug=f"factual-result-mid-quarter-{uuid4().hex[:6]}", name="Factual Result Mid Quarter")
+    pool, root, leaf, database = _create_pool_scope(tenant=tenant, suffix="mid-quarter")
+    edge = _create_edge(pool=pool, root=root, leaf=leaf)
+    batch = PoolBatch.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        period_start=date(2026, 2, 1),
+        period_end=date(2026, 2, 28),
+        start_organization=root,
+        source_reference="receipt-mid-quarter",
+    )
+    settlement = PoolBatchSettlement.objects.create(
+        tenant=tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.INGESTED,
+    )
+    checkpoint = PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+    )
+    payload = {
+        "node_results": {
+            "factual_sync_source_slice": {
+                "step": "factual_sync_source_slice",
+                "pool_id": str(pool.id),
+                "database_id": str(database.id),
+                "lane": "read",
+                "quarter_start": "2026-01-01",
+                "quarter_end": "2026-03-31",
+                "boundary_reads": {
+                    "accounting_register": 1,
+                    "information_register": 1,
+                    "Document_ПоступлениеТоваровУслуг": 1,
+                },
+                "source_checkpoint_token": "cp-mid-quarter-001",
+                "factual_documents": [
+                    {
+                        "source_document_ref": "Document_ПоступлениеТоваровУслуг(guid'mid-quarter-1')",
+                        "organization_id": str(leaf.id),
+                        "batch_id": str(batch.id),
+                        "edge_id": str(edge.id),
+                        "amount_with_vat": "45.00",
+                        "amount_without_vat": "37.50",
+                        "vat_amount": "7.50",
+                        "comment": (
+                            f"CCPOOL:v=1;pool={pool.id};run=-;batch={batch.id};org={leaf.id};q=2026Q1;kind=receipt"
+                        ),
+                        "kind": "receipt",
+                        "modified_at": "2026-02-14T09:00:00Z",
+                    }
+                ],
+            }
+        }
+    }
+    execution = _build_execution(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        checkpoint=checkpoint,
+        organization_id=str(leaf.id),
+        lane=PoolFactualLane.READ,
+        payload=payload,
+    )
+
+    assert project_pool_factual_result_from_execution(execution=execution, result_payload=payload) is True
+
+    settlement.refresh_from_db()
+    assert settlement.status == PoolBatchSettlementStatus.DISTRIBUTED
+    assert settlement.incoming_amount == Decimal("45.00")
+    assert settlement.outgoing_amount == Decimal("0.00")
+    assert settlement.open_balance == Decimal("45.00")
 
 
 @pytest.mark.django_db
