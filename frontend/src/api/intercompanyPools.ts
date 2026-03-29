@@ -571,21 +571,40 @@ export type PoolBatch = {
   settlement: PoolBatchSettlement | null
 }
 
-export type PoolBatchCreatePayload = {
+type PoolBatchCreatePayloadBase = {
   pool_id: string
-  batch_kind: PoolBatchKind
   source_type: PoolBatchCreateSourceType
-  schema_template_id?: string | null
-  pool_workflow_binding_id?: string
-  start_organization_id?: string | null
+  schema_template_id: string
   period_start: string
   period_end?: string | null
   source_reference?: string
   raw_payload_ref?: string
-  source_metadata?: Record<string, unknown>
-  json_payload?: unknown
-  xlsx_base64?: string
+  source_metadata?: unknown
 }
+
+type PoolReceiptBatchCreatePayloadBase = PoolBatchCreatePayloadBase & {
+  batch_kind: 'receipt'
+  pool_workflow_binding_id: string
+  start_organization_id: string
+}
+
+type PoolSaleBatchCreatePayloadBase = PoolBatchCreatePayloadBase & {
+  batch_kind: 'sale'
+}
+
+type PoolBatchCreateJsonPayload = {
+  json_payload: unknown
+}
+
+type PoolBatchCreateXlsxPayload = {
+  xlsx_base64: string
+}
+
+export type PoolBatchCreatePayload =
+  | (PoolReceiptBatchCreatePayloadBase & PoolBatchCreateJsonPayload)
+  | (PoolReceiptBatchCreatePayloadBase & PoolBatchCreateXlsxPayload)
+  | (PoolSaleBatchCreatePayloadBase & PoolBatchCreateJsonPayload)
+  | (PoolSaleBatchCreatePayloadBase & PoolBatchCreateXlsxPayload)
 
 export type PoolBatchCreateResponse = {
   batch: PoolBatch

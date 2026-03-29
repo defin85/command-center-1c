@@ -85,6 +85,10 @@ export type PoolRunSafeCommandConflictContract = AssertAssignable<PoolRunSafeCom
 export type PoolRunRetryAcceptedResponseContract = AssertAssignable<PoolRunRetryAcceptedResponse, GeneratedPoolRunRetryAcceptedResponse>
 
 export type PoolBatchCreatePayloadContract = AssertAssignable<PoolBatchCreatePayload, GeneratedPoolBatchCreateRequest>
+export type GeneratedPoolBatchCreateRequestContract = AssertAssignable<
+  GeneratedPoolBatchCreateRequest,
+  PoolBatchCreatePayload
+>
 export type CreatePoolTopologyTemplatePayloadContract = AssertAssignable<
   CreatePoolTopologyTemplatePayload,
   GeneratedTopologyTemplateCreateRequest

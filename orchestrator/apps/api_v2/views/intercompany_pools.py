@@ -14,7 +14,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiResponse, PolymorphicProxySerializer, extend_schema
 from rest_framework import serializers, status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -3064,6 +3064,43 @@ class PoolBatchCreateRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class PoolBatchCreateRequestSchemaBaseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    source_type = serializers.ChoiceField(choices=(PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,))
+    schema_template_id = serializers.UUIDField()
+    pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
+    start_organization_id = serializers.UUIDField(required=False, allow_null=True)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField(required=False, allow_null=True)
+    source_reference = serializers.CharField(required=False, allow_blank=True, default="")
+    raw_payload_ref = serializers.CharField(required=False, allow_blank=True, default="")
+    source_metadata = serializers.JSONField(required=False, default=dict)
+
+
+class PoolBatchCreateReceiptJsonRequestSchemaSerializer(PoolBatchCreateRequestSchemaBaseSerializer):
+    batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.RECEIPT,))
+    pool_workflow_binding_id = serializers.CharField(allow_blank=False)
+    start_organization_id = serializers.UUIDField()
+    json_payload = serializers.JSONField()
+
+
+class PoolBatchCreateReceiptXlsxRequestSchemaSerializer(PoolBatchCreateRequestSchemaBaseSerializer):
+    batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.RECEIPT,))
+    pool_workflow_binding_id = serializers.CharField(allow_blank=False)
+    start_organization_id = serializers.UUIDField()
+    xlsx_base64 = serializers.CharField(allow_blank=False)
+
+
+class PoolBatchCreateSaleJsonRequestSchemaSerializer(PoolBatchCreateRequestSchemaBaseSerializer):
+    batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.SALE,))
+    json_payload = serializers.JSONField()
+
+
+class PoolBatchCreateSaleXlsxRequestSchemaSerializer(PoolBatchCreateRequestSchemaBaseSerializer):
+    batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.SALE,))
+    xlsx_base64 = serializers.CharField(allow_blank=False)
+
+
 class PoolBatchCreateResponseSerializer(serializers.Serializer):
     batch = PoolBatchSerializer()
     settlement = PoolBatchSettlementSerializer()
@@ -5470,7 +5507,16 @@ def get_pool_run_report(request, run_id: UUID):
     tags=["v2"],
     operation_id="v2_pools_batches_create",
     summary="Create canonical pool batch and start downstream processing",
-    request=PoolBatchCreateRequestSerializer,
+    request=PolymorphicProxySerializer(
+        component_name="PoolBatchCreateRequest",
+        serializers=[
+            PoolBatchCreateReceiptJsonRequestSchemaSerializer,
+            PoolBatchCreateReceiptXlsxRequestSchemaSerializer,
+            PoolBatchCreateSaleJsonRequestSchemaSerializer,
+            PoolBatchCreateSaleXlsxRequestSchemaSerializer,
+        ],
+        resource_type_field_name=None,
+    ),
     responses={
         201: PoolBatchCreateResponseSerializer,
         (400, "application/problem+json"): ProblemDetailsErrorSerializer,

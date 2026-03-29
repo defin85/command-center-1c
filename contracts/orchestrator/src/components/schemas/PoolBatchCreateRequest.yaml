@@ -1,44 +1,177 @@
-type: object
-properties:
-  pool_id:
-    type: string
-    format: uuid
-  batch_kind:
-    type: string
-    enum:
-      - receipt
-      - sale
-  source_type:
-    type: string
-    enum:
-      - schema_template_upload
-  schema_template_id:
-    type: string
-    format: uuid
-    nullable: true
-  pool_workflow_binding_id:
-    type: string
-  start_organization_id:
-    type: string
-    format: uuid
-    nullable: true
-  period_start:
-    type: string
-    format: date
-  period_end:
-    type: string
-    format: date
-    nullable: true
-  source_reference:
-    type: string
-  raw_payload_ref:
-    type: string
-  source_metadata: {}
-  json_payload: {}
-  xlsx_base64:
-    type: string
-required:
-  - batch_kind
-  - period_start
-  - pool_id
-  - source_type
+oneOf:
+  - type: object
+    additionalProperties: false
+    properties:
+      pool_id:
+        type: string
+        format: uuid
+      batch_kind:
+        type: string
+        enum:
+          - receipt
+      source_type:
+        type: string
+        enum:
+          - schema_template_upload
+      schema_template_id:
+        type: string
+        format: uuid
+      pool_workflow_binding_id:
+        type: string
+      start_organization_id:
+        type: string
+        format: uuid
+      period_start:
+        type: string
+        format: date
+      period_end:
+        type: string
+        format: date
+        nullable: true
+      source_reference:
+        type: string
+      raw_payload_ref:
+        type: string
+      source_metadata: {}
+      json_payload: {}
+    required:
+      - pool_id
+      - batch_kind
+      - source_type
+      - schema_template_id
+      - pool_workflow_binding_id
+      - start_organization_id
+      - period_start
+      - json_payload
+  - type: object
+    additionalProperties: false
+    properties:
+      pool_id:
+        type: string
+        format: uuid
+      batch_kind:
+        type: string
+        enum:
+          - receipt
+      source_type:
+        type: string
+        enum:
+          - schema_template_upload
+      schema_template_id:
+        type: string
+        format: uuid
+      pool_workflow_binding_id:
+        type: string
+      start_organization_id:
+        type: string
+        format: uuid
+      period_start:
+        type: string
+        format: date
+      period_end:
+        type: string
+        format: date
+        nullable: true
+      source_reference:
+        type: string
+      raw_payload_ref:
+        type: string
+      source_metadata: {}
+      xlsx_base64:
+        type: string
+    required:
+      - pool_id
+      - batch_kind
+      - source_type
+      - schema_template_id
+      - pool_workflow_binding_id
+      - start_organization_id
+      - period_start
+      - xlsx_base64
+  - type: object
+    additionalProperties: false
+    properties:
+      pool_id:
+        type: string
+        format: uuid
+      batch_kind:
+        type: string
+        enum:
+          - sale
+      source_type:
+        type: string
+        enum:
+          - schema_template_upload
+      schema_template_id:
+        type: string
+        format: uuid
+      pool_workflow_binding_id:
+        type: string
+      start_organization_id:
+        type: string
+        format: uuid
+        nullable: true
+      period_start:
+        type: string
+        format: date
+      period_end:
+        type: string
+        format: date
+        nullable: true
+      source_reference:
+        type: string
+      raw_payload_ref:
+        type: string
+      source_metadata: {}
+      json_payload: {}
+    required:
+      - pool_id
+      - batch_kind
+      - source_type
+      - schema_template_id
+      - period_start
+      - json_payload
+  - type: object
+    additionalProperties: false
+    properties:
+      pool_id:
+        type: string
+        format: uuid
+      batch_kind:
+        type: string
+        enum:
+          - sale
+      source_type:
+        type: string
+        enum:
+          - schema_template_upload
+      schema_template_id:
+        type: string
+        format: uuid
+      pool_workflow_binding_id:
+        type: string
+      start_organization_id:
+        type: string
+        format: uuid
+        nullable: true
+      period_start:
+        type: string
+        format: date
+      period_end:
+        type: string
+        format: date
+        nullable: true
+      source_reference:
+        type: string
+      raw_payload_ref:
+        type: string
+      source_metadata: {}
+      xlsx_base64:
+        type: string
+    required:
+      - pool_id
+      - batch_kind
+      - source_type
+      - schema_template_id
+      - period_start
+      - xlsx_base64

@@ -15,7 +15,9 @@ type PoolsUiMockState = {
   pools: AnyRecord[]
   graphByPoolId: Record<string, AnyRecord>
   runs: AnyRecord[]
+  batches?: AnyRecord[]
   createRunCalls: number
+  createBatchCalls?: number
   confirmCalls: number
   topologyUpsertCalls: number
   retryCalls: number
@@ -23,6 +25,8 @@ type PoolsUiMockState = {
   retryResponse?: AnyRecord
   lastTopologyPayload?: AnyRecord | null
   topologyTemplates?: AnyRecord[]
+  schemaTemplates?: AnyRecord[]
+  lastBatchPayload?: AnyRecord | null
   masterData?: {
     parties: AnyRecord[]
     items: AnyRecord[]
@@ -39,6 +43,199 @@ async function fulfillJson(route: Route, data: unknown, status = 200) {
     body: JSON.stringify(data),
     headers: { 'cache-control': 'no-store' },
   })
+}
+
+function buildDefaultWorkflowBinding(poolId: string): AnyRecord {
+  return {
+    binding_id: `binding-${poolId.slice(0, 8)}`,
+    pool_id: poolId,
+    revision: 1,
+    status: 'active',
+    binding_profile_id: 'profile-top-down',
+    binding_profile_revision_id: 'profile-top-down-r1',
+    binding_profile_revision_number: 1,
+    selector: {
+      direction: 'top_down',
+      mode: 'safe',
+    },
+    effective_from: '2026-01-01',
+    effective_to: null,
+    workflow: {
+      workflow_definition_key: 'pool-top-down',
+      workflow_name: 'Top Down Run',
+    },
+    decisions: [],
+    parameters: {},
+    role_mapping: {},
+    resolved_profile: {
+      binding_profile_id: 'profile-top-down',
+      code: 'profile-top-down',
+      name: 'Top Down Profile',
+      status: 'active',
+      binding_profile_revision_id: 'profile-top-down-r1',
+      binding_profile_revision_number: 1,
+      workflow: {
+        workflow_definition_key: 'pool-top-down',
+        workflow_name: 'Top Down Run',
+      },
+      decisions: [],
+      parameters: {},
+      role_mapping: {},
+      topology_template_compatibility: {
+        status: 'compatible',
+        topology_aware_ready: true,
+        covered_slot_keys: [],
+        diagnostics: [],
+      },
+    },
+  }
+}
+
+function buildDefaultSchemaTemplate(): AnyRecord {
+  return {
+    id: 'schema-template-json',
+    tenant_id: TENANT_ID,
+    code: 'json-template',
+    name: 'JSON Template',
+    format: 'json',
+    is_public: true,
+    is_active: true,
+    schema: {},
+    metadata: {},
+    workflow_template_id: null,
+    created_at: NOW,
+    updated_at: NOW,
+  }
+}
+
+function buildReceiptBatchMock({
+  batchId,
+  poolId,
+  schemaTemplateId,
+  runId,
+  periodStart,
+  periodEnd,
+  startOrganizationId,
+  sourceReference,
+}: {
+  batchId: string
+  poolId: string
+  schemaTemplateId: string | null
+  runId: string | null
+  periodStart: string
+  periodEnd: string | null
+  startOrganizationId: string | null
+  sourceReference: string
+}): AnyRecord {
+  return {
+    id: batchId,
+    tenant_id: TENANT_ID,
+    pool_id: poolId,
+    batch_kind: 'receipt',
+    source_type: 'schema_template_upload',
+    schema_template_id: schemaTemplateId,
+    start_organization_id: startOrganizationId,
+    run_id: runId,
+    workflow_execution_id: runId ? `94000000-0000-4000-8000-${runId.slice(-12)}` : null,
+    operation_id: null,
+    workflow_status: runId ? 'pending' : 'queued',
+    period_start: periodStart,
+    period_end: periodEnd,
+    source_reference: sourceReference,
+    raw_payload_ref: '',
+    content_hash: `hash-${batchId.slice(-12)}`,
+    source_metadata: {},
+    normalization_summary: { rows: 1 },
+    publication_summary: runId ? { linked_run_id: runId } : {},
+    last_error_code: '',
+    last_error: '',
+    created_by_id: null,
+    created_at: NOW,
+    updated_at: NOW,
+    settlement: {
+      id: `settlement-${batchId.slice(-12)}`,
+      tenant_id: TENANT_ID,
+      batch_id: batchId,
+      status: 'ingested',
+      incoming_amount: '125.50',
+      outgoing_amount: '0.00',
+      open_balance: '125.50',
+      summary: {},
+      freshness_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+    },
+  }
+}
+
+function buildLinkedReceiptRun({
+  runId,
+  batchId,
+  poolId,
+  startOrganizationId,
+  schemaTemplateId,
+}: {
+  runId: string
+  batchId: string
+  poolId: string
+  startOrganizationId: string | null
+  schemaTemplateId: string | null
+}): AnyRecord {
+  return {
+    id: runId,
+    tenant_id: TENANT_ID,
+    pool_id: poolId,
+    schema_template_id: schemaTemplateId,
+    mode: 'safe',
+    direction: 'top_down',
+    status: 'validated',
+    status_reason: 'awaiting_approval',
+    period_start: '2026-01-01',
+    period_end: null,
+    run_input: {
+      batch_id: batchId,
+      start_organization_id: startOrganizationId,
+    },
+    input_contract_version: 'run_input_v1',
+    idempotency_key: `idem-${runId}`,
+    workflow_execution_id: `94000000-0000-4000-8000-${runId.slice(-12)}`,
+    workflow_status: 'pending',
+    approval_state: 'awaiting_approval',
+    publication_step_state: 'not_enqueued',
+    terminal_reason: null,
+    execution_backend: 'workflow_core',
+    provenance: {
+      workflow_run_id: `94000000-0000-4000-8000-${runId.slice(-12)}`,
+      workflow_status: 'pending',
+      execution_backend: 'workflow_core',
+      retry_chain: [
+        {
+          workflow_run_id: `94000000-0000-4000-8000-${runId.slice(-12)}`,
+          parent_workflow_run_id: null,
+          attempt_number: 1,
+          attempt_kind: 'initial',
+          status: 'pending',
+        },
+      ],
+    },
+    workflow_template_name: 'pool-template-v1',
+    seed: null,
+    validation_summary: { rows: 1 },
+    publication_summary: { total_targets: 1 },
+    diagnostics: [],
+    last_error: '',
+    created_at: NOW,
+    updated_at: NOW,
+    validated_at: NOW,
+    publication_confirmed_at: null,
+    publishing_started_at: null,
+    completed_at: null,
+  }
+}
+
+async function selectAntdOption(page: Page, testId: string, optionText: string) {
+  await page.getByTestId(testId).click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: optionText }).first().click()
 }
 
 async function setupAuth(page: Page) {
@@ -110,6 +307,7 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
     bindings: [] as AnyRecord[],
   }
   const topologyTemplates = state.topologyTemplates || []
+  const schemaTemplates = state.schemaTemplates || [buildDefaultSchemaTemplate()]
 
   const buildPoolId = () => `90000000-0000-4000-8000-${String(poolSequence++).padStart(12, '0')}`
   const buildRunId = () => `91000000-0000-4000-8000-${String(runSequence++).padStart(12, '0')}`
@@ -198,6 +396,9 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
       pool.is_active = payload.is_active !== false
       pool.metadata = payload.metadata && typeof payload.metadata === 'object' ? payload.metadata : {}
       pool.updated_at = now
+      if (!Array.isArray(pool.workflow_bindings) || pool.workflow_bindings.length === 0) {
+        pool.workflow_bindings = [buildDefaultWorkflowBinding(String(pool.id))]
+      }
 
       const poolId = String(pool.id)
       if (!state.graphByPoolId[poolId]) {
@@ -377,7 +578,102 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
       })
     }
     if (method === 'GET' && path === '/api/v2/pools/schema-templates/') {
-      return fulfillJson(route, { templates: [], count: 0 })
+      return fulfillJson(route, { templates: schemaTemplates, count: schemaTemplates.length })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/batches/') {
+      const poolId = String(url.searchParams.get('pool_id') || '').trim()
+      const batchKind = String(url.searchParams.get('batch_kind') || '').trim()
+      const batches = (state.batches || []).filter((item) => {
+        const matchesPool = !poolId || String(item.pool_id || '') === poolId
+        const matchesKind = !batchKind || String(item.batch_kind || '') === batchKind
+        return matchesPool && matchesKind
+      })
+      return fulfillJson(route, { batches, count: batches.length })
+    }
+    if (method === 'POST' && path === '/api/v2/pools/batches/') {
+      state.createBatchCalls = (state.createBatchCalls ?? 0) + 1
+      const payload = request.postDataJSON() as AnyRecord
+      state.lastBatchPayload = payload
+      const poolId = String(payload.pool_id || '').trim()
+      const batchKind = String(payload.batch_kind || 'receipt').trim()
+      const periodStart = String(payload.period_start || '2026-01-01')
+      const periodEnd = payload.period_end == null ? null : String(payload.period_end)
+      const sourceReference = String(payload.source_reference || '').trim()
+      const schemaTemplateId = payload.schema_template_id == null ? null : String(payload.schema_template_id)
+      const startOrganizationId = payload.start_organization_id == null ? null : String(payload.start_organization_id)
+      const batchId = `92000000-0000-4000-8000-${String((state.batches || []).length + 1).padStart(12, '0')}`
+      const runId = batchKind === 'receipt'
+        ? `91000000-0000-4000-8000-${String((state.runs || []).length + 1).padStart(12, '0')}`
+        : null
+      const batch = batchKind === 'receipt'
+        ? buildReceiptBatchMock({
+          batchId,
+          poolId,
+          schemaTemplateId,
+          runId,
+          periodStart,
+          periodEnd,
+          startOrganizationId,
+          sourceReference,
+        })
+        : {
+          id: batchId,
+          tenant_id: TENANT_ID,
+          pool_id: poolId,
+          batch_kind: 'sale',
+          source_type: 'schema_template_upload',
+          schema_template_id: schemaTemplateId,
+          start_organization_id: null,
+          run_id: null,
+          workflow_execution_id: null,
+          operation_id: null,
+          workflow_status: 'queued',
+          period_start: periodStart,
+          period_end: periodEnd,
+          source_reference: sourceReference,
+          raw_payload_ref: '',
+          content_hash: `hash-${batchId.slice(-12)}`,
+          source_metadata: {},
+          normalization_summary: {},
+          publication_summary: {},
+          last_error_code: '',
+          last_error: '',
+          created_by_id: null,
+          created_at: NOW,
+          updated_at: NOW,
+          settlement: {
+            id: `settlement-${batchId.slice(-12)}`,
+            tenant_id: TENANT_ID,
+            batch_id: batchId,
+            status: 'ingested',
+            incoming_amount: '125.50',
+            outgoing_amount: '0.00',
+            open_balance: '125.50',
+            summary: {},
+            freshness_at: NOW,
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        }
+
+      state.batches = [batch, ...(state.batches || []).filter((item) => String(item.id) !== batchId)]
+      if (runId) {
+        const linkedRun = buildLinkedReceiptRun({
+          runId,
+          batchId,
+          poolId,
+          startOrganizationId,
+          schemaTemplateId,
+        })
+        state.runs = [linkedRun, ...(state.runs || []).filter((item) => String(item.id) !== runId)]
+      }
+      return fulfillJson(route, {
+        batch,
+        settlement: batch.settlement,
+        run: runId ? state.runs.find((item) => String(item.id) === runId) ?? null : null,
+        created: true,
+        sale_closing: null,
+      }, 201)
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/parties/') {
       const role = String(url.searchParams.get('role') || '').trim()
@@ -654,6 +950,210 @@ test('Pools full flow smoke: 3 org -> minimal pool -> top_down run -> confirm pu
 
   await expect.poll(() => state.confirmCalls).toBe(1)
   await expect(page.getByText('approved', { exact: false })).toBeVisible()
+})
+
+test('Pools browser-flow: canonical batch drawer opens linked run context without manual UUID entry', async ({ page }) => {
+  const state = {
+    pools: [] as AnyRecord[],
+    graphByPoolId: {} as Record<string, AnyRecord>,
+    runs: [] as AnyRecord[],
+    batches: [] as AnyRecord[],
+    createRunCalls: 0,
+    createBatchCalls: 0,
+    confirmCalls: 0,
+    topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null as AnyRecord | null,
+    lastBatchPayload: null as AnyRecord | null,
+    topologyTemplates: [
+      {
+        topology_template_id: 'template-top-down',
+        code: 'top-down-template',
+        name: 'Top Down Template',
+        description: 'Browser smoke topology template',
+        status: 'active',
+        metadata: {},
+        latest_revision_number: 3,
+        latest_revision: {
+          topology_template_revision_id: 'template-revision-r3',
+          topology_template_id: 'template-top-down',
+          revision_number: 3,
+          nodes: [
+            { slot_key: 'root', label: 'Root', is_root: true, metadata: {} },
+            { slot_key: 'organization_1', label: 'Organization 1', is_root: false, metadata: {} },
+            { slot_key: 'organization_2', label: 'Organization 2', is_root: false, metadata: {} },
+            { slot_key: 'organization_3', label: 'Organization 3', is_root: false, metadata: {} },
+            { slot_key: 'organization_4', label: 'Organization 4', is_root: false, metadata: {} },
+          ],
+          edges: [
+            {
+              parent_slot_key: 'root',
+              child_slot_key: 'organization_1',
+              weight: '1',
+              min_amount: null,
+              max_amount: null,
+              document_policy_key: 'sale',
+              metadata: {},
+            },
+            {
+              parent_slot_key: 'organization_1',
+              child_slot_key: 'organization_2',
+              weight: '1',
+              min_amount: null,
+              max_amount: null,
+              document_policy_key: 'receipt_internal',
+              metadata: {},
+            },
+            {
+              parent_slot_key: 'organization_2',
+              child_slot_key: 'organization_3',
+              weight: '1',
+              min_amount: null,
+              max_amount: null,
+              document_policy_key: 'receipt_leaf',
+              metadata: {},
+            },
+            {
+              parent_slot_key: 'organization_2',
+              child_slot_key: 'organization_4',
+              weight: '1',
+              min_amount: null,
+              max_amount: null,
+              document_policy_key: 'receipt_leaf',
+              metadata: {},
+            },
+          ],
+          metadata: {},
+          created_at: NOW,
+        },
+        revisions: [
+          {
+            topology_template_revision_id: 'template-revision-r3',
+            topology_template_id: 'template-top-down',
+            revision_number: 3,
+            nodes: [
+              { slot_key: 'root', label: 'Root', is_root: true, metadata: {} },
+              { slot_key: 'organization_1', label: 'Organization 1', is_root: false, metadata: {} },
+              { slot_key: 'organization_2', label: 'Organization 2', is_root: false, metadata: {} },
+              { slot_key: 'organization_3', label: 'Organization 3', is_root: false, metadata: {} },
+              { slot_key: 'organization_4', label: 'Organization 4', is_root: false, metadata: {} },
+            ],
+            edges: [
+              {
+                parent_slot_key: 'root',
+                child_slot_key: 'organization_1',
+                weight: '1',
+                min_amount: null,
+                max_amount: null,
+                document_policy_key: 'sale',
+                metadata: {},
+              },
+              {
+                parent_slot_key: 'organization_1',
+                child_slot_key: 'organization_2',
+                weight: '1',
+                min_amount: null,
+                max_amount: null,
+                document_policy_key: 'receipt_internal',
+                metadata: {},
+              },
+              {
+                parent_slot_key: 'organization_2',
+                child_slot_key: 'organization_3',
+                weight: '1',
+                min_amount: null,
+                max_amount: null,
+                document_policy_key: 'receipt_leaf',
+                metadata: {},
+              },
+              {
+                parent_slot_key: 'organization_2',
+                child_slot_key: 'organization_4',
+                weight: '1',
+                min_amount: null,
+                max_amount: null,
+                document_policy_key: 'receipt_leaf',
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_at: NOW,
+          },
+        ],
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ] as AnyRecord[],
+    schemaTemplates: [
+      {
+        id: 'schema-template-json',
+        tenant_id: TENANT_ID,
+        code: 'json-template',
+        name: 'JSON Template',
+        format: 'json',
+        is_public: true,
+        is_active: true,
+        schema: {},
+        metadata: {},
+        workflow_template_id: null,
+        created_at: NOW,
+        updated_at: NOW,
+      },
+    ] as AnyRecord[],
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/catalog', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Catalog', exact: true })).toBeVisible()
+
+  await page.getByRole('tab', { name: 'Pools' }).click()
+  await page.getByTestId('pool-catalog-add-pool').click()
+  const poolDrawer = page.getByTestId('pool-catalog-pool-drawer')
+  await poolDrawer.getByLabel('Code').fill('pool-batch-smoke')
+  await poolDrawer.getByPlaceholder('Main intercompany pool').fill('Batch Smoke Pool')
+  await poolDrawer.getByPlaceholder('Optional').fill('Pool for canonical batch browser flow')
+  await page.getByTestId('pool-catalog-save-pool').click()
+
+  await expect.poll(() => state.pools.length).toBe(1)
+  await expect(page.getByTestId('pool-catalog-context-pool')).toContainText('pool-batch-smoke - Batch Smoke Pool')
+
+  await page.getByRole('tab', { name: 'Topology Editor' }).click()
+  await expect(page.getByText('Topology snapshots by date')).toBeVisible()
+  await page.getByTestId('pool-catalog-topology-authoring-mode').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Manual snapshot editor' }).first().click()
+  await page.getByTestId('pool-catalog-topology-add-node').click()
+  const topologyCard = page.locator('.ant-card').filter({ hasText: 'Topology snapshot editor' })
+  await topologyCard.getByLabel('Organization').click()
+  await page.locator('.ant-select-dropdown .ant-select-item-option-content', { hasText: 'Org One (730000000001)' }).first().click()
+  await topologyCard.getByLabel('Root').click()
+  await page.getByTestId('pool-catalog-topology-save').click()
+
+  await expect.poll(() => state.topologyUpsertCalls).toBe(1)
+
+  await page.goto('/pools/runs', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Create' }).click()
+  await page.getByTestId('pool-runs-open-batch-intake').click()
+
+  const batchDrawer = page.getByTestId('pool-runs-batch-intake-drawer')
+  await expect(batchDrawer).toBeVisible()
+  await selectAntdOption(page, 'pool-runs-batch-intake-schema-template', 'json-template - JSON Template')
+  await selectAntdOption(page, 'pool-runs-batch-intake-binding', 'Top Down Run')
+  await selectAntdOption(page, 'pool-runs-batch-intake-start-organization', 'Org One')
+  await page.getByTestId('pool-runs-batch-intake-source-reference').fill('receipt-apr')
+  await page.getByTestId('pool-runs-batch-intake-submit').click()
+
+  await expect.poll(() => state.createBatchCalls).toBe(1)
+  await expect.poll(() => state.batches.length).toBe(1)
+  await expect.poll(() => state.runs.length).toBe(1)
+  const createdRunId = String(state.runs[0]?.id || '')
+  await expect.poll(() => page.url()).toContain('stage=inspect')
+  await expect.poll(() => page.url()).toContain(`run=${createdRunId}`)
+  await expect(page.getByText('Lifecycle stage: Inspect')).toBeVisible()
+  await expect(page.getByText('Selected run:')).toContainText(createdRunId.slice(0, 8))
+  await expect(batchDrawer).toBeHidden()
 })
 
 test('Pools browser-flow: fresh pool defaults to template topology authoring path', async ({ page }) => {

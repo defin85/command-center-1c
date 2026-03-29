@@ -4,6 +4,7 @@ import { UploadOutlined } from '@ant-design/icons'
 
 import {
   createPoolBatch,
+  type PoolBatchCreatePayload,
   type PoolBatchCreateResponse,
   type PoolBatchKind,
   type PoolSchemaTemplate,
@@ -102,6 +103,70 @@ async function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
+function requireTrimmedValue(value: string | undefined, fieldName: string): string {
+  const normalized = value?.trim() || ''
+  if (!normalized) {
+    throw new Error(`${fieldName} required`)
+  }
+  return normalized
+}
+
+function buildPoolBatchCreatePayload(values: BatchIntakeFormValues, poolId: string): PoolBatchCreatePayload {
+  const payloadBase = {
+    pool_id: poolId,
+    source_type: 'schema_template_upload' as const,
+    schema_template_id: requireTrimmedValue(values.schema_template_id, 'schema_template_id'),
+    period_start: values.period_start,
+    period_end: values.period_end?.trim() || null,
+    source_reference: values.source_reference?.trim() || '',
+    raw_payload_ref: values.raw_payload_ref?.trim() || '',
+  }
+  const xlsxBase64 = values.xlsx_base64?.trim() || ''
+
+  if (values.batch_kind === 'receipt') {
+    const receiptScope = {
+      pool_workflow_binding_id: requireTrimmedValue(values.pool_workflow_binding_id, 'pool_workflow_binding_id'),
+      start_organization_id: requireTrimmedValue(values.start_organization_id, 'start_organization_id'),
+    }
+    if (xlsxBase64) {
+      return {
+        ...payloadBase,
+        ...receiptScope,
+        batch_kind: 'receipt',
+        xlsx_base64: xlsxBase64,
+      }
+    }
+    const rawPayloadJson = values.source_payload_json?.trim() || ''
+    if (!rawPayloadJson) {
+      throw new Error('source_payload required')
+    }
+    return {
+      ...payloadBase,
+      ...receiptScope,
+      batch_kind: 'receipt',
+      json_payload: parseBatchPayloadJson(rawPayloadJson),
+    }
+  }
+
+  if (xlsxBase64) {
+    return {
+      ...payloadBase,
+      batch_kind: 'sale',
+      xlsx_base64: xlsxBase64,
+    }
+  }
+
+  const rawPayloadJson = values.source_payload_json?.trim() || ''
+  if (!rawPayloadJson) {
+    throw new Error('source_payload required')
+  }
+  return {
+    ...payloadBase,
+    batch_kind: 'sale',
+    json_payload: parseBatchPayloadJson(rawPayloadJson),
+  }
+}
+
 export function PoolBatchIntakeDrawer({
   open,
   poolId,
@@ -180,26 +245,7 @@ export function PoolBatchIntakeDrawer({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const rawPayloadJson = values.source_payload_json?.trim() || ''
-      const rawPayloadRef = values.raw_payload_ref?.trim() || ''
-      const payload = {
-        pool_id: poolId,
-        batch_kind: values.batch_kind,
-        source_type: 'schema_template_upload' as const,
-        schema_template_id: values.schema_template_id?.trim() || null,
-        period_start: values.period_start,
-        period_end: values.period_end?.trim() || null,
-        source_reference: values.source_reference?.trim() || '',
-        raw_payload_ref: rawPayloadRef,
-        json_payload: rawPayloadJson ? parseBatchPayloadJson(rawPayloadJson) : undefined,
-        xlsx_base64: values.xlsx_base64?.trim() || undefined,
-        ...(values.batch_kind === 'receipt'
-          ? {
-            pool_workflow_binding_id: values.pool_workflow_binding_id?.trim() || undefined,
-            start_organization_id: values.start_organization_id?.trim() || undefined,
-          }
-          : {}),
-      }
+      const payload = buildPoolBatchCreatePayload(values, poolId)
       const response = await createPoolBatch(payload)
       await onCreated(response, {
         batchKind: values.batch_kind,

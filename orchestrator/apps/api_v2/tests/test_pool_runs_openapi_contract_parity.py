@@ -278,11 +278,121 @@ def test_pool_batch_path_and_schemas_are_in_contract_with_runtime_serializer_fie
     assert runtime_settlement_fields.issubset(set(settlement_properties.keys()))
 
     create_request_schema = _schema(contract, "PoolBatchCreateRequest")
-    create_request_properties = create_request_schema.get("properties")
-    assert isinstance(create_request_properties, dict)
-    assert create_request_properties["source_type"]["enum"] == ["schema_template_upload"]
-    runtime_create_request_fields = set(pools_view.PoolBatchCreateRequestSerializer().fields.keys())
-    assert runtime_create_request_fields.issubset(set(create_request_properties.keys()))
+    variants = create_request_schema.get("oneOf")
+    assert isinstance(variants, list)
+    assert len(variants) == 4
+
+    resolved_variants = [
+        _resolve_schema_reference(contract, candidate)
+        for candidate in variants
+    ]
+
+    def _find_variant(*, batch_kind: str, payload_field: str) -> dict[str, Any]:
+        return next(
+            candidate
+            for candidate in resolved_variants
+            if isinstance(candidate.get("properties"), dict)
+            and candidate["properties"].get("batch_kind", {}).get("enum") == [batch_kind]
+            and payload_field in candidate["properties"]
+        )
+
+    receipt_json_variant = _find_variant(batch_kind="receipt", payload_field="json_payload")
+    receipt_xlsx_variant = _find_variant(batch_kind="receipt", payload_field="xlsx_base64")
+    sale_json_variant = _find_variant(batch_kind="sale", payload_field="json_payload")
+    sale_xlsx_variant = _find_variant(batch_kind="sale", payload_field="xlsx_base64")
+
+    for candidate in resolved_variants:
+        properties = candidate.get("properties")
+        assert isinstance(properties, dict)
+        assert properties["source_type"]["enum"] == ["schema_template_upload"]
+        assert properties["schema_template_id"]["format"] == "uuid"
+        assert candidate.get("additionalProperties") is False
+
+    assert {
+        "pool_id",
+        "batch_kind",
+        "source_type",
+        "schema_template_id",
+        "pool_workflow_binding_id",
+        "start_organization_id",
+        "period_start",
+        "json_payload",
+    }.issubset(set(receipt_json_variant.get("required") or []))
+    assert {
+        "pool_id",
+        "batch_kind",
+        "source_type",
+        "schema_template_id",
+        "pool_workflow_binding_id",
+        "start_organization_id",
+        "period_start",
+        "xlsx_base64",
+    }.issubset(set(receipt_xlsx_variant.get("required") or []))
+    assert {
+        "pool_id",
+        "batch_kind",
+        "source_type",
+        "schema_template_id",
+        "period_start",
+        "json_payload",
+    }.issubset(set(sale_json_variant.get("required") or []))
+    assert {
+        "pool_id",
+        "batch_kind",
+        "source_type",
+        "schema_template_id",
+        "period_start",
+        "xlsx_base64",
+    }.issubset(set(sale_xlsx_variant.get("required") or []))
+
+    receipt_json_payload = pools_view.PoolBatchCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "batch_kind": "receipt",
+            "source_type": "schema_template_upload",
+            "schema_template_id": "22222222-2222-2222-2222-222222222222",
+            "pool_workflow_binding_id": "binding-top-down",
+            "start_organization_id": "33333333-3333-3333-3333-333333333333",
+            "period_start": "2026-01-01",
+            "json_payload": [{"inn": "730000000001", "amount": "100.00"}],
+        }
+    )
+    assert receipt_json_payload.is_valid(), receipt_json_payload.errors
+
+    sale_xlsx_payload = pools_view.PoolBatchCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "batch_kind": "sale",
+            "source_type": "schema_template_upload",
+            "schema_template_id": "22222222-2222-2222-2222-222222222222",
+            "period_start": "2026-01-01",
+            "xlsx_base64": "AAAA",
+        }
+    )
+    assert sale_xlsx_payload.is_valid(), sale_xlsx_payload.errors
+
+    missing_schema_template_payload = pools_view.PoolBatchCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "batch_kind": "sale",
+            "source_type": "schema_template_upload",
+            "period_start": "2026-01-01",
+            "json_payload": [{"inn": "730000000001", "amount": "100.00"}],
+        }
+    )
+    assert missing_schema_template_payload.is_valid() is False
+
+    missing_receipt_scope_payload = pools_view.PoolBatchCreateRequestSerializer(
+        data={
+            "pool_id": "11111111-1111-1111-1111-111111111111",
+            "batch_kind": "receipt",
+            "source_type": "schema_template_upload",
+            "schema_template_id": "22222222-2222-2222-2222-222222222222",
+            "period_start": "2026-01-01",
+            "json_payload": [{"inn": "730000000001", "amount": "100.00"}],
+        }
+    )
+    assert missing_receipt_scope_payload.is_valid() is False
 
     create_response_schema = _schema(contract, "PoolBatchCreateResponse")
     create_response_properties = create_response_schema.get("properties")
