@@ -31,6 +31,7 @@ type PoolRunsRouteParams = {
 type PoolFactualRouteParams = {
   poolId?: string | null
   runId?: string | null
+  quarterStart?: string | null
   focus?: 'summary' | 'settlement' | 'drilldown' | 'review' | null
   detail?: boolean
 }
@@ -100,12 +101,14 @@ export const buildPoolRunsRoute = ({
 export const buildPoolFactualRoute = ({
   poolId,
   runId,
+  quarterStart,
   focus,
   detail = false,
 }: PoolFactualRouteParams = {}) => {
   const params = new URLSearchParams()
   appendRouteParam(params, 'pool', poolId)
   appendRouteParam(params, 'run', runId)
+  appendRouteParam(params, 'quarter_start', quarterStart)
   appendRouteParam(params, 'focus', focus)
   if (detail) {
     params.set('detail', '1')

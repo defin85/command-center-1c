@@ -354,6 +354,9 @@ def test_apply_pool_factual_review_action_endpoint_updates_queue(
     workspace_payload = workspace_response.json()
     assert workspace_payload["summary"]["pending_review_total"] == 0
     assert workspace_payload["summary"]["attention_required_total"] == 0
+    assert workspace_payload["summary"]["amount_with_vat"] == "0.00"
+    assert workspace_payload["summary"]["amount_without_vat"] == "0.00"
+    assert workspace_payload["summary"]["vat_amount"] == "0.00"
     assert workspace_payload["summary"]["incoming_amount"] == "15.00"
     assert workspace_payload["summary"]["outgoing_amount"] == "15.00"
     assert workspace_payload["summary"]["open_balance"] == "0.00"

@@ -6,6 +6,7 @@ import { App as AntApp } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
+  PoolBatch,
   PoolRun,
   PoolRunReadinessBlocker,
   PoolRunReadinessChecklist,
@@ -16,9 +17,11 @@ import { PoolRunsPage } from '../PoolRunsPage'
 
 const mockListOrganizationPools = vi.fn()
 const mockListPoolSchemaTemplates = vi.fn()
+const mockListPoolBatches = vi.fn()
 const mockGetPoolGraph = vi.fn()
 const mockListPoolRuns = vi.fn()
 const mockGetPoolRunReport = vi.fn()
+const mockCreatePoolBatch = vi.fn()
 const mockCreatePoolRun = vi.fn()
 const mockPreviewPoolWorkflowBinding = vi.fn()
 const mockRetryPoolRunFailed = vi.fn()
@@ -45,9 +48,11 @@ vi.mock('reactflow', () => ({
 vi.mock('../../../api/intercompanyPools', () => ({
   listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
   listPoolSchemaTemplates: (...args: unknown[]) => mockListPoolSchemaTemplates(...args),
+  listPoolBatches: (...args: unknown[]) => mockListPoolBatches(...args),
   getPoolGraph: (...args: unknown[]) => mockGetPoolGraph(...args),
   listPoolRuns: (...args: unknown[]) => mockListPoolRuns(...args),
   getPoolRunReport: (...args: unknown[]) => mockGetPoolRunReport(...args),
+  createPoolBatch: (...args: unknown[]) => mockCreatePoolBatch(...args),
   createPoolRun: (...args: unknown[]) => mockCreatePoolRun(...args),
   previewPoolWorkflowBinding: (...args: unknown[]) => mockPreviewPoolWorkflowBinding(...args),
   retryPoolRunFailed: (...args: unknown[]) => mockRetryPoolRunFailed(...args),
@@ -112,6 +117,49 @@ function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
     publication_confirmed_at: null,
     publishing_started_at: null,
     completed_at: null,
+    ...overrides,
+  }
+}
+
+function buildReceiptBatch(overrides: Partial<PoolBatch> = {}): PoolBatch {
+  return {
+    id: '99999999-9999-9999-9999-999999999999',
+    tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    batch_kind: 'receipt',
+    source_type: 'schema_template_upload',
+    schema_template_id: '55555555-5555-5555-5555-555555555555',
+    start_organization_id: '11111111-1111-1111-1111-111111111111',
+    run_id: null,
+    workflow_execution_id: null,
+    operation_id: null,
+    workflow_status: '',
+    period_start: '2026-01-01',
+    period_end: '2026-03-31',
+    source_reference: 'receipt-q1',
+    raw_payload_ref: 'files/receipt-q1.json',
+    content_hash: 'hash-receipt-q1',
+    source_metadata: {},
+    normalization_summary: {},
+    publication_summary: {},
+    last_error_code: '',
+    last_error: '',
+    created_by_id: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    settlement: {
+      id: 'settlement-receipt-q1',
+      tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      batch_id: '99999999-9999-9999-9999-999999999999',
+      status: 'ingested',
+      incoming_amount: '125.50',
+      outgoing_amount: '0.00',
+      open_balance: '125.50',
+      summary: {},
+      freshness_at: '2026-01-01T00:00:00Z',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
     ...overrides,
   }
 }
@@ -476,6 +524,14 @@ async function openRunsStage(user: ReturnType<typeof userEvent.setup>, stage: 'C
   await user.click(screen.getByRole('tab', { name: stage }))
 }
 
+async function selectOption(testId: string, label: string) {
+  const select = await screen.findByTestId(testId)
+  const selector = select.querySelector('.ant-select-selector')
+  expect(selector).toBeTruthy()
+  fireEvent.mouseDown(selector as Element)
+  fireEvent.click(await screen.findByText(label))
+}
+
 async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) {
   await openRunsStage(user, 'Inspect')
   await user.click(screen.getByText('Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)'))
@@ -486,9 +542,11 @@ describe('PoolRunsPage', () => {
     resetQueryClient()
     mockListOrganizationPools.mockReset()
     mockListPoolSchemaTemplates.mockReset()
+    mockListPoolBatches.mockReset()
     mockGetPoolGraph.mockReset()
     mockListPoolRuns.mockReset()
     mockGetPoolRunReport.mockReset()
+    mockCreatePoolBatch.mockReset()
     mockCreatePoolRun.mockReset()
     mockPreviewPoolWorkflowBinding.mockReset()
     mockRetryPoolRunFailed.mockReset()
@@ -540,6 +598,9 @@ describe('PoolRunsPage', () => {
         updated_at: '2026-01-01T00:00:00Z',
       },
     ])
+    mockListPoolBatches.mockResolvedValue([
+      buildReceiptBatch(),
+    ])
     mockGetPoolGraph.mockResolvedValue({
       pool_id: run.pool_id,
       date: '2026-01-01',
@@ -549,6 +610,19 @@ describe('PoolRunsPage', () => {
     })
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+    mockCreatePoolBatch.mockResolvedValue({
+      batch: buildReceiptBatch({ run_id: run.id }),
+      settlement: buildReceiptBatch({ run_id: run.id }).settlement,
+      run: buildRun({
+        direction: 'top_down',
+        run_input: {
+          batch_id: '99999999-9999-9999-9999-999999999999',
+          start_organization_id: '11111111-1111-1111-1111-111111111111',
+        },
+      }),
+      created: true,
+      sale_closing: null,
+    })
     mockCreatePoolRun.mockResolvedValue({ run, created: true })
     mockPreviewPoolWorkflowBinding.mockResolvedValue(buildWorkflowBindingPreview())
     mockRetryPoolRunFailed.mockResolvedValue({
@@ -1696,16 +1770,8 @@ describe('PoolRunsPage', () => {
 
     await openRunsStage(user, 'Create')
     fireEvent.click(await screen.findByText('receipt batch'))
-
-    const batchIdInput = await screen.findByTestId('pool-runs-create-batch-id')
-    await user.clear(batchIdInput)
-    await user.type(batchIdInput, '99999999-9999-9999-9999-999999999999')
-
-    const startOrganizationSelect = await screen.findByTestId('pool-runs-create-start-organization')
-    const selector = startOrganizationSelect.querySelector('.ant-select-selector')
-    expect(selector).toBeTruthy()
-    fireEvent.mouseDown(selector as Element)
-    fireEvent.click(await screen.findByText('Root Org'))
+    await selectOption('pool-runs-create-batch-id', 'receipt-q1 · 2026-01-01')
+    await selectOption('pool-runs-create-start-organization', 'Root Org')
 
     await user.click(screen.getByTestId('pool-runs-create-submit'))
 
@@ -1737,19 +1803,83 @@ describe('PoolRunsPage', () => {
 
     await openRunsStage(user, 'Create')
     fireEvent.click(await screen.findByText('receipt batch'))
-    await user.type(await screen.findByTestId('pool-runs-create-batch-id'), '99999999-9999-9999-9999-999999999999')
-
-    const startOrganizationSelect = await screen.findByTestId('pool-runs-create-start-organization')
-    const selector = startOrganizationSelect.querySelector('.ant-select-selector')
-    expect(selector).toBeTruthy()
-    fireEvent.mouseDown(selector as Element)
-    fireEvent.click(await screen.findByText('Root Org'))
+    await selectOption('pool-runs-create-batch-id', 'receipt-q1 · 2026-01-01')
+    await selectOption('pool-runs-create-start-organization', 'Root Org')
 
     await user.click(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
     expect(await screen.findByText('top_down batch_id must reference an existing receipt batch in the selected pool.')).toBeInTheDocument()
+  }, 30000)
+
+  it('creates a receipt batch from the default operator path without manual UUID entry and opens the linked run context', async () => {
+    const user = userEvent.setup()
+    const run = buildRun({
+      id: 'aaaaaaaa-1111-2222-3333-batchrun000001',
+      direction: 'top_down',
+      run_input: {
+        batch_id: 'aaaaaaaa-1111-2222-3333-batch00000001',
+        start_organization_id: '11111111-1111-1111-1111-111111111111',
+      },
+    })
+    const batch = buildReceiptBatch({
+      id: 'aaaaaaaa-1111-2222-3333-batch00000001',
+      run_id: run.id,
+      source_reference: 'receipt-apr',
+    })
+    mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
+    mockCreatePoolBatch.mockResolvedValueOnce({
+      batch,
+      settlement: batch.settlement,
+      run,
+      created: true,
+      sale_closing: null,
+    })
+    mockListPoolRuns.mockResolvedValueOnce([buildRun()]).mockResolvedValueOnce([run])
+    renderPage()
+
+    await openRunsStage(user, 'Create')
+    fireEvent.click(await screen.findByText('receipt batch'))
+    await selectOption('pool-runs-create-start-organization', 'Root Org')
+    await user.click(await screen.findByTestId('pool-runs-open-batch-intake'))
+
+    await screen.findByTestId('pool-runs-batch-intake-drawer')
+    await selectOption('pool-runs-batch-intake-schema-template', 'json-template - JSON Template')
+    await user.type(screen.getByTestId('pool-runs-batch-intake-source-reference'), 'receipt-apr')
+    fireEvent.change(screen.getByTestId('pool-runs-batch-intake-source-payload'), {
+      target: {
+        value: '[{"inn":"730000000001","amount":"125.50","external_id":"receipt-apr-001"}]',
+      },
+    })
+
+    await user.click(screen.getByTestId('pool-runs-batch-intake-submit'))
+
+    await waitFor(() => expect(mockCreatePoolBatch).toHaveBeenCalledTimes(1))
+    expect(mockCreatePoolBatch).toHaveBeenCalledWith({
+      pool_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+      batch_kind: 'receipt',
+      source_type: 'schema_template_upload',
+      schema_template_id: '55555555-5555-5555-5555-555555555555',
+      pool_workflow_binding_id: 'binding-top-down',
+      start_organization_id: '11111111-1111-1111-1111-111111111111',
+      period_start: expect.any(String),
+      period_end: null,
+      source_reference: 'receipt-apr',
+      raw_payload_ref: '',
+      json_payload: [
+        {
+          inn: '730000000001',
+          amount: '125.50',
+          external_id: 'receipt-apr-001',
+        },
+      ],
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-runs-location').textContent).toContain(
+        `/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=${run.id}&stage=inspect&detail=1`
+      )
+    })
   }, 30000)
 
   it('previews effective workflow binding before run start', async () => {

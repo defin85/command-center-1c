@@ -69,7 +69,11 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 
 ```bash
 printf '%s\n' "http://localhost:15173/pools/factual?pool=<pool-uuid>"
+printf '%s\n' "http://localhost:15173/pools/factual?pool=<pool-uuid>&quarter_start=2026-01-01&focus=settlement&detail=1"
 ```
+
+- Default operator producer path for factual acceptance:
+  open `http://localhost:15173/pools/runs?pool=<pool-uuid>` and use the `Create canonical batch` drawer on the create stage. Receipt intake creates the canonical batch and opens the linked inspect/run context without manual batch UUID entry.
 
 ## Runtime Control
 

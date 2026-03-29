@@ -20513,8 +20513,6 @@ components:
           type: string
           enum:
             - schema_template_upload
-            - integration
-            - manual
         schema_template_id:
           type: string
           format: uuid
@@ -20537,8 +20535,6 @@ components:
         raw_payload_ref:
           type: string
         source_metadata: {}
-        integration_reference:
-          type: string
         json_payload: {}
         xlsx_base64:
           type: string
@@ -20975,6 +20971,12 @@ components:
         quarter_end:
           type: string
           format: date
+        amount_with_vat:
+          type: string
+        amount_without_vat:
+          type: string
+        vat_amount:
+          type: string
         incoming_amount:
           type: string
         outgoing_amount:
@@ -21007,6 +21009,8 @@ components:
         - attention_required_total
         - checkpoint_total
         - freshness_state
+        - amount_with_vat
+        - amount_without_vat
         - incoming_amount
         - open_balance
         - outgoing_amount
@@ -21016,6 +21020,7 @@ components:
         - quarter_start
         - settlement_total
         - source_availability
+        - vat_amount
     PoolFactualBalanceSnapshot:
       type: object
       properties:

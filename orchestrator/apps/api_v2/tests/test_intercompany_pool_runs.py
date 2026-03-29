@@ -4844,6 +4844,30 @@ def test_create_pool_batch_sale_intake_persists_batch_and_starts_closing_workflo
 
 
 @pytest.mark.django_db
+def test_create_pool_batch_rejects_unshipped_public_source_type(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/batches/",
+        {
+            "pool_id": str(pool.id),
+            "batch_kind": PoolBatchKind.SALE,
+            "source_type": PoolBatchSourceType.INTEGRATION,
+            "period_start": "2026-01-01",
+            "period_end": "2026-03-31",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "VALIDATION_ERROR"
+    assert "source_type" in payload["detail"]
+    assert "valid choice" in payload["detail"].lower()
+
+
+@pytest.mark.django_db
 def test_create_pool_run_rejects_mixed_top_down_manual_and_batch_modes(
     authenticated_client: APIClient,
     user: User,

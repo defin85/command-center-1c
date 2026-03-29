@@ -1,4 +1,6 @@
 import type {
+  PoolBatchCreatePayload,
+  PoolFactualSummary,
   CreatePoolTopologyTemplatePayload,
   CreatePoolTopologyTemplateRevisionPayload,
   CreatePoolRunPayload,
@@ -27,6 +29,8 @@ import type { DecisionTableRef as GeneratedDecisionTableRef } from './generated/
 import type { OrganizationPool as GeneratedOrganizationPool } from './generated/model/organizationPool'
 import type { OrganizationPoolUpsertRequest as GeneratedOrganizationPoolUpsertRequest } from './generated/model/organizationPoolUpsertRequest'
 import type { PoolGraphResponse as GeneratedPoolGraphResponse } from './generated/model/poolGraphResponse'
+import type { PoolBatchCreateRequest as GeneratedPoolBatchCreateRequest } from './generated/model/poolBatchCreateRequest'
+import type { PoolFactualSummary as GeneratedPoolFactualSummary } from './generated/model/poolFactualSummary'
 import type { PoolRun as GeneratedPoolRun } from './generated/model/poolRun'
 import type { PoolRunCreateRequest as GeneratedPoolRunCreateRequest } from './generated/model/poolRunCreateRequest'
 import type { PoolRunReportResponse as GeneratedPoolRunReportResponse } from './generated/model/poolRunReportResponse'
@@ -75,10 +79,12 @@ export type PoolTopologyTemplateMutationResponseContract = AssertAssignable<
 export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRun>
 export type PoolRunReportContract = AssertAssignable<PoolRunReport, GeneratedPoolRunReportResponse>
 export type PoolGraphContract = AssertAssignable<PoolGraph, GeneratedPoolGraphResponse>
+export type PoolFactualSummaryContract = AssertAssignable<PoolFactualSummary, GeneratedPoolFactualSummary>
 export type PoolRunSafeCommandResponseContract = AssertAssignable<PoolRunSafeCommandResponse, GeneratedPoolRunSafeCommandResponse>
 export type PoolRunSafeCommandConflictContract = AssertAssignable<PoolRunSafeCommandConflict, GeneratedPoolRunSafeCommandConflict>
 export type PoolRunRetryAcceptedResponseContract = AssertAssignable<PoolRunRetryAcceptedResponse, GeneratedPoolRunRetryAcceptedResponse>
 
+export type PoolBatchCreatePayloadContract = AssertAssignable<PoolBatchCreatePayload, GeneratedPoolBatchCreateRequest>
 export type CreatePoolTopologyTemplatePayloadContract = AssertAssignable<
   CreatePoolTopologyTemplatePayload,
   GeneratedTopologyTemplateCreateRequest

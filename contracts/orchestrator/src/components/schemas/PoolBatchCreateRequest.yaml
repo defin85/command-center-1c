@@ -12,8 +12,6 @@ properties:
     type: string
     enum:
       - schema_template_upload
-      - integration
-      - manual
   schema_template_id:
     type: string
     format: uuid
@@ -36,8 +34,6 @@ properties:
   raw_payload_ref:
     type: string
   source_metadata: {}
-  integration_reference:
-    type: string
   json_payload: {}
   xlsx_base64:
     type: string

@@ -280,6 +280,7 @@ def test_pool_batch_path_and_schemas_are_in_contract_with_runtime_serializer_fie
     create_request_schema = _schema(contract, "PoolBatchCreateRequest")
     create_request_properties = create_request_schema.get("properties")
     assert isinstance(create_request_properties, dict)
+    assert create_request_properties["source_type"]["enum"] == ["schema_template_upload"]
     runtime_create_request_fields = set(pools_view.PoolBatchCreateRequestSerializer().fields.keys())
     assert runtime_create_request_fields.issubset(set(create_request_properties.keys()))
 

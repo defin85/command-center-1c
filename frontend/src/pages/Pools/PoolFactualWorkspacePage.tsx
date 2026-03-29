@@ -60,6 +60,7 @@ export function PoolFactualWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
   const runFromUrl = normalizeRouteParam(searchParams.get('run'))
+  const quarterStartFromUrl = normalizeRouteParam(searchParams.get('quarter_start'))
   const focusFromUrl = normalizeFactualFocus(searchParams.get('focus'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
 
@@ -128,6 +129,12 @@ export function PoolFactualWorkspacePage() {
       next.delete('run')
     }
 
+    if (quarterStartFromUrl) {
+      next.set('quarter_start', quarterStartFromUrl)
+    } else {
+      next.delete('quarter_start')
+    }
+
     if (focusFromUrl && focusFromUrl !== 'summary') {
       next.set('focus', focusFromUrl)
     } else {
@@ -143,7 +150,7 @@ export function PoolFactualWorkspacePage() {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true })
     }
-  }, [focusFromUrl, isDetailOpen, runFromUrl, searchParams, selectedPoolId, setSearchParams])
+  }, [focusFromUrl, isDetailOpen, quarterStartFromUrl, runFromUrl, searchParams, selectedPoolId, setSearchParams])
 
   const selectedPool = useMemo(
     () => pools.find((pool) => pool.id === selectedPoolId) ?? null,
@@ -294,6 +301,7 @@ export function PoolFactualWorkspacePage() {
                   selectedPool={selectedPool}
                   focus={focusFromUrl}
                   runId={runFromUrl}
+                  quarterStart={quarterStartFromUrl}
                   poolCatalogHref={poolCatalogHref}
                   runWorkspaceHref={runWorkspaceHref}
                 />

@@ -2387,14 +2387,23 @@ def _build_pool_factual_workspace_summary(
     *,
     quarter_start: date,
     settlements: list[PoolBatch],
+    edge_balances: list[PoolFactualBalanceSnapshot],
     checkpoints: list[PoolFactualSyncCheckpoint],
     review_queue: dict[str, Any],
 ) -> dict[str, Any]:
+    amount_with_vat = Decimal("0.00")
+    amount_without_vat = Decimal("0.00")
+    vat_amount = Decimal("0.00")
     incoming_amount = Decimal("0.00")
     outgoing_amount = Decimal("0.00")
     open_balance = Decimal("0.00")
     attention_required_total = 0
     latest_settlement_freshness_at = None
+
+    for snapshot in edge_balances:
+        amount_with_vat += snapshot.amount_with_vat
+        amount_without_vat += snapshot.amount_without_vat
+        vat_amount += snapshot.vat_amount
 
     for batch in settlements:
         settlement = getattr(batch, "settlement", None)
@@ -2437,6 +2446,9 @@ def _build_pool_factual_workspace_summary(
         "quarter": _format_quarter_label(quarter_start),
         "quarter_start": quarter_start,
         "quarter_end": _resolve_quarter_end(quarter_start),
+        "amount_with_vat": _decimal_to_api_string(amount_with_vat),
+        "amount_without_vat": _decimal_to_api_string(amount_without_vat),
+        "vat_amount": _decimal_to_api_string(vat_amount),
         "incoming_amount": _decimal_to_api_string(incoming_amount),
         "outgoing_amount": _decimal_to_api_string(outgoing_amount),
         "open_balance": _decimal_to_api_string(open_balance),
@@ -2999,7 +3011,7 @@ class PoolSaleClosingStartResponseSerializer(serializers.Serializer):
 class PoolBatchCreateRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
     batch_kind = serializers.ChoiceField(choices=PoolBatchKind.values)
-    source_type = serializers.ChoiceField(choices=PoolBatchSourceType.values)
+    source_type = serializers.ChoiceField(choices=(PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,))
     schema_template_id = serializers.UUIDField(required=False, allow_null=True)
     pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
     start_organization_id = serializers.UUIDField(required=False, allow_null=True)
@@ -3008,7 +3020,6 @@ class PoolBatchCreateRequestSerializer(serializers.Serializer):
     source_reference = serializers.CharField(required=False, allow_blank=True, default="")
     raw_payload_ref = serializers.CharField(required=False, allow_blank=True, default="")
     source_metadata = serializers.JSONField(required=False, default=dict)
-    integration_reference = serializers.CharField(required=False, allow_blank=True, default="")
     json_payload = serializers.JSONField(required=False)
     xlsx_base64 = serializers.CharField(required=False, allow_blank=False)
 
@@ -3079,6 +3090,9 @@ class PoolFactualSummarySerializer(serializers.Serializer):
     quarter = serializers.CharField()
     quarter_start = serializers.DateField()
     quarter_end = serializers.DateField()
+    amount_with_vat = serializers.CharField()
+    amount_without_vat = serializers.CharField()
+    vat_amount = serializers.CharField()
     incoming_amount = serializers.CharField()
     outgoing_amount = serializers.CharField()
     open_balance = serializers.CharField()
@@ -5827,6 +5841,7 @@ def get_pool_factual_workspace(request):
         "summary": _build_pool_factual_workspace_summary(
             quarter_start=quarter_start,
             settlements=batches,
+            edge_balances=edge_balances,
             checkpoints=checkpoints,
             review_queue=review_queue,
         ),

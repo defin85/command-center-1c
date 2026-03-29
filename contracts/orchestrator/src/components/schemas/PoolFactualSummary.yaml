@@ -8,6 +8,12 @@ properties:
   quarter_end:
     type: string
     format: date
+  amount_with_vat:
+    type: string
+  amount_without_vat:
+    type: string
+  vat_amount:
+    type: string
   incoming_amount:
     type: string
   outgoing_amount:
@@ -40,6 +46,8 @@ required:
   - attention_required_total
   - checkpoint_total
   - freshness_state
+  - amount_with_vat
+  - amount_without_vat
   - incoming_amount
   - open_balance
   - outgoing_amount
@@ -49,3 +57,4 @@ required:
   - quarter_start
   - settlement_total
   - source_availability
+  - vat_amount

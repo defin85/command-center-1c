@@ -62,9 +62,16 @@ cd go-services/worker && go test ./...
 ```bash
 ./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_scheduler_runtime.py apps/api_internal/tests/test_views_pools_factual.py
 ./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_preflight.py apps/intercompany_pools/tests/test_factual_preflight_command.py
+./scripts/dev/pytest.sh -q apps/api_v2/tests/test_pool_factual_api.py apps/api_v2/tests/test_intercompany_pool_runs.py apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py
+./contracts/scripts/build-orchestrator-openapi.sh check
+./contracts/scripts/validate-specs.sh
+./contracts/scripts/verify-generated-code.sh
 cd go-services/shared && go test ./config
 cd go-services/worker && go test ./internal/drivers/poolops ./internal/orchestrator ./internal/scheduler/... ./cmd
 cd frontend && npm run test:run -- src/pages/Pools/__tests__/PoolFactualPage.test.tsx
+cd frontend && timeout 120 npx vitest run src/pages/Pools/__tests__/PoolRunsPage.test.tsx -t "batch-backed|creates a receipt batch"
+cd frontend && npm run test:browser:ui-platform
+cd frontend && npm run validate:ui-platform
 ./scripts/dev/check-agent-doc-freshness.sh
 ```
 
@@ -79,6 +86,11 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
   --json \
   --strict
 ```
+
+Operator path acceptance notes:
+
+- `/pools/runs` is the default producer surface for canonical batch intake: use the `Create canonical batch` drawer from the create stage, then follow the auto-opened inspect context for the linked receipt run.
+- Run-to-factual handoff must preserve `quarter_start` in the factual route so the settlement focus lands in the correct quarter, not just the latest pool snapshot.
 
 ## Runtime-Test Reference
 

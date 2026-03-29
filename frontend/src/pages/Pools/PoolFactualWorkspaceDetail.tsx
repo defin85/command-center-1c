@@ -29,6 +29,7 @@ type PoolFactualWorkspaceDetailProps = {
   selectedPool: OrganizationPool
   focus: 'summary' | 'settlement' | 'drilldown' | 'review'
   runId: string | null
+  quarterStart: string | null
   poolCatalogHref: string
   runWorkspaceHref: string
 }
@@ -124,6 +125,7 @@ export function PoolFactualWorkspaceDetail({
   selectedPool,
   focus,
   runId,
+  quarterStart,
   poolCatalogHref,
   runWorkspaceHref,
 }: PoolFactualWorkspaceDetailProps) {
@@ -144,7 +146,10 @@ export function PoolFactualWorkspaceDetail({
       setReviewActionError(null)
 
       try {
-        const data = await getPoolFactualWorkspace({ poolId: selectedPool.id })
+        const data = await getPoolFactualWorkspace({
+          poolId: selectedPool.id,
+          quarterStart: quarterStart ?? undefined,
+        })
         if (cancelled) {
           return
         }
@@ -174,9 +179,15 @@ export function PoolFactualWorkspaceDetail({
       cancelled = true
       window.clearInterval(pollId)
     }
-  }, [selectedPool.id])
+  }, [quarterStart, selectedPool.id])
 
   const reviewRows = mapReviewRows(workspace?.review_queue)
+  const linkedSettlement = runId
+    ? (workspace?.settlements.find((row) => row.run_id === runId) ?? null)
+    : null
+  const settlements = linkedSettlement && workspace
+    ? [linkedSettlement, ...workspace.settlements.filter((row) => row.id !== linkedSettlement.id)]
+    : (workspace?.settlements ?? [])
 
   const reviewSummary = {
     pendingTotal: workspace?.review_queue.summary.pending_total ?? 0,
@@ -197,7 +208,10 @@ export function PoolFactualWorkspaceDetail({
         note: 'Triggered from factual workspace',
       })
       try {
-        const refreshedWorkspace = await getPoolFactualWorkspace({ poolId: selectedPool.id })
+        const refreshedWorkspace = await getPoolFactualWorkspace({
+          poolId: selectedPool.id,
+          quarterStart: quarterStart ?? undefined,
+        })
         setWorkspace(refreshedWorkspace)
       } catch (error) {
         const resolved = resolveApiError(error, 'Factual review action succeeded but workspace refresh failed.')
@@ -319,8 +333,9 @@ export function PoolFactualWorkspaceDetail({
               <StatusBadge status="active" label="focus=settlement" />
             </Space>
             <Text type="secondary">
-              This deep link keeps the operator in factual dashboard context while starting from the linked run
-              report and its batch settlement handoff.
+              {linkedSettlement
+                ? `Matched run-linked settlement ${linkedSettlement.source_reference || formatShortId(linkedSettlement.id)} is ${linkedSettlement.settlement?.status ?? 'pending'} with open balance ${linkedSettlement.settlement?.open_balance ?? '-'}.`
+                : 'This deep link keeps the operator in factual dashboard context while starting from the linked run report and its batch settlement handoff.'}
             </Text>
           </Space>
         </div>
@@ -358,9 +373,14 @@ export function PoolFactualWorkspaceDetail({
                 label={workspace ? workspace.summary.quarter : (loadingWorkspace ? 'loading' : 'awaiting data')}
               />
               {workspace ? (
-                <Text type="secondary">
-                  Incoming {workspace.summary.incoming_amount}, outgoing {workspace.summary.outgoing_amount}, open balance {workspace.summary.open_balance}.
-                </Text>
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">
+                    Incoming {workspace.summary.incoming_amount}, outgoing {workspace.summary.outgoing_amount}, open balance {workspace.summary.open_balance}.
+                  </Text>
+                  <Text type="secondary">
+                    With VAT {workspace.summary.amount_with_vat}, without VAT {workspace.summary.amount_without_vat}, VAT {workspace.summary.vat_amount}.
+                  </Text>
+                </Space>
               ) : (
                 <Text type="secondary">
                   Incoming, outgoing, and open-balance totals appear here after the factual workspace payload loads.
@@ -456,7 +476,7 @@ export function PoolFactualWorkspaceDetail({
           </Space>
         )}
         loading={loadingWorkspace}
-        dataSource={workspace?.settlements ?? []}
+        dataSource={settlements}
         columns={[
           {
             title: 'Batch',
@@ -467,6 +487,7 @@ export function PoolFactualWorkspaceDetail({
                 <Text>{row.source_reference || formatShortId(row.id)}</Text>
                 <Text type="secondary">{row.batch_kind} · {row.period_start}</Text>
                 {row.run_id ? <Text type="secondary">run {formatShortId(row.run_id)}</Text> : null}
+                {runId && row.run_id === runId ? <Text type="secondary">linked from run report</Text> : null}
               </Space>
             ),
           },

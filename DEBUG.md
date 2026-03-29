@@ -251,14 +251,16 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 - decision `go` означает, что required published surfaces доступны и live bounded read probe завершился без direct DB path;
 - JSON output сохраняем как pilot/preflight evidence для rollout gate `0.3`.
 
-3. Создать `safe` batch-backed `top_down` run:
+3. Создать canonical `receipt` batch и получить связанный `safe` `top_down` run:
 
 ```bash
-RUN_ID=$(curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
+RECEIPT_RESPONSE=$(curl --noproxy '*' -sS -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
   -H 'Content-Type: application/json' \
-  -d "{\"pool_id\":\"$CC1C_POOL_ID\",\"pool_workflow_binding_id\":\"$CC1C_BINDING_ID\",\"direction\":\"top_down\",\"period_start\":\"$CC1C_PERIOD_START\",\"run_input\":{\"batch_id\":\"$CC1C_BATCH_ID\",\"start_organization_id\":\"$CC1C_START_ORGANIZATION_ID\"},\"mode\":\"safe\"}" \
-  "$CC1C_BASE_URL/api/v2/pools/runs/" | python -c "import json,sys; print(json.load(sys.stdin)['run']['id'])")
+  -d "{\"pool_id\":\"$CC1C_POOL_ID\",\"batch_kind\":\"receipt\",\"source_type\":\"schema_template_upload\",\"schema_template_id\":\"$CC1C_SCHEMA_TEMPLATE_ID\",\"pool_workflow_binding_id\":\"$CC1C_BINDING_ID\",\"start_organization_id\":\"$CC1C_START_ORGANIZATION_ID\",\"period_start\":\"$CC1C_PERIOD_START\",\"period_end\":\"$CC1C_PERIOD_END\",\"source_reference\":\"receipt-debug\",\"json_payload\":[{\"inn\":\"730000000001\",\"amount\":\"100.00\",\"external_id\":\"debug-receipt-001\"}]}" \
+  "$CC1C_BASE_URL/api/v2/pools/batches/")
+CC1C_BATCH_ID=$(printf '%s' "$RECEIPT_RESPONSE" | python -c "import json,sys; print(json.load(sys.stdin)['batch']['id'])")
+RUN_ID=$(printf '%s' "$RECEIPT_RESPONSE" | python -c "import json,sys; print(json.load(sys.stdin)['run']['id'])")
 ```
 
 4. Подтвердить публикацию и дополлить report до terminal execution state:
@@ -281,8 +283,8 @@ curl --noproxy '*' -sS \
 5. Открыть operator-facing factual route из run context:
 
 ```bash
-printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
-printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&quarter_start=$CC1C_PERIOD_START&focus=settlement&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&quarter_start=$CC1C_PERIOD_START&focus=review&detail=1"
 ```
 
 6. Дополлить factual workspace API до появления checkpoint/sync summary:
@@ -291,7 +293,7 @@ printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus
 curl --noproxy '*' -sS \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "X-CC1C-Tenant-ID: $CC1C_TENANT_ID" \
-  "$CC1C_BASE_URL/api/v2/pools/factual/workspace/?pool_id=$CC1C_POOL_ID"
+  "$CC1C_BASE_URL/api/v2/pools/factual/workspace/?pool_id=$CC1C_POOL_ID&quarter_start=$CC1C_PERIOD_START"
 ```
 
 Ожидаемое поведение:
@@ -302,8 +304,8 @@ curl --noproxy '*' -sS \
 7. Открыть operator-facing factual route из browser и дождаться backend-fed summary:
 
 ```bash
-printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=settlement&detail=1"
-printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&focus=review&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&quarter_start=$CC1C_PERIOD_START&focus=settlement&detail=1"
+printf '%s\n' "$CC1C_BASE_URL/pools/factual?pool=$CC1C_POOL_ID&run=$RUN_ID&quarter_start=$CC1C_PERIOD_START&focus=review&detail=1"
 ```
 
 8. Выполнить operator action по review item через public API:

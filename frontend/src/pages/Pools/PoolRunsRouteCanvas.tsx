@@ -34,12 +34,14 @@ import {
   getPoolGraph,
   getPoolRunReport,
   listOrganizationPools,
+  listPoolBatches,
   listPoolRuns,
   listPoolSchemaTemplates,
   previewPoolWorkflowBinding,
   retryPoolRunFailed,
   type CreatePoolRunPayload,
   type OrganizationPool,
+  type PoolBatch,
   type PoolGraph,
   type PoolPublicationAttemptDiagnostics,
   type PoolRun,
@@ -86,6 +88,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
+import { PoolBatchIntakeDrawer } from './PoolBatchIntakeDrawer'
 import { buildPoolFactualRoute, POOL_RUNS_ROUTE } from './routes'
 
 const { Text } = Typography
@@ -1406,6 +1409,7 @@ export function PoolRunsPage() {
   const graphDateFromUrl = parseGraphDate(searchParams.get('date'), defaultGraphDateRef.current)
   const detailOpenFromUrl = searchParams.get('detail') === '1'
   const [pools, setPools] = useState<OrganizationPool[]>([])
+  const [receiptBatches, setReceiptBatches] = useState<PoolBatch[]>([])
   const [schemaTemplates, setSchemaTemplates] = useState<PoolSchemaTemplate[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null | undefined>(
     () => poolFromUrl ?? undefined
@@ -1416,6 +1420,7 @@ export function PoolRunsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(() => runFromUrl)
   const [report, setReport] = useState<PoolRunReport | null>(null)
   const [loadingPools, setLoadingPools] = useState(false)
+  const [loadingReceiptBatches, setLoadingReceiptBatches] = useState(false)
   const [loadingSchemaTemplates, setLoadingSchemaTemplates] = useState(false)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [loadingRuns, setLoadingRuns] = useState(false)
@@ -1428,6 +1433,7 @@ export function PoolRunsPage() {
   const [bindingPreview, setBindingPreview] = useState<PoolWorkflowBindingPreview | null>(null)
   const [activeStageTab, setActiveStageTab] = useState<PoolRunsStage>(stageFromUrl)
   const [isRunDetailOpen, setIsRunDetailOpen] = useState(detailOpenFromUrl)
+  const [isBatchIntakeDrawerOpen, setIsBatchIntakeDrawerOpen] = useState(false)
   const [createForm] = Form.useForm<CreateRunFormValues>()
   const [retryForm] = Form.useForm<RetryFormValues>()
   const selectedPoolIdRef = useRef<string | null | undefined>(selectedPoolId)
@@ -1458,6 +1464,7 @@ export function PoolRunsPage() {
   const createDirection = Form.useWatch('direction', createForm) ?? 'top_down'
   const createMode = Form.useWatch('mode', createForm) ?? 'safe'
   const createPeriodStart = Form.useWatch('period_start', createForm) ?? new Date().toISOString().slice(0, 10)
+  const createPeriodEnd = Form.useWatch('period_end', createForm) ?? ''
   const createBindingId = Form.useWatch('pool_workflow_binding_id', createForm)
   const createTopDownInputMode = Form.useWatch('top_down_input_mode', createForm) ?? 'manual'
   const createStartingAmount = Form.useWatch('starting_amount', createForm)
@@ -1482,6 +1489,29 @@ export function PoolRunsPage() {
       periodStart: createPeriodStart,
     })),
     [createDirection, createMode, createPeriodStart, selectedPool]
+  )
+  const receiptBatchWorkflowBindings = useMemo(
+    () => (selectedPool?.workflow_bindings ?? []).filter((binding) => matchesWorkflowBindingForCreateRun({
+      binding,
+      direction: 'top_down',
+      mode: 'safe',
+      periodStart: createPeriodStart,
+    })),
+    [createPeriodStart, selectedPool]
+  )
+  const receiptBatchOptions = useMemo(
+    () => receiptBatches.map((batch) => ({
+      value: batch.id,
+      label: `${batch.source_reference || formatShortId(batch.id)} · ${batch.period_start}`,
+    })),
+    [receiptBatches]
+  )
+  const receiptBatchWorkflowBindingOptions = useMemo(
+    () => receiptBatchWorkflowBindings.map((binding) => ({
+      value: binding.binding_id,
+      label: formatWorkflowBindingOptionLabel(binding),
+    })),
+    [receiptBatchWorkflowBindings]
   )
   const selectedCreateBinding = useMemo(() => {
     const normalizedBindingId = String(createBindingId || '').trim()
@@ -1552,6 +1582,26 @@ export function PoolRunsPage() {
       setLoadingSchemaTemplates(false)
     }
   }, [])
+
+  const loadReceiptBatches = useCallback(async () => {
+    if (!selectedPoolId) {
+      setReceiptBatches([])
+      return
+    }
+    setLoadingReceiptBatches(true)
+    try {
+      const data = await listPoolBatches({
+        poolId: selectedPoolId,
+        batchKind: 'receipt',
+        limit: 100,
+      })
+      setReceiptBatches(data)
+    } catch {
+      setError('Не удалось загрузить canonical receipt batches.')
+    } finally {
+      setLoadingReceiptBatches(false)
+    }
+  }, [selectedPoolId])
 
   const loadGraph = useCallback(async () => {
     if (!selectedPoolId) {
@@ -1740,6 +1790,10 @@ export function PoolRunsPage() {
   useEffect(() => {
     void loadGraph()
   }, [loadGraph])
+
+  useEffect(() => {
+    void loadReceiptBatches()
+  }, [loadReceiptBatches])
 
   useEffect(() => {
     void loadRuns()
@@ -2100,9 +2154,55 @@ export function PoolRunsPage() {
 
   const handleRefreshData = useCallback(() => {
     void loadGraph()
+    void loadReceiptBatches()
     void loadRuns()
     void loadReport()
-  }, [loadGraph, loadReport, loadRuns])
+  }, [loadGraph, loadReceiptBatches, loadReport, loadRuns])
+
+  const handleBatchCreated = useCallback(async (
+    response: {
+      batch: PoolBatch
+      run?: PoolRun | null
+    },
+    context: {
+      batchKind: 'receipt' | 'sale'
+      periodStart: string
+      periodEnd: string | null
+      poolWorkflowBindingId: string | null
+      startOrganizationId: string | null
+    },
+  ) => {
+    setIsBatchIntakeDrawerOpen(false)
+    createForm.setFieldsValue({
+      period_start: context.periodStart,
+      period_end: context.periodEnd ?? '',
+    })
+
+    if (response.batch.batch_kind === 'receipt') {
+      createForm.setFieldsValue({
+        direction: 'top_down',
+        mode: 'safe',
+        top_down_input_mode: 'batch_backed',
+        batch_id: response.batch.id,
+        pool_workflow_binding_id: context.poolWorkflowBindingId ?? undefined,
+        start_organization_id: context.startOrganizationId ?? undefined,
+      })
+      setReceiptBatches((current) => [
+        response.batch,
+        ...current.filter((item) => item.id !== response.batch.id),
+      ])
+      if (response.run?.id) {
+        routeUpdateModeRef.current = 'push'
+        setActiveStageTab('inspect')
+        setIsRunDetailOpen(true)
+        setSelectedRunId(response.run.id)
+        await loadRuns({ preferredRunId: response.run.id })
+        return
+      }
+    }
+
+    await loadReceiptBatches()
+  }, [createForm, loadReceiptBatches, loadRuns])
 
   const handleSelectStage = useCallback((nextStage: PoolRunsStage) => {
     routeUpdateModeRef.current = 'push'
@@ -2462,6 +2562,7 @@ export function PoolRunsPage() {
   const factualWorkspaceHref = buildPoolFactualRoute({
     poolId: selectedPoolId,
     runId: selectedRunId,
+    quarterStart: runDetails?.period_start ?? null,
     focus: 'settlement',
     detail: true,
   })
@@ -2594,6 +2695,24 @@ export function PoolRunsPage() {
                     description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
                     style={{ marginBottom: 12 }}
                   />
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="Canonical batch intake stays on the checked-in operator path"
+                    description="Use the drawer below to create receipt/sale batches through schema-template normalization. Receipt intake queues the linked safe run without manual batch UUID entry."
+                    action={(
+                      <Button
+                        type="primary"
+                        size="small"
+                        data-testid="pool-runs-open-batch-intake"
+                        disabled={!selectedPoolId}
+                        onClick={() => setIsBatchIntakeDrawerOpen(true)}
+                      >
+                        Create canonical batch
+                      </Button>
+                    )}
+                    style={{ marginBottom: 12 }}
+                  />
                   {selectedPoolWorkflowBindingsReadError ? (
                     <Alert
                       type="error"
@@ -2669,7 +2788,7 @@ export function PoolRunsPage() {
                           <Col span={8}>
                             <Form.Item
                               name="batch_id"
-                              label="Receipt batch ID"
+                              label="Receipt batch"
                               rules={[
                                 { required: true, message: 'batch_id required' },
                                 {
@@ -2681,10 +2800,19 @@ export function PoolRunsPage() {
                                   },
                                 },
                               ]}
+                              extra={
+                                receiptBatchOptions.length === 0
+                                  ? 'Create a canonical receipt batch from the drawer above, then reuse it from this select.'
+                                  : 'Select an existing canonical receipt batch for the explicit batch-backed run path.'
+                              }
                             >
-                              <Input
+                              <Select
                                 data-testid="pool-runs-create-batch-id"
-                                placeholder="Canonical receipt batch UUID"
+                                loading={loadingReceiptBatches}
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="Select canonical receipt batch"
+                                options={receiptBatchOptions}
                               />
                             </Form.Item>
                           </Col>
@@ -3022,6 +3150,25 @@ export function PoolRunsPage() {
                       </Descriptions>
                     </Card>
                   )}
+
+                  <PoolBatchIntakeDrawer
+                    open={isBatchIntakeDrawerOpen}
+                    poolId={selectedPoolId ?? null}
+                    poolLabel={selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : 'No pool selected'}
+                    schemaTemplates={schemaTemplates}
+                    loadingSchemaTemplates={loadingSchemaTemplates}
+                    workflowBindingOptions={receiptBatchWorkflowBindingOptions}
+                    startOrganizationOptions={activeTopologyOrganizations}
+                    initialValues={{
+                      batchKind: 'receipt',
+                      periodStart: createPeriodStart,
+                      periodEnd: createPeriodEnd || null,
+                      poolWorkflowBindingId: createBindingId ?? null,
+                      startOrganizationId: createStartOrganizationId ?? null,
+                    }}
+                    onClose={() => setIsBatchIntakeDrawerOpen(false)}
+                    onCreated={handleBatchCreated}
+                  />
                 </Form>
               </Card>
             ),

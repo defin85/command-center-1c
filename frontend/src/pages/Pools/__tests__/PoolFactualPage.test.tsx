@@ -104,6 +104,9 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       quarter: '2026Q1',
       quarter_start: '2026-01-01',
       quarter_end: '2026-03-31',
+      amount_with_vat: '120.00',
+      amount_without_vat: '100.00',
+      vat_amount: '20.00',
       incoming_amount: '170.00',
       outgoing_amount: '115.00',
       open_balance: '55.00',
@@ -261,17 +264,25 @@ describe('PoolFactualPage', () => {
     ])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
 
-    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&run=run-001&focus=settlement&detail=1')
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&run=run-001&focus=settlement&detail=1&quarter_start=2026-01-01')
 
     await screen.findByText('Factual operator workspace')
     await screen.findByText('receipt-q1')
 
+    expect(mockGetPoolFactualWorkspace).toHaveBeenLastCalledWith({
+      poolId: '11111111-1111-1111-1111-111111111111',
+      quarterStart: '2026-01-01',
+    })
     expect(screen.getByText('Batch settlement')).toBeInTheDocument()
     expect(screen.getByText('Edge drill-down')).toBeInTheDocument()
     expect(screen.getByText('Manual review queue')).toBeInTheDocument()
     expect(screen.getByText('Linked run: run-001')).toBeInTheDocument()
     expect(screen.getByText('Run-linked settlement handoff')).toBeInTheDocument()
     expect(screen.getByText('Incoming 170.00, outgoing 115.00, open balance 55.00.')).toBeInTheDocument()
+    expect(screen.getByText('With VAT 120.00, without VAT 100.00, VAT 20.00.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Matched run-linked settlement receipt-q1 is partially_closed with open balance 40.00.')
+    ).toBeInTheDocument()
     expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
     expect(screen.getByText('sale-q1')).toBeInTheDocument()
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
@@ -414,6 +425,9 @@ describe('PoolFactualPage', () => {
           quarter: '2026Q1',
           quarter_start: '2026-01-01',
           quarter_end: '2026-03-31',
+          amount_with_vat: '170.00',
+          amount_without_vat: '141.67',
+          vat_amount: '28.33',
           incoming_amount: '170.00',
           outgoing_amount: '115.00',
           open_balance: '55.00',
@@ -433,6 +447,9 @@ describe('PoolFactualPage', () => {
           quarter: '2026Q1',
           quarter_start: '2026-01-01',
           quarter_end: '2026-03-31',
+          amount_with_vat: '170.00',
+          amount_without_vat: '141.67',
+          vat_amount: '28.33',
           incoming_amount: '170.00',
           outgoing_amount: '115.00',
           open_balance: '55.00',
@@ -552,9 +569,10 @@ describe('PoolFactualPage', () => {
       buildPoolFactualRoute({
         poolId: 'pool-1',
         runId: 'run-1',
+        quarterStart: '2026-01-01',
         focus: 'settlement',
         detail: true,
       })
-    ).toBe('/pools/factual?pool=pool-1&run=run-1&focus=settlement&detail=1')
+    ).toBe('/pools/factual?pool=pool-1&run=run-1&quarter_start=2026-01-01&focus=settlement&detail=1')
   })
 })

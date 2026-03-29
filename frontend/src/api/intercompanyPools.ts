@@ -520,6 +520,7 @@ export type PoolRunReport = {
 
 export type PoolBatchKind = 'receipt' | 'sale'
 export type PoolBatchSourceType = 'schema_template_upload' | 'integration' | 'manual'
+export type PoolBatchCreateSourceType = 'schema_template_upload'
 export type PoolBatchSettlementStatus =
   | 'ingested'
   | 'distributed'
@@ -570,6 +571,42 @@ export type PoolBatch = {
   settlement: PoolBatchSettlement | null
 }
 
+export type PoolBatchCreatePayload = {
+  pool_id: string
+  batch_kind: PoolBatchKind
+  source_type: PoolBatchCreateSourceType
+  schema_template_id?: string | null
+  pool_workflow_binding_id?: string
+  start_organization_id?: string | null
+  period_start: string
+  period_end?: string | null
+  source_reference?: string
+  raw_payload_ref?: string
+  source_metadata?: Record<string, unknown>
+  json_payload?: unknown
+  xlsx_base64?: string
+}
+
+export type PoolBatchCreateResponse = {
+  batch: PoolBatch
+  settlement: PoolBatchSettlement
+  run?: PoolRun | null
+  created: boolean
+  sale_closing?: {
+    execution_id?: string | null
+    operation_id?: string | null
+    enqueue_success: boolean
+    enqueue_status: string
+    enqueue_error?: string | null
+    created_execution: boolean
+  } | null
+}
+
+export type PoolBatchListResponse = {
+  batches: PoolBatch[]
+  count: number
+}
+
 export type PoolFactualReviewReason = 'unattributed' | 'late_correction'
 export type PoolFactualReviewStatus = 'pending' | 'attributed' | 'reconciled' | 'resolved_without_change'
 export type PoolFactualReviewAction = 'attribute' | 'reconcile' | 'resolve_without_change'
@@ -578,6 +615,9 @@ export type PoolFactualSummary = {
   quarter: string
   quarter_start: string
   quarter_end: string
+  amount_with_vat: string
+  amount_without_vat: string
+  vat_amount: string
   incoming_amount: string
   outgoing_amount: string
   open_balance: string
@@ -651,6 +691,12 @@ export type PoolFactualWorkspace = {
 export type GetPoolFactualWorkspaceParams = {
   poolId: string
   quarterStart?: string
+}
+
+export type ListPoolBatchesParams = {
+  poolId?: string
+  batchKind?: PoolBatchKind
+  limit?: number
 }
 
 export type ApplyPoolFactualReviewActionPayload = {
@@ -1013,6 +1059,38 @@ export async function listOrganizationPools(): Promise<OrganizationPool[]> {
     { skipGlobalError: true }
   )
   return response.data.pools ?? []
+}
+
+export async function listPoolBatches(
+  params: ListPoolBatchesParams = {}
+): Promise<PoolBatch[]> {
+  const query: Record<string, string> = {}
+  if (params.poolId) {
+    query.pool_id = params.poolId
+  }
+  if (params.batchKind) {
+    query.batch_kind = params.batchKind
+  }
+  if (typeof params.limit === 'number') {
+    query.limit = String(params.limit)
+  }
+
+  const response = await apiClient.get<PoolBatchListResponse>(
+    '/api/v2/pools/batches/',
+    { params: query, skipGlobalError: true }
+  )
+  return response.data.batches ?? []
+}
+
+export async function createPoolBatch(
+  payload: PoolBatchCreatePayload
+): Promise<PoolBatchCreateResponse> {
+  const response = await apiClient.post<PoolBatchCreateResponse>(
+    '/api/v2/pools/batches/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
 }
 
 export async function getPoolFactualWorkspace(
