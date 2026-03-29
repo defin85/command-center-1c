@@ -76,6 +76,7 @@ Canonical execution path:
 - `/pools/execution-packs`
 - `/pools/master-data`
 - `/pools/runs`
+- `/pools/factual`
 
 ### Admin и governance surfaces
 

@@ -67,6 +67,13 @@
 - Для canary запускай preview binding, затем create-run с явным `pool_workflow_binding_id`, потом проверяй `Run Lineage / Operator Report`.
 - Подробный runbook: [observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md](./observability/WORKFLOW_CENTRIC_POOLS_RUNBOOK.md)
 
+### Factual monitoring (`/pools/factual`)
+- `/pools/factual` — отдельный workspace для factual balance monitoring, settlement drill-down и manual review.
+- Переход из `/pools/runs` делай через `Create canonical batch` на create stage, затем открывай linked inspect/run context и сохрани `quarter_start` в handoff.
+- Для factual detail используй route вида `/pools/factual?pool=<pool-uuid>&quarter_start=2026-01-01&focus=settlement&detail=1`.
+- Для late correction работай через manual review queue и `Reconcile review item`; для attributable queue items используй `Attribute review item`.
+- Default operator path здесь не заменяет `/pools/runs`: run surface остаётся execution-centric, а factual workspace держит monitoring отдельно.
+
 ### Pool Master Data (`/pools/master-data`)
 - Назначение: canonical-справочник для публикации в target infobase (Party, Item, Contract, TaxProfile) и их `ib_ref_key`-привязки в `Bindings`.
 

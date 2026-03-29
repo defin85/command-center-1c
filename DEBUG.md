@@ -204,6 +204,9 @@ curl --noproxy '*' -k -sS \
 - operator route `/pools/factual` и public factual API опубликованы;
 - `GET /api/v2/pools/factual/workspace/` теперь сам поднимает worker-backed factual refresh на default path, если checkpoint отсутствует или протух;
 - manual review идёт через `POST /api/v2/pools/factual/review-actions/`, без `dev-bridge` для штатного operator path.
+- receipt intake для default operator path идёт через `/pools/runs` → `Create canonical batch` → linked inspect/run context, а не через ручной ввод batch UUID.
+- для settlement focus всегда сохраняй `quarter_start` в `/pools/factual`; без него workspace может показать не тот quarter snapshot.
+- manual reconcile для late correction проверяй через `action=reconcile`, а attributable items через `action=attribute`, затем переполли workspace summary и review queue.
 
 Дополнительно подтверждено на `2026-03-29`:
 - published-surfaces preflight возвращает `decision=go` на pilot path при наличии published OData surfaces;

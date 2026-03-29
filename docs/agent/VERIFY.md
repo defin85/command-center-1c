@@ -62,7 +62,7 @@ cd go-services/worker && go test ./...
 ```bash
 ./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_scheduler_runtime.py apps/api_internal/tests/test_views_pools_factual.py
 ./scripts/dev/pytest.sh -q apps/intercompany_pools/tests/test_factual_preflight.py apps/intercompany_pools/tests/test_factual_preflight_command.py
-./scripts/dev/pytest.sh -q apps/api_v2/tests/test_pool_factual_api.py apps/api_v2/tests/test_intercompany_pool_runs.py apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py
+./scripts/dev/pytest.sh -q apps/api_v2/tests/test_pool_factual_api.py apps/api_v2/tests/test_intercompany_pool_runs.py apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py apps/intercompany_pools/tests/test_factual_preflight_docs_parity.py
 ./contracts/scripts/build-orchestrator-openapi.sh check
 ./contracts/scripts/validate-specs.sh
 ./contracts/scripts/verify-generated-code.sh
@@ -91,6 +91,7 @@ Operator path acceptance notes:
 
 - `/pools/runs` is the default producer surface for canonical batch intake: use the `Create canonical batch` drawer from the create stage, then follow the auto-opened inspect context for the linked receipt run.
 - Run-to-factual handoff must preserve `quarter_start` in the factual route so the settlement focus lands in the correct quarter, not just the latest pool snapshot.
+- `Create canonical batch` is the shipped UI path, while `/pools/factual` is the shipped monitoring workspace for settlement and manual review.
 
 ## Runtime-Test Reference
 

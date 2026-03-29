@@ -69,6 +69,10 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 - For safe-mode runs, poll the run report until `publication_step_state=completed` or terminal `status=published`; a transient pre-projection snapshot is not the acceptance point.
 - A checked-in live acceptance snapshot lives at `openspec/changes/archive/2026-03-29-add-pool-factual-balance-monitoring/artifacts/2026-03-29-live-default-path-evidence.md`.
 - Factual acceptance is not complete unless the workspace summary surfaces explicit `backlog_total` / staleness in the operator freshness card, not only source availability.
+- Default operator producer path starts in `/pools/runs` with `Create canonical batch`, not with manual batch UUID entry.
+- Run-to-factual handoff must preserve `quarter_start`, because the factual workspace uses it to land on the intended settlement quarter rather than the latest pool snapshot.
+- Default verification for a receipt cohort is: create batch, confirm publication, open `/pools/factual`, then verify `summary.backlog_total`, `summary.freshness_state`, and `review_queue.summary` before widening the cohort.
+- Manual late correction closure is verified through `POST /api/v2/pools/factual/review-actions/` with `action=reconcile`; attributable items use `action=attribute`.
 
 - Operator-facing route:
 
