@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import connections, transaction
 
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.binding_profiles_store import create_canonical_binding_profile
@@ -28,6 +29,9 @@ from apps.intercompany_pools.runtime_projection_contract import (
 from apps.intercompany_pools.models import (
     Organization,
     OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSourceType,
     PoolEdgeVersion,
     PoolNodeVersion,
     PoolPublicationAttempt,
@@ -535,6 +539,76 @@ def _start_runtime_retry_workflow_execution(
     )
 
 
+def _create_batch_backed_top_down_run(*, mode: str) -> PoolRun:
+    tenant = Tenant.objects.create(
+        slug=f"pool-runtime-batch-{uuid4().hex[:8]}",
+        name="Pool Runtime Batch",
+    )
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"pool-batch-{uuid4().hex[:6]}",
+        name="Pool Runtime Batch",
+    )
+    start_organization = Organization.objects.create(
+        tenant=tenant,
+        name=f"Batch Start {uuid4().hex[:6]}",
+        inn=f"73{uuid4().int % 10**10:010d}",
+    )
+    PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=start_organization,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    _attach_pool_target_database(
+        tenant=tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    batch = PoolBatch.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        start_organization=start_organization,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        source_reference=f"receipt-{uuid4().hex[:8]}",
+        normalization_summary={
+            "processed_rows": 1,
+            "normalized_rows": 1,
+            "total_amount_with_vat": "125.50",
+        },
+    )
+    run = PoolRun.objects.create(
+        tenant=tenant,
+        pool=pool,
+        mode=mode,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        run_input={
+            "batch_id": str(batch.id),
+            "start_organization_id": str(start_organization.id),
+        },
+        idempotency_key=build_pool_run_idempotency_key(
+            pool_id=str(pool.id),
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+            direction=PoolRunDirection.TOP_DOWN,
+            run_input={
+                "batch_id": str(batch.id),
+                "start_organization_id": str(start_organization.id),
+            },
+            batch_id=str(batch.id),
+            start_organization_id=str(start_organization.id),
+        ),
+    )
+    batch.run = run
+    batch.save(update_fields=["run", "updated_at"])
+    return run
+
+
 def _build_document_plan_artifact_for_compile() -> dict[str, object]:
     return {
         "version": "document_plan_artifact.v1",
@@ -731,6 +805,70 @@ def test_start_pool_run_workflow_execution_persists_explicit_pool_workflow_bindi
     assert "workflow" not in persisted_run.workflow_binding_snapshot
     assert "decisions" not in persisted_run.workflow_binding_snapshot
     assert persisted_run.runtime_projection_snapshot == runtime_projection
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_accepts_batch_backed_top_down_run_without_explicit_starting_amount() -> None:
+    run = _create_batch_backed_top_down_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _ensure_runtime_test_workflow_binding_attachment(run=run)
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-batch-top-down",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = _start_runtime_workflow_execution(run=run, workflow_binding=workflow_binding)
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+
+    assert execution.input_context[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY]["version"] == "document_plan_artifact.v1"
+    assert execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["compile_summary"]["compiled_targets_count"] == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_start_pool_run_workflow_execution_defers_enqueue_until_outer_commit() -> None:
+    run = _create_batch_backed_top_down_run(mode=PoolRunMode.SAFE)
+    workflow_binding = _ensure_runtime_test_workflow_binding_attachment(run=run)
+    target_database = (
+        PoolNodeVersion.objects.filter(
+            pool=run.pool,
+            effective_from=run.period_start,
+            is_root=False,
+            organization__database__isnull=False,
+        )
+        .values_list("organization__database", flat=True)
+        .first()
+    )
+    assert target_database is not None
+    _ensure_service_mapping(database=Database.objects.get(id=target_database))
+    enqueue_atomic_flags: list[bool] = []
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        side_effect=lambda **kwargs: (
+            enqueue_atomic_flags.append(connections["default"].in_atomic_block)
+            or EnqueueResult(
+                success=True,
+                operation_id="workflow-op-deferred-top-down",
+                status="queued",
+                error=None,
+                error_code=None,
+            )
+        ),
+    ):
+        with transaction.atomic():
+            result = start_pool_run_workflow_execution(run=run, workflow_binding=workflow_binding)
+            assert result.enqueue_status == "deferred"
+            assert enqueue_atomic_flags == []
+
+    refreshed_run = PoolRun.objects.get(id=run.id)
+    assert enqueue_atomic_flags == [False]
+    assert refreshed_run.workflow_status == "queued"
 
 
 @pytest.mark.django_db

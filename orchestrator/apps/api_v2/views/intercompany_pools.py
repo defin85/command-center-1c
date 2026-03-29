@@ -5618,6 +5618,7 @@ def list_or_create_pool_batches(request):
         resolved_workflow_binding_payload = resolved_workflow_binding.model_dump(mode="json", exclude_none=True)
 
     run_record = None
+    runtime_result = None
     run_created = True
     sale_closing_result = None
     try:
@@ -5711,6 +5712,12 @@ def list_or_create_pool_batches(request):
             detail=detail,
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
+
+    if runtime_result is not None and isinstance(getattr(runtime_result, "run", None), PoolRun):
+        run_record = runtime_result.run
+    if sale_closing_result is not None and isinstance(getattr(sale_closing_result, "batch", None), PoolBatch):
+        batch = sale_closing_result.batch
+        settlement = getattr(batch, "settlement", settlement)
 
     payload: dict[str, Any] = {
         "batch": _serialize_pool_batch(batch),

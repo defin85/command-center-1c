@@ -64,6 +64,8 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 
 - `decision=go` means the cohort passed all mandatory checks: source availability, metadata refresh, required published surfaces, bounded quarter/org/account/movement scope, and live read-only OData probes for the accounting register, information register, and factual documents.
 - Save the JSON output as the pilot evidence bundle for task `0.3`; repository docs describe the command, but tenant-specific go/no-go still comes from running it on the target pilot infobases.
+- Live acceptance for the default path is verified by the shipped sequence `POST /api/v2/pools/batches/ -> GET /api/v2/pools/runs/<run>/report/ -> POST /api/v2/pools/runs/<run>/confirm-publication/ -> GET /api/v2/pools/factual/workspace/`.
+- For safe-mode runs, poll the run report until `publication_step_state=completed` or terminal `status=published`; a transient pre-projection snapshot is not the acceptance point.
 
 - Operator-facing route:
 

@@ -20,6 +20,10 @@ import {
   type PoolFactualReviewAction,
   type PoolFactualReviewRow,
 } from './poolFactualReviewQueue'
+import {
+  PoolFactualReviewAttributeModal,
+  type PoolFactualReviewAttributeValues,
+} from './PoolFactualReviewAttributeModal'
 import { resolveApiError } from './masterData/errorUtils'
 
 
@@ -134,6 +138,7 @@ export function PoolFactualWorkspaceDetail({
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [reviewActionError, setReviewActionError] = useState<string | null>(null)
   const [pendingReviewItemId, setPendingReviewItemId] = useState<string | null>(null)
+  const [attributeReviewRow, setAttributeReviewRow] = useState<ReviewRowWithTargets | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -194,7 +199,11 @@ export function PoolFactualWorkspaceDetail({
     attentionRequiredTotal: workspace?.review_queue.summary.attention_required_total ?? 0,
   }
 
-  const handleReviewAction = async (row: ReviewRowWithTargets, action: PoolFactualReviewAction) => {
+  const submitReviewAction = async (
+    row: ReviewRowWithTargets,
+    action: PoolFactualReviewAction,
+    targets?: PoolFactualReviewAttributeValues,
+  ) => {
     setPendingReviewItemId(row.id)
     setReviewActionError(null)
 
@@ -202,9 +211,9 @@ export function PoolFactualWorkspaceDetail({
       const response = await applyPoolFactualReviewActionRequest({
         review_item_id: row.id,
         action,
-        batch_id: row.batchId ?? undefined,
-        edge_id: row.edgeId ?? undefined,
-        organization_id: row.organizationId ?? undefined,
+        batch_id: targets ? targets.batch_id ?? undefined : row.batchId ?? undefined,
+        edge_id: targets ? targets.edge_id ?? undefined : row.edgeId ?? undefined,
+        organization_id: targets ? targets.organization_id ?? undefined : row.organizationId ?? undefined,
         note: 'Triggered from factual workspace',
       })
       try {
@@ -230,12 +239,32 @@ export function PoolFactualWorkspaceDetail({
           }
         })
       }
+      if (action === 'attribute') {
+        setAttributeReviewRow(null)
+      }
     } catch (error) {
       const resolved = resolveApiError(error, 'Failed to apply factual review action.')
       setReviewActionError(resolved.message)
     } finally {
       setPendingReviewItemId(null)
     }
+  }
+
+  const handleReviewAction = async (row: ReviewRowWithTargets, action: PoolFactualReviewAction) => {
+    await submitReviewAction(row, action)
+  }
+
+  const handleOpenAttributeReview = (row: ReviewRowWithTargets) => {
+    setReviewActionError(null)
+    setAttributeReviewRow(row)
+  }
+
+  const handleConfirmAttributeReview = async (values: PoolFactualReviewAttributeValues) => {
+    if (!attributeReviewRow) {
+      return
+    }
+
+    await submitReviewAction(attributeReviewRow, 'attribute', values)
   }
 
   const reviewColumns = [
@@ -285,7 +314,13 @@ export function PoolFactualWorkspaceDetail({
                 type={action === 'resolve_without_change' ? 'default' : 'primary'}
                 loading={pendingReviewItemId === row.id}
                 aria-label={`${getPoolFactualReviewActionLabel(action)} review item ${row.id}`}
-                onClick={() => void handleReviewAction(row as ReviewRowWithTargets, action)}
+                onClick={() => {
+                  if (action === 'attribute') {
+                    handleOpenAttributeReview(row as ReviewRowWithTargets)
+                    return
+                  }
+                  void handleReviewAction(row as ReviewRowWithTargets, action)
+                }}
               >
                 {getPoolFactualReviewActionLabel(action)}
               </Button>
@@ -562,6 +597,18 @@ export function PoolFactualWorkspaceDetail({
         columns={reviewColumns}
         rowKey="id"
         emptyDescription="No pending factual review items were recorded for this quarter."
+      />
+
+      <PoolFactualReviewAttributeModal
+        open={Boolean(attributeReviewRow)}
+        reviewRow={attributeReviewRow}
+        workspace={workspace}
+        saving={pendingReviewItemId === attributeReviewRow?.id}
+        onCancel={() => {
+          setAttributeReviewRow(null)
+          setReviewActionError(null)
+        }}
+        onSubmit={handleConfirmAttributeReview}
       />
     </Space>
   )

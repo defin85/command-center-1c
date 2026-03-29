@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.db import connections
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -50,6 +51,11 @@ from apps.intercompany_pools.models import (
     PoolBatchSettlement,
     PoolBatchSettlementStatus,
     PoolBatchSourceType,
+    PoolFactualLane,
+    PoolFactualReviewItem,
+    PoolFactualReviewReason,
+    PoolFactualReviewStatus,
+    PoolFactualSyncCheckpoint,
     PoolWorkflowBinding,
     PoolMasterParty,
     PoolEdgeVersion,
@@ -4752,6 +4758,210 @@ def test_create_pool_batch_receipt_intake_persists_batch_settlement_and_linked_r
 
 
 @pytest.mark.django_db
+def test_create_pool_batch_receipt_intake_stays_available_when_factual_context_is_degraded(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, leaf_organization, _ = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+    database = _create_database(tenant=pool.tenant, name=f"factual-degraded-{uuid4().hex[:6]}")
+    leaf_organization.database = database
+    leaf_organization.save(update_fields=["database", "updated_at"])
+    schema_template = _create_batch_schema_template(
+        tenant=pool.tenant,
+        code=f"receipt-degraded-{uuid4().hex[:6]}",
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="cp-factual-degraded-001",
+        last_synced_at=timezone.now(),
+        metadata={
+            "freshness_state": "stale",
+            "source_availability": "available",
+            "source_availability_detail": "bounded reads are lagging but still reachable",
+            "freshness_target_seconds": 120,
+        },
+    )
+    PoolFactualReviewItem.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        organization=leaf_organization,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.LATE_CORRECTION,
+        status=PoolFactualReviewStatus.PENDING,
+        source_document_ref="Document_КорректировкаРеализации(guid'factual-degraded')",
+        metadata={"delta_payload": {"amount_with_vat": "15.00"}},
+    )
+
+    workspace_response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+
+    assert workspace_response.status_code == 200
+    workspace_payload = workspace_response.json()
+    assert workspace_payload["summary"]["freshness_state"] == "stale"
+    assert workspace_payload["summary"]["pending_review_total"] == 1
+    assert workspace_payload["review_queue"]["summary"]["late_correction_total"] == 1
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=lambda *args, **kwargs: SimpleNamespace(run=kwargs["run"]),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/batches/",
+            {
+                "pool_id": str(pool.id),
+                "batch_kind": PoolBatchKind.RECEIPT,
+                "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                "schema_template_id": str(schema_template.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "start_organization_id": str(start_organization.id),
+                "period_start": "2026-01-01",
+                "period_end": "2026-03-31",
+                "source_reference": "receipt-degraded-q1",
+                "raw_payload_ref": "files/receipt-degraded-q1.json",
+                "json_payload": [
+                    {
+                        "inn": start_organization.inn,
+                        "amount": "125.50",
+                        "external_id": "receipt-degraded-q1-001",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["batch"]["batch_kind"] == PoolBatchKind.RECEIPT
+    assert payload["run"] is not None
+    assert payload["run"]["direction"] == PoolRunDirection.TOP_DOWN
+    assert payload["run"]["run_input"] == {
+        "batch_id": payload["batch"]["id"],
+        "start_organization_id": str(start_organization.id),
+    }
+
+
+@pytest.mark.django_db
+def test_create_pool_batch_receipt_intake_triggers_workflow_enqueue_callback(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+    django_capture_on_commit_callbacks,
+) -> None:
+    scoped_pool = OrganizationPool.objects.create(
+        tenant=pool.tenant,
+        code=f"receipt-post-commit-{uuid4().hex[:6]}",
+        name="Receipt Post Commit Pool",
+    )
+    binding = _build_pool_workflow_binding_payload(
+        pool=scoped_pool,
+        workflow_definition_key="services-publication",
+        workflow_revision=3,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=scoped_pool.tenant,
+        pool=scoped_pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    root_node = PoolNodeVersion.objects.get(
+        pool=scoped_pool,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    start_organization = root_node.organization
+    leaf_organization = Organization.objects.create(
+        tenant=scoped_pool.tenant,
+        name=f"Receipt Post Commit Leaf {uuid4().hex[:6]}",
+        inn=f"74{uuid4().int % 10**10:010d}",
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=scoped_pool,
+        organization=leaf_organization,
+        effective_from=date(2026, 1, 1),
+        is_root=False,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=scoped_pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+        metadata={"document_policy_key": "document_policy"},
+    )
+    schema_template = _create_batch_schema_template(
+        tenant=scoped_pool.tenant,
+        code=f"receipt-post-commit-{uuid4().hex[:6]}",
+    )
+    enqueue_atomic_flags: list[bool] = []
+
+    def _enqueue_after_commit(*, execution_id: str, workflow_config: dict[str, object]) -> EnqueueResult:
+        del execution_id, workflow_config
+        enqueue_atomic_flags.append(connections["default"].in_atomic_block)
+        return EnqueueResult(success=True, operation_id="receipt-post-commit-op", status="queued")
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        side_effect=_enqueue_after_commit,
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            response = authenticated_client.post(
+                "/api/v2/pools/batches/",
+                {
+                    "pool_id": str(scoped_pool.id),
+                    "batch_kind": PoolBatchKind.RECEIPT,
+                    "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                    "schema_template_id": str(schema_template.id),
+                    "pool_workflow_binding_id": binding["binding_id"],
+                    "start_organization_id": str(start_organization.id),
+                    "period_start": "2026-01-01",
+                    "period_end": "2026-03-31",
+                    "source_reference": "receipt-post-commit-q1",
+                    "raw_payload_ref": "files/receipt-post-commit-q1.json",
+                    "json_payload": [
+                        {
+                            "inn": start_organization.inn,
+                            "amount": "125.50",
+                            "external_id": "receipt-post-commit-q1-001",
+                        }
+                    ],
+                },
+                format="json",
+            )
+
+    assert response.status_code == 201, response.json()
+    payload = response.json()
+    run = PoolRun.objects.get(id=payload["run"]["id"])
+    assert payload["run"]["workflow_execution_id"] is not None
+    assert run.workflow_status == "queued"
+    assert len(enqueue_atomic_flags) == 1
+
+
+@pytest.mark.django_db
 def test_create_pool_batch_sale_intake_persists_batch_and_starts_closing_workflow(
     authenticated_client: APIClient,
     pool: OrganizationPool,
@@ -4841,6 +5051,90 @@ def test_create_pool_batch_sale_intake_persists_batch_and_starts_closing_workflo
     _, start_kwargs = start_closing_mock.call_args
     assert start_kwargs["batch"].id == batch.id
     assert start_kwargs["requested_by"].username == "pool-api-user"
+
+
+@pytest.mark.django_db
+def test_create_pool_batch_sale_intake_triggers_workflow_enqueue_callback(
+    authenticated_client: APIClient,
+    pool: OrganizationPool,
+    django_capture_on_commit_callbacks,
+) -> None:
+    root = Organization.objects.create(
+        tenant=pool.tenant,
+        name=f"Sale Commit Root {uuid4().hex[:6]}",
+        inn=f"76{uuid4().int % 10**10:010d}",
+    )
+    leaf_database = _create_database(
+        tenant=pool.tenant,
+        name=f"sale-commit-db-{uuid4().hex[:6]}",
+    )
+    leaf = Organization.objects.create(
+        tenant=pool.tenant,
+        database=leaf_database,
+        name=f"Sale Commit Leaf {uuid4().hex[:6]}",
+        inn=f"77{uuid4().int % 10**10:010d}",
+    )
+    root_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=root,
+        effective_from=date(2026, 1, 1),
+        is_root=True,
+    )
+    leaf_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=leaf,
+        effective_from=date(2026, 1, 1),
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=root_node,
+        child_node=leaf_node,
+        effective_from=date(2026, 1, 1),
+    )
+    schema_template = _create_batch_schema_template(
+        tenant=pool.tenant,
+        code=f"sale-post-commit-{uuid4().hex[:6]}",
+    )
+    enqueue_atomic_flags: list[bool] = []
+
+    def _enqueue_after_commit(*, execution_id: str, workflow_config: dict[str, object]) -> EnqueueResult:
+        del execution_id, workflow_config
+        enqueue_atomic_flags.append(connections["default"].in_atomic_block)
+        return EnqueueResult(success=True, operation_id=str(uuid4()), status="queued")
+
+    with patch(
+        "apps.intercompany_pools.sale_batch_workflow_runtime.OperationsService.enqueue_workflow_execution",
+        side_effect=_enqueue_after_commit,
+    ):
+        with django_capture_on_commit_callbacks(execute=True):
+            response = authenticated_client.post(
+                "/api/v2/pools/batches/",
+                {
+                    "pool_id": str(pool.id),
+                    "batch_kind": PoolBatchKind.SALE,
+                    "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                    "schema_template_id": str(schema_template.id),
+                    "period_start": "2026-01-01",
+                    "period_end": "2026-03-31",
+                    "source_reference": "sales-post-commit-q1",
+                    "raw_payload_ref": "files/sales-post-commit-q1.json",
+                    "json_payload": [
+                        {
+                            "inn": leaf.inn,
+                            "amount": "85.40",
+                            "external_id": "sale-post-commit-001",
+                        }
+                    ],
+                },
+                format="json",
+            )
+
+    assert response.status_code == 201, response.json()
+    payload = response.json()
+    batch = PoolBatch.objects.get(id=payload["batch"]["id"])
+    assert batch.workflow_execution_id is not None
+    assert batch.operation_id is not None
+    assert len(enqueue_atomic_flags) == 1
 
 
 @pytest.mark.django_db
@@ -5015,6 +5309,7 @@ def test_create_pool_run_endpoint_requires_explicit_binding_and_reuses_idempoten
     authenticated_client: APIClient,
     user: User,
     pool: OrganizationPool,
+    django_capture_on_commit_callbacks,
 ) -> None:
     binding = _build_pool_workflow_binding_payload(
         pool=pool,
@@ -5045,8 +5340,10 @@ def test_create_pool_run_endpoint_requires_explicit_binding_and_reuses_idempoten
         "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
         return_value=EnqueueResult(success=True, operation_id="op-1", status="queued"),
     ) as enqueue:
-        first = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
-        second = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+        with django_capture_on_commit_callbacks(execute=True):
+            first = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+        with django_capture_on_commit_callbacks(execute=True):
+            second = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
 
     assert first.status_code == 201
     first_payload = first.json()
@@ -5330,6 +5627,7 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
     authenticated_client: APIClient,
     user: User,
     pool: OrganizationPool,
+    django_capture_on_commit_callbacks,
 ) -> None:
     binding = _build_pool_workflow_binding_payload(
         pool=pool,
@@ -5364,7 +5662,8 @@ def test_create_pool_run_endpoint_keeps_workflow_link_when_enqueue_fails(
             error_code="REDIS_UNAVAILABLE",
         ),
     ):
-        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+        with django_capture_on_commit_callbacks(execute=True):
+            response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
 
     assert response.status_code == 201
     data = response.json()
@@ -6416,6 +6715,7 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
     authenticated_client: APIClient,
     user: User,
     pool: OrganizationPool,
+    django_capture_on_commit_callbacks,
 ) -> None:
     bindings, _ = _prepare_pool_runtime_bindings(
         tenant=pool.tenant,
@@ -6448,7 +6748,8 @@ def test_create_pool_run_enqueues_to_workflow_stream_with_normal_priority(
         mock_redis_client.STREAM_WORKFLOWS = "commands:worker:workflows"
         mock_redis_client.enqueue_operation_stream.return_value = "1702389123456-0"
 
-        response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
+        with django_capture_on_commit_callbacks(execute=True):
+            response = authenticated_client.post("/api/v2/pools/runs/", payload, format="json")
 
     assert response.status_code == 201
     run_payload = response.json()["run"]

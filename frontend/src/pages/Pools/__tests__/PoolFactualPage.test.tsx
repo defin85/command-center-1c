@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -240,6 +240,22 @@ function renderPage(initialEntry = '/pools/factual', options?: { strict?: boolea
   return render(options?.strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
+function openSelectByTestId(testId: string) {
+  const select = screen.getByTestId(testId)
+  const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
+  fireEvent.mouseDown(trigger ?? select)
+}
+
+async function selectDropdownOption(label: string | RegExp) {
+  const matcher = typeof label === 'string' ? label : (content: string) => label.test(content)
+  const matches = await screen.findAllByText(matcher)
+  const option = [...matches]
+    .reverse()
+    .find((node) => node.closest('.ant-select-item-option'))
+  expect(option).toBeTruthy()
+  fireEvent.click(option as Element)
+}
+
 function LocationProbe() {
   const location = useLocation()
   return <div data-testid="pool-factual-location">{`${location.pathname}${location.search}`}</div>
@@ -381,12 +397,36 @@ describe('PoolFactualPage', () => {
     expect(screen.queryByText('Create Run')).not.toBeInTheDocument()
   })
 
-  it('shows reason-specific review actions and updates queue state from the factual review API', async () => {
+  it('opens an attribution modal and updates queue state after choosing explicit targets', async () => {
     const user = userEvent.setup()
     mockListOrganizationPools.mockResolvedValue([buildPool()])
+    const baseWorkspace = buildWorkspace()
+    const baseReceiptBatch = baseWorkspace.settlements[0]
+    if (!baseReceiptBatch?.settlement) {
+      throw new Error('Expected receipt settlement fixture to exist.')
+    }
+    const baseReceiptSettlement = baseReceiptBatch.settlement
+    const initialReviewQueue = buildReviewQueue([
+      buildReviewItem({
+        batch_id: null,
+        edge_id: null,
+        organization_id: null,
+      }),
+      buildReviewItem({
+        id: 'late-correction-pool-alpha',
+        reason: 'late_correction',
+        batch_id: null,
+        source_document_ref: "Document_КорректировкаРеализации(guid'pool-alpha-late')",
+        allowed_actions: ['reconcile', 'resolve_without_change'],
+        attention_required: true,
+      }),
+    ])
     const afterAttributeQueue = buildReviewQueue([
       buildReviewItem({
         status: 'attributed',
+        batch_id: 'batch-receipt-2',
+        edge_id: 'edge-beta-1',
+        organization_id: 'organization-leaf-2',
         allowed_actions: [],
         attention_required: false,
         resolved_at: '2026-03-27T10:05:00Z',
@@ -403,6 +443,9 @@ describe('PoolFactualPage', () => {
     const afterReconcileQueue = buildReviewQueue([
       buildReviewItem({
         status: 'attributed',
+        batch_id: 'batch-receipt-2',
+        edge_id: 'edge-beta-1',
+        organization_id: 'organization-leaf-2',
         allowed_actions: [],
         attention_required: false,
         resolved_at: '2026-03-27T10:05:00Z',
@@ -418,52 +461,59 @@ describe('PoolFactualPage', () => {
         resolved_at: '2026-03-27T10:10:00Z',
       }),
     ])
+    const initialWorkspace = buildWorkspace({
+      settlements: [
+        ...baseWorkspace.settlements,
+        {
+          ...baseReceiptBatch,
+          id: 'batch-receipt-2',
+          tenant_id: baseReceiptBatch.tenant_id,
+          source_reference: 'receipt-q2',
+          period_start: '2026-04-01',
+          period_end: '2026-06-30',
+          settlement: {
+            ...baseReceiptSettlement,
+            id: 'settlement-receipt-2',
+            tenant_id: baseReceiptSettlement.tenant_id,
+            batch_id: 'batch-receipt-2',
+            status: 'ingested',
+            incoming_amount: '90.00',
+            outgoing_amount: '0.00',
+            open_balance: '90.00',
+          },
+        },
+      ],
+      edge_balances: [
+        ...baseWorkspace.edge_balances,
+        {
+          ...baseWorkspace.edge_balances[0],
+          id: 'edge-balance-2',
+          batch_id: 'batch-receipt-2',
+          organization_id: 'organization-leaf-2',
+          organization_name: 'Leaf Beta',
+          edge_id: 'edge-beta-1',
+          parent_node_id: 'parent-node-2',
+          child_node_id: 'child-node-2',
+          open_balance: '25.00',
+        },
+      ],
+      review_queue: initialReviewQueue,
+    })
+    const workspaceAfterAttribute = buildWorkspace({
+      settlements: initialWorkspace.settlements,
+      edge_balances: initialWorkspace.edge_balances,
+      review_queue: afterAttributeQueue,
+    })
+    const workspaceAfterReconcile = buildWorkspace({
+      settlements: initialWorkspace.settlements,
+      edge_balances: initialWorkspace.edge_balances,
+      review_queue: afterReconcileQueue,
+    })
+
     mockGetPoolFactualWorkspace
-      .mockResolvedValueOnce(buildWorkspace())
-      .mockResolvedValueOnce(buildWorkspace({
-        summary: {
-          quarter: '2026Q1',
-          quarter_start: '2026-01-01',
-          quarter_end: '2026-03-31',
-          amount_with_vat: '170.00',
-          amount_without_vat: '141.67',
-          vat_amount: '28.33',
-          incoming_amount: '170.00',
-          outgoing_amount: '115.00',
-          open_balance: '55.00',
-          pending_review_total: 1,
-          attention_required_total: 1,
-          freshness_state: 'fresh',
-          source_availability: 'available',
-          source_availability_detail: '',
-          last_synced_at: '2026-03-27T10:05:00Z',
-          settlement_total: 2,
-          checkpoint_total: 1,
-        },
-        review_queue: afterAttributeQueue,
-      }))
-      .mockResolvedValueOnce(buildWorkspace({
-        summary: {
-          quarter: '2026Q1',
-          quarter_start: '2026-01-01',
-          quarter_end: '2026-03-31',
-          amount_with_vat: '170.00',
-          amount_without_vat: '141.67',
-          vat_amount: '28.33',
-          incoming_amount: '170.00',
-          outgoing_amount: '115.00',
-          open_balance: '55.00',
-          pending_review_total: 0,
-          attention_required_total: 0,
-          freshness_state: 'fresh',
-          source_availability: 'available',
-          source_availability_detail: '',
-          last_synced_at: '2026-03-27T10:10:00Z',
-          settlement_total: 2,
-          checkpoint_total: 1,
-        },
-        review_queue: afterReconcileQueue,
-      }))
+      .mockResolvedValueOnce(initialWorkspace)
+      .mockResolvedValueOnce(workspaceAfterAttribute)
+      .mockResolvedValueOnce(workspaceAfterReconcile)
 
     mockApplyPoolFactualReviewAction
       .mockResolvedValueOnce({
@@ -495,6 +545,15 @@ describe('PoolFactualPage', () => {
     expect(within(lateCorrectionRow as HTMLElement).queryByRole('button', { name: 'Attribute review item late-correction-pool-alpha' })).not.toBeInTheDocument()
 
     await user.click(within(unattributedRow as HTMLElement).getByRole('button', { name: 'Attribute review item unattributed-pool-alpha' }))
+    await screen.findByText('Choose or confirm attribution targets')
+    const attributeDialog = screen.getByRole('dialog')
+    openSelectByTestId('pool-factual-attribute-batch-select')
+    await selectDropdownOption('receipt-q2 · 2026-04-01 · receipt')
+    openSelectByTestId('pool-factual-attribute-edge-select')
+    await selectDropdownOption('Leaf Beta · edge-bet')
+    openSelectByTestId('pool-factual-attribute-organization-select')
+    await selectDropdownOption('Leaf Beta')
+    await user.click(within(attributeDialog).getByRole('button', { name: 'Confirm attribution' }))
     await waitFor(() => {
       expect(within(unattributedRow as HTMLElement).getByText('attributed')).toBeInTheDocument()
     })
@@ -513,9 +572,9 @@ describe('PoolFactualPage', () => {
     expect(mockApplyPoolFactualReviewAction).toHaveBeenNthCalledWith(1, expect.objectContaining({
       review_item_id: 'unattributed-pool-alpha',
       action: 'attribute',
-      batch_id: 'batch-receipt-1',
-      edge_id: 'edge-alpha-1',
-      organization_id: 'organization-leaf-1',
+      batch_id: 'batch-receipt-2',
+      edge_id: 'edge-beta-1',
+      organization_id: 'organization-leaf-2',
     }))
     expect(mockApplyPoolFactualReviewAction).toHaveBeenNthCalledWith(2, expect.objectContaining({
       review_item_id: 'late-correction-pool-alpha',
@@ -523,45 +582,6 @@ describe('PoolFactualPage', () => {
     }))
     expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(2, { poolId: '11111111-1111-1111-1111-111111111111' })
     expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(3, { poolId: '11111111-1111-1111-1111-111111111111' })
-  })
-
-  it('shows an explicit error when the factual review API rejects a manual action', async () => {
-    const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
-    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
-      review_queue: buildReviewQueue([
-        buildReviewItem({
-          batch_id: null,
-          edge_id: null,
-          organization_id: null,
-        }),
-      ]),
-    }))
-    mockApplyPoolFactualReviewAction.mockRejectedValue({
-      response: {
-        data: {
-          title: 'Validation Error',
-          detail: 'POOL_FACTUAL_REVIEW_QUEUE_INVALID: attribute action requires at least one attribution target',
-        },
-      },
-    })
-
-    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&focus=review&detail=1')
-
-    await screen.findByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
-
-    const unattributedRow = screen
-      .getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")
-      .closest('tr')
-    expect(unattributedRow).not.toBeNull()
-
-    await user.click(within(unattributedRow as HTMLElement).getByRole('button', { name: 'Attribute review item unattributed-pool-alpha' }))
-
-    await screen.findByText('Manual review action failed')
-    expect(
-      screen.getByText('POOL_FACTUAL_REVIEW_QUEUE_INVALID: attribute action requires at least one attribution target')
-    ).toBeInTheDocument()
-    expect(within(unattributedRow as HTMLElement).getByText('pending')).toBeInTheDocument()
   })
 
   it('builds a focus-aware factual route for settlement handoff from run report', () => {

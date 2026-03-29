@@ -24,6 +24,7 @@ from .document_policy_contract import (
 )
 from .distribution_artifact_contract import validate_distribution_artifact_v1
 from .models import BindingProfileRevision, OrganizationPool, PoolRun, PoolSchemaTemplate
+from .runtime_run_input import build_runtime_run_input
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
 from .runtime_projection_contract import build_pool_runtime_projection_v1
@@ -199,9 +200,10 @@ def build_pool_workflow_binding_runtime_bundle(
         period_end=period_end,
         run_input=sanitized_run_input,
     )
+    runtime_run_input = build_runtime_run_input(run=preview_run, run_input=sanitized_run_input)
     distribution_state = compute_distribution_runtime_state(
         run=preview_run,
-        run_input=sanitized_run_input,
+        run_input=runtime_run_input,
     )
     distribution_artifact = validate_distribution_artifact_v1(
         artifact=distribution_state.get("artifact"),
@@ -219,7 +221,7 @@ def build_pool_workflow_binding_runtime_bundle(
         mode=mode,
         period_start=period_start,
         period_end=period_end,
-        run_input=sanitized_run_input,
+        run_input=runtime_run_input,
     )
     document_plan_artifact = compile_document_plan_artifact_v1(
         run=preview_run,
@@ -241,7 +243,7 @@ def build_pool_workflow_binding_runtime_bundle(
             period_end=period_end,
             direction=direction,
             mode=mode,
-            run_input=sanitized_run_input,
+            run_input=runtime_run_input,
             document_plan_artifact=document_plan_artifact,
             workflow_binding=resolved_binding_payload,
         ),
@@ -265,7 +267,7 @@ def build_pool_workflow_binding_runtime_bundle(
         "slot_coverage_summary": slot_coverage_summary,
         "plan": plan,
         "runtime_projection": runtime_projection,
-        "run_input": sanitized_run_input,
+        "run_input": runtime_run_input,
     }
 
 

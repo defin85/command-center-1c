@@ -520,6 +520,72 @@ def test_apply_pool_factual_review_action_endpoint_resolve_without_change_keeps_
 
 
 @pytest.mark.django_db
+def test_apply_pool_factual_review_action_endpoint_reconcile_resolves_late_correction(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+    user: User,
+) -> None:
+    pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="review-reconcile")
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="cp-review-reconcile-001",
+        last_synced_at=datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc),
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+        },
+    )
+    review_item = PoolFactualReviewItem.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        organization=leaf,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.LATE_CORRECTION,
+        status=PoolFactualReviewStatus.PENDING,
+        source_document_ref="Document_КорректировкаРеализации(guid'review-reconcile-sale')",
+        metadata={"delta_payload": {"amount_with_vat": "15.00"}},
+    )
+
+    response = authenticated_client.post(
+        "/api/v2/pools/factual/review-actions/",
+        {
+            "review_item_id": str(review_item.id),
+            "action": "reconcile",
+            "note": "late correction reconciled from API",
+            "metadata": {"resolution_code": "MANUAL_RECONCILE"},
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    review_item.refresh_from_db()
+
+    assert payload["review_item"]["id"] == str(review_item.id)
+    assert payload["review_item"]["status"] == "reconciled"
+    assert payload["review_queue"]["summary"]["pending_total"] == 0
+    assert review_item.status == PoolFactualReviewStatus.RECONCILED
+    assert review_item.resolved_by_id == user.id
+    assert review_item.metadata["last_resolution"]["note"] == "late correction reconciled from API"
+    assert review_item.metadata["last_resolution"]["metadata"]["resolution_code"] == "MANUAL_RECONCILE"
+
+    workspace_response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+
+    assert workspace_response.status_code == 200
+    workspace_payload = workspace_response.json()
+    assert workspace_payload["summary"]["pending_review_total"] == 0
+    assert workspace_payload["review_queue"]["summary"]["pending_total"] == 0
+    assert workspace_payload["review_queue"]["summary"]["late_correction_total"] == 0
+
+
+@pytest.mark.django_db
 def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_missing(
     authenticated_client: APIClient,
     default_tenant: Tenant,

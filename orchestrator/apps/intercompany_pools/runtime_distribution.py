@@ -13,6 +13,7 @@ from django.db.models import Q
 
 from .distribution import DistributionEdge, distribute_top_down
 from .models import PoolEdgeVersion, PoolNodeVersion, PoolRun, PoolRunDirection
+from .runtime_run_input import build_runtime_run_input
 from .validators import validate_pool_graph
 
 
@@ -38,7 +39,7 @@ def compute_distribution_runtime_state(
     run: PoolRun,
     run_input: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    payload = run_input if isinstance(run_input, dict) else _run_input(run)
+    payload = build_runtime_run_input(run=run, run_input=run_input)
     period_start = run.period_start
     period_end = run.period_end or run.period_start
     if period_end < period_start:
@@ -912,12 +913,6 @@ def _reverse_topological_nodes(
             if in_degree[child_id] == 0:
                 queue.append(child_id)
     return list(reversed(order))
-
-
-def _run_input(run: PoolRun) -> dict[str, Any]:
-    return dict(run.run_input) if isinstance(run.run_input, dict) else {}
-
-
 def _parse_decimal(value: Any) -> Decimal | None:
     if value is None:
         return None

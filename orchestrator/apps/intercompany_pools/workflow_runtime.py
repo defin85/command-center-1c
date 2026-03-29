@@ -79,7 +79,7 @@ POOL_RUNTIME_DECISIONS_CONTEXT_KEY = "decisions"
 POOL_WORKFLOW_BINDING_REQUIRED = "POOL_WORKFLOW_BINDING_REQUIRED"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PoolWorkflowStartResult:
     run: PoolRun
     execution_id: str | None
@@ -251,17 +251,71 @@ def start_pool_run_workflow_execution(
         execution_id = str(execution.id)
         created_execution = True
 
+    if transaction.get_connection().in_atomic_block:
+        deferred_result = PoolWorkflowStartResult(
+            run=PoolRun.objects.get(id=run.id),
+            execution_id=execution_id,
+            enqueue_success=True,
+            enqueue_status="deferred",
+            enqueue_error=None,
+            created_execution=created_execution,
+        )
+
+        def _enqueue_after_commit() -> None:
+            final_result = _enqueue_pool_run_workflow_execution(
+                run_id=str(run.id),
+                requested_by=requested_by,
+                execution_id=execution_id,
+                created_execution=created_execution,
+            )
+            _copy_pool_workflow_start_result(target=deferred_result, source=final_result)
+
+        transaction.on_commit(_enqueue_after_commit)
+        return deferred_result
+
+    return _enqueue_pool_run_workflow_execution(
+        run_id=str(run.id),
+        requested_by=requested_by,
+        execution_id=execution_id,
+        created_execution=created_execution,
+    )
+
+
+def _copy_pool_workflow_start_result(
+    *,
+    target: PoolWorkflowStartResult,
+    source: PoolWorkflowStartResult,
+) -> None:
+    target.run = source.run
+    target.execution_id = source.execution_id
+    target.enqueue_success = source.enqueue_success
+    target.enqueue_status = source.enqueue_status
+    target.enqueue_error = source.enqueue_error
+    target.created_execution = source.created_execution
+
+
+def _enqueue_pool_run_workflow_execution(
+    *,
+    run_id: str,
+    requested_by: User | None,
+    execution_id: str | None,
+    created_execution: bool,
+) -> PoolWorkflowStartResult:
+    run_refresh = PoolRun.objects.get(id=run_id)
+    linked_execution_id = str(run_refresh.workflow_execution_id or execution_id or "").strip()
+    if not linked_execution_id:
+        raise ValueError("Pool run is not linked to workflow execution.")
+
     enqueue_result = OperationsService.enqueue_workflow_execution(
-        execution_id=execution_id or "",
+        execution_id=linked_execution_id,
         workflow_config={
-            "pool_run_id": str(run.id),
-            "pool_run_idempotency_key": run.idempotency_key,
+            "pool_run_id": str(run_refresh.id),
+            "pool_run_idempotency_key": run_refresh.idempotency_key,
             "execution_consumer": "pools",
             "priority": "normal",
-            "idempotency_key": run.idempotency_key or (execution_id or ""),
+            "idempotency_key": run_refresh.idempotency_key or linked_execution_id,
         },
     )
-    run_refresh = PoolRun.objects.get(id=run.id)
 
     if enqueue_result.success:
         run_refresh.workflow_status = "queued"
@@ -272,7 +326,7 @@ def start_pool_run_workflow_execution(
             status_before=run_refresh.status,
             status_after=run_refresh.status,
             payload={
-                "workflow_execution_id": execution_id,
+                "workflow_execution_id": linked_execution_id,
                 "operation_id": enqueue_result.operation_id,
                 "enqueue_status": enqueue_result.status,
             },
@@ -284,7 +338,7 @@ def start_pool_run_workflow_execution(
             status_before=run_refresh.status,
             status_after=run_refresh.status,
             payload={
-                "workflow_execution_id": execution_id,
+                "workflow_execution_id": linked_execution_id,
                 "enqueue_status": enqueue_result.status,
                 "error": enqueue_result.error,
                 "error_code": enqueue_result.error_code,
@@ -293,7 +347,7 @@ def start_pool_run_workflow_execution(
 
     return PoolWorkflowStartResult(
         run=run_refresh,
-        execution_id=execution_id,
+        execution_id=linked_execution_id,
         enqueue_success=enqueue_result.success,
         enqueue_status=enqueue_result.status,
         enqueue_error=enqueue_result.error,

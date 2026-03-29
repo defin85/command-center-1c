@@ -184,6 +184,20 @@ func (c *Consumer) processMessage(ctx context.Context, message redis.XMessage) {
 		return
 	}
 
+	releaseFactualRolloutAdmission, factualRolloutAcquired := c.acquireFactualRolloutAdmission(ctx, &msg)
+	if !factualRolloutAcquired {
+		log.Warnf(
+			"failed to acquire factual rollout admission, operation_id=%s, message_id=%s, databases=%d",
+			msg.OperationID,
+			messageID,
+			len(msg.TargetDatabases),
+		)
+		return
+	}
+	if releaseFactualRolloutAdmission != nil {
+		defer releaseFactualRolloutAdmission()
+	}
+
 	releaseSchedulingPoolSlot, schedulingPoolKey, acquired := c.acquireSchedulingPoolSlot(ctx, &msg)
 	if !acquired {
 		log.Warnf(

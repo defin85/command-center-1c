@@ -2503,12 +2503,14 @@ test('UI platform: /pools/factual opens review detail in a mobile-safe drawer wi
     waitUntil: 'domcontentloaded',
   })
 
-  const detailDrawer = page.getByRole('dialog')
+  const detailDrawer = page.getByRole('dialog').filter({ hasText: 'Factual operator workspace' }).first()
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText('Factual operator workspace')).toBeVisible()
   await expect(detailDrawer.getByText('Manual review queue')).toBeVisible()
   await expect(detailDrawer.getByText('review focus')).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Attribute review item unattributed-pool-main' })).toBeVisible()
+  await detailDrawer.getByRole('button', { name: 'Attribute review item unattributed-pool-main' }).click()
+  await expect(page.getByText('Choose or confirm attribution targets')).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

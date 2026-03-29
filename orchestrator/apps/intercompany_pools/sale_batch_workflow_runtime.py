@@ -23,7 +23,7 @@ SALE_BATCH_PUBLICATION_AUTH_SOURCE = "sale_batch_intake"
 SALE_BATCH_PUBLICATION_DEFAULT_ENTITY = "Document_РеализацияТоваровУслуг"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PoolSaleBatchWorkflowStartResult:
     batch: PoolBatch
     execution_id: str | None
@@ -110,18 +110,74 @@ def start_pool_sale_batch_closing_workflow_execution(
             execution_id = str(execution.id)
             created_execution = True
 
+    if transaction.get_connection().in_atomic_block:
+        deferred_result = PoolSaleBatchWorkflowStartResult(
+            batch=PoolBatch.objects.get(id=batch.id),
+            execution_id=execution_id,
+            operation_id=None,
+            enqueue_success=True,
+            enqueue_status="deferred",
+            enqueue_error=None,
+            created_execution=created_execution,
+        )
+
+        def _enqueue_after_commit() -> None:
+            final_result = _enqueue_pool_sale_batch_closing_workflow_execution(
+                batch_id=str(batch.id),
+                target_database_ids=target_database_ids,
+                execution_id=execution_id,
+                created_execution=created_execution,
+            )
+            _copy_pool_sale_batch_workflow_start_result(target=deferred_result, source=final_result)
+
+        transaction.on_commit(_enqueue_after_commit)
+        return deferred_result
+
+    return _enqueue_pool_sale_batch_closing_workflow_execution(
+        batch_id=str(batch.id),
+        target_database_ids=target_database_ids,
+        execution_id=execution_id,
+        created_execution=created_execution,
+    )
+
+
+def _copy_pool_sale_batch_workflow_start_result(
+    *,
+    target: PoolSaleBatchWorkflowStartResult,
+    source: PoolSaleBatchWorkflowStartResult,
+) -> None:
+    target.batch = source.batch
+    target.execution_id = source.execution_id
+    target.operation_id = source.operation_id
+    target.enqueue_success = source.enqueue_success
+    target.enqueue_status = source.enqueue_status
+    target.enqueue_error = source.enqueue_error
+    target.created_execution = source.created_execution
+
+
+def _enqueue_pool_sale_batch_closing_workflow_execution(
+    *,
+    batch_id: str,
+    target_database_ids: list[str],
+    execution_id: str | None,
+    created_execution: bool,
+) -> PoolSaleBatchWorkflowStartResult:
+    refreshed = PoolBatch.objects.get(id=batch_id)
+    linked_execution_id = str(refreshed.workflow_execution_id or execution_id or "").strip()
+    if not linked_execution_id:
+        raise ValueError("Pool batch is not linked to workflow execution.")
+
     enqueue_result = OperationsService.enqueue_workflow_execution(
-        execution_id=execution_id or "",
+        execution_id=linked_execution_id,
         workflow_config={
-            "pool_batch_id": str(batch.id),
+            "pool_batch_id": str(refreshed.id),
             "execution_consumer": "pools",
-            "idempotency_key": f"pool.sale_batch.closing:{batch.id}",
+            "idempotency_key": f"pool.sale_batch.closing:{refreshed.id}",
             "target_database_ids": target_database_ids,
         },
     )
-    refreshed = PoolBatch.objects.get(id=batch.id)
     if enqueue_result.success:
-        normalized_operation_id = _normalize_operation_id(enqueue_result.operation_id or (execution_id or ""))
+        normalized_operation_id = _normalize_operation_id(enqueue_result.operation_id or linked_execution_id)
         refreshed.operation_id = UUID(normalized_operation_id) if normalized_operation_id is not None else None
         refreshed.workflow_status = str(refreshed.workflow_status or "").strip() or "pending"
         refreshed.last_error_code = ""
@@ -137,7 +193,7 @@ def start_pool_sale_batch_closing_workflow_execution(
         )
         return PoolSaleBatchWorkflowStartResult(
             batch=refreshed,
-            execution_id=execution_id,
+            execution_id=linked_execution_id,
             operation_id=normalized_operation_id,
             enqueue_success=True,
             enqueue_status=enqueue_result.status,
@@ -156,7 +212,7 @@ def start_pool_sale_batch_closing_workflow_execution(
     )
     return PoolSaleBatchWorkflowStartResult(
         batch=refreshed,
-        execution_id=execution_id,
+        execution_id=linked_execution_id,
         operation_id=None,
         enqueue_success=False,
         enqueue_status=enqueue_result.status,

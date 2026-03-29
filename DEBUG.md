@@ -205,6 +205,12 @@ curl --noproxy '*' -k -sS \
 - `GET /api/v2/pools/factual/workspace/` теперь сам поднимает worker-backed factual refresh на default path, если checkpoint отсутствует или протух;
 - manual review идёт через `POST /api/v2/pools/factual/review-actions/`, без `dev-bridge` для штатного operator path.
 
+Дополнительно подтверждено на `2026-03-29`:
+- published-surfaces preflight возвращает `decision=go` на pilot path при наличии published OData surfaces;
+- live path `receipt batch -> linked safe run -> confirm-publication -> report=status=published -> factual workspace summary` проходит на default runtime wiring;
+- для live contour обязательны активный public `Pool Schema Template` и actor/service mapping, достаточный для publication/factual OData calls в целевых ИБ;
+- acceptance point для safe-mode публикации: поллить report до `publication_step_state=completed` или `status=published`, а не оценивать первый промежуточный snapshot сразу после `confirm-publication`.
+
 Минимальные env vars:
 
 ```bash
@@ -215,7 +221,9 @@ export CC1C_BINDING_ID=<workflow-binding-uuid>
 export CC1C_BATCH_ID=<receipt-batch-uuid>
 export CC1C_START_ORGANIZATION_ID=<organization-uuid>
 export CC1C_EDGE_ID=<pool-edge-version-uuid>
+export CC1C_SCHEMA_TEMPLATE_ID=<schema-template-uuid>
 export CC1C_PERIOD_START=2026-01-01
+export CC1C_PERIOD_END=2026-03-31
 export CC1C_UI_USER=admin
 export CC1C_UI_PASSWORD='...'
 ```

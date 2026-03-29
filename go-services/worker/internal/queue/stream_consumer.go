@@ -77,6 +77,12 @@ type Consumer struct {
 	perSchedulingPoolSize   int
 	maxSchedulingPoolGroups int
 
+	// factualRolloutState limits concurrent factual syncs by database/cluster/global caps.
+	factualRolloutMu               sync.Mutex
+	factualRolloutActiveByDatabase map[string]int
+	factualRolloutActiveByCluster  map[string]int
+	factualRolloutActiveTotal      int
+
 	workerPoolSize int
 
 	manualReserveSlots  chan struct{}
@@ -143,15 +149,17 @@ func NewConsumer(cfg *config.Config, proc *processor.TaskProcessor, redisClient 
 		schedulingPools: map[string]chan struct{}{
 			defaultSchedulingPoolKey: make(chan struct{}, defaultSchedulingPoolSize),
 		},
-		perSchedulingPoolSize:   defaultSchedulingPoolSize,
-		maxSchedulingPoolGroups: defaultMaxSchedulingPoolGroups,
-		workerPoolSize:          workerPoolSize,
-		manualReserveSlots:      manualReserveSlots,
-		generalWorkerSlots:      make(chan struct{}, generalSlotSize),
-		oldestAgeThreshold:      resolveOldestAgeThreshold(cfg.WorkerFairnessOldestAgeThreshold),
-		tenantBudgetShare:       resolveTenantBudgetShare(cfg.WorkerFairnessTenantBudgetShare),
-		tenantBudgetBackoff:     resolveTenantBudgetBackoff(cfg.WorkerFairnessTenantBudgetBackoff),
-		tenantActiveByServer:    map[string]map[string]int{},
+		perSchedulingPoolSize:          defaultSchedulingPoolSize,
+		maxSchedulingPoolGroups:        defaultMaxSchedulingPoolGroups,
+		factualRolloutActiveByDatabase: map[string]int{},
+		factualRolloutActiveByCluster:  map[string]int{},
+		workerPoolSize:                 workerPoolSize,
+		manualReserveSlots:             manualReserveSlots,
+		generalWorkerSlots:             make(chan struct{}, generalSlotSize),
+		oldestAgeThreshold:             resolveOldestAgeThreshold(cfg.WorkerFairnessOldestAgeThreshold),
+		tenantBudgetShare:              resolveTenantBudgetShare(cfg.WorkerFairnessTenantBudgetShare),
+		tenantBudgetBackoff:            resolveTenantBudgetBackoff(cfg.WorkerFairnessTenantBudgetBackoff),
+		tenantActiveByServer:           map[string]map[string]int{},
 	}, nil
 }
 

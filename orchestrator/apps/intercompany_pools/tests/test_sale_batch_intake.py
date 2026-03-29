@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
+from django.db import connections, transaction
 
 from apps.databases.models import Database
 from apps.intercompany_pools.batch_intake_normalization import (
@@ -244,6 +245,7 @@ def test_build_sale_batch_closing_contract_rejects_non_sale_batch_kind(
 @pytest.mark.django_db
 def test_start_pool_sale_batch_closing_workflow_execution_publishes_traceable_leaf_payload(
     sale_topology_scope: dict[str, object],
+    django_capture_on_commit_callbacks,
 ) -> None:
     from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
     from apps.intercompany_pools.sale_batch_workflow_runtime import (
@@ -301,11 +303,12 @@ def test_start_pool_sale_batch_closing_workflow_execution_publishes_traceable_le
                 error_code=None,
             ),
         )
-        result = start_pool_sale_batch_closing_workflow_execution(
-            batch=batch,
-            closing_contract=closing_contract,
-            requested_by=requested_by,
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            result = start_pool_sale_batch_closing_workflow_execution(
+                batch=batch,
+                closing_contract=closing_contract,
+                requested_by=requested_by,
+            )
 
     assert result.batch.id == batch.id
     assert result.enqueue_success is True
@@ -335,6 +338,7 @@ def test_start_pool_sale_batch_closing_workflow_execution_publishes_traceable_le
 @pytest.mark.django_db
 def test_start_pool_sale_batch_closing_workflow_execution_reuses_existing_batch_execution(
     sale_topology_scope: dict[str, object],
+    django_capture_on_commit_callbacks,
 ) -> None:
     from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
     from apps.intercompany_pools.sale_batch_workflow_runtime import (
@@ -378,16 +382,18 @@ def test_start_pool_sale_batch_closing_workflow_execution_reuses_existing_batch_
                 error_code=None,
             ),
         )
-        first = start_pool_sale_batch_closing_workflow_execution(
-            batch=batch,
-            closing_contract=closing_contract,
-            requested_by=requested_by,
-        )
-        second = start_pool_sale_batch_closing_workflow_execution(
-            batch=batch,
-            closing_contract=closing_contract,
-            requested_by=requested_by,
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            first = start_pool_sale_batch_closing_workflow_execution(
+                batch=batch,
+                closing_contract=closing_contract,
+                requested_by=requested_by,
+            )
+        with django_capture_on_commit_callbacks(execute=True):
+            second = start_pool_sale_batch_closing_workflow_execution(
+                batch=batch,
+                closing_contract=closing_contract,
+                requested_by=requested_by,
+            )
 
     batch.refresh_from_db()
     assert first.created_execution is True
@@ -396,3 +402,67 @@ def test_start_pool_sale_batch_closing_workflow_execution_reuses_existing_batch_
     assert str(batch.workflow_execution_id) == first.execution_id
     assert str(batch.operation_id) == operation_id
     assert WorkflowExecution.objects.filter(id=first.execution_id).count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_start_pool_sale_batch_closing_workflow_execution_defers_enqueue_until_outer_commit(
+    sale_topology_scope: dict[str, object],
+) -> None:
+    from apps.intercompany_pools.sale_batch_intake import build_sale_batch_closing_contract
+    from apps.intercompany_pools.sale_batch_workflow_runtime import (
+        start_pool_sale_batch_closing_workflow_execution,
+    )
+
+    pool = sale_topology_scope["pool"]
+    leaf_left = sale_topology_scope["leaf_left"]
+    sale_batch = _build_sale_batch(
+        pool=pool,
+        lines=[
+            CanonicalPoolBatchLine(
+                line_no=1,
+                organization_inn=leaf_left.inn,
+                amount_with_vat=Decimal("30.00"),
+                external_id="sale-001",
+            ),
+        ],
+    )
+    batch = PoolBatch.objects.create(
+        tenant=pool.tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.SALE,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        period_start=sale_batch.period_start,
+        period_end=sale_batch.period_end,
+        normalization_summary={"total_amount_with_vat": "30.00"},
+    )
+    requested_by = User.objects.create_user(username="sale-batch-deferred", password="secret")
+    closing_contract = build_sale_batch_closing_contract(pool=pool, normalized_batch=sale_batch)
+    enqueue_atomic_flags: list[bool] = []
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr(
+            "apps.intercompany_pools.sale_batch_workflow_runtime.OperationsService.enqueue_workflow_execution",
+            lambda **kwargs: (
+                enqueue_atomic_flags.append(connections["default"].in_atomic_block)
+                or EnqueueResult(
+                    success=True,
+                    operation_id=str(uuid4()),
+                    status="queued",
+                    error=None,
+                    error_code=None,
+                )
+            ),
+        )
+        with transaction.atomic():
+            result = start_pool_sale_batch_closing_workflow_execution(
+                batch=batch,
+                closing_contract=closing_contract,
+                requested_by=requested_by,
+            )
+            assert result.enqueue_status == "deferred"
+            assert enqueue_atomic_flags == []
+
+    batch.refresh_from_db()
+    assert enqueue_atomic_flags == [False]
+    assert batch.workflow_execution_id is not None
+    assert batch.operation_id is not None
