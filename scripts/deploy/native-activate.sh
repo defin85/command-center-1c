@@ -21,6 +21,12 @@ PYTHON_BIN="${CC1C_PYTHON_BIN:-/usr/bin/python3.12}"
 REQUIREMENTS_FILE="$RELEASE_DIR/orchestrator/requirements.txt"
 REQUIREMENTS_HASH=""
 TARGET_VENV_DIR=""
+SERVICES=(
+  cc1c-orchestrator.service
+  cc1c-api-gateway.service
+  cc1c-worker-ops.service
+  cc1c-worker-workflows.service
+)
 
 REQUIRED_FILES=(
   "bin/cc1c-api-gateway"
@@ -29,6 +35,41 @@ REQUIRED_FILES=(
   "orchestrator/requirements.txt"
   "frontend/dist/index.html"
 )
+
+venv_is_healthy() {
+  local venv_dir="$1"
+
+  if [[ ! -x "$venv_dir/bin/python" || ! -x "$venv_dir/bin/pip" ]]; then
+    return 1
+  fi
+
+  if ! runuser -u cc1c -- "$venv_dir/bin/python" -c "import sys; print(sys.executable)" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  if ! runuser -u cc1c -- "$venv_dir/bin/pip" --version >/dev/null 2>&1; then
+    return 1
+  fi
+
+  return 0
+}
+
+wait_for_service_active() {
+  local unit="$1"
+  local active_state=""
+
+  for _ in {1..30}; do
+    active_state="$(systemctl show -p ActiveState --value "$unit" 2>/dev/null || true)"
+    if [[ "$active_state" == "active" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "Service failed to reach active state: $unit (state=$active_state)"
+  systemctl status --no-pager "$unit" || true
+  return 1
+}
 
 if [[ $EUID -ne 0 ]]; then
   echo "This script must run as root."
@@ -76,27 +117,31 @@ chown -R cc1c:cc1c "$RELEASE_DIR"
 REQUIREMENTS_HASH="$(sha256sum "$REQUIREMENTS_FILE" | awk '{print $1}')"
 TARGET_VENV_DIR="$SHARED_VENVS_DIR/$REQUIREMENTS_HASH"
 
+if [[ -d "$TARGET_VENV_DIR" ]] && ! venv_is_healthy "$TARGET_VENV_DIR"; then
+  echo "Cached Python virtualenv for requirements hash $REQUIREMENTS_HASH is broken, rebuilding..."
+  rm -rf "$TARGET_VENV_DIR"
+fi
+
 if [[ ! -d "$TARGET_VENV_DIR" ]]; then
-  TEMP_VENV_DIR="$(mktemp -d "$SHARED_VENVS_DIR/.tmp-$REQUIREMENTS_HASH-XXXXXX")"
-  chown cc1c:cc1c "$TEMP_VENV_DIR"
-  runuser -u cc1c -- "$PYTHON_BIN" -m venv "$TEMP_VENV_DIR"
+  trap 'rm -rf "$TARGET_VENV_DIR"' ERR
+  runuser -u cc1c -- "$PYTHON_BIN" -m venv "$TARGET_VENV_DIR"
 
   if [[ -d "$WHEELHOUSE_DIR" ]] && [[ -n "$(find "$WHEELHOUSE_DIR" -mindepth 1 -print -quit)" ]]; then
     echo "Installing Python dependencies from bundled wheelhouse..."
-    runuser -u cc1c -- "$TEMP_VENV_DIR/bin/pip" install \
+    runuser -u cc1c -- "$TARGET_VENV_DIR/bin/pip" install \
       --disable-pip-version-check \
       --no-index \
       --find-links "$WHEELHOUSE_DIR" \
       -r "$REQUIREMENTS_FILE"
   else
     echo "Wheelhouse not found in release bundle, falling back to online pip install..."
-    runuser -u cc1c -- "$TEMP_VENV_DIR/bin/pip" install \
+    runuser -u cc1c -- "$TARGET_VENV_DIR/bin/pip" install \
       --disable-pip-version-check \
       -r "$REQUIREMENTS_FILE"
   fi
 
-  mv "$TEMP_VENV_DIR" "$TARGET_VENV_DIR"
   chown -R cc1c:cc1c "$TARGET_VENV_DIR"
+  trap - ERR
 else
   echo "Reusing cached Python virtualenv for requirements hash $REQUIREMENTS_HASH"
 fi
@@ -121,14 +166,16 @@ nginx -t
 systemctl reload nginx
 
 systemctl daemon-reload
-systemctl enable cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-ops.service cc1c-worker-workflows.service >/dev/null
-systemctl restart cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-ops.service cc1c-worker-workflows.service
-systemctl is-active cc1c-orchestrator.service cc1c-api-gateway.service cc1c-worker-ops.service cc1c-worker-workflows.service >/dev/null
+systemctl enable "${SERVICES[@]}" >/dev/null
+systemctl restart "${SERVICES[@]}"
+for unit in "${SERVICES[@]}"; do
+  wait_for_service_active "$unit"
+done
 
 # Best-effort monitoring sync for native mode, so Prometheus/blackbox targets
 # follow the same env as active release.
 if [[ -x "$RELEASE_DIR/scripts/dev/sync-native-monitoring.sh" ]]; then
-  if ! CC1C_ENV_FILE="$ENV_FILE" "$RELEASE_DIR/scripts/dev/sync-native-monitoring.sh" --env-file "$ENV_FILE" --strict; then
+  if ! USE_DOCKER=false CC1C_ENV_FILE="$ENV_FILE" "$RELEASE_DIR/scripts/dev/sync-native-monitoring.sh" --env-file "$ENV_FILE" --strict; then
     echo "Warning: native monitoring sync failed (deployment continues)."
   fi
 fi
