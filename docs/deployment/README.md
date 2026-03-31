@@ -61,6 +61,8 @@ ssh-copy-id -i ~/.ssh/cc1c_gha_deploy.pub -p <SSH_PORT> <SSH_USER>@<SERVER_IP>
 
 Workflow: [deploy-native.yml](../../.github/workflows/deploy-native.yml)
 
+Отдельный frontend gate: [validate-ui-platform.yml](../../.github/workflows/validate-ui-platform.yml)
+
 Триггеры:
 
 - `workflow_dispatch`
@@ -68,11 +70,18 @@ Workflow: [deploy-native.yml](../../.github/workflows/deploy-native.yml)
 
 Что делает workflow:
 
-1. Собирает frontend
-2. Собирает Go-бинарники (`cc1c-api-gateway`, `cc1c-worker`)
-3. Пакует релизный архив
-4. Загружает архив на сервер
-5. Вызывает `sudo /usr/local/bin/cc1c-deploy <archive> <sha>`
+1. Собирает frontend release assets
+2. Готовит Python wheelhouse для `orchestrator/requirements.txt`
+3. Собирает Go-бинарники (`cc1c-api-gateway`, `cc1c-worker`)
+4. Пакует релизный архив
+5. Загружает архив на сервер
+6. Вызывает `sudo /usr/local/bin/cc1c-deploy <archive> <sha>`
+
+Что делает отдельный UI validation workflow:
+
+1. Выполняет полный `frontend` gate (`npm run validate:ui-platform`)
+2. Запускается на `pull_request` и на frontend/contracts push в `main`/`master`
+3. Не удлиняет production deploy на десятки минут на каждом push
 
 ## 5) Проверка после деплоя
 
@@ -81,6 +90,13 @@ Workflow: [deploy-native.yml](../../.github/workflows/deploy-native.yml)
 ```bash
 sudo systemctl status cc1c-orchestrator cc1c-api-gateway cc1c-worker-ops cc1c-worker-workflows --no-pager
 curl -I http://127.0.0.1/
+```
+
+Проверка shared venv cache после первого нового деплоя:
+
+```bash
+ls -1 /opt/command-center-1c/shared/venvs
+readlink -f /opt/command-center-1c/current/orchestrator/venv
 ```
 
 ## 6) Rollback (ручной)

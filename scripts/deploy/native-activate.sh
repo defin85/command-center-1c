@@ -11,10 +11,16 @@ RELEASE_ID="$2"
 
 BASE_DIR="/opt/command-center-1c"
 RELEASES_DIR="$BASE_DIR/releases"
+SHARED_DIR="$BASE_DIR/shared"
+SHARED_VENVS_DIR="$SHARED_DIR/venvs"
 CURRENT_LINK="$BASE_DIR/current"
 ENV_FILE="/etc/command-center-1c/env.production"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
+WHEELHOUSE_DIR="$RELEASE_DIR/orchestrator/wheelhouse"
 PYTHON_BIN="${CC1C_PYTHON_BIN:-/usr/bin/python3.12}"
+REQUIREMENTS_FILE="$RELEASE_DIR/orchestrator/requirements.txt"
+REQUIREMENTS_HASH=""
+TARGET_VENV_DIR=""
 
 REQUIRED_FILES=(
   "bin/cc1c-api-gateway"
@@ -53,6 +59,7 @@ else
 fi
 
 install -d -o cc1c -g cc1c -m 755 "$BASE_DIR" "$RELEASES_DIR"
+install -d -o cc1c -g cc1c -m 755 "$SHARED_DIR" "$SHARED_VENVS_DIR"
 install -d -o cc1c -g cc1c -m 750 "$RELEASE_DIR"
 runuser -u cc1c -- tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
 
@@ -66,9 +73,36 @@ done
 chmod 750 "$RELEASE_DIR/bin/cc1c-api-gateway" "$RELEASE_DIR/bin/cc1c-worker"
 chown -R cc1c:cc1c "$RELEASE_DIR"
 
-runuser -u cc1c -- "$PYTHON_BIN" -m venv "$RELEASE_DIR/orchestrator/venv"
-runuser -u cc1c -- "$RELEASE_DIR/orchestrator/venv/bin/pip" install --upgrade pip
-runuser -u cc1c -- "$RELEASE_DIR/orchestrator/venv/bin/pip" install -r "$RELEASE_DIR/orchestrator/requirements.txt"
+REQUIREMENTS_HASH="$(sha256sum "$REQUIREMENTS_FILE" | awk '{print $1}')"
+TARGET_VENV_DIR="$SHARED_VENVS_DIR/$REQUIREMENTS_HASH"
+
+if [[ ! -d "$TARGET_VENV_DIR" ]]; then
+  TEMP_VENV_DIR="$(mktemp -d "$SHARED_VENVS_DIR/.tmp-$REQUIREMENTS_HASH-XXXXXX")"
+  chown cc1c:cc1c "$TEMP_VENV_DIR"
+  runuser -u cc1c -- "$PYTHON_BIN" -m venv "$TEMP_VENV_DIR"
+
+  if [[ -d "$WHEELHOUSE_DIR" ]] && [[ -n "$(find "$WHEELHOUSE_DIR" -mindepth 1 -print -quit)" ]]; then
+    echo "Installing Python dependencies from bundled wheelhouse..."
+    runuser -u cc1c -- "$TEMP_VENV_DIR/bin/pip" install \
+      --disable-pip-version-check \
+      --no-index \
+      --find-links "$WHEELHOUSE_DIR" \
+      -r "$REQUIREMENTS_FILE"
+  else
+    echo "Wheelhouse not found in release bundle, falling back to online pip install..."
+    runuser -u cc1c -- "$TEMP_VENV_DIR/bin/pip" install \
+      --disable-pip-version-check \
+      -r "$REQUIREMENTS_FILE"
+  fi
+
+  mv "$TEMP_VENV_DIR" "$TARGET_VENV_DIR"
+  chown -R cc1c:cc1c "$TARGET_VENV_DIR"
+else
+  echo "Reusing cached Python virtualenv for requirements hash $REQUIREMENTS_HASH"
+fi
+
+ln -sfn "$TARGET_VENV_DIR" "$RELEASE_DIR/orchestrator/venv"
+chown -h cc1c:cc1c "$RELEASE_DIR/orchestrator/venv"
 
 runuser -u cc1c -- /bin/bash -lc "set -a; source '$ENV_FILE'; set +a; cd '$RELEASE_DIR/orchestrator'; '$RELEASE_DIR/orchestrator/venv/bin/python' manage.py migrate --noinput"
 runuser -u cc1c -- /bin/bash -lc "set -a; source '$ENV_FILE'; set +a; cd '$RELEASE_DIR/orchestrator'; '$RELEASE_DIR/orchestrator/venv/bin/python' manage.py collectstatic --noinput"

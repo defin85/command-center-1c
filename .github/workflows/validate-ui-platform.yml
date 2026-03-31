@@ -1,0 +1,65 @@
+name: Validate UI Platform
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - '.github/workflows/validate-ui-platform.yml'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'frontend/**'
+      - 'contracts/**'
+      - '.github/workflows/validate-ui-platform.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: validate-ui-platform-${{ github.ref }}
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('frontend/package-lock.json', 'frontend/playwright.config.ts') }}
+
+      - name: Install frontend dependencies
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm ci
+
+      - name: Install Playwright Chromium
+        run: |
+          set -euo pipefail
+          cd frontend
+          if [[ "${{ steps.playwright-cache.outputs.cache-hit }}" == 'true' ]]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
+
+      - name: Validate UI platform
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm run validate:ui-platform

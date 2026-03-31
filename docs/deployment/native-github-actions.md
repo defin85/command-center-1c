@@ -37,13 +37,21 @@ Trigger:
 
 Pipeline steps:
 
-1. Build frontend (`frontend/dist`)
-2. Build Go binaries (`cc1c-api-gateway`, `cc1c-worker`)
-3. Pack release archive
-4. Upload archive to server
-5. Run `/usr/local/bin/cc1c-deploy <archive> <sha>`
+1. Build frontend release assets (`frontend/dist`)
+2. Build Python wheelhouse for `orchestrator/requirements.txt`
+3. Build Go binaries (`cc1c-api-gateway`, `cc1c-worker`)
+4. Pack release archive
+5. Upload archive to server
+6. Run `/usr/local/bin/cc1c-deploy <archive> <sha>`
+
+Separate workflow:
+
+- `.github/workflows/validate-ui-platform.yml`
+- runs full `frontend` gate (`lint + vitest + playwright + build`) on frontend/contracts changes
+- deploy workflow no longer waits for the full UI gate on every push to `master`
 
 ## 4. Notes
 
 - Current server mode is configured for no-domain/no-TLS startup.
 - When domain and TLS are ready, update Django settings in `/etc/command-center-1c/env.production`.
+- `cc1c-deploy` now prefers bundled `orchestrator/wheelhouse` and reuses a shared venv under `/opt/command-center-1c/shared/venvs/<requirements-hash>` when requirements do not change.
