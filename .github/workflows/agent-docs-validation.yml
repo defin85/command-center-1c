@@ -21,13 +21,14 @@ on:
       - '.agents/skills/**'
       - '.codex/config.toml'
       - '.tool-versions'
-      - 'debug/**'
+      - 'debug/runtime-inventory.sh'
       - 'frontend/package.json'
-      - 'scripts/dev/**'
       - 'scripts/dev/check-agent-doc-freshness.py'
       - 'scripts/dev/check-agent-doc-freshness.sh'
+      - '.github/workflows/agent-docs-validation.yml'
   push:
     branches:
+      - main
       - master
     paths:
       - 'AGENTS.md'
@@ -48,11 +49,11 @@ on:
       - '.agents/skills/**'
       - '.codex/config.toml'
       - '.tool-versions'
-      - 'debug/**'
+      - 'debug/runtime-inventory.sh'
       - 'frontend/package.json'
-      - 'scripts/dev/**'
       - 'scripts/dev/check-agent-doc-freshness.py'
       - 'scripts/dev/check-agent-doc-freshness.sh'
+      - '.github/workflows/agent-docs-validation.yml'
 
 jobs:
   agent-docs:
@@ -72,8 +73,21 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install OpenSpec CLI
+        run: npm install -g @fission-ai/openspec@0.20.0
+
+      - name: Install Beads CLI
+        run: |
+          set -euo pipefail
+          BD_VERSION="0.63.3"
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL "https://github.com/steveyegge/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz" \
+            | tar -xzf - -C "$HOME/.local/bin" bd
+          chmod +x "$HOME/.local/bin/bd"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Validate authoritative agent docs
         run: ./scripts/dev/check-agent-doc-freshness.sh
 
       - name: Validate OpenSpec metadata
-        run: npx -y openspec validate add-codex-agent-productivity-foundation --strict --no-interactive
+        run: openspec validate add-codex-agent-productivity-foundation --strict --no-interactive
