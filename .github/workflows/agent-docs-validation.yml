@@ -89,5 +89,5 @@ jobs:
       - name: Validate authoritative agent docs
         run: ./scripts/dev/check-agent-doc-freshness.sh
 
-      - name: Validate OpenSpec metadata
-        run: openspec validate add-codex-agent-productivity-foundation --strict --no-interactive
+      - name: Validate OpenSpec specs
+        run: openspec validate --specs --strict --no-interactive
