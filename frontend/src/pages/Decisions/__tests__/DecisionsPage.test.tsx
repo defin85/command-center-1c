@@ -4,6 +4,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
+
 const mockGetDecisionsCollection = vi.fn()
 const mockGetDecisionsDetail = vi.fn()
 const mockPostDecisionsCollection = vi.fn()
@@ -549,7 +551,7 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('imports a legacy edge policy through the pool migration API on /decisions', async () => {
     const user = userEvent.setup()
@@ -594,7 +596,7 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Source: edge.metadata.document_policy (edge-v1)')).toBeInTheDocument()
     expect(screen.getByText('Decision ref: policy-imported r4')).toBeInTheDocument()
     expect(screen.getByText('Affected workflow bindings were updated automatically.')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('falls back to unscoped decisions read when selected database metadata state is unavailable', async () => {
     mockUseDatabaseMetadataManagement.mockReturnValue({
@@ -724,7 +726,7 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('offers known metadata and draft-backed choices across the structured decision builder', async () => {
     const user = userEvent.setup()
@@ -1067,7 +1069,7 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('supports cloning a selected revision into an independent decision resource', async () => {
     const user = userEvent.setup()
@@ -1419,7 +1421,7 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('supports deactivating the selected decision from the authoring workspace', async () => {
     renderPage()
@@ -1440,7 +1442,7 @@ describe('DecisionsPage', () => {
         { errorPolicy: 'page' },
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps guided rollover fail-closed when target metadata validation rejects publish', async () => {
     const user = userEvent.setup()
@@ -1462,5 +1464,5 @@ describe('DecisionsPage', () => {
 
     expect(await screen.findByText('Document policy references are invalid for the selected target metadata snapshot.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 })

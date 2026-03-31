@@ -9,6 +9,7 @@ import type { BindingProfileDetail } from '../../../api/generated/model/bindingP
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
 import type { BindingProfileSummary } from '../../../api/generated/model/bindingProfileSummary'
 import type { BindingProfileUsageSummary } from '../../../api/generated/model/bindingProfileUsageSummary'
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import type { AvailableDecisionRevision, AvailableWorkflowRevision } from '../../../types/workflow'
 import { PoolBindingProfilesPage } from '../PoolBindingProfilesPage'
 
@@ -353,7 +354,7 @@ describe('PoolBindingProfilesPage', () => {
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
     expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeDisabled()
-  }, 25000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('restores search and selected profile from query params and labels the catalog search', async () => {
     renderPage('/pools/execution-packs?q=legacy&profile=bp-legacy&detail=1')
@@ -474,7 +475,7 @@ describe('PoolBindingProfilesPage', () => {
         },
       })
     })
-  }, 25000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('publishes a new immutable revision and deactivates the selected profile from the catalog', async () => {
     const reviseMutateAsync = vi.fn().mockResolvedValue({ binding_profile: activeDetail })
@@ -542,7 +543,7 @@ describe('PoolBindingProfilesPage', () => {
     await waitFor(() => {
       expect(deactivateMutateAsync).toHaveBeenCalledWith(activeDetail.binding_profile_id)
     })
-  }, 25000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders publication slots as compact stacked rows in the publish revision modal', async () => {
     renderPage()

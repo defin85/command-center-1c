@@ -12,6 +12,7 @@ import type {
   PoolWorkflowBinding,
   PoolWorkflowBindingCollection,
 } from '../../../api/intercompanyPools'
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
 const mockGetDecisionsCollection = vi.fn()
@@ -926,7 +927,7 @@ describe('PoolCatalogPage', () => {
       })
     )
     await waitFor(() => expect(mockListOrganizations).toHaveBeenCalledTimes(2))
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('updates organization details after editing without page reload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -967,7 +968,7 @@ describe('PoolCatalogPage', () => {
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(nextDatabaseId)).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('creates pool via drawer and reloads pools list', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

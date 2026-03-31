@@ -12,6 +12,7 @@ import type {
   PoolWorkflowBinding,
   PoolWorkflowBindingCollection,
 } from '../../../api/intercompanyPools'
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
 const mockGetDecisionsCollection = vi.fn()
@@ -1071,7 +1072,7 @@ describe('PoolCatalogPage', () => {
       screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0')
     ).toHaveValue('baseline, conflicted')
     expect(screen.getByText('Workflow attachment workspace')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits workflow attachments from isolated workspace via profile revision selection', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1120,7 +1121,7 @@ describe('PoolCatalogPage', () => {
       ],
     })
     expect(mockDeletePoolWorkflowBinding).not.toHaveBeenCalled()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('lists reusable profile revisions from dedicated catalog and offers handoff for reusable logic edits', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1191,7 +1192,7 @@ describe('PoolCatalogPage', () => {
     } finally {
       consoleErrorSpy.mockRestore()
     }
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('does not prefetch every binding profile detail before the operator opens a revision selector', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1224,7 +1225,7 @@ describe('PoolCatalogPage', () => {
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
 
     await waitFor(() => expect(mockGetBindingProfileDetail).toHaveBeenCalledTimes(2))
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('allows attaching an explicit non-latest profile revision from catalog detail', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1303,7 +1304,7 @@ describe('PoolCatalogPage', () => {
         }),
       ],
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps pinned reusable profile visible even when it is no longer the catalog latest revision', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1368,7 +1369,7 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-workflow-binding-profile-status-0')).toHaveTextContent('deactivated')
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
     expect(await screen.findAllByText('legacy-archive-profile · Legacy Archive Profile · r1 · current')).not.toHaveLength(0)
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows topology slot coverage summary in bindings workspace', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
@@ -1463,7 +1464,7 @@ describe('PoolCatalogPage', () => {
     expect(screen.getByTestId('pool-catalog-workflow-binding-coverage-item-0-0')).toHaveTextContent(
       'Org One -> Org Three · purchase · Slot missing'
     )
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('fails closed when first-class workflow bindings load fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

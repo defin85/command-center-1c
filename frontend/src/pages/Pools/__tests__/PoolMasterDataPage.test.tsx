@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolMasterDataPage } from '../PoolMasterDataPage'
 
 const mockListMasterDataParties = vi.fn()
@@ -251,7 +252,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Sync' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('opens remediation target tab from query params and shows remediation context', async () => {
     renderPage('/pools/master-data?tab=bindings&entityType=organization&canonicalId=party-1&databaseId=db-1&role=organization')
@@ -281,7 +282,7 @@ describe('PoolMasterDataPage', () => {
       await screen.findByText('Party должен иметь минимум одну роль: organization или counterparty.')
     ).toBeInTheDocument()
     expect(mockUpsertMasterDataParty).not.toHaveBeenCalled()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders Sync tab and runs conflict actions', async () => {
     const user = userEvent.setup()
@@ -371,7 +372,7 @@ describe('PoolMasterDataPage', () => {
         metadata: { source: 'ui' },
       })
     )
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('applies scheduling filters for sync status operator view', async () => {
     const user = userEvent.setup()
@@ -400,7 +401,7 @@ describe('PoolMasterDataPage', () => {
       server_affinity: 'srv:main',
       deadline_state: 'missed',
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
     const user = userEvent.setup()
@@ -500,7 +501,7 @@ describe('PoolMasterDataPage', () => {
 
     expect(await screen.findByText('Current Job')).toBeInTheDocument()
     expect(await screen.findByText('Rows (dry-run)')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps bootstrap form values after preflight error', async () => {
     const user = userEvent.setup()
@@ -527,7 +528,7 @@ describe('PoolMasterDataPage', () => {
     expect((await screen.findAllByText('Preflight failed in source adapter.')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('bootstrap-import-database-select')).toHaveTextContent('Main DB')
     expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('party')
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs retry failed chunks action for bootstrap job', async () => {
     const user = userEvent.setup()
@@ -567,5 +568,5 @@ describe('PoolMasterDataPage', () => {
     await waitFor(() =>
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 })

@@ -13,6 +13,7 @@ import type {
   PoolRunReport,
 } from '../../../api/intercompanyPools'
 import { resetQueryClient } from '../../../lib/queryClient'
+import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolRunsPage } from '../PoolRunsPage'
 
 const mockListOrganizationPools = vi.fn()
@@ -685,7 +686,7 @@ describe('PoolRunsPage', () => {
     await openRunsStage(user, 'Safe Actions')
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
     const user = userEvent.setup()
@@ -866,7 +867,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
       '/workflows/executions/22222222-2222-2222-2222-222222222222'
     )
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('restores selected run and stage from query params', async () => {
     const run = buildRun()
@@ -886,7 +887,7 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('stage=safe')
       expect(location).toContain('detail=1')
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps selected run and active stage in the URL when the operator switches lifecycle stages', async () => {
     const user = userEvent.setup()
@@ -944,7 +945,7 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('stage=retry')
       expect(location).toContain('detail=1')
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
     const user = userEvent.setup()
@@ -963,7 +964,7 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('Pre-publish ещё выполняется')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps factual monitoring controls out of the run-local execution canvas', async () => {
     renderPage('/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=11111111-1111-1111-1111-111111111111&stage=inspect&detail=1')
@@ -974,7 +975,7 @@ describe('PoolRunsPage', () => {
     expect(screen.queryByText('Quarter summary')).not.toBeInTheDocument()
     expect(screen.queryByText('Batch settlement')).not.toBeInTheDocument()
     expect(screen.queryByText('Manual review queue')).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('sends confirm-publication with generated idempotency key', async () => {
     const user = userEvent.setup()
@@ -992,7 +993,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockConfirmPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps create-run problem+json VALIDATION_ERROR to form field and user-facing message', async () => {
     const user = userEvent.setup()
@@ -1016,7 +1017,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps create-run topology alias errors to a localized message', async () => {
     const user = userEvent.setup()
@@ -1043,7 +1044,7 @@ describe('PoolRunsPage', () => {
         'Исправьте topology-aware alias в document policy: malformed alias блокирует compile до публикации.'
       )
     ).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows raw validation detail when create-run VALIDATION_ERROR is not mapped to a specific field', async () => {
     const user = userEvent.setup()
@@ -1067,7 +1068,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('“wf-top-down-execution-v1” is not a valid UUID.')).toBeInTheDocument()
     expect(screen.queryByText('Проверьте корректность параметров запуска.')).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps missing binding create-run error to workflow binding field and localized message', async () => {
     const user = userEvent.setup()
@@ -1092,7 +1093,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps missing binding preview error to workflow binding field and localized message', async () => {
     const user = userEvent.setup()
@@ -1116,7 +1117,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it.each([
     [
@@ -1204,7 +1205,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockAbortPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('sends retry-failed payload with parsed documents and generated idempotency key', async () => {
     const user = userEvent.setup()
@@ -1230,7 +1231,7 @@ describe('PoolRunsPage', () => {
     )
     const generatedKey = mockRetryPoolRunFailed.mock.calls[0][2] as string
     expect(generatedKey.length).toBeGreaterThan(8)
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders legacy run with canonical diagnostics payload fields', async () => {
     const user = userEvent.setup()
@@ -1411,7 +1412,7 @@ describe('PoolRunsPage', () => {
     await user.click(screen.getByText('Mismatches (1)'))
     expect(screen.getByText('sales-doc-1')).toBeInTheDocument()
     expect(screen.getByText('missing_table_part')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders remediation transitions for master-data readiness blockers', async () => {
     const user = userEvent.setup()
@@ -1478,7 +1479,7 @@ describe('PoolRunsPage', () => {
         '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders topology-aware readiness blockers with edge context and remediation routing', async () => {
     const user = userEvent.setup()
@@ -1537,7 +1538,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pool-runs-location')).toHaveTextContent('role=counterparty')
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('disables confirm when readiness blockers are present', async () => {
     const user = userEvent.setup()
@@ -1582,7 +1583,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('Organization->Party bindings')).toBeInTheDocument()
     expect(screen.getByText('Policy completeness')).toBeInTheDocument()
     expect(screen.getByText('OData verify readiness')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps readiness Problem Details from confirm-publication to blocker-specific message', async () => {
     const user = userEvent.setup()
@@ -1617,7 +1618,7 @@ describe('PoolRunsPage', () => {
         'Document policy is incomplete for minimal_documents_full_payload. (POOL_DOCUMENT_POLICY_MAPPING_INVALID)'
       )
     ).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders publication credentials source hint in create run form', async () => {
     const user = userEvent.setup()
@@ -1696,7 +1697,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByTestId('pool-runs-create-binding-coverage')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('edges: 1')
     expect(screen.getByTestId('pool-runs-create-slot-coverage-summary')).toHaveTextContent('resolved: 1')
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('surfaces blocking workflow binding read diagnostics instead of generic empty binding state', async () => {
     const user = userEvent.setup()
@@ -1729,7 +1730,7 @@ describe('PoolRunsPage', () => {
     )
     expect(screen.getByTestId('pool-runs-create-workflow-binding')).toHaveAttribute('aria-disabled', 'true')
     expect(screen.queryByText('No matching binding')).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits top_down create-run payload with run_input and without source_hash', async () => {
     const user = userEvent.setup()
@@ -1745,7 +1746,7 @@ describe('PoolRunsPage', () => {
     expect(payload.pool_workflow_binding_id).toBe('binding-top-down')
     expect(payload.run_input).toEqual({ starting_amount: '100.00' })
     expect(payload).not.toHaveProperty('source_hash')
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('preserves a user-entered starting amount in top_down create-run payload', async () => {
     const user = userEvent.setup()
@@ -1761,7 +1762,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
     expect(payload.run_input).toEqual({ starting_amount: '55555.55' })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits batch-backed top_down create-run payload with explicit batch and start organization', async () => {
     const user = userEvent.setup()
@@ -1783,7 +1784,7 @@ describe('PoolRunsPage', () => {
       batch_id: '99999999-9999-9999-9999-999999999999',
       start_organization_id: '11111111-1111-1111-1111-111111111111',
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps batch-backed top_down validation errors to batch and start organization fields', async () => {
     const user = userEvent.setup()
@@ -1811,7 +1812,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
     expect(await screen.findByText('top_down batch_id must reference an existing receipt batch in the selected pool.')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('creates a receipt batch from the default operator path without manual UUID entry and opens the linked run context', async () => {
     const user = userEvent.setup()
@@ -1880,7 +1881,7 @@ describe('PoolRunsPage', () => {
         `/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=${run.id}&stage=inspect&detail=1`
       )
     })
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('previews effective workflow binding before run start', async () => {
     const user = userEvent.setup()
@@ -1911,7 +1912,7 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-binding-preview-slot-projection') as HTMLTextAreaElement).value).toContain(
       '"invoice_mode"'
     )
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('uses backend slot coverage summary for binding preview instead of recomputing it from graph', async () => {
     const user = userEvent.setup()
@@ -1951,7 +1952,7 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByTestId('pool-runs-binding-preview-slot-coverage')).toHaveTextContent('resolved: 1')
     expect(screen.getByText('All topology edges are covered by this binding preview.')).toBeInTheDocument()
     expect(screen.queryByText(/unexpected_slot/i)).not.toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {
     const user = userEvent.setup()
@@ -1992,7 +1993,7 @@ describe('PoolRunsPage', () => {
       source_payload: [{ inn: '730000000111', amount: '55.00' }],
     })
     expect(payload).not.toHaveProperty('source_hash')
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('ignores stale listPoolRuns response after create and keeps latest awaiting_approval run selected', async () => {
     const user = userEvent.setup()
@@ -2035,7 +2036,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
     expect(screen.queryByText('Pre-publish ещё выполняется')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('refreshes current run report when Refresh Data is clicked', async () => {
     const user = userEvent.setup()
@@ -2085,5 +2086,5 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockGetPoolRunReport).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: passed'))
     expect(screen.getByText('Published documents verified')).toBeInTheDocument()
-  }, 30000)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 })
