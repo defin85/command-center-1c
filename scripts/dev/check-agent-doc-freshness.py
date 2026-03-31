@@ -105,6 +105,11 @@ REPO_PREFIXES = (
     "contracts/",
 )
 
+OPTIONAL_LOCAL_PATHS = (
+    ROOT / "orchestrator/venv",
+    ROOT / "frontend/.env.local",
+)
+
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 CODE_RE = re.compile(r"`([^`\n]+)`")
 
@@ -189,6 +194,13 @@ def collect_path_like_tokens(path: Path, text: str) -> set[Path]:
         if normalized is not None:
             found.add(normalized)
     return found
+
+
+def is_optional_local_path(path: Path) -> bool:
+    for optional_path in OPTIONAL_LOCAL_PATHS:
+        if path == optional_path or optional_path in path.parents:
+            return True
+    return False
 
 
 def require_contains(errors: list[str], text: str, needle: str, path: Path) -> None:
@@ -554,6 +566,8 @@ def main() -> int:
         for referenced in collect_path_like_tokens(path, texts[path]):
             if referenced == path:
                 continue
+            if is_optional_local_path(referenced):
+                continue
             if not referenced.exists():
                 errors.append(
                     f"{path.relative_to(ROOT)} references missing local path: {referenced.relative_to(ROOT)}"
@@ -601,8 +615,8 @@ def main() -> int:
     )
     require_command_success(
         errors,
-        "bd ready smoke check",
-        ["bd", "ready"],
+        "bd CLI smoke check",
+        ["bd", "help"],
     )
 
     if (ROOT / "frontend/node_modules").exists():

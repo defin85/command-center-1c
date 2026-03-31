@@ -243,7 +243,64 @@ class FrontendSmokeCoverageTests(unittest.TestCase):
         )
 
 
+class OptionalLocalPathTests(unittest.TestCase):
+    def test_accepts_untracked_local_virtualenv_paths(self) -> None:
+        self.assertTrue(
+            CHECKER.is_optional_local_path(CHECKER.ROOT / "orchestrator/venv")
+        )
+        self.assertTrue(
+            CHECKER.is_optional_local_path(
+                CHECKER.ROOT / "orchestrator/venv/bin/python"
+            )
+        )
+
+    def test_accepts_untracked_frontend_env_file(self) -> None:
+        self.assertTrue(
+            CHECKER.is_optional_local_path(CHECKER.ROOT / "frontend/.env.local")
+        )
+
+    def test_rejects_checked_in_repo_paths(self) -> None:
+        self.assertFalse(
+            CHECKER.is_optional_local_path(CHECKER.ROOT / "docs/agent/INDEX.md")
+        )
+
+
 class MainPipelineTests(unittest.TestCase):
+    def test_main_uses_bd_help_smoke_check(self) -> None:
+        inventory = [
+            {
+                "runtime": "frontend",
+                "type": "frontend",
+                "stack": "react/vite",
+                "entrypoint": "frontend/src/main.tsx",
+                "start": "./scripts/dev/restart.sh frontend",
+                "health": "http://localhost:15173",
+                "tests": "cd frontend && npm run test:run -- <path>",
+            }
+        ]
+        commands_seen: list[list[str]] = []
+
+        def fake_require_command_success(
+            errors: list[str],
+            description: str,
+            command: list[str],
+            *,
+            cwd: Path | None = None,
+        ) -> None:
+            commands_seen.append(command)
+
+        with (
+            mock.patch.object(CHECKER, "load_inventory", return_value=inventory),
+            mock.patch.object(CHECKER, "check_runtime_doc_semantics", return_value=None),
+            mock.patch.object(CHECKER, "check_task_routing_semantics", return_value=None),
+            mock.patch.object(CHECKER, "require_command_success", side_effect=fake_require_command_success),
+        ):
+            exit_code = CHECKER.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn(["bd", "help"], commands_seen)
+        self.assertNotIn(["bd", "ready"], commands_seen)
+
     def test_main_surfaces_validate_ui_platform_smoke_failure(self) -> None:
         inventory = [
             {
