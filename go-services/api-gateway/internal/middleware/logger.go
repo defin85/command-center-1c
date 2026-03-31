@@ -8,6 +8,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var skippedAccessLogPaths = map[string]struct{}{
+	"/metrics": {},
+}
+
 // LoggerMiddleware logs HTTP requests
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -17,6 +21,10 @@ func LoggerMiddleware() gin.HandlerFunc {
 
 		// Process request
 		c.Next()
+
+		if shouldSkipAccessLog(path) {
+			return
+		}
 
 		// Calculate latency
 		latency := time.Since(start)
@@ -32,6 +40,11 @@ func LoggerMiddleware() gin.HandlerFunc {
 			"user_agent": c.Request.UserAgent(),
 		}).Info("HTTP request")
 	}
+}
+
+func shouldSkipAccessLog(path string) bool {
+	_, skip := skippedAccessLogPaths[path]
+	return skip
 }
 
 // CORSConfig holds CORS configuration

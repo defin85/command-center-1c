@@ -82,14 +82,17 @@ PROM_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/prometheus-native.y
 BLACKBOX_SRC="$PROJECT_ROOT/infrastructure/monitoring/blackbox/blackbox.yml"
 TARGETS_TCP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
 TARGETS_HTTP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_http.yml"
+BLACKBOX_DESTINATIONS=(
+  "/etc/blackbox_exporter/config.yml"
+  "/etc/prometheus/blackbox.yml"
+)
+BLACKBOX_SERVICES=(
+  "blackbox-exporter.service"
+  "prometheus-blackbox-exporter.service"
+)
 
-if ! sudo -n mkdir -p /etc/prometheus/targets; then
+if ! sudo -n mkdir -p /etc/prometheus /etc/prometheus/targets /etc/blackbox_exporter; then
   log_warning "Failed to create /etc/prometheus/targets"
-  $STRICT && exit 1 || exit 0
-fi
-
-if ! sudo -n mkdir -p /etc/blackbox_exporter; then
-  log_warning "Failed to create /etc/blackbox_exporter"
   $STRICT && exit 1 || exit 0
 fi
 
@@ -116,11 +119,17 @@ else
 fi
 
 if [[ -f "$BLACKBOX_SRC" ]]; then
-  if ! sudo -n cp "$BLACKBOX_SRC" /etc/blackbox_exporter/config.yml; then
-    log_warning "Failed to update /etc/blackbox_exporter/config.yml"
-    $STRICT && exit 1
-  fi
-  log_success "Updated /etc/blackbox_exporter/config.yml"
+  for destination in "${BLACKBOX_DESTINATIONS[@]}"; do
+    if ! sudo -n mkdir -p "$(dirname "$destination")"; then
+      log_warning "Failed to create $(dirname "$destination")"
+      $STRICT && exit 1
+    fi
+    if ! sudo -n cp "$BLACKBOX_SRC" "$destination"; then
+      log_warning "Failed to update $destination"
+      $STRICT && exit 1
+    fi
+    log_success "Updated $destination"
+  done
 else
   log_warning "Missing repo blackbox config: $BLACKBOX_SRC"
   $STRICT && exit 1
@@ -141,11 +150,22 @@ else
   $STRICT && exit 1
 fi
 
-if systemctl show -p LoadState blackbox-exporter.service 2>/dev/null | grep -q 'LoadState=loaded'; then
-  sudo -n systemctl daemon-reload || true
-  sudo -n systemctl restart blackbox-exporter || true
-else
-  log_warning "blackbox-exporter.service not installed (skip restart)"
+sudo -n systemctl daemon-reload || true
+
+blackbox_service_found=false
+for service_name in "${BLACKBOX_SERVICES[@]}"; do
+  if systemctl show -p LoadState "$service_name" 2>/dev/null | grep -q 'LoadState=loaded'; then
+    blackbox_service_found=true
+    if ! sudo -n systemctl restart "$service_name"; then
+      log_warning "Failed to restart $service_name"
+      $STRICT && exit 1
+    fi
+    log_success "Restarted $service_name"
+  fi
+done
+
+if [[ "$blackbox_service_found" != "true" ]]; then
+  log_warning "No blackbox exporter systemd service found (skip restart)"
 fi
 
 sudo -n systemctl restart prometheus || true

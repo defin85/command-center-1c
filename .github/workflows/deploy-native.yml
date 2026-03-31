@@ -2,6 +2,10 @@ name: Deploy Native
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
   deploy:
@@ -79,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf release
-          mkdir -p release/bin release/frontend/dist
+          mkdir -p release/bin release/frontend/dist release/infrastructure
           cp bin/cc1c-api-gateway release/bin/
           cp bin/cc1c-worker release/bin/
           rsync -a --delete \
@@ -88,6 +92,8 @@ jobs:
             --exclude '.pytest_cache' \
             orchestrator/ release/orchestrator/
           rsync -a --delete frontend/dist/ release/frontend/dist/
+          rsync -a --delete scripts/ release/scripts/
+          rsync -a --delete infrastructure/monitoring/ release/infrastructure/monitoring/
           tar -C release -czf release.tar.gz .
 
       - name: Setup SSH key

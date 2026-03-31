@@ -83,6 +83,7 @@ scrape_configs:
       - targets: ['localhost:9000']
         labels:
           cc1c_service: 'minio'
+    scrape_interval: 60s
     metrics_path: /probe
     params:
       module: [tcp_connect]
@@ -110,6 +111,7 @@ scrape_configs:
   # Blackbox Exporter - TCP probes for external dependencies (e.g., RAS Server)
   # Exporter listens on 9115 by default.
   - job_name: 'blackbox-tcp'
+    scrape_interval: 60s
     metrics_path: /probe
     params:
       module: [tcp_connect]
@@ -127,6 +129,7 @@ scrape_configs:
 
   # Blackbox Exporter - HTTP probes for frontend availability
   - job_name: 'blackbox-http'
+    scrape_interval: 60s
     metrics_path: /probe
     params:
       module: [http_2xx]
