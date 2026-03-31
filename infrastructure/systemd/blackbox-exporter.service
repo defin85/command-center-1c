@@ -10,6 +10,9 @@ DynamicUser=yes
 # Arch Linux package provides /usr/bin/prometheus-blackbox-exporter.
 # If you installed manually under a different path/name, adjust ExecStart accordingly.
 ExecStart=/usr/bin/prometheus-blackbox-exporter --config.file=/etc/blackbox_exporter/config.yml
+# blackbox_exporter 0.19 logs every probe to stderr, which creates journal
+# write amplification under frequent health checks.
+StandardError=null
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true

@@ -8,6 +8,7 @@
 # - Prometheus config (/etc/prometheus/prometheus.yml)
 # - Blackbox exporter config (/etc/blackbox_exporter/config.yml)
 # - Prometheus blackbox targets (/etc/prometheus/targets/blackbox_tcp.yml, blackbox_http.yml)
+# - Blackbox exporter stderr suppression override for noisy distro packages
 #
 # This exists because native Prometheus reads /etc/*, while docker mode uses
 # bind-mounts from the repo.
@@ -80,6 +81,7 @@ fi
 
 PROM_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/prometheus-native.yml"
 BLACKBOX_SRC="$PROJECT_ROOT/infrastructure/monitoring/blackbox/blackbox.yml"
+BLACKBOX_OVERRIDE_SRC="$PROJECT_ROOT/infrastructure/systemd/blackbox-exporter.override.conf"
 TARGETS_TCP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_tcp.yml"
 TARGETS_HTTP_SRC="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets/blackbox_http.yml"
 BLACKBOX_DESTINATIONS=(
@@ -132,6 +134,25 @@ if [[ -f "$BLACKBOX_SRC" ]]; then
   done
 else
   log_warning "Missing repo blackbox config: $BLACKBOX_SRC"
+  $STRICT && exit 1
+fi
+
+if [[ -f "$BLACKBOX_OVERRIDE_SRC" ]]; then
+  for service_name in "${BLACKBOX_SERVICES[@]}"; do
+    override_dir="/etc/systemd/system/${service_name}.d"
+    override_dest="$override_dir/override.conf"
+    if ! sudo -n mkdir -p "$override_dir"; then
+      log_warning "Failed to create $override_dir"
+      $STRICT && exit 1
+    fi
+    if ! sudo -n cp "$BLACKBOX_OVERRIDE_SRC" "$override_dest"; then
+      log_warning "Failed to update $override_dest"
+      $STRICT && exit 1
+    fi
+    log_success "Updated $override_dest"
+  done
+else
+  log_warning "Missing repo blackbox override: $BLACKBOX_OVERRIDE_SRC"
   $STRICT && exit 1
 fi
 
