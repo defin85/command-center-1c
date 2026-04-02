@@ -78,6 +78,7 @@ def test_system_health_excludes_disabled_services_from_overall(authenticated_cli
     settings.SYSTEM_HEALTH_DISABLED_SERVICES = ("frontend",)
 
     mock_client = MagicMock()
+    mock_client.query = AsyncMock(return_value={"status": "success", "data": {"result": [{"value": ["0", "1"]}]}})
     mock_client.get_all_services_metrics = AsyncMock(
         return_value=[
             ServiceMetrics(
@@ -118,3 +119,83 @@ def test_system_health_excludes_disabled_services_from_overall(authenticated_cli
     frontend = next(service for service in data["services"] if service["name"] == "Frontend")
     assert frontend["status"] == "degraded"
     assert frontend["details"]["disabled"] is True
+
+
+@pytest.mark.django_db
+def test_system_health_maps_critical_but_available_service_to_degraded(authenticated_client):
+    cache.clear()
+
+    mock_client = MagicMock()
+    mock_client.query = AsyncMock(return_value={"status": "success", "data": {"result": [{"value": ["0", "1"]}]}})
+    mock_client.get_all_services_metrics = AsyncMock(
+        return_value=[
+            ServiceMetrics(
+                name="worker-workflows",
+                display_name="Worker Workflows",
+                status="critical",
+                availability_status="available",
+                ops_per_minute=12.0,
+                active_operations=1,
+                p95_latency_ms=850.0,
+                error_rate=1.0,
+            ),
+        ]
+    )
+    mock_client.get_overall_health = AsyncMock(return_value="critical")
+
+    with patch("apps.api_v2.views.system.get_prometheus_client", return_value=mock_client):
+        response = authenticated_client.get("/api/v2/system/health/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["overall_status"] == "degraded"
+    assert data["statistics"] == {
+        "total": 1,
+        "online": 0,
+        "offline": 0,
+        "degraded": 1,
+    }
+    service = data["services"][0]
+    assert service["status"] == "degraded"
+    assert service["details"]["severity"] == "critical"
+    assert service["details"]["availability_status"] == "available"
+
+
+@pytest.mark.django_db
+def test_system_health_maps_unavailable_service_to_offline(authenticated_client):
+    cache.clear()
+
+    mock_client = MagicMock()
+    mock_client.query = AsyncMock(return_value={"status": "success", "data": {"result": [{"value": ["0", "1"]}]}})
+    mock_client.get_all_services_metrics = AsyncMock(
+        return_value=[
+            ServiceMetrics(
+                name="worker-workflows",
+                display_name="Worker Workflows",
+                status="critical",
+                availability_status="unavailable",
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+            ),
+        ]
+    )
+    mock_client.get_overall_health = AsyncMock(return_value="critical")
+
+    with patch("apps.api_v2.views.system.get_prometheus_client", return_value=mock_client):
+        response = authenticated_client.get("/api/v2/system/health/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["overall_status"] == "critical"
+    assert data["statistics"] == {
+        "total": 1,
+        "online": 0,
+        "offline": 1,
+        "degraded": 0,
+    }
+    service = data["services"][0]
+    assert service["status"] == "offline"
+    assert service["details"]["severity"] == "critical"
+    assert service["details"]["availability_status"] == "unavailable"

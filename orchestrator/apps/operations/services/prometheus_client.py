@@ -17,6 +17,10 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+AVAILABILITY_AVAILABLE = "available"
+AVAILABILITY_UNAVAILABLE = "unavailable"
+AVAILABILITY_UNKNOWN = "unknown"
+
 
 @dataclass
 class ServiceMetrics:
@@ -24,6 +28,7 @@ class ServiceMetrics:
     name: str
     display_name: str
     status: str  # 'healthy', 'degraded', 'critical'
+    availability_status: str = AVAILABILITY_AVAILABLE
     ops_per_minute: float = 0.0
     active_operations: int = 0
     p95_latency_ms: float = 0.0
@@ -36,6 +41,7 @@ class ServiceMetrics:
             'name': self.name,
             'display_name': self.display_name,
             'status': self.status,
+            'availability_status': self.availability_status,
             'ops_per_minute': round(self.ops_per_minute, 2),
             'active_operations': self.active_operations,
             'p95_latency_ms': round(self.p95_latency_ms, 2),
@@ -319,7 +325,7 @@ class PrometheusClient:
         """
         result = await self.query('max(probe_success{cc1c_service="ras-server"})')
         if result.get("status") == "error" or not self._has_result(result):
-            return "critical"
+            return "degraded"
 
         value = self._extract_value(result)
         return "healthy" if value >= 0.5 else "critical"
@@ -332,7 +338,7 @@ class PrometheusClient:
         thresholds: Optional[Dict[str, float]] = None,
     ) -> str:
         """
-        Determine service health status based on metrics.
+        Determine service severity based on metrics for a reachable service.
 
         Thresholds:
         - critical: error_rate > 10% OR p95 > 5000ms
@@ -412,19 +418,27 @@ class PrometheusClient:
             critical_lag_seconds = float(thresholds.get('critical_lag_seconds', 300))
             degraded_lag_seconds = float(thresholds.get('degraded_lag_seconds', 60))
 
-            if up_value < 0.5:
+            if up_result.get("status") == "error" or not self._has_result(up_result):
+                status = "degraded"
+                availability_status = AVAILABILITY_UNKNOWN
+            elif up_value < 0.5:
                 status = "critical"
+                availability_status = AVAILABILITY_UNAVAILABLE
             elif lag_seconds >= critical_lag_seconds:
                 status = "critical"
+                availability_status = AVAILABILITY_AVAILABLE
             elif lag_seconds >= degraded_lag_seconds or saturated_total > 0 or failed_last_cycle > 0:
                 status = "degraded"
+                availability_status = AVAILABILITY_AVAILABLE
             else:
                 status = "healthy"
+                availability_status = AVAILABILITY_AVAILABLE
 
             return ServiceMetrics(
                 name=service,
                 display_name=display_name,
                 status=status,
+                availability_status=availability_status,
                 ops_per_minute=max(float(dispatched_last_cycle), 0.0),
                 active_operations=max(int(pending_total), 0),
                 p95_latency_ms=max(float(heartbeat_age_seconds), 0.0) * 1000.0,
@@ -437,26 +451,29 @@ class PrometheusClient:
                 'min(cc1c_orchestrator_event_subscriber_up{group="orchestrator-group"})',
                 'max(cc1c_orchestrator_event_subscriber_consumers{group="orchestrator-group"})',
             ])
-            if (
-                up_result.get("status") == "error"
-                or consumers_result.get("status") == "error"
-                or not self._has_result(up_result)
-            ):
-                status = "critical"
+            if up_result.get("status") == "error" or not self._has_result(up_result):
+                status = "degraded"
+                availability_status = AVAILABILITY_UNKNOWN
             else:
                 up_value = self._extract_value(up_result)
-                consumers = self._extract_value(consumers_result)
                 if up_value < 0.5:
                     status = "critical"
-                elif consumers < 1:
+                    availability_status = AVAILABILITY_UNAVAILABLE
+                elif consumers_result.get("status") == "error" or not self._has_result(consumers_result):
                     status = "degraded"
+                    availability_status = AVAILABILITY_AVAILABLE
+                elif self._extract_value(consumers_result) < 1:
+                    status = "degraded"
+                    availability_status = AVAILABILITY_AVAILABLE
                 else:
                     status = "healthy"
+                    availability_status = AVAILABILITY_AVAILABLE
 
             return ServiceMetrics(
                 name=service,
                 display_name=display_name,
                 status=status,
+                availability_status=availability_status,
                 ops_per_minute=0.0,
                 active_operations=0,
                 p95_latency_ms=0.0,
@@ -471,15 +488,21 @@ class PrometheusClient:
                 f'max(probe_duration_seconds{{cc1c_service="{service_label}"}}) * 1000',
             ])
             if success_result.get("status") == "error" or not self._has_result(success_result):
-                status = "critical"
+                status = "degraded"
+                availability_status = AVAILABILITY_UNKNOWN
             else:
-                status = "healthy" if self._extract_value(success_result) >= 0.5 else "critical"
+                is_available = self._extract_value(success_result) >= 0.5
+                status = "healthy" if is_available else "critical"
+                availability_status = (
+                    AVAILABILITY_AVAILABLE if is_available else AVAILABILITY_UNAVAILABLE
+                )
 
             p95_latency_ms = self._extract_value(duration_result) if self._has_result(duration_result) else 0.0
             return ServiceMetrics(
                 name=service,
                 display_name=display_name,
                 status=status,
+                availability_status=availability_status,
                 ops_per_minute=0.0,
                 active_operations=0,
                 p95_latency_ms=p95_latency_ms,
@@ -520,6 +543,20 @@ class PrometheusClient:
                 name=service,
                 display_name=display_name,
                 status='degraded',
+                availability_status=AVAILABILITY_UNKNOWN,
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+                last_updated=datetime.utcnow(),
+            )
+
+        if not self._has_result(up_result):
+            return ServiceMetrics(
+                name=service,
+                display_name=display_name,
+                status='degraded',
+                availability_status=AVAILABILITY_UNKNOWN,
                 ops_per_minute=0.0,
                 active_operations=0,
                 p95_latency_ms=0.0,
@@ -533,6 +570,7 @@ class PrometheusClient:
                 name=service,
                 display_name=display_name,
                 status='critical',
+                availability_status=AVAILABILITY_UNAVAILABLE,
                 ops_per_minute=0.0,
                 active_operations=0,
                 p95_latency_ms=0.0,
@@ -560,6 +598,7 @@ class PrometheusClient:
             name=service,
             display_name=display_name,
             status=status,
+            availability_status=AVAILABILITY_AVAILABLE,
             ops_per_minute=ops_per_minute,
             active_operations=active_operations,
             p95_latency_ms=p95_latency_ms,
@@ -593,6 +632,7 @@ class PrometheusClient:
                     name=service,
                     display_name=config.get('display_name', service.title()),
                     status='degraded',
+                    availability_status=AVAILABILITY_UNKNOWN,
                     ops_per_minute=0.0,
                     active_operations=0,
                     p95_latency_ms=0.0,

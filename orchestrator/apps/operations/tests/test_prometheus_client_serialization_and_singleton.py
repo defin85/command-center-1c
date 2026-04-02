@@ -26,6 +26,7 @@ class TestServiceMetricsSerialization:
         assert data["name"] == "api-gateway"
         assert data["display_name"] == "API Gateway"
         assert data["status"] == "healthy"
+        assert data["availability_status"] == "available"
         assert data["ops_per_minute"] == 123.46
         assert data["active_operations"] == 42
         assert data["p95_latency_ms"] == 500.79
@@ -53,4 +54,3 @@ class TestGetPrometheusClientSingleton:
 
         clients = [get_prometheus_client() for _ in range(5)]
         assert len(set(id(c) for c in clients)) == 1
-

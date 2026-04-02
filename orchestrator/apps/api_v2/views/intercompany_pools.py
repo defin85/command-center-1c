@@ -2399,7 +2399,7 @@ def _build_pool_factual_workspace_summary(
     incoming_amount = Decimal("0.00")
     outgoing_amount = Decimal("0.00")
     open_balance = Decimal("0.00")
-    attention_required_total = 0
+    settlement_attention_required_total = 0
     latest_settlement_freshness_at = None
 
     for snapshot in edge_balances:
@@ -2415,30 +2415,22 @@ def _build_pool_factual_workspace_summary(
         outgoing_amount += settlement.outgoing_amount
         open_balance += settlement.open_balance
         if settlement.status == PoolBatchSettlementStatus.ATTENTION_REQUIRED:
-            attention_required_total += 1
+            settlement_attention_required_total += 1
         if settlement.freshness_at and (
             latest_settlement_freshness_at is None or settlement.freshness_at > latest_settlement_freshness_at
         ):
             latest_settlement_freshness_at = settlement.freshness_at
 
-    latest_checkpoint = next(
-        (
-            checkpoint
-            for checkpoint in sorted(
-                checkpoints,
-                key=lambda item: (item.last_synced_at or datetime.min.replace(tzinfo=dt_timezone.utc), item.updated_at),
-                reverse=True,
-            )
-        ),
-        None,
-    )
-    checkpoint_metadata = (
-        latest_checkpoint.metadata
-        if latest_checkpoint is not None and isinstance(latest_checkpoint.metadata, dict)
-        else {}
-    )
+    latest_checkpoint = _latest_pool_factual_checkpoint(checkpoints=checkpoints)
     review_summary = review_queue.get("summary") if isinstance(review_queue, dict) else {}
+    if not isinstance(review_summary, dict):
+        review_summary = {}
     read_summary = build_pool_factual_read_summary(checkpoints=checkpoints, now=timezone.now())
+    review_attention_required_total = int(review_summary.get("attention_required_total") or 0)
+    checkpoint_summary = _summarize_pool_factual_checkpoints(
+        checkpoints=checkpoints,
+        read_summary=read_summary,
+    )
     last_synced_at = (
         latest_checkpoint.last_synced_at
         if latest_checkpoint is not None and latest_checkpoint.last_synced_at is not None
@@ -2456,15 +2448,128 @@ def _build_pool_factual_workspace_summary(
         "outgoing_amount": _decimal_to_api_string(outgoing_amount),
         "open_balance": _decimal_to_api_string(open_balance),
         "pending_review_total": int(review_summary.get("pending_total") or 0),
-        "attention_required_total": attention_required_total,
+        "attention_required_total": max(
+            settlement_attention_required_total,
+            review_attention_required_total,
+        ),
         "backlog_total": int(read_summary.get("backlog_total") or 0),
-        "freshness_state": str(checkpoint_metadata.get("freshness_state") or "unknown"),
-        "source_availability": str(checkpoint_metadata.get("source_availability") or "unknown"),
-        "source_availability_detail": str(checkpoint_metadata.get("source_availability_detail") or ""),
+        "freshness_state": checkpoint_summary["freshness_state"],
+        "source_availability": checkpoint_summary["source_availability"],
+        "source_availability_detail": checkpoint_summary["source_availability_detail"],
         "last_synced_at": last_synced_at,
         "settlement_total": len(settlements),
         "checkpoint_total": len(checkpoints),
     }
+
+
+def _latest_pool_factual_checkpoint(
+    *,
+    checkpoints: list[PoolFactualSyncCheckpoint],
+) -> PoolFactualSyncCheckpoint | None:
+    return next(
+        (
+            checkpoint
+            for checkpoint in sorted(
+                checkpoints,
+                key=_pool_factual_checkpoint_sort_key,
+                reverse=True,
+            )
+        ),
+        None,
+    )
+
+
+def _pool_factual_checkpoint_sort_key(
+    checkpoint: PoolFactualSyncCheckpoint,
+) -> tuple[datetime, datetime]:
+    return (
+        checkpoint.last_synced_at or datetime.min.replace(tzinfo=dt_timezone.utc),
+        checkpoint.updated_at,
+    )
+
+
+def _summarize_pool_factual_checkpoints(
+    *,
+    checkpoints: list[PoolFactualSyncCheckpoint],
+    read_summary: dict[str, Any],
+) -> dict[str, str]:
+    latest_checkpoint = _latest_pool_factual_checkpoint(checkpoints=checkpoints)
+    latest_metadata = _pool_factual_checkpoint_metadata(checkpoint=latest_checkpoint)
+
+    aggregate_source_availability = str(latest_metadata.get("source_availability") or "unknown")
+    aggregate_source_detail = str(latest_metadata.get("source_availability_detail") or "")
+
+    if checkpoints:
+        worst_source_checkpoint = max(
+            checkpoints,
+            key=lambda checkpoint: (
+                _pool_factual_source_state_priority(
+                    _pool_factual_checkpoint_metadata(checkpoint=checkpoint).get("source_availability")
+                ),
+                *_pool_factual_checkpoint_sort_key(checkpoint),
+            ),
+        )
+        worst_metadata = _pool_factual_checkpoint_metadata(checkpoint=worst_source_checkpoint)
+        aggregate_source_availability = str(worst_metadata.get("source_availability") or "unknown")
+        aggregate_source_detail = str(
+            worst_metadata.get("source_availability_detail")
+            or latest_metadata.get("source_availability_detail")
+            or ""
+        )
+
+    aggregate_freshness_state = "unknown"
+    backlog_total = int(read_summary.get("backlog_total") or 0)
+    if backlog_total > 0:
+        aggregate_freshness_state = "stale"
+    elif checkpoints:
+        freshness_priorities = [
+            _pool_factual_freshness_state_priority(
+                _pool_factual_checkpoint_metadata(checkpoint=checkpoint).get("freshness_state")
+            )
+            for checkpoint in checkpoints
+        ]
+        if freshness_priorities:
+            highest_priority = max(freshness_priorities)
+            aggregate_freshness_state = {
+                2: "unknown",
+                1: "fresh",
+                0: "stale",
+            }.get(highest_priority, "unknown")
+
+    return {
+        "freshness_state": aggregate_freshness_state,
+        "source_availability": aggregate_source_availability,
+        "source_availability_detail": aggregate_source_detail,
+    }
+
+
+def _pool_factual_checkpoint_metadata(
+    *,
+    checkpoint: PoolFactualSyncCheckpoint | None,
+) -> dict[str, Any]:
+    if checkpoint is None or not isinstance(checkpoint.metadata, dict):
+        return {}
+    return checkpoint.metadata
+
+
+def _pool_factual_source_state_priority(value: Any) -> int:
+    normalized = str(value or "unknown").strip().lower()
+    return {
+        "unavailable": 4,
+        "blocked_external_sessions": 3,
+        "maintenance": 2,
+        "unknown": 1,
+        "available": 0,
+    }.get(normalized, 1)
+
+
+def _pool_factual_freshness_state_priority(value: Any) -> int:
+    normalized = str(value or "unknown").strip().lower()
+    return {
+        "unknown": 2,
+        "fresh": 1,
+        "stale": 0,
+    }.get(normalized, 2)
 
 
 def _decimal_to_api_string(value: Any) -> str:

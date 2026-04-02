@@ -97,6 +97,89 @@ function buildReviewQueue(items?: PoolFactualReviewQueueItem[]): PoolFactualRevi
 function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFactualWorkspace {
   const poolId = overrides.pool_id ?? '11111111-1111-1111-1111-111111111111'
   const reviewQueue = overrides.review_queue ?? buildReviewQueue()
+  const settlements = overrides.settlements ?? [
+    {
+      id: 'batch-receipt-1',
+      tenant_id: 'tenant-1',
+      pool_id: poolId,
+      batch_kind: 'receipt',
+      source_type: 'manual',
+      schema_template_id: null,
+      start_organization_id: 'org-root-1',
+      run_id: 'run-001',
+      workflow_execution_id: null,
+      operation_id: null,
+      workflow_status: '',
+      period_start: '2026-01-01',
+      period_end: '2026-03-31',
+      source_reference: 'receipt-q1',
+      raw_payload_ref: '',
+      content_hash: 'hash-1',
+      source_metadata: {},
+      normalization_summary: {},
+      publication_summary: {},
+      last_error_code: '',
+      last_error: '',
+      created_by_id: null,
+      created_at: '2026-03-27T09:00:00Z',
+      updated_at: '2026-03-27T09:30:00Z',
+      settlement: {
+        id: 'settlement-receipt-1',
+        tenant_id: 'tenant-1',
+        batch_id: 'batch-receipt-1',
+        status: 'partially_closed',
+        incoming_amount: '120.00',
+        outgoing_amount: '80.00',
+        open_balance: '40.00',
+        summary: {},
+        freshness_at: '2026-03-27T10:00:00Z',
+        created_at: '2026-03-27T09:00:00Z',
+        updated_at: '2026-03-27T09:30:00Z',
+      },
+    },
+    {
+      id: 'batch-sale-1',
+      tenant_id: 'tenant-1',
+      pool_id: poolId,
+      batch_kind: 'sale',
+      source_type: 'manual',
+      schema_template_id: null,
+      start_organization_id: null,
+      run_id: null,
+      workflow_execution_id: 'workflow-sale-1',
+      operation_id: 'operation-sale-1',
+      workflow_status: 'completed',
+      period_start: '2026-01-01',
+      period_end: '2026-03-31',
+      source_reference: 'sale-q1',
+      raw_payload_ref: '',
+      content_hash: 'hash-2',
+      source_metadata: {},
+      normalization_summary: {},
+      publication_summary: {},
+      last_error_code: '',
+      last_error: '',
+      created_by_id: null,
+      created_at: '2026-03-27T09:00:00Z',
+      updated_at: '2026-03-27T09:30:00Z',
+      settlement: {
+        id: 'settlement-sale-1',
+        tenant_id: 'tenant-1',
+        batch_id: 'batch-sale-1',
+        status: 'attention_required',
+        incoming_amount: '50.00',
+        outgoing_amount: '35.00',
+        open_balance: '15.00',
+        summary: {},
+        freshness_at: '2026-03-27T10:00:00Z',
+        created_at: '2026-03-27T09:00:00Z',
+        updated_at: '2026-03-27T09:30:00Z',
+      },
+    },
+  ]
+  const settlementAttentionRequiredTotal = settlements.filter(
+    (item) => item.settlement?.status === 'attention_required'
+  ).length
 
   return {
     pool_id: poolId,
@@ -111,95 +194,19 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       outgoing_amount: '115.00',
       open_balance: '55.00',
       pending_review_total: reviewQueue.summary.pending_total,
-      attention_required_total: 1,
+      attention_required_total: Math.max(
+        settlementAttentionRequiredTotal,
+        reviewQueue.summary.attention_required_total
+      ),
       backlog_total: 0,
       freshness_state: 'fresh',
       source_availability: 'available',
       source_availability_detail: '',
       last_synced_at: '2026-03-27T10:00:00Z',
-      settlement_total: 2,
+      settlement_total: settlements.length,
       checkpoint_total: 1,
     },
-    settlements: [
-      {
-        id: 'batch-receipt-1',
-        tenant_id: 'tenant-1',
-        pool_id: poolId,
-        batch_kind: 'receipt',
-        source_type: 'manual',
-        schema_template_id: null,
-        start_organization_id: 'org-root-1',
-        run_id: 'run-001',
-        workflow_execution_id: null,
-        operation_id: null,
-        workflow_status: '',
-        period_start: '2026-01-01',
-        period_end: '2026-03-31',
-        source_reference: 'receipt-q1',
-        raw_payload_ref: '',
-        content_hash: 'hash-1',
-        source_metadata: {},
-        normalization_summary: {},
-        publication_summary: {},
-        last_error_code: '',
-        last_error: '',
-        created_by_id: null,
-        created_at: '2026-03-27T09:00:00Z',
-        updated_at: '2026-03-27T09:30:00Z',
-        settlement: {
-          id: 'settlement-receipt-1',
-          tenant_id: 'tenant-1',
-          batch_id: 'batch-receipt-1',
-          status: 'partially_closed',
-          incoming_amount: '120.00',
-          outgoing_amount: '80.00',
-          open_balance: '40.00',
-          summary: {},
-          freshness_at: '2026-03-27T10:00:00Z',
-          created_at: '2026-03-27T09:00:00Z',
-          updated_at: '2026-03-27T09:30:00Z',
-        },
-      },
-      {
-        id: 'batch-sale-1',
-        tenant_id: 'tenant-1',
-        pool_id: poolId,
-        batch_kind: 'sale',
-        source_type: 'manual',
-        schema_template_id: null,
-        start_organization_id: null,
-        run_id: null,
-        workflow_execution_id: 'workflow-sale-1',
-        operation_id: 'operation-sale-1',
-        workflow_status: 'completed',
-        period_start: '2026-01-01',
-        period_end: '2026-03-31',
-        source_reference: 'sale-q1',
-        raw_payload_ref: '',
-        content_hash: 'hash-2',
-        source_metadata: {},
-        normalization_summary: {},
-        publication_summary: {},
-        last_error_code: '',
-        last_error: '',
-        created_by_id: null,
-        created_at: '2026-03-27T09:00:00Z',
-        updated_at: '2026-03-27T09:30:00Z',
-        settlement: {
-          id: 'settlement-sale-1',
-          tenant_id: 'tenant-1',
-          batch_id: 'batch-sale-1',
-          status: 'attention_required',
-          incoming_amount: '50.00',
-          outgoing_amount: '35.00',
-          open_balance: '15.00',
-          summary: {},
-          freshness_at: '2026-03-27T10:00:00Z',
-          created_at: '2026-03-27T09:00:00Z',
-          updated_at: '2026-03-27T09:30:00Z',
-        },
-      },
-    ],
+    settlements,
     edge_balances: [
       {
         id: 'edge-balance-1',
@@ -599,6 +606,64 @@ describe('PoolFactualPage', () => {
     }))
     expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(2, { poolId: '11111111-1111-1111-1111-111111111111' })
     expect(mockGetPoolFactualWorkspace).toHaveBeenNthCalledWith(3, { poolId: '11111111-1111-1111-1111-111111111111' })
+  })
+
+  it('recomputes top-level attention summary when review action refresh fails', async () => {
+    const user = userEvent.setup()
+    mockListOrganizationPools.mockResolvedValue([buildPool()])
+
+    const lateCorrectionDocumentRef = "Document_КорректировкаРеализации(guid'pool-alpha-late')"
+    const initialReviewQueue = buildReviewQueue([
+      buildReviewItem({
+        id: 'late-correction-pool-alpha',
+        reason: 'late_correction',
+        batch_id: null,
+        source_document_ref: lateCorrectionDocumentRef,
+        allowed_actions: ['reconcile', 'resolve_without_change'],
+        attention_required: true,
+      }),
+    ])
+    const resolvedReviewQueue = buildReviewQueue([
+      buildReviewItem({
+        id: 'late-correction-pool-alpha',
+        reason: 'late_correction',
+        status: 'reconciled',
+        batch_id: null,
+        source_document_ref: lateCorrectionDocumentRef,
+        allowed_actions: [],
+        attention_required: false,
+        resolved_at: '2026-03-27T10:10:00Z',
+      }),
+    ])
+    const baseWorkspace = buildWorkspace()
+    const initialWorkspace = buildWorkspace({
+      settlements: [baseWorkspace.settlements[0]],
+      review_queue: initialReviewQueue,
+    })
+
+    mockGetPoolFactualWorkspace
+      .mockResolvedValueOnce(initialWorkspace)
+      .mockRejectedValueOnce(new Error('refresh failed'))
+
+    mockApplyPoolFactualReviewAction.mockResolvedValueOnce({
+      review_item: resolvedReviewQueue.items[0],
+      review_queue: resolvedReviewQueue,
+    } satisfies PoolFactualReviewActionResponse)
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&focus=review&detail=1')
+
+    await screen.findByText('Manual review queue')
+    await screen.findByText(lateCorrectionDocumentRef)
+
+    await user.click(screen.getByRole('button', { name: 'Reconcile review item late-correction-pool-alpha' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('0 pending')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('0 attention required')).toBeInTheDocument()
+    })
+    expect(screen.getByText(/0 item\(s\) currently require manual reconcile\./)).toBeInTheDocument()
   })
 
   it('builds a focus-aware factual route for settlement handoff from run report', () => {

@@ -112,12 +112,6 @@ class ServiceHistoryResponseSerializer(serializers.Serializer):
     minutes = serializers.IntegerField(help_text="History period in minutes")
     data_points = HistoryDataPointSerializer(many=True, help_text="Historical data points")
 
-STATUS_MAP = {
-    "healthy": "healthy",
-    "degraded": "degraded",
-    "critical": "unreachable",
-}
-
 TYPE_MAP = {
     "frontend": "backend",
     "api-gateway": "backend",
@@ -130,6 +124,15 @@ TYPE_MAP = {
     "event-subscriber": "internal",
     "ras-server": "external",
 }
+
+
+def _map_metric_status(item) -> str:
+    availability_status = getattr(item, "availability_status", "available")
+    if availability_status == "unavailable":
+        return "unreachable"
+    if item.status == "healthy":
+        return "healthy"
+    return "degraded"
 
 
 @extend_schema(
@@ -206,7 +209,7 @@ def get_metrics(request):
 
     all_services = []
     for item in metrics:
-        status = STATUS_MAP.get(item.status, "unknown")
+        status = _map_metric_status(item)
         all_services.append({
             "name": item.name,
             "type": TYPE_MAP.get(item.name, "backend"),
@@ -214,6 +217,8 @@ def get_metrics(request):
             "response_time_ms": round(item.p95_latency_ms, 2) if item.p95_latency_ms else None,
             "details": {
                 "display_name": item.display_name,
+                "severity": item.status,
+                "availability_status": getattr(item, "availability_status", "available"),
                 "ops_per_minute": item.ops_per_minute,
                 "active_operations": item.active_operations,
                 "p95_latency_ms": item.p95_latency_ms,

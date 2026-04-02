@@ -411,6 +411,7 @@ class TestServiceMetrics:
                 assert metrics.name == 'api-gateway'
                 assert metrics.display_name == 'API Gateway'
                 assert metrics.status == 'healthy'
+                assert metrics.availability_status == 'available'
                 assert metrics.ops_per_minute == 150.0
                 assert metrics.p95_latency_ms == 500.0
                 assert metrics.error_rate == 0.005
@@ -435,7 +436,42 @@ class TestServiceMetrics:
             metrics = await client.get_service_metrics('worker')
 
             assert metrics.status == 'degraded'
+            assert metrics.availability_status == 'available'
             assert metrics.p95_latency_ms == 1500.0
+
+    @pytest.mark.asyncio
+    async def test_get_service_metrics_critical_but_available(self, client):
+        """Test severe metrics do not imply service unavailability."""
+        with patch.object(client, '_execute_queries', new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = [
+                {'data': {'result': [{'value': ['1234567890', '5000']}]}},
+                {'data': {'result': [{'value': ['1234567890', '1500']}]}},
+                {'data': {'result': [{'value': ['1234567890', '0.15']}]}},
+                {'data': {'result': []}},
+                {'data': {'result': [{'value': ['1234567890', '1']}]}}
+            ]
+
+            metrics = await client.get_service_metrics('worker-workflows')
+
+            assert metrics.status == 'critical'
+            assert metrics.availability_status == 'available'
+
+    @pytest.mark.asyncio
+    async def test_get_service_metrics_marks_missing_up_as_unavailable(self, client):
+        """Test down targets are the only source of unavailable status."""
+        with patch.object(client, '_execute_queries', new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = [
+                {'data': {'result': [{'value': ['1234567890', '10']}]}},
+                {'data': {'result': [{'value': ['1234567890', '500']}]}},
+                {'data': {'result': [{'value': ['1234567890', '0.0']}]}},
+                {'data': {'result': []}},
+                {'data': {'result': [{'value': ['1234567890', '0']}]}}
+            ]
+
+            metrics = await client.get_service_metrics('worker')
+
+            assert metrics.status == 'critical'
+            assert metrics.availability_status == 'unavailable'
 
     @pytest.mark.asyncio
     async def test_get_service_metrics_nan_handling(self, client):
@@ -473,9 +509,29 @@ class TestServiceMetrics:
             metrics = await client.get_service_metrics('pool-outbox-dispatcher')
 
             assert metrics.status == 'healthy'
+            assert metrics.availability_status == 'available'
             assert metrics.ops_per_minute == 3.0
             assert metrics.active_operations == 0
             assert metrics.error_rate == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_service_metrics_pool_outbox_dispatcher_critical_but_available_on_lag(self, client):
+        """Test severe dispatcher lag does not imply service unreachability."""
+        with patch.object(client, '_execute_queries', new_callable=AsyncMock) as mock_execute:
+            mock_execute.return_value = [
+                {'data': {'result': [{'value': ['1234567890', '1']}]}},    # up
+                {'data': {'result': [{'value': ['1234567890', '120']}]}},  # heartbeat age
+                {'data': {'result': [{'value': ['1234567890', '4']}]}},    # pending
+                {'data': {'result': [{'value': ['1234567890', '400']}]}},  # lag
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # saturated
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # dispatched
+                {'data': {'result': [{'value': ['1234567890', '0']}]}},    # failed
+            ]
+
+            metrics = await client.get_service_metrics('pool-outbox-dispatcher')
+
+            assert metrics.status == 'critical'
+            assert metrics.availability_status == 'available'
 
     @pytest.mark.asyncio
     async def test_get_service_metrics_pool_outbox_dispatcher_critical_when_down(self, client):
@@ -494,6 +550,7 @@ class TestServiceMetrics:
             metrics = await client.get_service_metrics('pool-outbox-dispatcher')
 
             assert metrics.status == 'critical'
+            assert metrics.availability_status == 'unavailable'
             assert metrics.active_operations == 4
 
     @pytest.mark.asyncio

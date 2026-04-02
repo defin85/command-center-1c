@@ -65,6 +65,74 @@ class TestServiceMeshGetMetrics:
         assert 'timestamp' in data
         assert data['status'] in ['healthy', 'degraded', 'unhealthy']
 
+    @pytest.mark.django_db
+    def test_get_metrics_maps_critical_but_available_service_to_degraded(self, authenticated_client):
+        mock_client = MagicMock()
+        mock_client.get_all_services_metrics = AsyncMock(return_value=[
+            ServiceMetrics(
+                name="worker-workflows",
+                display_name="Worker Workflows",
+                status="critical",
+                availability_status="available",
+                ops_per_minute=12.0,
+                active_operations=1,
+                p95_latency_ms=850.0,
+                error_rate=1.0,
+            )
+        ])
+
+        with patch("apps.api_v2.views.service_mesh.get_prometheus_client", return_value=mock_client):
+            response = authenticated_client.get('/api/v2/service-mesh/get-metrics/')
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["summary"] == {
+            "total": 1,
+            "healthy": 0,
+            "degraded": 1,
+            "unreachable": 0,
+            "error": 0,
+        }
+        service = data["services"][0]
+        assert service["status"] == "degraded"
+        assert service["details"]["severity"] == "critical"
+        assert service["details"]["availability_status"] == "available"
+
+    @pytest.mark.django_db
+    def test_get_metrics_maps_unavailable_service_to_unreachable(self, authenticated_client):
+        mock_client = MagicMock()
+        mock_client.get_all_services_metrics = AsyncMock(return_value=[
+            ServiceMetrics(
+                name="worker-workflows",
+                display_name="Worker Workflows",
+                status="critical",
+                availability_status="unavailable",
+                ops_per_minute=0.0,
+                active_operations=0,
+                p95_latency_ms=0.0,
+                error_rate=0.0,
+            )
+        ])
+
+        with patch("apps.api_v2.views.service_mesh.get_prometheus_client", return_value=mock_client):
+            response = authenticated_client.get('/api/v2/service-mesh/get-metrics/')
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "unhealthy"
+        assert data["summary"] == {
+            "total": 1,
+            "healthy": 0,
+            "degraded": 0,
+            "unreachable": 1,
+            "error": 0,
+        }
+        service = data["services"][0]
+        assert service["status"] == "unreachable"
+        assert service["details"]["severity"] == "critical"
+        assert service["details"]["availability_status"] == "unavailable"
+
 
 class TestServiceMeshGetHistory:
     """Test GET /api/v2/service-mesh/get-history/ endpoint."""

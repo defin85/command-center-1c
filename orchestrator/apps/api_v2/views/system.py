@@ -222,6 +222,15 @@ class SystemHealthView(APIView):
         return "healthy"
 
     @staticmethod
+    def _map_prometheus_service_status(metrics) -> str:
+        availability_status = getattr(metrics, "availability_status", "available")
+        if availability_status == "unavailable":
+            return "offline"
+        if metrics.status == "healthy":
+            return "online"
+        return "degraded"
+
+    @staticmethod
     def _strip_internal_fields(results: list[dict]) -> list[dict]:
         return [{k: v for k, v in item.items() if k != "_service_key"} for item in results]
 
@@ -596,12 +605,6 @@ class SystemHealthView(APIView):
         disabled_services = self._normalize_disabled_services(
             getattr(settings, "SYSTEM_HEALTH_DISABLED_SERVICES", ())
         )
-        status_map = {
-            "healthy": "online",
-            "degraded": "degraded",
-            "critical": "offline",
-        }
-
         api_gateway_url = getattr(settings, 'API_GATEWAY_URL', 'http://localhost:8180').rstrip('/')
         frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:15173').rstrip('/')
         worker_url = getattr(settings, 'WORKER_URL', 'http://localhost:9191').rstrip('/')
@@ -678,7 +681,7 @@ class SystemHealthView(APIView):
         if services_metrics:
             results = []
             for metrics in services_metrics:
-                status = status_map.get(metrics.status, "offline")
+                status = self._map_prometheus_service_status(metrics)
                 results.append(
                     self._build_service_payload(
                         metrics.name,
@@ -687,6 +690,12 @@ class SystemHealthView(APIView):
                         url_map,
                         source="prometheus",
                         details={
+                            "severity": metrics.status,
+                            "availability_status": getattr(
+                                metrics,
+                                "availability_status",
+                                "available",
+                            ),
                             "ops_per_minute": metrics.ops_per_minute,
                             "active_operations": metrics.active_operations,
                             "p95_latency_ms": metrics.p95_latency_ms,

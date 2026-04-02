@@ -109,6 +109,10 @@ const getBacklogCopy = (summary: PoolFactualSummary | null) => {
   return 'Read backlog is clear on the default sync lane.'
 }
 
+const countAttentionRequiredSettlements = (workspace: PoolFactualWorkspace | null | undefined) => (
+  workspace?.settlements.filter((row) => row.settlement?.status === 'attention_required').length ?? 0
+)
+
 const getSettlementHandoffTone = (workspace: PoolFactualWorkspace | null) => {
   if (!workspace || workspace.settlements.length === 0) {
     return 'unknown'
@@ -248,6 +252,10 @@ export function PoolFactualWorkspaceDetail({
             summary: {
               ...current.summary,
               pending_review_total: response.review_queue.summary.pending_total,
+              attention_required_total: Math.max(
+                countAttentionRequiredSettlements(current),
+                response.review_queue.summary.attention_required_total,
+              ),
             },
           }
         })

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
@@ -103,6 +103,99 @@ def _create_pool_scope(*, tenant: Tenant, suffix: str) -> tuple[OrganizationPool
         effective_from=date(2026, 1, 1),
     )
     return pool, leaf, edge, database
+
+
+def test_build_pool_factual_workspace_summary_uses_review_attention_when_settlement_attention_is_clear() -> None:
+    from apps.api_v2.views.intercompany_pools import _build_pool_factual_workspace_summary
+
+    synced_at = datetime.now(dt_timezone.utc)
+    batch = PoolBatch()
+    batch.settlement = PoolBatchSettlement(
+        status=PoolBatchSettlementStatus.DISTRIBUTED,
+        incoming_amount=Decimal("10.00"),
+        outgoing_amount=Decimal("10.00"),
+        open_balance=Decimal("0.00"),
+        freshness_at=synced_at,
+    )
+    checkpoint = PoolFactualSyncCheckpoint(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        last_synced_at=synced_at,
+        updated_at=synced_at,
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    summary = _build_pool_factual_workspace_summary(
+        quarter_start=date(2026, 1, 1),
+        settlements=[batch],
+        edge_balances=[],
+        checkpoints=[checkpoint],
+        review_queue={
+            "summary": {
+                "pending_total": 1,
+                "attention_required_total": 1,
+            }
+        },
+    )
+
+    assert summary["pending_review_total"] == 1
+    assert summary["attention_required_total"] == 1
+
+
+def test_build_pool_factual_workspace_summary_uses_worst_checkpoint_source_state() -> None:
+    from apps.api_v2.views.intercompany_pools import _build_pool_factual_workspace_summary
+
+    fresh_synced_at = datetime.now(dt_timezone.utc)
+    batch = PoolBatch()
+    batch.settlement = PoolBatchSettlement(
+        status=PoolBatchSettlementStatus.DISTRIBUTED,
+        incoming_amount=Decimal("10.00"),
+        outgoing_amount=Decimal("10.00"),
+        open_balance=Decimal("0.00"),
+        freshness_at=fresh_synced_at,
+    )
+    blocked_checkpoint = PoolFactualSyncCheckpoint(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        last_synced_at=fresh_synced_at,
+        updated_at=fresh_synced_at,
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "blocked_external_sessions",
+            "source_availability_detail": "locked by external sessions",
+            "freshness_target_seconds": 120,
+        },
+    )
+    latest_checkpoint = PoolFactualSyncCheckpoint(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        last_synced_at=fresh_synced_at + timedelta(microseconds=1),
+        updated_at=fresh_synced_at + timedelta(microseconds=1),
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    summary = _build_pool_factual_workspace_summary(
+        quarter_start=date(2026, 1, 1),
+        settlements=[batch],
+        edge_balances=[],
+        checkpoints=[blocked_checkpoint, latest_checkpoint],
+        review_queue={"summary": {"pending_total": 0, "attention_required_total": 0}},
+    )
+
+    assert summary["backlog_total"] == 0
+    assert summary["freshness_state"] == "fresh"
+    assert summary["source_availability"] == "blocked_external_sessions"
+    assert summary["source_availability_detail"] == "locked by external sessions"
 
 
 @pytest.mark.django_db
