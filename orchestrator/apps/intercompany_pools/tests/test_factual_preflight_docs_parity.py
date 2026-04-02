@@ -23,6 +23,8 @@ def test_factual_runbook_and_verify_document_live_preflight_command() -> None:
     assert expected_command in runbook
     assert "--database-id <pilot-db-uuid>" in runbook
     assert "--strict" in runbook
+    assert "boundary_probes" in runbook
+    assert "probe_ok" in runbook
     assert "/pools/factual?pool=<pool-uuid>&quarter_start=2026-01-01&focus=settlement&detail=1" in runbook
     assert "Create canonical batch" in runbook
     assert "quarter_start" in runbook
@@ -36,6 +38,8 @@ def test_factual_runbook_and_verify_document_live_preflight_command() -> None:
 
     assert expected_command in debug
     assert "pilot/preflight evidence" in debug
+    assert "boundary_probes" in debug
+    assert "probe_ok" in debug
     assert "/pools/factual" in debug
     assert "quarter_start" in debug
 

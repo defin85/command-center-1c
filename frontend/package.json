@@ -24,7 +24,7 @@
     "test:browser:extensions": "playwright test tests/browser/extensions-ui.spec.ts",
     "test:browser:forms": "playwright test tests/browser/form-field-ids.spec.ts",
     "test:browser:pools-full-flow": "playwright test tests/browser/pools-full-flow-ui.spec.ts",
-    "test:browser:ui-platform": "playwright test tests/browser/ui-platform-contract.spec.ts",
+    "test:browser:ui-platform": "playwright test tests/browser/ui-platform-contract.spec.ts --workers=1",
     "validate:ui-platform": "npm run generate:api && npm run lint && npm run test:run && npm run test:browser:ui-platform && npm run build:assets"
   },
   "dependencies": {

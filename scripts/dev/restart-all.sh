@@ -44,11 +44,6 @@ cd "$PROJECT_ROOT"
 # Load environment variables from .env.local
 load_env_file
 
-# Dev default: enable Go scheduler unless explicitly disabled in env.
-if [[ -z "${ENABLE_GO_SCHEDULER:-}" ]]; then
-    export ENABLE_GO_SCHEDULER=true
-fi
-
 # Флаги по умолчанию
 FORCE_REBUILD=false
 NO_REBUILD=false
@@ -161,19 +156,36 @@ restart_all_services() {
 
 restart_single_service() {
     local service=$1
+    local rebuild_target=""
+
+    if [[ "$(get_service_category "$service")" == "go" ]]; then
+        rebuild_target=$(resolve_go_service_binary_target "$service")
+    fi
 
     print_header "Перезапуск сервиса: $service"
 
     # Если это Go сервис и он в списке для пересборки
-    if [[ " ${GO_SERVICES[@]} " =~ " ${service} " ]] && [[ " ${REBUILD_SERVICES[@]} " =~ " ${service} " ]]; then
-        print_status "info" "Пересборка $service перед перезапуском..."
+    if [[ -n "$rebuild_target" ]] && [[ " ${REBUILD_SERVICES[@]} " =~ " ${rebuild_target} " ]]; then
+        if [[ "$rebuild_target" == "$service" ]]; then
+            print_status "info" "Пересборка $service перед перезапуском..."
+        else
+            print_status "info" "Пересборка shared binary $rebuild_target перед перезапуском $service..."
+        fi
         echo ""
 
-        if bash "$PROJECT_ROOT/scripts/build.sh" --service="$service"; then
-            print_status "success" "Сервис $service успешно пересобран"
+        if bash "$PROJECT_ROOT/scripts/build.sh" --service="$rebuild_target"; then
+            if [[ "$rebuild_target" == "$service" ]]; then
+                print_status "success" "Сервис $service успешно пересобран"
+            else
+                print_status "success" "Shared binary $rebuild_target успешно пересобран для $service"
+            fi
             echo ""
         else
-            print_status "error" "Ошибка при пересборке $service"
+            if [[ "$rebuild_target" == "$service" ]]; then
+                print_status "error" "Ошибка при пересборке $service"
+            else
+                print_status "error" "Ошибка при пересборке shared binary $rebuild_target для $service"
+            fi
             return 1
         fi
     fi
@@ -300,22 +312,25 @@ main() {
     # Режим: перезапуск одного сервиса
     if [ -n "$SINGLE_SERVICE" ]; then
         # Для Go сервисов: умная проверка изменений
-        if [[ " ${GO_SERVICES[@]} " =~ " ${SINGLE_SERVICE} " ]] && [ "$NO_REBUILD" = false ]; then
+        if [[ "$(get_service_category "$SINGLE_SERVICE")" == "go" ]] && [ "$NO_REBUILD" = false ]; then
+            local rebuild_target
+            rebuild_target=$(resolve_go_service_binary_target "$SINGLE_SERVICE")
             echo -e "${BLUE}Проверка изменений для $SINGLE_SERVICE...${NC}"
             echo ""
 
-            local status=$(detect_go_service_changes "$SINGLE_SERVICE")
+            local status
+            status=$(detect_go_service_changes "$rebuild_target")
 
             case "$status" in
                 REBUILD_NEEDED)
                     print_status "warning" "Обнаружены изменения → требуется пересборка"
-                    REBUILD_SERVICES+=("$SINGLE_SERVICE")
+                    REBUILD_SERVICES+=("$rebuild_target")
                     echo ""
                     ;;
                 UP_TO_DATE)
                     if [ "$FORCE_REBUILD" = true ]; then
                         print_status "info" "Принудительная пересборка (--force-rebuild)"
-                        REBUILD_SERVICES+=("$SINGLE_SERVICE")
+                        REBUILD_SERVICES+=("$rebuild_target")
                     else
                         print_status "success" "Бинарник актуален → пересборка не требуется"
                     fi

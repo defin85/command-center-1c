@@ -1930,6 +1930,10 @@ async function setupUiPlatformMocks(
       return fulfillJson(route, { runs: [POOL_RUN] })
     }
 
+    if (method === 'GET' && path === '/api/v2/pools/batches/') {
+      return fulfillJson(route, { batches: [], count: 0 })
+    }
+
     const poolRunReportMatch = path.match(/^\/api\/v2\/pools\/runs\/([^/]+)\/report\/$/)
     if (method === 'GET' && poolRunReportMatch) {
       if (counts) {
@@ -2453,6 +2457,7 @@ test('UI platform: /pools/runs keeps selected stage on browser back and forward'
   })
 
   await expect(page.getByRole('tab', { name: 'Inspect' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('pool-runs-lineage-binding-id')).toHaveText('binding-top-down', { timeout: 15000 })
 
   await page.getByRole('tab', { name: 'Retry Failed' }).click()
   await expect(page).toHaveURL(new RegExp(`\\/pools\\/runs\\?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=retry&detail=1$`))
@@ -2490,7 +2495,7 @@ test('UI platform: /pools/factual restores compact selection and detail workspac
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page)
 
-  await page.goto(`/pools/factual?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&focus=settlement&detail=1`, {
+  await page.goto(`/pools/factual?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&quarter_start=2026-01-01&focus=settlement&detail=1`, {
     waitUntil: 'domcontentloaded',
   })
 
@@ -2502,6 +2507,28 @@ test('UI platform: /pools/factual restores compact selection and detail workspac
   await expect(page.getByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.')).toBeVisible()
   await expect(page.getByText('focus=settlement')).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /pools/runs handoff to factual workspace preserves quarter_start', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto(`/pools/runs?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&stage=inspect&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByText('Run Lineage / Operator Report')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Open factual workspace' })).toBeVisible({ timeout: 15000 })
+  await page.getByRole('button', { name: 'Open factual workspace' }).click()
+
+  await expect(page).toHaveURL(
+    new RegExp(
+      `\\/pools\\/factual\\?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&quarter_start=2026-01-01&focus=settlement&detail=1$`
+    )
+  )
+  await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
+  await expect(page.getByText('Run-linked settlement handoff')).toBeVisible()
 })
 
 test('UI platform: /pools/factual opens review detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
@@ -2578,6 +2605,7 @@ test('UI platform: /operations opens inspect detail in a mobile-safe drawer with
     waitUntil: 'domcontentloaded',
   })
 
+  await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({ timeout: 15000 })
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
@@ -2972,8 +3000,8 @@ test('Runtime contract: /databases ignores same-route menu re-entry and keeps ma
 
   const databasesMenuItem = page.getByRole('menuitem', { name: /Databases/i })
 
-  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID)
-  await expect(page.getByText(`Database Workspace: ${DATABASE_RECORD.name}`)).toBeVisible()
+  await expect(page.getByText(`Database Workspace: ${DATABASE_RECORD.name}`)).toBeVisible({ timeout: 15000 })
+  await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID, { timeout: 15000 })
   await expect.poll(() => counts.databaseLists).toBe(1)
   await expect.poll(() => counts.clusterLists).toBe(1)
   await expect(counts.metadataManagementReads).toBe(0)
@@ -3188,8 +3216,9 @@ test('UI platform: /pools/execution-packs restores catalog context and keeps sel
 
   await page.goto('/pools/execution-packs?q=legacy&profile=bp-legacy&detail=1', { waitUntil: 'domcontentloaded' })
 
-  await expect(page.getByLabel('Search execution packs')).toHaveValue('legacy')
-  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
+  await expect(page.getByRole('heading', { name: 'Execution Packs', level: 2 })).toBeVisible({ timeout: 15000 })
+  await expect(page.getByLabel('Search execution packs')).toHaveValue('legacy', { timeout: 15000 })
+  await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive', { timeout: 15000 })
   await expect(page.getByText('legacy_archive · r1')).toBeVisible()
   await expect(page.getByText('Workflow definition key')).toHaveCount(0)
 

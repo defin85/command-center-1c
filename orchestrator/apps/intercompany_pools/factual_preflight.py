@@ -349,6 +349,18 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
         "accounting_register": len(accounting_rows),
         "information_register": len(information_rows),
     }
+    boundary_probes: dict[str, dict[str, Any]] = {
+        "accounting_register": {
+            "entity": accounting_entity,
+            "row_count": len(accounting_rows),
+            "probe_ok": True,
+        },
+        "information_register": {
+            "entity": scope_contract.information_register_entity,
+            "row_count": len(information_rows),
+            "probe_ok": True,
+        },
+    }
     document_refs_by_entity = _collect_accounting_document_refs(
         accounting_rows=accounting_rows,
         allowed_entities=scope_contract.document_entities,
@@ -363,6 +375,11 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
                 entity=entity,
             )
         boundary_reads[str(entity)] = len(rows)
+        boundary_probes[str(entity)] = {
+            "entity": str(entity),
+            "row_count": len(rows),
+            "probe_ok": True,
+        }
 
     return {
         "read_boundary_kind": "odata",
@@ -370,6 +387,7 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
         "account_code_refs": account_code_refs,
         "information_register_entity": REQUIRED_FACTUAL_INFORMATION_REGISTER,
         "boundary_reads": boundary_reads,
+        "boundary_probes": boundary_probes,
     }
 
 

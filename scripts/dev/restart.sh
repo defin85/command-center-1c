@@ -18,11 +18,6 @@ source "$PROJECT_ROOT/scripts/lib/init.sh"
 # Load environment variables from .env.local
 load_env_file
 
-# Dev default: enable Go scheduler unless explicitly disabled in env.
-if [[ -z "${ENABLE_GO_SCHEDULER:-}" ]]; then
-    export ENABLE_GO_SCHEDULER=true
-fi
-
 # Константы проекта (нужны для lifecycle.sh)
 PIDS_DIR="$PROJECT_ROOT/pids"
 LOGS_DIR="$PROJECT_ROOT/logs"

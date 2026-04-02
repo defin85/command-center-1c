@@ -542,6 +542,10 @@ async function expandFirstEdgeAdvanced(user: ReturnType<typeof userEvent.setup>)
 const EXTENDED_UI_TEST_TIMEOUT_MS = 60000
 const TOPOLOGY_EDITOR_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
 const SYNC_MODAL_TIMEOUT_MS = EXTENDED_UI_TEST_TIMEOUT_MS
+// Cold serial validation runs can push this end-to-end template instantiation flow
+// past the generic 60s UI budget because it hydrates the template catalog and
+// drives seven Select interactions before submit.
+const TEMPLATE_INSTANTIATION_TIMEOUT_MS = 90000
 
 function createAuthzValue(overrides: Partial<{ isStaff: boolean; isLoading: boolean }> = {}) {
   return {
@@ -1226,7 +1230,7 @@ describe('PoolCatalogPage', () => {
         edges: [],
       })
     )
-  }, TOPOLOGY_EDITOR_TIMEOUT_MS)
+  }, TEMPLATE_INSTANTIATION_TIMEOUT_MS)
 
   it('defaults fresh pool topology editor to template-based instantiation when graph is empty', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')

@@ -672,7 +672,16 @@ async function setupApiMocks(page: Page, state: PoolsUiMockState) {
         settlement: batch.settlement,
         run: runId ? state.runs.find((item) => String(item.id) === runId) ?? null : null,
         created: true,
-        sale_closing: null,
+        sale_closing: batchKind === 'sale'
+          ? {
+            execution_id: `sale-close-${batchId.slice(-12)}`,
+            operation_id: `sale-close-op-${batchId.slice(-12)}`,
+            enqueue_success: true,
+            enqueue_status: 'queued',
+            enqueue_error: null,
+            created_execution: true,
+          }
+          : null,
       }, 201)
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/parties/') {
@@ -1153,6 +1162,68 @@ test('Pools browser-flow: canonical batch drawer opens linked run context withou
   await expect.poll(() => page.url()).toContain(`run=${createdRunId}`)
   await expect(page.getByText('Lifecycle stage: Inspect')).toBeVisible()
   await expect(page.getByText('Selected run:')).toContainText(createdRunId.slice(0, 8))
+  await expect(batchDrawer).toBeHidden()
+})
+
+test('Pools browser-flow: canonical sale batch stays on runs workspace and omits receipt-only linkage fields', async ({ page }) => {
+  const poolId = '90000000-0000-4000-8000-000000000444'
+  const state: PoolsUiMockState = {
+    pools: [
+      {
+        id: poolId,
+        code: 'pool-sale-batch',
+        name: 'Sale Batch Pool',
+        description: 'Pool for canonical sale batch flow',
+        is_active: true,
+        metadata: {},
+        workflow_bindings: [buildDefaultWorkflowBinding(poolId)],
+        updated_at: NOW,
+      },
+    ],
+    graphByPoolId: {
+      [poolId]: {
+        pool_id: poolId,
+        date: '2026-01-01',
+        version: 'v1:pool-topology-sale-batch',
+        nodes: [],
+        edges: [],
+      },
+    },
+    runs: [],
+    batches: [],
+    createRunCalls: 0,
+    createBatchCalls: 0,
+    confirmCalls: 0,
+    topologyUpsertCalls: 0,
+    retryCalls: 0,
+    lastRetryPayload: null,
+    lastBatchPayload: null,
+  }
+
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto(`/pools/runs?pool=${poolId}&stage=create&detail=1`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Runs', exact: true })).toBeVisible()
+  await page.getByTestId('pool-runs-open-batch-intake').click()
+
+  const batchDrawer = page.getByTestId('pool-runs-batch-intake-drawer')
+  await expect(batchDrawer).toBeVisible()
+  await batchDrawer.locator('.ant-radio-button-wrapper', { hasText: 'sale' }).click()
+  await expect(batchDrawer.getByTestId('pool-runs-batch-intake-binding')).toHaveCount(0)
+  await expect(batchDrawer.getByTestId('pool-runs-batch-intake-start-organization')).toHaveCount(0)
+  await selectAntdOption(page, 'pool-runs-batch-intake-schema-template', 'json-template - JSON Template')
+  await page.getByTestId('pool-runs-batch-intake-source-reference').fill('sale-apr')
+  await page.getByTestId('pool-runs-batch-intake-submit').click()
+
+  await expect.poll(() => state.createBatchCalls).toBe(1)
+  await expect.poll(() => state.batches?.length ?? 0).toBe(1)
+  await expect.poll(() => state.runs.length).toBe(0)
+  await expect.poll(() => String(state.lastBatchPayload?.batch_kind || '')).toBe('sale')
+  await expect.poll(() => 'pool_workflow_binding_id' in (state.lastBatchPayload || {})).toBe(false)
+  await expect.poll(() => 'start_organization_id' in (state.lastBatchPayload || {})).toBe(false)
+  await expect(page.getByText('Sale batch accepted and closing workflow queued')).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`\\/pools\\/runs\\?pool=${poolId}$`))
   await expect(batchDrawer).toBeHidden()
 })
 

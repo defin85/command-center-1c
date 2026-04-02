@@ -248,6 +248,19 @@ start_service() {
 # Глобальная переменная для хранения PID последнего запущенного процесса
 LAST_SERVICE_PID=""
 
+resolve_go_service_binary_target() {
+    local service_name=$1
+
+    case "$service_name" in
+        worker-workflows)
+            echo "worker"
+            ;;
+        *)
+            echo "$service_name"
+            ;;
+    esac
+}
+
 ##############################################################################
 # PYTHON SERVICE STARTERS
 ##############################################################################
@@ -320,10 +333,8 @@ _start_python_service() {
 _start_go_service() {
     local service_name=$1
     local log_file="${LOGS_DIR:-logs}/${service_name}.log"
-    local effective_service_name="$service_name"
-    if [[ "$service_name" == "worker-workflows" ]]; then
-        effective_service_name="worker"
-    fi
+    local effective_service_name
+    effective_service_name=$(resolve_go_service_binary_target "$service_name")
 
     local binary_path
     binary_path=$(get_binary_path "$effective_service_name")
@@ -383,6 +394,12 @@ _start_go_service() {
             POOLOPS_ROUTE_ROLLOUT_PERCENT="$poolops_route_rollout_percent" \
             ENABLE_POOL_PUBLICATION_ODATA_CORE="$publication_core_enabled" \
             POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT="$publication_core_rollout_percent" \
+            "$binary_path" > "$log_file" 2>&1 &
+    elif [[ "$service_name" == "worker" ]]; then
+        # Keep scheduler ownership on worker-workflows for local shell entrypoints.
+        local scheduler_enabled="${WORKER_ENABLE_SCHEDULER:-false}"
+        nohup env \
+            ENABLE_GO_SCHEDULER="$scheduler_enabled" \
             "$binary_path" > "$log_file" 2>&1 &
     else
         nohup "$binary_path" > "$log_file" 2>&1 &

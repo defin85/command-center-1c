@@ -192,11 +192,6 @@ if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
     set +a
 fi
 
-# Dev default: enable Go scheduler unless explicitly disabled in env.
-if [[ -z "${ENABLE_GO_SCHEDULER:-}" ]]; then
-    export ENABLE_GO_SCHEDULER=true
-fi
-
 # Прокинуть VITE_BASE_HOST из CC1C_BASE_HOST если он не задан
 if [[ -n "${CC1C_BASE_HOST:-}" ]]; then
     if [[ -z "${VITE_BASE_HOST:-}" ]]; then

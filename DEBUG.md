@@ -260,6 +260,7 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 Ожидаемое поведение:
 - metadata refresh проходит через canonical Command Center path;
 - decision `go` означает, что required published surfaces доступны и live bounded read probe завершился без direct DB path;
+- успешный probe подтверждай по `live_probe.boundary_probes.<surface>.probe_ok=true`, а `boundary_reads.<surface>` трактуй только как row-count snapshot, который может быть `0` на пустом bounded slice;
 - JSON output сохраняем как pilot/preflight evidence для rollout gate `0.3`; reference bundle см. в `openspec/changes/archive/2026-03-29-add-pool-factual-balance-monitoring/artifacts/2026-03-29-pilot-preflight-evidence.json`.
 
 3. Создать canonical `receipt` batch и получить связанный `safe` `top_down` run:

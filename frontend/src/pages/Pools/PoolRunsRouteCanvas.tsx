@@ -1401,6 +1401,7 @@ export function PoolRunsPage() {
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const pendingRouteSyncRef = useRef<RouteSyncState | null>(null)
   const previousStageRef = useRef<PoolRunsStage>(DEFAULT_STAGE)
+  const previousSelectedPoolIdRef = useRef<string | null | undefined>(undefined)
   const previousSelectedRunIdRef = useRef<string | null>(null)
   const defaultGraphDateRef = useRef(getDefaultGraphDate())
   const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
@@ -1443,6 +1444,9 @@ export function PoolRunsPage() {
 
   selectedPoolIdRef.current = selectedPoolId
   selectedRunIdRef.current = selectedRunId
+  if (previousSelectedPoolIdRef.current === undefined) {
+    previousSelectedPoolIdRef.current = selectedPoolId
+  }
 
   const selectedRun = useMemo(
     () => runs.find((item) => item.id === selectedRunId) ?? null,
@@ -1823,6 +1827,10 @@ export function PoolRunsPage() {
   }, [loadingPools, pools, selectedPoolId])
 
   useEffect(() => {
+    if (previousSelectedPoolIdRef.current === selectedPoolId) {
+      return
+    }
+    previousSelectedPoolIdRef.current = selectedPoolId
     setRuns([])
     setSelectedRunId(null)
     setReport(null)

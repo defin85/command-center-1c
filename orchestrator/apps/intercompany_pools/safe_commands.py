@@ -98,13 +98,21 @@ def process_pool_run_safe_command(
     command_fingerprint = "v1"
 
     with transaction.atomic():
+        run_link = PoolRun.objects.filter(id=run_id).values("workflow_execution_id").first()
+        if run_link is None:
+            raise PoolRun.DoesNotExist(f"Pool run {run_id} does not exist")
+        initial_execution_id = run_link.get("workflow_execution_id")
+        if initial_execution_id is None:
+            raise ValueError("Pool run is not linked to workflow execution")
+
+        execution = WorkflowExecution.objects.select_for_update().get(id=initial_execution_id)
         run = PoolRun.objects.select_for_update().filter(id=run_id).first()
         if run is None:
             raise PoolRun.DoesNotExist(f"Pool run {run_id} does not exist")
         if run.workflow_execution_id is None:
             raise ValueError("Pool run is not linked to workflow execution")
-
-        execution = WorkflowExecution.objects.select_for_update().get(id=run.workflow_execution_id)
+        if run.workflow_execution_id != execution.id:
+            raise RuntimeError("Pool run workflow execution changed during safe command processing")
 
         existing = _load_existing_command_log(
             run=run,

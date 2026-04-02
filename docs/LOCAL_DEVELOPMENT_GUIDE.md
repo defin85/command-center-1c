@@ -49,7 +49,7 @@
 │                                         │
 │  React Frontend (port 15173)            │
 │  Go API Gateway (port 8180)             │
-│  Go Worker                              │
+│  Go Worker (ops + workflows)            │
 │  Django Orchestrator (port 8200)        │
 │                                         │
 └─────────────┬───────────────────────────┘
@@ -236,7 +236,7 @@ chmod +x scripts/dev/*.sh
 2. Django migrations
 3. Django Orchestrator
 4. Go API Gateway
-5. Go Worker
+5. Go Worker (`worker` for ops + `worker-workflows` for workflow/scheduler ownership)
 6. React Frontend
 
 ### Step 7: Verify Setup
@@ -503,6 +503,8 @@ ORCHESTRATOR_URL=http://localhost:8000  # ⚠️ localhost
 # Go Worker (Redis Streams routing)
 # По умолчанию worker читает `commands:worker:operations`.
 # Для разделения deployments (ops vs workflows) задавайте разные stream/group.
+# Локальный shell contract оставляет scheduler ownership на `worker-workflows`;
+# обычный `worker` должен стартовать с `ENABLE_GO_SCHEDULER=false`, если не нужен явный override.
 WORKER_ID=worker-1
 WORKER_POOL_SIZE=50
 WORKER_STREAM_NAME=commands:worker:operations
@@ -742,16 +744,20 @@ for i in {1..5}; do
     WORKER_ID="worker-ops-$i" \
     WORKER_STREAM_NAME="commands:worker:operations" \
     WORKER_CONSUMER_GROUP="worker-ops" \
+    ENABLE_GO_SCHEDULER="false" \
     nohup go run cmd/main.go > ../../logs/worker-ops-$i.log 2>&1 &
     echo $! > ../../pids/worker-ops-$i.pid
     cd ../..
 done
 
-# Start 1 workflow-worker (commands:worker:workflows)
+# Start 1 workflow-worker (commands:worker:workflows + scheduler ownership)
 cd go-services/worker
 WORKER_ID="worker-workflows-1" \
 WORKER_STREAM_NAME="commands:worker:workflows" \
 WORKER_CONSUMER_GROUP="worker-workflows" \
+ENABLE_GO_SCHEDULER="true" \
+ENABLE_POOLOPS_ROUTE="true" \
+ENABLE_POOL_PUBLICATION_ODATA_CORE="true" \
 nohup go run cmd/main.go > ../../logs/worker-workflows-1.log 2>&1 &
 echo $! > ../../pids/worker-workflows-1.pid
 cd ../..

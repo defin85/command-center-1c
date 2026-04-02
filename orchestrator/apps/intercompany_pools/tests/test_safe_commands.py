@@ -344,6 +344,38 @@ def test_safe_commands_confirm_noop_backfills_pool_run_confirmation_for_approved
 
 
 @pytest.mark.django_db
+def test_safe_commands_confirm_locks_workflow_execution_before_pool_run() -> None:
+    run = _create_safe_run_with_awaiting_approval_execution()
+
+    lock_order: list[str] = []
+    original_execution_select_for_update = WorkflowExecution.objects.select_for_update
+    original_run_select_for_update = PoolRun.objects.select_for_update
+
+    def _track_execution_lock(*args, **kwargs):
+        lock_order.append("execution")
+        return original_execution_select_for_update(*args, **kwargs)
+
+    def _track_run_lock(*args, **kwargs):
+        lock_order.append("run")
+        return original_run_select_for_update(*args, **kwargs)
+
+    with (
+        patch.object(WorkflowExecution.objects, "select_for_update", side_effect=_track_execution_lock),
+        patch.object(PoolRun.objects, "select_for_update", side_effect=_track_run_lock),
+    ):
+        outcome = process_pool_run_safe_command(
+            run_id=run.id,
+            command_type=PoolRunCommandType.CONFIRM_PUBLICATION,
+            idempotency_key="confirm-lock-order-1",
+        )
+
+    assert outcome.response_status_code == 202
+    assert lock_order
+    assert lock_order[0] == "execution"
+    assert "run" in lock_order[1:]
+
+
+@pytest.mark.django_db
 def test_safe_commands_variant_a_atomicity_rolls_back_command_log_when_outbox_write_fails() -> None:
     run = _create_safe_run_with_awaiting_approval_execution()
     execution = WorkflowExecution.objects.get(id=run.workflow_execution_id)

@@ -1,6 +1,15 @@
 import type {
+  PoolBatch,
+  PoolBatchCreateResponse,
   PoolBatchCreatePayload,
+  PoolBatchListResponse,
+  PoolBatchSettlement,
+  PoolFactualEdgeBalance,
+  PoolFactualReviewActionResponse,
+  PoolFactualReviewQueue,
+  PoolFactualReviewQueueItem,
   PoolFactualSummary,
+  PoolFactualWorkspace,
   CreatePoolTopologyTemplatePayload,
   CreatePoolTopologyTemplateRevisionPayload,
   CreatePoolRunPayload,
@@ -29,8 +38,18 @@ import type { DecisionTableRef as GeneratedDecisionTableRef } from './generated/
 import type { OrganizationPool as GeneratedOrganizationPool } from './generated/model/organizationPool'
 import type { OrganizationPoolUpsertRequest as GeneratedOrganizationPoolUpsertRequest } from './generated/model/organizationPoolUpsertRequest'
 import type { PoolGraphResponse as GeneratedPoolGraphResponse } from './generated/model/poolGraphResponse'
+import type { PoolBatch as GeneratedPoolBatch } from './generated/model/poolBatch'
+import type { PoolBatchCreateResponse as GeneratedPoolBatchCreateResponse } from './generated/model/poolBatchCreateResponse'
 import type { PoolBatchCreateRequest as GeneratedPoolBatchCreateRequest } from './generated/model/poolBatchCreateRequest'
+import type { PoolBatchListResponse as GeneratedPoolBatchListResponse } from './generated/model/poolBatchListResponse'
+import type { PoolSaleClosingStartResponse as GeneratedPoolSaleClosingStartResponse } from './generated/model/poolSaleClosingStartResponse'
+import type { PoolBatchSettlement as GeneratedPoolBatchSettlement } from './generated/model/poolBatchSettlement'
+import type { PoolFactualBalanceSnapshot as GeneratedPoolFactualBalanceSnapshot } from './generated/model/poolFactualBalanceSnapshot'
+import type { PoolFactualReviewActionResponse as GeneratedPoolFactualReviewActionResponse } from './generated/model/poolFactualReviewActionResponse'
+import type { PoolFactualReviewQueue as GeneratedPoolFactualReviewQueue } from './generated/model/poolFactualReviewQueue'
+import type { PoolFactualReviewQueueItem as GeneratedPoolFactualReviewQueueItem } from './generated/model/poolFactualReviewQueueItem'
 import type { PoolFactualSummary as GeneratedPoolFactualSummary } from './generated/model/poolFactualSummary'
+import type { PoolFactualWorkspaceResponse as GeneratedPoolFactualWorkspaceResponse } from './generated/model/poolFactualWorkspaceResponse'
 import type { PoolRun as GeneratedPoolRun } from './generated/model/poolRun'
 import type { PoolRunCreateRequest as GeneratedPoolRunCreateRequest } from './generated/model/poolRunCreateRequest'
 import type { PoolRunReportResponse as GeneratedPoolRunReportResponse } from './generated/model/poolRunReportResponse'
@@ -52,6 +71,24 @@ import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelecto
 import type { WorkflowDefinitionRef as GeneratedWorkflowDefinitionRef } from './generated/model/workflowDefinitionRef'
 
 type AssertAssignable<TActual extends TExpected, TExpected> = TActual
+
+type GeneratedPoolBatchContractShape = Omit<GeneratedPoolBatch, 'settlement'> & {
+  settlement?: GeneratedPoolBatchSettlement | null
+}
+
+type GeneratedPoolBatchListResponseContractShape = Omit<GeneratedPoolBatchListResponse, 'batches'> & {
+  batches: GeneratedPoolBatchContractShape[]
+}
+
+type GeneratedPoolBatchCreateResponseContractShape = Omit<GeneratedPoolBatchCreateResponse, 'batch' | 'run' | 'sale_closing'> & {
+  batch: GeneratedPoolBatchContractShape
+  run?: GeneratedPoolRun | null
+  sale_closing?: GeneratedPoolSaleClosingStartResponse | null
+}
+
+type GeneratedPoolFactualWorkspaceResponseContractShape = Omit<GeneratedPoolFactualWorkspaceResponse, 'settlements'> & {
+  settlements: GeneratedPoolBatchContractShape[]
+}
 
 export type WorkflowDefinitionRefContract = AssertAssignable<WorkflowDefinitionRef, GeneratedWorkflowDefinitionRef>
 export type DecisionTableRefContract = AssertAssignable<DecisionTableRef, GeneratedDecisionTableRef>
@@ -79,7 +116,16 @@ export type PoolTopologyTemplateMutationResponseContract = AssertAssignable<
 export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRun>
 export type PoolRunReportContract = AssertAssignable<PoolRunReport, GeneratedPoolRunReportResponse>
 export type PoolGraphContract = AssertAssignable<PoolGraph, GeneratedPoolGraphResponse>
+export type PoolBatchSettlementContract = AssertAssignable<PoolBatchSettlement, GeneratedPoolBatchSettlement>
+export type PoolBatchContract = AssertAssignable<PoolBatch, GeneratedPoolBatchContractShape>
+export type PoolBatchListResponseContract = AssertAssignable<PoolBatchListResponse, GeneratedPoolBatchListResponseContractShape>
+export type PoolBatchCreateResponseContract = AssertAssignable<PoolBatchCreateResponse, GeneratedPoolBatchCreateResponseContractShape>
 export type PoolFactualSummaryContract = AssertAssignable<PoolFactualSummary, GeneratedPoolFactualSummary>
+export type PoolFactualEdgeBalanceContract = AssertAssignable<PoolFactualEdgeBalance, GeneratedPoolFactualBalanceSnapshot>
+export type PoolFactualReviewQueueItemContract = AssertAssignable<PoolFactualReviewQueueItem, GeneratedPoolFactualReviewQueueItem>
+export type PoolFactualReviewQueueContract = AssertAssignable<PoolFactualReviewQueue, GeneratedPoolFactualReviewQueue>
+export type PoolFactualWorkspaceContract = AssertAssignable<PoolFactualWorkspace, GeneratedPoolFactualWorkspaceResponseContractShape>
+export type PoolFactualReviewActionResponseContract = AssertAssignable<PoolFactualReviewActionResponse, GeneratedPoolFactualReviewActionResponse>
 export type PoolRunSafeCommandResponseContract = AssertAssignable<PoolRunSafeCommandResponse, GeneratedPoolRunSafeCommandResponse>
 export type PoolRunSafeCommandConflictContract = AssertAssignable<PoolRunSafeCommandConflict, GeneratedPoolRunSafeCommandConflict>
 export type PoolRunRetryAcceptedResponseContract = AssertAssignable<PoolRunRetryAcceptedResponse, GeneratedPoolRunRetryAcceptedResponse>

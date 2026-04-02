@@ -37,7 +37,7 @@ alias cc1c-factual-preflight='cd /home/egor/code/command-center-1c/orchestrator 
 cc1c-factual-preflight --help
 ```
 
-- `worker-workflows` shipped default path now starts with `ENABLE_GO_SCHEDULER=true`, `ENABLE_POOLOPS_ROUTE=true` and `ENABLE_POOL_PUBLICATION_ODATA_CORE=true` from checked-in env/preset surfaces (`.env.example`, `.env.workflow`, `docker-compose.yml`, `scripts/lib/lifecycle.sh`).
+- Default local shell entrypoints keep factual scheduler ownership on `worker-workflows`: the regular `worker` starts with `ENABLE_GO_SCHEDULER=false` unless explicitly overridden, while `worker-workflows` keeps `ENABLE_GO_SCHEDULER=true`, `ENABLE_POOLOPS_ROUTE=true` and `ENABLE_POOL_PUBLICATION_ODATA_CORE=true` from checked-in env/preset surfaces plus `scripts/lib/lifecycle.sh`.
 - Active-quarter factual refresh runs through scheduler + workspace default sync; closed-quarter reconcile runs through dedicated nightly scheduler entrypoint on the same `worker-workflows` runtime family.
 - Before widening pilot cohort, run factual published-surfaces preflight from Command Center against the target pool/quarter and a bounded set of pilot infobases. The command refreshes metadata through the canonical metadata path and then executes read-only bounded OData probes with the same default factual sync scope.
 - Fast sanity checks:
@@ -63,6 +63,7 @@ cd orchestrator && ./venv/bin/python manage.py preflight_pool_factual_sync \
 ```
 
 - `decision=go` means the cohort passed all mandatory checks: source availability, metadata refresh, required published surfaces, bounded quarter/org/account/movement scope, and live read-only OData probes for the accounting register, information register, and factual documents.
+- Use `databases[].live_probe.boundary_probes.*.probe_ok=true` as the proof that the probe actually executed. `boundary_reads.*` stays a row-count snapshot and may legitimately be `0` for an empty bounded slice.
 - A checked-in reference bundle for the pilot gate lives at `openspec/changes/archive/2026-03-29-add-pool-factual-balance-monitoring/artifacts/2026-03-29-pilot-preflight-evidence.json`.
 - When re-running the gate for another tenant or cohort, save the fresh JSON output next to that reference bundle; repository docs describe the command, but tenant-specific go/no-go still comes from running it on the target pilot infobases.
 - Live acceptance for the default path is verified by the shipped sequence `POST /api/v2/pools/batches/ -> GET /api/v2/pools/runs/<run>/report/ -> POST /api/v2/pools/runs/<run>/confirm-publication/ -> GET /api/v2/pools/factual/workspace/`.

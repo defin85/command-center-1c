@@ -63,6 +63,25 @@ def test_generated_v2_has_document_policy_migration_operation_from_openapi() -> 
     assert "url: `/api/v2/pools/${poolId}/document-policy-migrations/`" in content
 
 
+def test_generated_v2_has_pool_batch_and_factual_operations_from_openapi() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+    assert "/api/v2/pools/batches/" in paths
+    assert "/api/v2/pools/factual/workspace/" in paths
+    assert "/api/v2/pools/factual/review-actions/" in paths
+
+    generated_v2_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "v2" / "v2.ts"
+    content = generated_v2_path.read_text(encoding="utf-8")
+
+    assert "postPoolsBatches" in content
+    assert "getPoolsFactualWorkspace" in content
+    assert "postPoolsFactualReviewActions" in content
+    assert "url: `/api/v2/pools/batches/`" in content
+    assert "url: `/api/v2/pools/factual/workspace/`" in content
+    assert "url: `/api/v2/pools/factual/review-actions/`" in content
+
+
 def test_generated_models_cover_contract_pool_runs_schemas() -> None:
     contract = _load_openapi_contract()
 
@@ -102,7 +121,7 @@ def test_generated_pool_run_readiness_blocker_exposes_topology_alias_context_fie
     ).read_text(encoding="utf-8")
 
     assert "import type { PoolRunReadinessBlockerEdgeRef } from './poolRunReadinessBlockerEdgeRef';" in content
-    assert re.search(r"edge_ref\?: PoolRunReadinessBlockerEdgeRef \| null;", content)
+    assert re.search(r"edge_ref\?: PoolRunReadinessBlockerEdgeRef;", content)
     assert re.search(r"participant_side\?: string \| null;", content)
     assert re.search(r"required_role\?: string \| null;", content)
 
@@ -377,6 +396,60 @@ def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
     assert re.search(r"retry:\s*['\"]retry['\"]", enum_content)
 
 
+def test_generated_models_cover_pool_batch_and_factual_schemas() -> None:
+    contract = _load_openapi_contract()
+
+    checks = {
+        "PoolSaleClosingStartResponse": "poolSaleClosingStartResponse.ts",
+        "PoolBatchSettlement": "poolBatchSettlement.ts",
+        "PoolBatch": "poolBatch.ts",
+        "PoolBatchListResponse": "poolBatchListResponse.ts",
+        "PoolBatchCreateResponse": "poolBatchCreateResponse.ts",
+        "PoolFactualSummary": "poolFactualSummary.ts",
+        "PoolFactualBalanceSnapshot": "poolFactualBalanceSnapshot.ts",
+        "PoolFactualReviewQueueSummary": "poolFactualReviewQueueSummary.ts",
+        "PoolFactualReviewQueueItem": "poolFactualReviewQueueItem.ts",
+        "PoolFactualReviewQueue": "poolFactualReviewQueue.ts",
+        "PoolFactualWorkspaceResponse": "poolFactualWorkspaceResponse.ts",
+        "PoolFactualReviewActionResponse": "poolFactualReviewActionResponse.ts",
+    }
+
+    for schema_name, model_file in checks.items():
+        schema = _schema(contract, schema_name)
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        generated_fields = _generated_model_fields(model_file)
+        assert set(properties.keys()).issubset(generated_fields), (
+            f"{schema_name} fields missing in generated model {model_file}: "
+            f"{sorted(set(properties.keys()) - generated_fields)}"
+        )
+
+    batch_create_response_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolBatchCreateResponse.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"sale_closing\?: PoolSaleClosingStartResponse;", batch_create_response_content)
+
+    factual_workspace_content = (
+        _repo_root()
+        / "frontend"
+        / "src"
+        / "api"
+        / "generated"
+        / "model"
+        / "poolFactualWorkspaceResponse.ts"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"summary: PoolFactualSummary;", factual_workspace_content)
+    assert re.search(r"settlements: PoolBatch\[];", factual_workspace_content)
+    assert re.search(r"edge_balances: PoolFactualBalanceSnapshot\[];", factual_workspace_content)
+    assert re.search(r"review_queue: PoolFactualReviewQueue;", factual_workspace_content)
+
+
 def test_generated_models_cover_graph_metadata_fields_from_contract() -> None:
     contract = _load_openapi_contract()
 
@@ -438,3 +511,22 @@ def test_generated_confirm_publication_error_alias_uses_readiness_problem_detail
     )
     assert re.search(r"export type PostPoolsRunsConfirmPublicationError = ErrorType<", content)
     assert "PoolRunConfirmPublicationReadinessProblemDetails" in content
+
+
+def test_frontend_contract_aliases_cover_pool_batch_and_factual_response_surfaces() -> None:
+    contracts_path = _repo_root() / "frontend" / "src" / "api" / "intercompanyPools.contracts.ts"
+    content = contracts_path.read_text(encoding="utf-8")
+
+    assert "type GeneratedPoolBatchContractShape = Omit<GeneratedPoolBatch, 'settlement'> & {" in content
+    assert "type GeneratedPoolBatchListResponseContractShape = Omit<GeneratedPoolBatchListResponse, 'batches'> & {" in content
+    assert "type GeneratedPoolBatchCreateResponseContractShape = Omit<GeneratedPoolBatchCreateResponse, 'batch' | 'run' | 'sale_closing'> & {" in content
+    assert "type GeneratedPoolFactualWorkspaceResponseContractShape = Omit<GeneratedPoolFactualWorkspaceResponse, 'settlements'> & {" in content
+    assert "export type PoolBatchSettlementContract = AssertAssignable<PoolBatchSettlement, GeneratedPoolBatchSettlement>" in content
+    assert "export type PoolBatchContract = AssertAssignable<PoolBatch, GeneratedPoolBatchContractShape>" in content
+    assert "export type PoolBatchListResponseContract = AssertAssignable<PoolBatchListResponse, GeneratedPoolBatchListResponseContractShape>" in content
+    assert "export type PoolBatchCreateResponseContract = AssertAssignable<PoolBatchCreateResponse, GeneratedPoolBatchCreateResponseContractShape>" in content
+    assert "export type PoolFactualEdgeBalanceContract = AssertAssignable<PoolFactualEdgeBalance, GeneratedPoolFactualBalanceSnapshot>" in content
+    assert "export type PoolFactualReviewQueueItemContract = AssertAssignable<PoolFactualReviewQueueItem, GeneratedPoolFactualReviewQueueItem>" in content
+    assert "export type PoolFactualReviewQueueContract = AssertAssignable<PoolFactualReviewQueue, GeneratedPoolFactualReviewQueue>" in content
+    assert "export type PoolFactualWorkspaceContract = AssertAssignable<PoolFactualWorkspace, GeneratedPoolFactualWorkspaceResponseContractShape>" in content
+    assert "export type PoolFactualReviewActionResponseContract = AssertAssignable<PoolFactualReviewActionResponse, GeneratedPoolFactualReviewActionResponse>" in content
