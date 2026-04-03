@@ -35,9 +35,9 @@
 ### Requirement: Account token validation MUST оставаться metadata-aware и configuration-scoped
 Система ДОЛЖНА (SHALL) валидировать `master_data.gl_account.<canonical_id>.ref` против resolved metadata snapshot выбранной target business configuration identity.
 
-Система ДОЛЖНА (SHALL) принимать такой token только для field paths, которые metadata snapshot распознаёт как ссылку на target chart-of-accounts object.
+Система ДОЛЖНА (SHALL) принимать такой token только для field paths, которые metadata snapshot и typed OData metadata contract распознают как ссылку на target chart-of-accounts object.
 
-Система НЕ ДОЛЖНА (SHALL NOT) принимать account token только по имени поля или по совпадению account code без metadata-aware compatibility validation.
+Система НЕ ДОЛЖНА (SHALL NOT) принимать account token только по имени поля, по legacy allowlist или по совпадению account code без metadata-aware compatibility validation.
 
 #### Scenario: Account token в несовместимом field path блокирует compile fail-closed
 - **GIVEN** `document_policy` содержит `master_data.gl_account.sales-revenue.ref`

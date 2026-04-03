@@ -20,11 +20,26 @@ Workspace ДОЛЖЕН (SHALL) быть доступен из основного
 - **THEN** система отображает рабочие зоны `Party`, `Item`, `Contract`, `TaxProfile`, `GLAccount`, `GLAccountSet`, `Bindings`
 - **AND** операции выполняются в tenant scope без cross-tenant данных
 
+### Requirement: `/pools/master-data` MUST расширять canonical platform workspace shell
+Система ДОЛЖНА (SHALL) реализовать `/pools/master-data` как расширение canonical platform workspace shell для Pools surfaces, используя route-level foundation, совместимый с project platform primitives, а не отдельный ad hoc page shell.
+
+Система НЕ ДОЛЖНА (SHALL NOT) вводить второй competing route foundation на raw `Card + Tabs` или другой standalone page composition, если canonical workspace shell уже определён для этого surface.
+
+Этот change ДОЛЖЕН (SHALL) ограничивать свою UI-работу добавлением новых зон, форм, detail/list surfaces и API wiring внутри canonical shell, а не повторным проектированием базовой route-level layout foundation.
+Preparatory compatibility wrappers МОГУТ (MAY) существовать временно, но НЕ ДОЛЖНЫ (SHALL NOT) считаться выполнением этого требования или оправданием для shipping competing route foundation.
+
+#### Scenario: Расширение master-data workspace не fork'ает platform migration
+- **GIVEN** для `/pools/master-data` существует canonical platform workspace shell
+- **WHEN** команда добавляет зоны `GLAccount`, `GLAccountSet`, `Bindings` и `Bootstrap Import`
+- **THEN** route-level foundation переиспользуется из canonical shell
+- **AND** change не создаёт второй параллельный layout migration для того же route
+
 ### Requirement: Workspace MUST показывать compatibility markers и revision semantics для reusable accounts
 Система ДОЛЖНА (SHALL) отображать для `GLAccount` и `GLAccountSet` operator-facing сведения о compatibility scope и revision state, достаточные для безопасного выбора профиля в publication/factual contexts.
 
 Система ДОЛЖНА (SHALL) различать как минимум:
 - target business/configuration compatibility markers;
+- pinned metadata/published-surface admission evidence для target infobase;
 - latest revision;
 - pinned runtime revision, если профиль уже используется в readiness/checkpoint/execution context.
 
@@ -34,6 +49,21 @@ Workspace ДОЛЖЕН (SHALL) быть доступен из основного
 - **WHEN** оператор открывает detail `GLAccountSet`
 - **THEN** UI явно показывает latest revision и pinned runtime revision как разные состояния
 - **AND** оператор не воспринимает latest revision как уже автоматически применённую к historical runtime contexts
+
+### Requirement: Workspace MUST отражать capability-gated sync semantics для reusable account entities
+Система ДОЛЖНА (SHALL) строить operator-facing sync affordances для `GLAccount` и `GLAccountSet` из того же executable reusable-data capability contract, который используется backend runtime.
+
+Для этого change:
+- `GLAccount` МОЖЕТ (MAY) отображаться в sync-oriented surface только как `bootstrap-only` / `unsupported-by-design` для outbound и bidirectional directions;
+- `GLAccountSet` НЕ ДОЛЖЕН (SHALL NOT) получать direct mutating sync actions и МОЖЕТ (MAY) быть скрыт из mutation-oriented sync list или показан как non-actionable profile state;
+- generic `Sync` zone НЕ ДОЛЖНА (SHALL NOT) создавать impression, что `GLAccount` или `GLAccountSet` поддерживают direct `CC -> ИБ` mutation в рамках этого change.
+
+#### Scenario: Sync zone не предлагает мутации для account entities, где capability их запрещает
+- **GIVEN** оператор открывает `/pools/master-data` и зону, связанную с sync/governance
+- **WHEN** UI строит доступные действия для `GLAccount` и `GLAccountSet`
+- **THEN** `GLAccount` не получает generic outbound/bidirectional mutate action
+- **AND** `GLAccountSet` не отображается как mutating sync entity
+- **AND** оператор видит явное non-actionable состояние вместо ложного универсального `Sync`
 
 ### Requirement: Master-data API MUST использовать Problem Details контракт для ошибок
 Система ДОЛЖНА (SHALL) возвращать ошибки reusable-data workspace endpoint-ов в формате `application/problem+json`.
@@ -64,6 +94,7 @@ Problem payload ДОЛЖЕН (SHALL) включать поля `type`, `title`, 
 - для `GLAccount`: `(canonical_id, entity_type, database_id, chart_identity)`.
 
 Система ДОЛЖНА (SHALL) отображать machine-readable конфликтные ответы backend без потери введённых оператором данных.
+`chart_identity` ДОЛЖЕН (SHALL) быть отдельным operator-facing полем формы и списка bindings, а не скрытым metadata-only значением.
 
 #### Scenario: Оператор настраивает GLAccount binding для target chart
 - **GIVEN** оператор открыл зону `Bindings`
