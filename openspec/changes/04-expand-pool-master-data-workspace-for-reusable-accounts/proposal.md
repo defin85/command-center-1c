@@ -13,6 +13,9 @@ UI-часть umbrella change смешивает доменную account-мод
 - Расширить token picker поддержкой `master_data.gl_account.*.ref`.
 - Расширить bootstrap import UI поддержкой `GLAccount`.
 - Подключить token picker, sync affordances и entity catalogs к generated reusable-data registry contract.
+- Дочистить оставшийся shared UI helper tail после `01-add-reusable-data-registry-and-capability-gates`:
+  - использовать registry `label` как operator-facing caption вместо raw `entity_type`;
+  - убрать string-specific defaults вроде special-case исключения `'binding'`, если требуемое поведение уже выражается через registry contract и page intent.
 - Показать capability-gated sync/readiness states для reusable accounts без generic mutating controls.
 - Не вводить новый route-level shell, новый parallel layout contract или альтернативную page foundation.
 

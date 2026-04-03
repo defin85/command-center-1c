@@ -38,10 +38,6 @@ import {
   getOrganization,
   getPoolGraph,
   listPoolWorkflowBindings,
-  listMasterDataContracts,
-  listMasterDataItems,
-  listMasterDataParties,
-  listMasterDataTaxProfiles,
   listPoolTopologyTemplates,
   listPoolTopologySnapshots,
   listOrganizationPools,
@@ -56,11 +52,7 @@ import {
   type OrganizationStatus,
   type PoolGraph,
   type PoolMasterBindingCatalogKind,
-  type PoolMasterContract,
-  type PoolMasterItem,
-  type PoolMasterParty,
   type PoolMasterDataRegistryEntry,
-  type PoolMasterTaxProfile,
   type PoolTopologyTemplate,
   type PoolTopologyTemplateRevision,
   type PoolTopologyTemplateEdge,
@@ -117,12 +109,17 @@ import {
   isMasterDataTokenLike,
   parseMasterDataToken,
 } from './masterData/registry'
+import {
+  EMPTY_POOL_MASTER_DATA_TOKEN_CATALOG,
+  getPoolMasterDataTokenCatalogOptions,
+  loadPoolMasterDataTokenCatalog,
+  type PoolMasterDataTokenCatalogSnapshot,
+} from './masterData/tokenCatalog'
 
 const { Text } = Typography
 const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
-const MASTER_DATA_TOKEN_CATALOG_LIMIT = 200
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 const TOPOLOGY_DOCUMENT_POLICY_BUILDER_ENABLED = false
@@ -1957,10 +1954,9 @@ export function PoolCatalogPage() {
   const [metadataCatalogByDatabase, setMetadataCatalogByDatabase] = useState<Record<string, PoolODataMetadataCatalogResponse>>({})
   const [metadataCatalogLoadingByDatabase, setMetadataCatalogLoadingByDatabase] = useState<Record<string, boolean>>({})
   const [metadataCatalogErrorByDatabase, setMetadataCatalogErrorByDatabase] = useState<Record<string, string>>({})
-  const [masterDataParties, setMasterDataParties] = useState<PoolMasterParty[]>([])
-  const [masterDataItems, setMasterDataItems] = useState<PoolMasterItem[]>([])
-  const [masterDataContracts, setMasterDataContracts] = useState<PoolMasterContract[]>([])
-  const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
+  const [masterDataTokenCatalog, setMasterDataTokenCatalog] = useState<PoolMasterDataTokenCatalogSnapshot>(
+    EMPTY_POOL_MASTER_DATA_TOKEN_CATALOG
+  )
   const [masterDataRegistryEntries, setMasterDataRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
   const [loadingMasterDataRegistry, setLoadingMasterDataRegistry] = useState(false)
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
@@ -2389,59 +2385,18 @@ export function PoolCatalogPage() {
     [organizations]
   )
 
-  const masterDataPartyOptions = useMemo(
-    () => masterDataParties
-      .map((item) => ({
-        value: item.canonical_id,
-        label: `${item.canonical_id} - ${item.name}`,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [masterDataParties]
-  )
-  const masterDataCounterpartyOptions = useMemo(
-    () => masterDataParties
-      .filter((item) => item.is_counterparty)
-      .map((item) => ({
-        value: item.canonical_id,
-        label: `${item.canonical_id} - ${item.name}`,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [masterDataParties]
-  )
-  const masterDataItemOptions = useMemo(
-    () => masterDataItems
-      .map((item) => ({
-        value: item.canonical_id,
-        label: `${item.canonical_id} - ${item.name}`,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [masterDataItems]
-  )
-  const masterDataContractOptions = useMemo(
-    () => masterDataContracts
-      .map((item) => ({
-        value: item.canonical_id,
-        label: `${item.canonical_id} - ${item.name}`,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [masterDataContracts]
-  )
-  const masterDataContractByCanonicalId = useMemo(() => (
-    Object.fromEntries(masterDataContracts.map((item) => [item.canonical_id, item]))
-  ), [masterDataContracts])
-  const masterDataTaxProfileOptions = useMemo(
-    () => masterDataTaxProfiles
-      .map((item) => ({
-        value: item.canonical_id,
-        label: item.canonical_id,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label)),
-    [masterDataTaxProfiles]
-  )
   const masterDataTokenEntityOptions = useMemo(
     () => getTokenEntityOptions(masterDataRegistryEntries),
     [masterDataRegistryEntries]
   )
+  const masterDataTokenEntityCatalogSignature = useMemo(
+    () => masterDataTokenEntityOptions
+      .map((option) => option.value)
+      .sort((left, right) => left.localeCompare(right))
+      .join('|'),
+    [masterDataTokenEntityOptions]
+  )
+  const [loadedMasterDataTokenCatalogSignature, setLoadedMasterDataTokenCatalogSignature] = useState('')
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
@@ -2649,47 +2604,32 @@ export function PoolCatalogPage() {
   const loadMasterDataTokenCatalog = useCallback(async () => {
     if (!hasTenantContext) {
       setMasterDataRegistryEntries([])
-      setMasterDataParties([])
-      setMasterDataItems([])
-      setMasterDataContracts([])
-      setMasterDataTaxProfiles([])
+      setMasterDataTokenCatalog(EMPTY_POOL_MASTER_DATA_TOKEN_CATALOG)
+      setLoadedMasterDataTokenCatalogSignature('')
       return
     }
-    const tokenEntityTypes = new Set(masterDataTokenEntityOptions.map((option) => option.value))
-    if (tokenEntityTypes.size === 0) {
-      setMasterDataParties([])
-      setMasterDataItems([])
-      setMasterDataContracts([])
-      setMasterDataTaxProfiles([])
+    if (!masterDataTokenEntityCatalogSignature) {
+      setMasterDataTokenCatalog(EMPTY_POOL_MASTER_DATA_TOKEN_CATALOG)
+      setLoadedMasterDataTokenCatalogSignature('')
       return
     }
     setLoadingMasterDataTokenCatalog(true)
     setMasterDataTokenCatalogError(null)
     try {
-      const [partiesPayload, itemsPayload, contractsPayload, taxProfilesPayload] = await Promise.all([
-        tokenEntityTypes.has('party')
-          ? listMasterDataParties({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
-          : Promise.resolve({ parties: [] }),
-        tokenEntityTypes.has('item')
-          ? listMasterDataItems({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
-          : Promise.resolve({ items: [] }),
-        tokenEntityTypes.has('contract')
-          ? listMasterDataContracts({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
-          : Promise.resolve({ contracts: [] }),
-        tokenEntityTypes.has('tax_profile')
-          ? listMasterDataTaxProfiles({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
-          : Promise.resolve({ tax_profiles: [] }),
-      ])
-      setMasterDataParties(Array.isArray(partiesPayload.parties) ? partiesPayload.parties : [])
-      setMasterDataItems(Array.isArray(itemsPayload.items) ? itemsPayload.items : [])
-      setMasterDataContracts(Array.isArray(contractsPayload.contracts) ? contractsPayload.contracts : [])
-      setMasterDataTaxProfiles(Array.isArray(taxProfilesPayload.tax_profiles) ? taxProfilesPayload.tax_profiles : [])
+      const snapshot = await loadPoolMasterDataTokenCatalog(masterDataRegistryEntries)
+      setMasterDataTokenCatalog(snapshot)
+      setLoadedMasterDataTokenCatalogSignature(masterDataTokenEntityCatalogSignature)
+      if (snapshot.unsupported_entity_types.length > 0) {
+        setMasterDataTokenCatalogError(
+          `Token catalog compatibility loader is missing for registry-published entity types: ${snapshot.unsupported_entity_types.join(', ')}.`
+        )
+      }
     } catch {
       setMasterDataTokenCatalogError('Не удалось загрузить master-data каталог для token picker.')
     } finally {
       setLoadingMasterDataTokenCatalog(false)
     }
-  }, [hasTenantContext, masterDataTokenEntityOptions])
+  }, [hasTenantContext, masterDataRegistryEntries, masterDataTokenEntityCatalogSignature])
 
   const loadMasterDataRegistry = useCallback(async () => {
     if (!hasTenantContext) {
@@ -2834,12 +2774,7 @@ export function PoolCatalogPage() {
     if (activeWorkspaceTab !== 'topology') return
     if (!hasTenantContext) return
     if (masterDataRegistryEntries.length === 0) return
-    if (
-      masterDataParties.length > 0
-      || masterDataItems.length > 0
-      || masterDataContracts.length > 0
-      || masterDataTaxProfiles.length > 0
-    ) {
+    if (loadedMasterDataTokenCatalogSignature === masterDataTokenEntityCatalogSignature) {
       return
     }
     void loadMasterDataTokenCatalog()
@@ -2847,11 +2782,9 @@ export function PoolCatalogPage() {
     activeWorkspaceTab,
     hasTenantContext,
     loadMasterDataTokenCatalog,
+    loadedMasterDataTokenCatalogSignature,
     masterDataRegistryEntries.length,
-    masterDataContracts.length,
-    masterDataItems.length,
-    masterDataParties.length,
-    masterDataTaxProfiles.length,
+    masterDataTokenEntityCatalogSignature,
   ])
 
   useEffect(() => {
@@ -5333,21 +5266,13 @@ export function PoolCatalogPage() {
                                                                                       const contractOwnerDefault = (
                                                                                         tokenRegistryEntry?.entity_type === 'contract' && tokenCanonicalId
                                                                                           ? String(
-                                                                                            masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
-                                                                                            || ''
+                                                                                            masterDataTokenCatalog.contract_owner_by_canonical_id[tokenCanonicalId] || ''
                                                                                           ).trim()
                                                                                           : ''
                                                                                       )
-                                                                                      const tokenCanonicalOptions = (
-                                                                                        tokenEntityType === 'party'
-                                                                                          ? masterDataPartyOptions
-                                                                                          : tokenEntityType === 'item'
-                                                                                            ? masterDataItemOptions
-                                                                                            : tokenEntityType === 'contract'
-                                                                                              ? masterDataContractOptions
-                                                                                              : tokenEntityType === 'tax_profile'
-                                                                                                ? masterDataTaxProfileOptions
-                                                                                          : []
+                                                                                      const tokenCanonicalOptions = getPoolMasterDataTokenCatalogOptions(
+                                                                                        masterDataTokenCatalog,
+                                                                                        tokenEntityType,
                                                                                       )
                                                                                       const tokenPartyRoleOptions = getTokenQualifierOptions(
                                                                                         masterDataRegistryEntries,
@@ -5363,17 +5288,17 @@ export function PoolCatalogPage() {
                                                                                       )
                                                                                       const ownerCounterpartyOptions = (
                                                                                         contractOwnerDefault
-                                                                                        && !masterDataCounterpartyOptions.some(
+                                                                                        && !masterDataTokenCatalog.counterparty_options.some(
                                                                                           (item) => item.value === contractOwnerDefault
                                                                                         )
                                                                                           ? [
-                                                                                            ...masterDataCounterpartyOptions,
+                                                                                            ...masterDataTokenCatalog.counterparty_options,
                                                                                             {
                                                                                               value: contractOwnerDefault,
                                                                                               label: contractOwnerDefault,
                                                                                             },
                                                                                           ]
-                                                                                          : masterDataCounterpartyOptions
+                                                                                          : masterDataTokenCatalog.counterparty_options
                                                                                       )
                                                                                       const tokenPreview = sourceType === 'master_data_token'
                                                                                         ? buildMasterDataToken({
@@ -5695,21 +5620,13 @@ export function PoolCatalogPage() {
                                                                                                   const contractOwnerDefault = (
                                                                                                     tokenRegistryEntry?.entity_type === 'contract' && tokenCanonicalId
                                                                                                       ? String(
-                                                                                                        masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
-                                                                                                        || ''
+                                                                                                        masterDataTokenCatalog.contract_owner_by_canonical_id[tokenCanonicalId] || ''
                                                                                                       ).trim()
                                                                                                       : ''
                                                                                                   )
-                                                                                                  const tokenCanonicalOptions = (
-                                                                                                    tokenEntityType === 'party'
-                                                                                                      ? masterDataPartyOptions
-                                                                                                      : tokenEntityType === 'item'
-                                                                                                        ? masterDataItemOptions
-                                                                                                        : tokenEntityType === 'contract'
-                                                                                                          ? masterDataContractOptions
-                                                                                                          : tokenEntityType === 'tax_profile'
-                                                                                                            ? masterDataTaxProfileOptions
-                                                                                                            : []
+                                                                                                  const tokenCanonicalOptions = getPoolMasterDataTokenCatalogOptions(
+                                                                                                    masterDataTokenCatalog,
+                                                                                                    tokenEntityType,
                                                                                                   )
                                                                                                   const tokenPartyRoleOptions = getTokenQualifierOptions(
                                                                                                     masterDataRegistryEntries,
@@ -5725,17 +5642,17 @@ export function PoolCatalogPage() {
                                                                                                   )
                                                                                                   const ownerCounterpartyOptions = (
                                                                                                     contractOwnerDefault
-                                                                                                    && !masterDataCounterpartyOptions.some(
+                                                                                                    && !masterDataTokenCatalog.counterparty_options.some(
                                                                                                       (item) => item.value === contractOwnerDefault
                                                                                                     )
                                                                                                       ? [
-                                                                                                        ...masterDataCounterpartyOptions,
+                                                                                                        ...masterDataTokenCatalog.counterparty_options,
                                                                                                         {
                                                                                                           value: contractOwnerDefault,
                                                                                                           label: contractOwnerDefault,
                                                                                                         },
                                                                                                       ]
-                                                                                                      : masterDataCounterpartyOptions
+                                                                                                      : masterDataTokenCatalog.counterparty_options
                                                                                                   )
                                                                                                   const tokenPreview = sourceType === 'master_data_token'
                                                                                                     ? buildMasterDataToken({
