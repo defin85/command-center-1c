@@ -6,12 +6,21 @@
 Система НЕ ДОЛЖНА (SHALL NOT) вводить отдельный ad hoc async lifecycle только ради `GLAccount` или последующих reusable entity types.
 Система НЕ ДОЛЖНА (SHALL NOT) выводить sync/bootstrap eligibility только из наличия entity type в enum, API namespace или binding table.
 Bootstrap dependency order, runtime enqueue eligibility и outbox fan-out ДОЛЖНЫ (SHALL) читаться из executable reusable-data registry/type handlers, а не из независимых hardcoded списков, которые команда должна синхронно поддерживать вручную.
+Backend-owned registry/type handlers ДОЛЖНЫ (SHALL) materialize-иться в generated shared contract/schema для frontend и client contracts pipeline.
+Система НЕ ДОЛЖНА (SHALL NOT) поддерживать handwritten duplicated registry definition в UI как parallel source-of-truth.
+Runtime endpoint МОЖЕТ (MAY) существовать как diagnostic/read-model surface, но НЕ ДОЛЖЕН (SHALL NOT) быть единственным источником capability policy для UI.
 
 #### Scenario: GLAccount bootstrap import использует existing staged async lifecycle
 - **GIVEN** оператор запускает bootstrap import для `GLAccount`
 - **WHEN** система создаёт bootstrap job
 - **THEN** job использует existing lifecycle `preflight -> dry_run -> execute -> finalize`
 - **AND** не появляется отдельный account-only background pipeline вне existing master-data sync runtime
+
+#### Scenario: Frontend и backend читают одну capability policy через generated contract
+- **GIVEN** backend registry уже определяет bootstrap/sync capabilities для reusable entity types
+- **WHEN** contracts pipeline публикует generated registry contract
+- **THEN** frontend использует этот contract для sync/bootstrap affordances
+- **AND** смена capability policy не требует отдельной ручной правки во втором handwritten registry
 
 ### Requirement: Reusable account entities MUST иметь explicit sync ownership contract
 Система ДОЛЖНА (SHALL) для reusable account entities явно фиксировать, какие sync directions поддерживаются shipped runtime, а какие запрещены fail-closed.

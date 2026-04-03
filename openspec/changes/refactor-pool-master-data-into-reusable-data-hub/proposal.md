@@ -6,10 +6,15 @@
 ## What Changes
 - Расширить `Pool Master Data` из publication-only слоя в tenant-scoped reusable-data hub без нового top-level runtime и без замены текущего route `/pools/master-data`.
 - Ввести executable reusable-data registry как единственный source-of-truth для capability matrix, sync/bootstrap routing и runtime gating по reusable entity types.
+- Публиковать backend-owned reusable-data registry в generated contract/schema для `contracts/**` и frontend, чтобы UI и backend читали одну capability policy без ручного дублирования registry definitions.
 - Ввести первую новую reusable entity family для бухгалтерских счетов:
   - `GLAccount` как tenant-scoped canonical semantic account с per-infobase binding;
-  - `GLAccountSet` как versioned grouped canonical profile для factual/report scopes.
+  - `GLAccountSet` как versioned grouped canonical profile для factual/report scopes с lifecycle `draft -> publish -> immutable revision`.
 - Сделать `GLAccount.chart_identity`, compatibility markers и `GLAccountSet` revision/member contract first-class persisted surfaces, а не opaque metadata-only convention.
+- Зафиксировать operator/API lifecycle `GLAccountSet`:
+  - `list/get/upsert` работают на уровне profile и current draft;
+  - `publish` создаёт новую immutable revision;
+  - runtime pin-ит published revision, а не mutable latest state.
 - Явно отделить canonical identity `GLAccount` от target-IB object refs:
   - `Ref_Key` / `ib_ref_key` остаётся только per-infobase binding surface и не считается cross-infobase identity;
   - для predefined счетов `PredefinedDataName` может использоваться как дополнительный compatibility/admission marker внутри `chart_identity`, но не заменяет canonical identity.
@@ -23,8 +28,12 @@
 - Перевести factual account scope с hardcoded defaults на first-class pinned revision `GLAccountSet` artifact + fail-closed preflight coverage по target infobases.
 - Ввести versioned factual scope bridge между orchestrator и worker:
   - верхнеуровневые runtime contracts `pool_factual_sync_workflow.v1` и `pool_factual_read_lane.v1` остаются стабильными на bridge-периоде;
-  - новый nested `factual_scope_contract.v2` становится first-class source-of-truth для `gl_account_set_revision_id`, `effective_members`, `scope_fingerprint`, compatibility provenance;
+  - новый nested `factual_scope_contract.v2` становится first-class source-of-truth для `gl_account_set_revision_id`, `effective_members`, `scope_fingerprint`, compatibility provenance и target-specific `resolved_bindings`;
   - transitional dual-read/dual-write режим сохраняет legacy `account_codes` как derived compatibility projection, чтобы rollout и rollback не ломали historical replay и текущий worker contract.
+- Зафиксировать replay-safe factual semantics:
+  - historical replay использует pinned `resolved_bindings` snapshot из artifact;
+  - runtime НЕ пере-резолвит latest bindings для уже созданных factual artifacts;
+  - отсутствие pinned binding snapshot приводит к fail-closed blocker, а не к silent fallback на latest state.
 - Явно зафиксировать capability matrix:
   - `GLAccount` поддерживает tenant-scoped canonical identity, manual upsert, binding и bootstrap import;
   - `GLAccount` в этом change НЕ поддерживает automatic outbound mutation/bidirectional sync в target ИБ;
