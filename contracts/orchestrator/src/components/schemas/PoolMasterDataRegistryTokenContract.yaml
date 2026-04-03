@@ -1,0 +1,21 @@
+type: object
+properties:
+  enabled:
+    type: boolean
+  qualifier_kind:
+    type: string
+    enum:
+      - none
+      - ib_catalog_kind
+      - owner_counterparty_canonical_id
+  qualifier_required:
+    type: boolean
+  qualifier_options:
+    type: array
+    items:
+      type: string
+required:
+  - enabled
+  - qualifier_kind
+  - qualifier_required
+  - qualifier_options

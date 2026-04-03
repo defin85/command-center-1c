@@ -6,9 +6,13 @@ from typing import Any, Mapping
 
 from django.utils import timezone
 
+from .master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    normalize_pool_master_data_entity_type,
+    supports_pool_master_data_capability,
+)
 from .master_data_sync_invariants import build_outbound_dedupe_key
 from .models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
 )
@@ -28,10 +32,13 @@ def enqueue_master_data_sync_outbox_intent(
     payload: Mapping[str, Any],
     origin_system: str = "cc",
     origin_event_id: str = "",
-) -> PoolMasterDataSyncOutbox:
-    normalized_entity_type = str(entity_type or "").strip()
-    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+) -> PoolMasterDataSyncOutbox | None:
+    normalized_entity_type = normalize_pool_master_data_entity_type(entity_type)
+    if not supports_pool_master_data_capability(
+        entity_type=normalized_entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    ):
+        return None
 
     normalized_canonical_id = str(canonical_id or "").strip()
     if not normalized_canonical_id:

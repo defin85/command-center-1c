@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 
-from apps.intercompany_pools.models import PoolMasterDataEntityType
+from apps.intercompany_pools.master_data_registry import normalize_pool_master_data_entity_type
 
 
 MASTER_DATA_SYNC_INVARIANT_INVALID = "MASTER_DATA_SYNC_INVARIANT_INVALID"
@@ -36,11 +36,10 @@ def _require_token(name: str, value: object) -> str:
 
 def _require_entity_type(entity_type: str) -> str:
     normalized = _require_token("entity_type", entity_type)
-    if normalized not in set(PoolMasterDataEntityType.values):
-        raise MasterDataSyncInvariantError(
-            detail=f"Unsupported master-data entity_type '{entity_type}'",
-        )
-    return normalized
+    try:
+        return normalize_pool_master_data_entity_type(normalized)
+    except ValueError as exc:
+        raise MasterDataSyncInvariantError(detail=str(exc)) from exc
 
 
 def require_origin_identifiers(*, origin_system: str, origin_event_id: str) -> OriginIdentifiers:

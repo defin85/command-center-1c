@@ -34,6 +34,7 @@ import { useDatabases } from '../../api/queries/databases'
 import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
 import { queryKeys } from '../../api/queries/queryKeys'
 import {
+  getPoolMasterDataRegistry,
   getOrganization,
   getPoolGraph,
   listPoolWorkflowBindings,
@@ -54,9 +55,12 @@ import {
   type OrganizationPoolBinding,
   type OrganizationStatus,
   type PoolGraph,
+  type PoolMasterBindingCatalogKind,
   type PoolMasterContract,
   type PoolMasterItem,
   type PoolMasterParty,
+  type PoolMasterDataEntityType,
+  type PoolMasterDataRegistryEntry,
   type PoolMasterTaxProfile,
   type PoolTopologyTemplate,
   type PoolTopologyTemplateRevision,
@@ -106,6 +110,13 @@ import {
   POOL_EXECUTION_PACKS_ROUTE,
   POOL_TOPOLOGY_TEMPLATES_ROUTE,
 } from './routes'
+import {
+  buildMasterDataToken,
+  getTokenEntityOptions,
+  getTokenQualifierOptions,
+  isMasterDataTokenLike,
+  parseMasterDataToken,
+} from './masterData/registry'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -272,8 +283,8 @@ type TopologyFormValues = {
 }
 
 type DocumentPolicySourceType = 'expression' | 'master_data_token'
-type MasterDataTokenEntityType = 'party' | 'item' | 'contract' | 'tax_profile'
-type MasterDataTokenPartyRole = 'organization' | 'counterparty'
+type MasterDataTokenEntityType = PoolMasterDataEntityType
+type MasterDataTokenPartyRole = Exclude<PoolMasterBindingCatalogKind, ''>
 
 type DocumentPolicyBuilderSourceValue = {
   source_type?: DocumentPolicySourceType
@@ -1067,87 +1078,16 @@ const stringifyMetadataForForm = (rawMetadata: unknown): string => {
 }
 
 const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
-const MASTER_DATA_TOKEN_PREFIX = 'master_data.'
 const TOKEN_SOURCE_TYPE_OPTIONS: Array<{ value: DocumentPolicySourceType; label: string }> = [
   { value: 'expression', label: 'expression' },
   { value: 'master_data_token', label: 'master_data_token' },
 ]
-const TOKEN_ENTITY_TYPE_OPTIONS: Array<{ value: MasterDataTokenEntityType; label: string }> = [
-  { value: 'party', label: 'party' },
-  { value: 'item', label: 'item' },
-  { value: 'contract', label: 'contract' },
-  { value: 'tax_profile', label: 'tax_profile' },
-]
-const TOKEN_PARTY_ROLE_OPTIONS: Array<{ value: MasterDataTokenPartyRole; label: string }> = [
-  { value: 'organization', label: 'organization' },
-  { value: 'counterparty', label: 'counterparty' },
-]
-
-type ParsedMasterDataToken = {
-  entity_type: MasterDataTokenEntityType
-  canonical_id: string
-  party_role?: MasterDataTokenPartyRole
-  owner_counterparty_canonical_id?: string
-}
-
-const parseMasterDataToken = (value: string): ParsedMasterDataToken | null => {
-  const source = value.trim()
-  if (!source.startsWith(MASTER_DATA_TOKEN_PREFIX)) {
-    return null
-  }
-  const parts = source.split('.')
-  if (parts[0] !== 'master_data' || parts[parts.length - 1] !== 'ref') {
-    return null
-  }
-  if (parts[1] === 'party' && parts.length === 5) {
-    const canonicalId = String(parts[2] || '').trim()
-    const partyRole = String(parts[3] || '').trim()
-    if (!canonicalId) return null
-    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
-      return null
-    }
-    return {
-      entity_type: 'party',
-      canonical_id: canonicalId,
-      party_role: partyRole as MasterDataTokenPartyRole,
-    }
-  }
-  if (parts[1] === 'item' && parts.length === 4) {
-    const canonicalId = String(parts[2] || '').trim()
-    if (!canonicalId) return null
-    return {
-      entity_type: 'item',
-      canonical_id: canonicalId,
-    }
-  }
-  if (parts[1] === 'contract' && parts.length === 5) {
-    const canonicalId = String(parts[2] || '').trim()
-    const ownerCounterpartyCanonicalId = String(parts[3] || '').trim()
-    if (!canonicalId || !ownerCounterpartyCanonicalId) return null
-    return {
-      entity_type: 'contract',
-      canonical_id: canonicalId,
-      owner_counterparty_canonical_id: ownerCounterpartyCanonicalId,
-    }
-  }
-  if (parts[1] === 'tax_profile' && parts.length === 4) {
-    const canonicalId = String(parts[2] || '').trim()
-    if (!canonicalId) return null
-    return {
-      entity_type: 'tax_profile',
-      canonical_id: canonicalId,
-    }
-  }
-  return null
-}
-
-const isMasterDataTokenLike = (value: string): boolean => (
-  value.trim().startsWith(MASTER_DATA_TOKEN_PREFIX)
-)
-
-const decodeDocumentPolicySourceValue = (rawSource: unknown): DocumentPolicyBuilderSourceValue => {
+const decodeDocumentPolicySourceValue = (
+  rawSource: unknown,
+  registryEntries: PoolMasterDataRegistryEntry[]
+): DocumentPolicyBuilderSourceValue => {
   const source = String(rawSource ?? '').trim()
-  const parsedToken = parseMasterDataToken(source)
+  const parsedToken = parseMasterDataToken(source, registryEntries)
   if (!parsedToken) {
     return {
       source_type: 'expression',
@@ -1161,42 +1101,13 @@ const decodeDocumentPolicySourceValue = (rawSource: unknown): DocumentPolicyBuil
     expression_source: '',
     token_entity_type: parsedToken.entity_type,
     token_canonical_id: parsedToken.canonical_id,
-    token_party_role: parsedToken.party_role,
-    token_owner_counterparty_canonical_id: parsedToken.owner_counterparty_canonical_id,
+    token_party_role: parsedToken.qualifier_kind === 'ib_catalog_kind'
+      ? parsedToken.qualifier as MasterDataTokenPartyRole
+      : undefined,
+    token_owner_counterparty_canonical_id: parsedToken.qualifier_kind === 'owner_counterparty_canonical_id'
+      ? parsedToken.qualifier
+      : undefined,
   }
-}
-
-const buildMasterDataToken = (
-  sourceValue: DocumentPolicyBuilderSourceValue
-): string | null => {
-  const entityType = String(sourceValue.token_entity_type ?? '').trim()
-  const canonicalId = String(sourceValue.token_canonical_id ?? '').trim()
-  if (!entityType || !canonicalId) {
-    return null
-  }
-  if (entityType === 'party') {
-    const partyRole = String(sourceValue.token_party_role ?? '').trim()
-    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
-      return null
-    }
-    return `master_data.party.${canonicalId}.${partyRole}.ref`
-  }
-  if (entityType === 'item') {
-    return `master_data.item.${canonicalId}.ref`
-  }
-  if (entityType === 'contract') {
-    const ownerCounterpartyCanonicalId = String(
-      sourceValue.token_owner_counterparty_canonical_id ?? ''
-    ).trim()
-    if (!ownerCounterpartyCanonicalId) {
-      return null
-    }
-    return `master_data.contract.${canonicalId}.${ownerCounterpartyCanonicalId}.ref`
-  }
-  if (entityType === 'tax_profile') {
-    return `master_data.tax_profile.${canonicalId}.ref`
-  }
-  return null
 }
 
 const hasDocumentPolicySourceInput = (sourceValue: DocumentPolicyBuilderSourceValue): boolean => (
@@ -1213,7 +1124,8 @@ const hasDocumentPolicySourceInput = (sourceValue: DocumentPolicyBuilderSourceVa
 
 const resolveDocumentPolicySourceValue = (
   sourceValue: DocumentPolicyBuilderSourceValue,
-  rowLabel: string
+  rowLabel: string,
+  registryEntries: PoolMasterDataRegistryEntry[]
 ): { source: string | null; error: string | null } => {
   const sourceType = String(sourceValue.source_type ?? '').trim().toLowerCase() === 'master_data_token'
     ? 'master_data_token'
@@ -1268,8 +1180,8 @@ const resolveDocumentPolicySourceValue = (
     }
   }
 
-  const token = buildMasterDataToken(sourceValue)
-  if (!token || !parseMasterDataToken(token)) {
+  const token = buildMasterDataToken(sourceValue, registryEntries)
+  if (!token || !parseMasterDataToken(token, registryEntries)) {
     return {
       source: null,
       error: `${rowLabel}: token должен соответствовать canonical master_data.*.ref формату.`,
@@ -1356,7 +1268,8 @@ const metadataObjectToBuilderRows = (
 )
 
 const documentPolicyToBuilderChains = (
-  policy: Record<string, unknown> | null
+  policy: Record<string, unknown> | null,
+  registryEntries: PoolMasterDataRegistryEntry[]
 ): DocumentPolicyBuilderChainFormValue[] => {
   if (!policy) return []
   const chainsRaw = policy.chains
@@ -1412,7 +1325,7 @@ const documentPolicyToBuilderChains = (
             source: String(source ?? '').trim(),
           })),
           field_mappings: Object.entries(fieldMappingRaw).map(([targetField, source]) => {
-            const decoded = decodeDocumentPolicySourceValue(source)
+            const decoded = decodeDocumentPolicySourceValue(source, registryEntries)
             return {
               target_field: String(targetField).trim(),
               ...decoded,
@@ -1425,7 +1338,7 @@ const documentPolicyToBuilderChains = (
             return {
               table_part: String(tablePartName).trim(),
               row_mappings: Object.entries(rowObject).map(([targetRowField, source]) => {
-                const decoded = decodeDocumentPolicySourceValue(source)
+                const decoded = decodeDocumentPolicySourceValue(source, registryEntries)
                 return {
                   target_row_field: String(targetRowField).trim(),
                   ...decoded,
@@ -1441,7 +1354,8 @@ const documentPolicyToBuilderChains = (
 
 const buildDocumentPolicyFromBuilder = (
   chainsRaw: DocumentPolicyBuilderChainFormValue[] | undefined,
-  rowNo: number
+  rowNo: number,
+  registryEntries: PoolMasterDataRegistryEntry[]
 ): {
   policy: Record<string, unknown> | null
   errors: string[]
@@ -1522,7 +1436,8 @@ const buildDocumentPolicyFromBuilder = (
         }
         const resolvedSource = resolveDocumentPolicySourceValue(
           sourceValue,
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping.${targetField}`
+          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping.${targetField}`,
+          registryEntries,
         )
         if (!resolvedSource.source) {
           errors.push(
@@ -1561,7 +1476,8 @@ const buildDocumentPolicyFromBuilder = (
           }
           const resolvedSource = resolveDocumentPolicySourceValue(
             sourceValue,
-            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping.${tablePartName || '<table_part>'}.${targetRowField}`
+            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping.${tablePartName || '<table_part>'}.${targetRowField}`,
+            registryEntries,
           )
           if (!resolvedSource.source) {
             errors.push(
@@ -1717,7 +1633,8 @@ const buildEdgeMetadataFromBuilder = (
 
 const buildTopologyPreflight = (
   values: TopologyFormValues,
-  selectedTemplateRevision?: PoolTopologyTemplateRevision | null
+  selectedTemplateRevision?: PoolTopologyTemplateRevision | null,
+  registryEntries: PoolMasterDataRegistryEntry[] = []
 ): {
   payload: {
     effective_from: string
@@ -1860,7 +1777,7 @@ const buildTopologyPreflight = (
       ? 'builder'
       : 'raw'
     const policyResult = policyMode === 'builder'
-      ? buildDocumentPolicyFromBuilder(edge.document_policy_builder, rowNo)
+      ? buildDocumentPolicyFromBuilder(edge.document_policy_builder, rowNo, registryEntries)
       : parseDocumentPolicyMetadata(
         String(edge.document_policy_json ?? ''),
         rowNo
@@ -2006,6 +1923,8 @@ export function PoolCatalogPage() {
   const [masterDataItems, setMasterDataItems] = useState<PoolMasterItem[]>([])
   const [masterDataContracts, setMasterDataContracts] = useState<PoolMasterContract[]>([])
   const [masterDataTaxProfiles, setMasterDataTaxProfiles] = useState<PoolMasterTaxProfile[]>([])
+  const [masterDataRegistryEntries, setMasterDataRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
+  const [loadingMasterDataRegistry, setLoadingMasterDataRegistry] = useState(false)
   const [loadingMasterDataTokenCatalog, setLoadingMasterDataTokenCatalog] = useState(false)
   const [masterDataTokenCatalogError, setMasterDataTokenCatalogError] = useState<string | null>(null)
   const watchedWorkflowBindings = Form.useWatch('workflow_bindings', poolBindingsForm)
@@ -2481,6 +2400,10 @@ export function PoolCatalogPage() {
       .sort((left, right) => left.label.localeCompare(right.label)),
     [masterDataTaxProfiles]
   )
+  const masterDataTokenEntityOptions = useMemo(
+    () => getTokenEntityOptions(masterDataRegistryEntries),
+    [masterDataRegistryEntries]
+  )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
@@ -2687,6 +2610,15 @@ export function PoolCatalogPage() {
 
   const loadMasterDataTokenCatalog = useCallback(async () => {
     if (!hasTenantContext) {
+      setMasterDataRegistryEntries([])
+      setMasterDataParties([])
+      setMasterDataItems([])
+      setMasterDataContracts([])
+      setMasterDataTaxProfiles([])
+      return
+    }
+    const tokenEntityTypes = new Set(masterDataTokenEntityOptions.map((option) => option.value))
+    if (tokenEntityTypes.size === 0) {
       setMasterDataParties([])
       setMasterDataItems([])
       setMasterDataContracts([])
@@ -2696,27 +2628,45 @@ export function PoolCatalogPage() {
     setLoadingMasterDataTokenCatalog(true)
     setMasterDataTokenCatalogError(null)
     try {
-      const [
-        partiesPayload,
-        itemsPayload,
-        contractsPayload,
-        taxProfilesPayload,
-      ] = await Promise.all([
-        listMasterDataParties({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
-        listMasterDataItems({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
-        listMasterDataContracts({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
-        listMasterDataTaxProfiles({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 }),
+      const [partiesPayload, itemsPayload, contractsPayload, taxProfilesPayload] = await Promise.all([
+        tokenEntityTypes.has('party')
+          ? listMasterDataParties({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
+          : Promise.resolve({ parties: [] }),
+        tokenEntityTypes.has('item')
+          ? listMasterDataItems({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
+          : Promise.resolve({ items: [] }),
+        tokenEntityTypes.has('contract')
+          ? listMasterDataContracts({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
+          : Promise.resolve({ contracts: [] }),
+        tokenEntityTypes.has('tax_profile')
+          ? listMasterDataTaxProfiles({ limit: MASTER_DATA_TOKEN_CATALOG_LIMIT, offset: 0 })
+          : Promise.resolve({ tax_profiles: [] }),
       ])
       setMasterDataParties(Array.isArray(partiesPayload.parties) ? partiesPayload.parties : [])
       setMasterDataItems(Array.isArray(itemsPayload.items) ? itemsPayload.items : [])
       setMasterDataContracts(Array.isArray(contractsPayload.contracts) ? contractsPayload.contracts : [])
-      setMasterDataTaxProfiles(
-        Array.isArray(taxProfilesPayload.tax_profiles) ? taxProfilesPayload.tax_profiles : []
-      )
+      setMasterDataTaxProfiles(Array.isArray(taxProfilesPayload.tax_profiles) ? taxProfilesPayload.tax_profiles : [])
     } catch {
       setMasterDataTokenCatalogError('Не удалось загрузить master-data каталог для token picker.')
     } finally {
       setLoadingMasterDataTokenCatalog(false)
+    }
+  }, [hasTenantContext, masterDataTokenEntityOptions])
+
+  const loadMasterDataRegistry = useCallback(async () => {
+    if (!hasTenantContext) {
+      setMasterDataRegistryEntries([])
+      return
+    }
+    setLoadingMasterDataRegistry(true)
+    setMasterDataTokenCatalogError(null)
+    try {
+      const response = await getPoolMasterDataRegistry()
+      setMasterDataRegistryEntries(Array.isArray(response.entries) ? response.entries : [])
+    } catch {
+      setMasterDataTokenCatalogError('Не удалось загрузить reusable-data registry для token picker.')
+    } finally {
+      setLoadingMasterDataRegistry(false)
     }
   }, [hasTenantContext])
 
@@ -2830,6 +2780,22 @@ export function PoolCatalogPage() {
   useEffect(() => {
     if (activeWorkspaceTab !== 'topology') return
     if (!hasTenantContext) return
+    if (masterDataRegistryEntries.length > 0 || loadingMasterDataRegistry) {
+      return
+    }
+    void loadMasterDataRegistry()
+  }, [
+    activeWorkspaceTab,
+    hasTenantContext,
+    loadMasterDataRegistry,
+    loadingMasterDataRegistry,
+    masterDataRegistryEntries.length,
+  ])
+
+  useEffect(() => {
+    if (activeWorkspaceTab !== 'topology') return
+    if (!hasTenantContext) return
+    if (masterDataRegistryEntries.length === 0) return
     if (
       masterDataParties.length > 0
       || masterDataItems.length > 0
@@ -2843,6 +2809,7 @@ export function PoolCatalogPage() {
     activeWorkspaceTab,
     hasTenantContext,
     loadMasterDataTokenCatalog,
+    masterDataRegistryEntries.length,
     masterDataContracts.length,
     masterDataItems.length,
     masterDataParties.length,
@@ -2892,7 +2859,7 @@ export function PoolCatalogPage() {
         document_policy_key: documentPolicyKey,
         document_policy_mode: 'raw',
         document_policy_json: policy ? JSON.stringify(policy, null, 2) : '',
-        document_policy_builder: documentPolicyToBuilderChains(policy),
+        document_policy_builder: documentPolicyToBuilderChains(policy, masterDataRegistryEntries),
         edge_metadata_mode: 'raw',
         edge_metadata_builder: metadataObjectToBuilderRows(metadataWithoutPolicy),
         metadata_json: stringifyMetadataForForm(metadataWithoutPolicy),
@@ -2925,6 +2892,7 @@ export function PoolCatalogPage() {
     graph,
     graphDate,
     hydratedTopologyTemplateRevision,
+    masterDataRegistryEntries,
     selectedPool,
     selectedPoolId,
     selectedPoolTopologyInstantiation,
@@ -3374,7 +3342,7 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     try {
       const values = await topologyForm.validateFields()
-      const preflight = buildTopologyPreflight(values, selectedTopologyTemplateRevision)
+      const preflight = buildTopologyPreflight(values, selectedTopologyTemplateRevision, masterDataRegistryEntries)
       if (!preflight.payload) {
         setTopologyPreflightErrors(preflight.errors)
         return
@@ -3429,6 +3397,7 @@ export function PoolCatalogPage() {
     loadGraph,
     loadPools,
     loadTopologySnapshots,
+    masterDataRegistryEntries,
     message,
     mutatingDisabled,
     selectedPoolId,
@@ -5336,7 +5305,11 @@ export function PoolCatalogPage() {
                                                                                               ? masterDataContractOptions
                                                                                               : tokenEntityType === 'tax_profile'
                                                                                                 ? masterDataTaxProfileOptions
-                                                                                                : []
+                                                                                          : []
+                                                                                      )
+                                                                                      const tokenPartyRoleOptions = getTokenQualifierOptions(
+                                                                                        masterDataRegistryEntries,
+                                                                                        tokenEntityType,
                                                                                       )
                                                                                       const ownerCounterpartyOptions = (
                                                                                         contractOwnerDefault
@@ -5360,7 +5333,7 @@ export function PoolCatalogPage() {
                                                                                           token_owner_counterparty_canonical_id: (
                                                                                             tokenOwnerCounterpartyCanonicalId || contractOwnerDefault
                                                                                           ),
-                                                                                        })
+                                                                                        }, masterDataRegistryEntries)
                                                                                         : null
 
                                                                                       return (
@@ -5408,8 +5381,8 @@ export function PoolCatalogPage() {
                                                                                                     >
                                                                                                       <Select
                                                                                                         placeholder="entity"
-                                                                                                        options={TOKEN_ENTITY_TYPE_OPTIONS}
-                                                                                                        loading={loadingMasterDataTokenCatalog}
+                                                                                                        options={masterDataTokenEntityOptions}
+                                                                                                        loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                         data-testid={(
                                                                                                           `pool-catalog-topology-field-mapping-token-entity-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                         )}
@@ -5427,7 +5400,7 @@ export function PoolCatalogPage() {
                                                                                                         allowClear
                                                                                                         placeholder="canonical_id"
                                                                                                         options={tokenCanonicalOptions}
-                                                                                                        loading={loadingMasterDataTokenCatalog}
+                                                                                                        loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                         data-testid={(
                                                                                                           `pool-catalog-topology-field-mapping-token-canonical-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                         )}
@@ -5443,7 +5416,7 @@ export function PoolCatalogPage() {
                                                                                                     <Select
                                                                                                       allowClear
                                                                                                       placeholder="party role"
-                                                                                                      options={TOKEN_PARTY_ROLE_OPTIONS}
+                                                                                                      options={tokenPartyRoleOptions}
                                                                                                       data-testid={(
                                                                                                         `pool-catalog-topology-field-mapping-token-party-role-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                       )}
@@ -5462,7 +5435,7 @@ export function PoolCatalogPage() {
                                                                                                       allowClear
                                                                                                       placeholder="owner_counterparty_canonical_id"
                                                                                                       options={ownerCounterpartyOptions}
-                                                                                                      loading={loadingMasterDataTokenCatalog}
+                                                                                                      loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                       data-testid={(
                                                                                                         `pool-catalog-topology-field-mapping-token-owner-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                       )}
@@ -5684,6 +5657,10 @@ export function PoolCatalogPage() {
                                                                                                             ? masterDataTaxProfileOptions
                                                                                                             : []
                                                                                                   )
+                                                                                                  const tokenPartyRoleOptions = getTokenQualifierOptions(
+                                                                                                    masterDataRegistryEntries,
+                                                                                                    tokenEntityType,
+                                                                                                  )
                                                                                                   const ownerCounterpartyOptions = (
                                                                                                     contractOwnerDefault
                                                                                                     && !masterDataCounterpartyOptions.some(
@@ -5706,7 +5683,7 @@ export function PoolCatalogPage() {
                                                                                                       token_owner_counterparty_canonical_id: (
                                                                                                         tokenOwnerCounterpartyCanonicalId || contractOwnerDefault
                                                                                                       ),
-                                                                                                    })
+                                                                                                    }, masterDataRegistryEntries)
                                                                                                     : null
 
                                                                                                   return (
@@ -5749,8 +5726,8 @@ export function PoolCatalogPage() {
                                                                                                                 >
                                                                                                                   <Select
                                                                                                                     placeholder="entity"
-                                                                                                                    options={TOKEN_ENTITY_TYPE_OPTIONS}
-                                                                                                                    loading={loadingMasterDataTokenCatalog}
+                                                                                                                    options={masterDataTokenEntityOptions}
+                                                                                                                    loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                                   />
                                                                                                                 </Form.Item>
                                                                                                               </Col>
@@ -5765,7 +5742,7 @@ export function PoolCatalogPage() {
                                                                                                                     allowClear
                                                                                                                     placeholder="canonical_id"
                                                                                                                     options={tokenCanonicalOptions}
-                                                                                                                    loading={loadingMasterDataTokenCatalog}
+                                                                                                                    loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                                   />
                                                                                                                 </Form.Item>
                                                                                                               </Col>
@@ -5778,7 +5755,7 @@ export function PoolCatalogPage() {
                                                                                                                 <Select
                                                                                                                   allowClear
                                                                                                                   placeholder="party role"
-                                                                                                                  options={TOKEN_PARTY_ROLE_OPTIONS}
+                                                                                                                  options={tokenPartyRoleOptions}
                                                                                                                 />
                                                                                                               </Form.Item>
                                                                                                             )}
@@ -5794,7 +5771,7 @@ export function PoolCatalogPage() {
                                                                                                                   allowClear
                                                                                                                   placeholder="owner_counterparty_canonical_id"
                                                                                                                   options={ownerCounterpartyOptions}
-                                                                                                                  loading={loadingMasterDataTokenCatalog}
+                                                                                                                  loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                                 />
                                                                                                               </Form.Item>
                                                                                                             )}

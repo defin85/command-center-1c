@@ -19,6 +19,14 @@ from .master_data_errors import (
     MASTER_DATA_ENTITY_NOT_FOUND,
     MasterDataResolveError,
 )
+from .master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_TOKEN_EXPOSURE,
+    POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_IB_CATALOG_KIND,
+    POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_NONE,
+    POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_OWNER_COUNTERPARTY_CANONICAL_ID,
+    get_pool_master_data_registry_entry,
+    supports_pool_master_data_capability,
+)
 from .models import (
     PoolMasterBindingCatalogKind,
     PoolMasterBindingSyncStatus,
@@ -345,8 +353,21 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
     entity_type = segments[0]
     canonical_id = segments[1]
     qualifier = segments[2] if len(segments) > 2 else ""
+    entry = get_pool_master_data_registry_entry(entity_type)
+    if entry is None or not supports_pool_master_data_capability(
+        entity_type=entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_TOKEN_EXPOSURE,
+    ):
+        raise MasterDataResolveError(
+            code=MASTER_DATA_ENTITY_NOT_FOUND,
+            detail=f"Unsupported master-data token entity_type '{entity_type}' in token '{token}'.",
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            target_database_id=database_id,
+        )
 
-    if entity_type == PoolMasterDataEntityType.PARTY:
+    qualifier_kind = entry.token_contract.qualifier_kind
+    if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_IB_CATALOG_KIND:
         if qualifier not in {
             PoolMasterBindingCatalogKind.ORGANIZATION,
             PoolMasterBindingCatalogKind.COUNTERPARTY,
@@ -366,7 +387,7 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
             ib_catalog_kind=qualifier,
         )
 
-    if entity_type == PoolMasterDataEntityType.CONTRACT:
+    if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_OWNER_COUNTERPARTY_CANONICAL_ID:
         if not qualifier:
             raise MasterDataResolveError(
                 code=MASTER_DATA_BINDING_CONFLICT,
@@ -383,13 +404,10 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
             owner_counterparty_canonical_id=qualifier,
         )
 
-    if entity_type not in {
-        PoolMasterDataEntityType.ITEM,
-        PoolMasterDataEntityType.TAX_PROFILE,
-    }:
+    if qualifier_kind != POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_NONE:
         raise MasterDataResolveError(
-            code=MASTER_DATA_ENTITY_NOT_FOUND,
-            detail=f"Unsupported master-data token entity_type '{entity_type}' in token '{token}'.",
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=f"Unsupported token qualifier kind '{qualifier_kind}' for entity_type '{entity_type}'.",
             entity_type=entity_type,
             canonical_id=canonical_id,
             target_database_id=database_id,

@@ -18,8 +18,11 @@ from apps.intercompany_pools.master_data_sync_inbound_poller import (
 from apps.intercompany_pools.master_data_sync_execution import (
     LegacyInboundRouteDisabledError,
     MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED,
+    MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED,
     MASTER_DATA_SYNC_INBOUND_DISABLED,
+    MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED,
     MASTER_DATA_SYNC_OUTBOUND_DISABLED,
+    MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED,
     configure_pool_master_data_sync_inbound_callbacks,
     execute_pool_master_data_sync_dispatch_step,
     execute_pool_master_data_sync_finalize_step,
@@ -35,6 +38,11 @@ from apps.intercompany_pools.master_data_sync_runtime_settings import (
     POOL_MASTER_DATA_SYNC_ENABLED_RUNTIME_KEY,
     POOL_MASTER_DATA_SYNC_INBOUND_ENABLED_RUNTIME_KEY,
     POOL_MASTER_DATA_SYNC_OUTBOUND_ENABLED_RUNTIME_KEY,
+)
+from apps.intercompany_pools.master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
 )
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
@@ -185,6 +193,35 @@ def test_trigger_outbound_sync_skips_when_outbound_runtime_gate_is_disabled() ->
 
 
 @pytest.mark.django_db
+def test_trigger_outbound_sync_skips_when_registry_disables_outbound_capability() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-outbound-cap-{uuid4().hex[:6]}", name="Sync Exec Outbound Cap")
+    database = _create_database(tenant=tenant, suffix="outbound-cap")
+    _set_runtime(enabled=True, outbound_enabled=True)
+
+    def _supports(*, entity_type: str, capability: str, include_bootstrap_helpers: bool = False) -> bool:
+        if capability == POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND:
+            return False
+        return True
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_execution.supports_pool_master_data_capability",
+        side_effect=_supports,
+    ):
+        result = trigger_pool_master_data_outbound_sync_job(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+            canonical_id="item-capability-off",
+            origin_system="cc",
+            origin_event_id="evt-capability-off",
+        )
+
+    assert result.skipped is True
+    assert result.skip_reason == MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED
+    assert PoolMasterDataSyncJob.objects.filter(tenant=tenant).count() == 0
+
+
+@pytest.mark.django_db
 def test_trigger_inbound_sync_creates_job_and_starts_workflow() -> None:
     tenant = Tenant.objects.create(slug=f"sync-exec-inbound-{uuid4().hex[:6]}", name="Sync Exec Inbound")
     database = _create_database(tenant=tenant, suffix="inbound")
@@ -244,6 +281,34 @@ def test_trigger_inbound_sync_skips_when_inbound_runtime_gate_is_disabled() -> N
 
 
 @pytest.mark.django_db
+def test_trigger_inbound_sync_skips_when_registry_disables_inbound_capability() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-cap-{uuid4().hex[:6]}", name="Sync Exec Inbound Cap")
+    database = _create_database(tenant=tenant, suffix="inbound-cap")
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True)
+
+    def _supports(*, entity_type: str, capability: str, include_bootstrap_helpers: bool = False) -> bool:
+        if capability == POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND:
+            return False
+        return True
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_execution.supports_pool_master_data_capability",
+        side_effect=_supports,
+    ):
+        result = trigger_pool_master_data_inbound_sync_job(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+            origin_system="ib",
+            origin_event_id="evt-inbound-capability-off",
+        )
+
+    assert result.skipped is True
+    assert result.skip_reason == MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED
+    assert PoolMasterDataSyncJob.objects.filter(tenant=tenant).count() == 0
+
+
+@pytest.mark.django_db
 def test_trigger_reconcile_sync_creates_bidirectional_job_and_starts_workflow() -> None:
     tenant = Tenant.objects.create(slug=f"sync-exec-reconcile-{uuid4().hex[:6]}", name="Sync Exec Reconcile")
     database = _create_database(tenant=tenant, suffix="reconcile")
@@ -282,6 +347,34 @@ def test_trigger_reconcile_sync_creates_bidirectional_job_and_starts_workflow() 
     assert metadata["last_trigger"]["mode"] == "reconcile_probe"
     assert metadata["last_trigger"]["reconcile_window_id"] == "window-001"
     assert metadata["last_trigger"]["reconcile_window_deadline_at"] == "2026-03-03T12:02:00Z"
+
+
+@pytest.mark.django_db
+def test_trigger_reconcile_sync_skips_when_registry_disables_reconcile_capability() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-reconcile-cap-{uuid4().hex[:6]}", name="Sync Exec Reconcile Cap")
+    database = _create_database(tenant=tenant, suffix="reconcile-cap")
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True)
+
+    def _supports(*, entity_type: str, capability: str, include_bootstrap_helpers: bool = False) -> bool:
+        if capability == POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE:
+            return False
+        return True
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_execution.supports_pool_master_data_capability",
+        side_effect=_supports,
+    ):
+        result = trigger_pool_master_data_reconcile_sync_job(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+            reconcile_window_id="window-off",
+            reconcile_window_deadline_at="2026-03-03T12:02:00Z",
+        )
+
+    assert result.skipped is True
+    assert result.skip_reason == MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED
+    assert PoolMasterDataSyncJob.objects.filter(tenant=tenant).count() == 0
 
 
 @pytest.mark.django_db

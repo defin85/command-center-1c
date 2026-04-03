@@ -11,6 +11,7 @@ import {
   retryMasterDataSyncConflict,
   type PoolMasterDataSyncDeadlineState,
   type PoolMasterDataEntityType,
+  type PoolMasterDataRegistryEntry,
   type PoolMasterDataSyncPriority,
   type PoolMasterDataSyncRole,
   type PoolMasterDataSyncConflict,
@@ -19,15 +20,9 @@ import {
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
+import { getSyncEntityOptions } from './registry'
 
 const { Text } = Typography
-
-const ENTITY_TYPE_OPTIONS: { value: PoolMasterDataEntityType; label: string }[] = [
-  { value: 'party', label: 'party' },
-  { value: 'item', label: 'item' },
-  { value: 'contract', label: 'contract' },
-  { value: 'tax_profile', label: 'tax_profile' },
-]
 
 const CONFLICT_STATUS_OPTIONS: { value: 'pending' | 'retrying' | 'resolved'; label: string }[] = [
   { value: 'pending', label: 'pending' },
@@ -63,7 +58,11 @@ const DEADLINE_STATE_COLORS: Record<PoolMasterDataSyncDeadlineState, string> = {
   missed: 'error',
 }
 
-export function SyncStatusTab() {
+type SyncStatusTabProps = {
+  registryEntries: PoolMasterDataRegistryEntry[]
+}
+
+export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const { message } = AntApp.useApp()
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [databaseId, setDatabaseId] = useState<string | undefined>(undefined)
@@ -77,6 +76,10 @@ export function SyncStatusTab() {
   const [conflictRows, setConflictRows] = useState<PoolMasterDataSyncConflict[]>([])
   const [loading, setLoading] = useState(false)
   const [actionConflictId, setActionConflictId] = useState<string | null>(null)
+  const entityTypeOptions = useMemo(
+    () => getSyncEntityOptions(registryEntries),
+    [registryEntries]
+  )
 
   const databaseNameById = useMemo(() => {
     const lookup = new Map<string, string>()
@@ -319,7 +322,7 @@ export function SyncStatusTab() {
             allowClear
             placeholder="Entity type"
             value={entityType}
-            options={ENTITY_TYPE_OPTIONS}
+            options={entityTypeOptions}
             onChange={(value) => setEntityType(value)}
             style={{ width: 180 }}
           />

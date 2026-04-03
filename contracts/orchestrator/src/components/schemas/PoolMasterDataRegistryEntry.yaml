@@ -1,0 +1,37 @@
+type: object
+properties:
+  entity_type:
+    type: string
+  label:
+    type: string
+  kind:
+    type: string
+    enum:
+      - canonical
+      - bootstrap_helper
+  display_order:
+    type: integer
+  binding_scope_fields:
+    type: array
+    items:
+      type: string
+  capabilities:
+    $ref: ./PoolMasterDataRegistryCapabilities.yaml
+  token_contract:
+    $ref: ./PoolMasterDataRegistryTokenContract.yaml
+  bootstrap_contract:
+    $ref: ./PoolMasterDataRegistryBootstrapContract.yaml
+  runtime_consumers:
+    type: array
+    items:
+      type: string
+required:
+  - entity_type
+  - label
+  - kind
+  - display_order
+  - binding_scope_fields
+  - capabilities
+  - token_contract
+  - bootstrap_contract
+  - runtime_consumers

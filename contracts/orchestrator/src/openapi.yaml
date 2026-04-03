@@ -222,6 +222,8 @@ paths:
     $ref: paths/api_v2_pools_workflow-bindings_preview_.yaml
   /api/v2/pools/master-data/bindings/:
     $ref: paths/api_v2_pools_master-data_bindings_.yaml
+  /api/v2/pools/master-data/registry/:
+    $ref: paths/api_v2_pools_master-data_registry_.yaml
   /api/v2/pools/master-data/bindings/{id}/:
     $ref: paths/api_v2_pools_master-data_bindings_{id}_.yaml
   /api/v2/pools/master-data/bindings/upsert/:

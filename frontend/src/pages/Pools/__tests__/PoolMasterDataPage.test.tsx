@@ -17,6 +17,7 @@ const mockListMasterDataTaxProfiles = vi.fn()
 const mockUpsertMasterDataTaxProfile = vi.fn()
 const mockListMasterDataBindings = vi.fn()
 const mockUpsertMasterDataBinding = vi.fn()
+const mockGetPoolMasterDataRegistry = vi.fn()
 const mockListPoolTargetDatabases = vi.fn()
 const mockListMasterDataSyncStatus = vi.fn()
 const mockListMasterDataSyncConflicts = vi.fn()
@@ -86,6 +87,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertMasterDataTaxProfile: (...args: unknown[]) => mockUpsertMasterDataTaxProfile(...args),
   listMasterDataBindings: (...args: unknown[]) => mockListMasterDataBindings(...args),
   upsertMasterDataBinding: (...args: unknown[]) => mockUpsertMasterDataBinding(...args),
+  getPoolMasterDataRegistry: (...args: unknown[]) => mockGetPoolMasterDataRegistry(...args),
   listPoolTargetDatabases: (...args: unknown[]) => mockListPoolTargetDatabases(...args),
   listMasterDataSyncStatus: (...args: unknown[]) => mockListMasterDataSyncStatus(...args),
   listMasterDataSyncConflicts: (...args: unknown[]) => mockListMasterDataSyncConflicts(...args),
@@ -138,6 +140,7 @@ describe('PoolMasterDataPage', () => {
     mockUpsertMasterDataTaxProfile.mockReset()
     mockListMasterDataBindings.mockReset()
     mockUpsertMasterDataBinding.mockReset()
+    mockGetPoolMasterDataRegistry.mockReset()
     mockListPoolTargetDatabases.mockReset()
     mockListMasterDataSyncStatus.mockReset()
     mockListMasterDataSyncConflicts.mockReset()
@@ -185,6 +188,132 @@ describe('PoolMasterDataPage', () => {
     mockListMasterDataBindings.mockResolvedValue({
       bindings: [],
       meta: { limit: 200, offset: 0, total: 0 },
+    })
+    mockGetPoolMasterDataRegistry.mockResolvedValue({
+      contract_version: 'pool_master_data_registry.v1',
+      count: 5,
+      entries: [
+        {
+          entity_type: 'party',
+          label: 'Party',
+          kind: 'canonical',
+          display_order: 10,
+          binding_scope_fields: ['canonical_id', 'database_id', 'ib_catalog_kind'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: true,
+            sync_outbound: true,
+            sync_inbound: true,
+            sync_reconcile: true,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'ib_catalog_kind',
+            qualifier_required: true,
+            qualifier_options: ['organization', 'counterparty'],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 10 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+        },
+        {
+          entity_type: 'item',
+          label: 'Item',
+          kind: 'canonical',
+          display_order: 20,
+          binding_scope_fields: ['canonical_id', 'database_id'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: true,
+            sync_outbound: true,
+            sync_inbound: true,
+            sync_reconcile: true,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 20 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+        },
+        {
+          entity_type: 'contract',
+          label: 'Contract',
+          kind: 'canonical',
+          display_order: 30,
+          binding_scope_fields: ['canonical_id', 'database_id', 'owner_counterparty_canonical_id'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: true,
+            sync_outbound: true,
+            sync_inbound: true,
+            sync_reconcile: true,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'owner_counterparty_canonical_id',
+            qualifier_required: true,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 40 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+        },
+        {
+          entity_type: 'tax_profile',
+          label: 'Tax Profile',
+          kind: 'canonical',
+          display_order: 40,
+          binding_scope_fields: ['canonical_id', 'database_id'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: true,
+            sync_outbound: true,
+            sync_inbound: true,
+            sync_reconcile: true,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 30 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+        },
+        {
+          entity_type: 'binding',
+          label: 'Binding',
+          kind: 'bootstrap_helper',
+          display_order: 50,
+          binding_scope_fields: [],
+          capabilities: {
+            direct_binding: false,
+            token_exposure: false,
+            bootstrap_import: true,
+            outbox_fanout: false,
+            sync_outbound: false,
+            sync_inbound: false,
+            sync_reconcile: false,
+          },
+          token_contract: {
+            enabled: false,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 50 },
+          runtime_consumers: ['bootstrap_import'],
+        },
+      ],
     })
     mockListPoolTargetDatabases.mockResolvedValue([
       { id: 'db-1', name: 'Main DB' },
@@ -569,4 +698,5 @@ describe('PoolMasterDataPage', () => {
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
 })

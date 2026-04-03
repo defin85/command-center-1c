@@ -9,6 +9,8 @@ from django.db import models
 from django.db.models import F, Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+
+from .master_data_registry import normalize_pool_master_data_bootstrap_entity_type
 from django_fsm import FSMField, transition
 
 
@@ -671,9 +673,10 @@ class PoolMasterDataBootstrapImportJob(models.Model):
 
         normalized: list[str] = []
         for value in self.entity_scope:
-            normalized_value = str(value or "").strip().lower()
-            if normalized_value not in set(PoolMasterDataBootstrapImportEntityType.values):
-                raise ValidationError({"entity_scope": f"Unsupported bootstrap entity type '{value}'."})
+            try:
+                normalized_value = normalize_pool_master_data_bootstrap_entity_type(str(value or ""))
+            except ValueError as exc:
+                raise ValidationError({"entity_scope": str(exc)}) from exc
             normalized.append(normalized_value)
 
         if len(normalized) != len(set(normalized)):

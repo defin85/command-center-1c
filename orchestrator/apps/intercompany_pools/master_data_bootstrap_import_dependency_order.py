@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
+from .master_data_registry import normalize_pool_master_data_bootstrap_entity_type
 from .models import PoolMasterDataBootstrapImportEntityType
 
 
@@ -26,10 +27,10 @@ def _fail(detail: str) -> ValueError:
 
 
 def _normalize_bootstrap_entity_type(entity_type: str) -> str:
-    normalized_entity_type = str(entity_type or "").strip().lower()
-    if normalized_entity_type not in set(PoolMasterDataBootstrapImportEntityType.values):
-        raise _fail(f"unsupported bootstrap entity_type '{entity_type}'")
-    return normalized_entity_type
+    try:
+        return normalize_pool_master_data_bootstrap_entity_type(entity_type)
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
 
 
 def resolve_bootstrap_import_dependency_order(*, selected_scope: Iterable[str]) -> tuple[str, ...]:

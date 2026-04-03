@@ -13,6 +13,10 @@ from apps.intercompany_pools.master_data_errors import (
     MasterDataResolveError,
 )
 from apps.intercompany_pools.master_data_bindings import upsert_pool_master_data_binding
+from apps.intercompany_pools.master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
+    POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+)
 from apps.intercompany_pools.models import (
     PoolMasterBindingCatalogKind,
     PoolMasterDataBinding,
@@ -161,6 +165,35 @@ def test_upsert_binding_skips_outbox_for_ib_origin_event() -> None:
         ).count()
         == 0
     )
+
+
+@pytest.mark.django_db
+def test_upsert_binding_skips_outbox_when_registry_disables_outbox_capability() -> None:
+    tenant = Tenant.objects.create(slug="mdm-bind-outbox-gated", name="MDM Binding Outbox Gated")
+    database = _create_database(tenant=tenant, suffix="outbox-gated")
+
+    def _supports(*, entity_type: str, capability: str, include_bootstrap_helpers: bool = False) -> bool:
+        if capability == POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING:
+            return True
+        if capability == POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT:
+            return False
+        return True
+
+    with patch(
+        "apps.intercompany_pools.master_data_bindings.supports_pool_master_data_capability",
+        side_effect=_supports,
+    ):
+        result = upsert_pool_master_data_binding(
+            tenant=tenant,
+            entity_type=PoolMasterDataEntityType.ITEM,
+            canonical_id="item-outbox-gated",
+            database=database,
+            ib_ref_key="item-ref-outbox-gated",
+        )
+
+    assert result.created is True
+    assert result.changed is True
+    assert PoolMasterDataSyncOutbox.objects.filter(tenant=tenant, database=database).count() == 0
 
 
 @pytest.mark.django_db

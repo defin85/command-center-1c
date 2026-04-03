@@ -1,0 +1,10 @@
+type: object
+properties:
+  enabled:
+    type: boolean
+  dependency_order:
+    type: integer
+    nullable: true
+required:
+  - enabled
+  - dependency_order

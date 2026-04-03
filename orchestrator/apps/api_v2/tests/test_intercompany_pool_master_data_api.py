@@ -136,6 +136,23 @@ def test_master_data_items_upsert_list_get_roundtrip(authenticated_client: APICl
 
 
 @pytest.mark.django_db
+def test_master_data_registry_inspect_returns_shared_capability_contract(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.get("/api/v2/pools/master-data/registry/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["contract_version"] == "pool_master_data_registry.v1"
+    assert payload["count"] == 5
+    assert len(payload["entries"]) == 5
+    binding_entry = next(item for item in payload["entries"] if item["entity_type"] == "binding")
+    assert binding_entry["kind"] == "bootstrap_helper"
+    assert binding_entry["capabilities"]["bootstrap_import"] is True
+    assert binding_entry["capabilities"]["outbox_fanout"] is False
+
+
+@pytest.mark.django_db
 def test_master_data_party_upsert_creates_outbox_intents_for_tenant_databases(
     authenticated_client: APIClient,
     default_tenant: Tenant,

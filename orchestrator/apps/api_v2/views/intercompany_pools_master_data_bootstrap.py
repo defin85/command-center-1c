@@ -26,7 +26,7 @@ from apps.intercompany_pools.master_data_bootstrap_import_service import (
     run_pool_master_data_bootstrap_preflight_preview,
     serialize_pool_master_data_bootstrap_import_job,
 )
-from apps.intercompany_pools.models import PoolMasterDataBootstrapImportEntityType
+from apps.intercompany_pools.master_data_registry import get_pool_master_data_bootstrap_entity_types
 from apps.tenancy.models import TenantMember
 
 from .intercompany_pools import _problem, _resolve_tenant_id
@@ -91,10 +91,13 @@ def _require_bootstrap_feature_enabled(*, tenant_id: str | None) -> Response | N
     return None
 
 
+_BOOTSTRAP_ENTITY_SCOPE_CHOICES = get_pool_master_data_bootstrap_entity_types()
+
+
 class BootstrapImportScopeRequestSerializer(serializers.Serializer):
     database_id = serializers.CharField(max_length=64)
     entity_scope = serializers.ListField(
-        child=serializers.ChoiceField(choices=PoolMasterDataBootstrapImportEntityType.values),
+        child=serializers.ChoiceField(choices=_BOOTSTRAP_ENTITY_SCOPE_CHOICES),
         allow_empty=False,
     )
 
@@ -113,7 +116,7 @@ class BootstrapImportListQuerySerializer(serializers.Serializer):
 class BootstrapImportChunkSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     job_id = serializers.UUIDField()
-    entity_type = serializers.ChoiceField(choices=PoolMasterDataBootstrapImportEntityType.values)
+    entity_type = serializers.ChoiceField(choices=_BOOTSTRAP_ENTITY_SCOPE_CHOICES)
     chunk_index = serializers.IntegerField(min_value=0)
     status = serializers.CharField()
     attempt_count = serializers.IntegerField(min_value=0)
@@ -138,7 +141,7 @@ class BootstrapImportJobSerializer(serializers.Serializer):
     tenant_id = serializers.UUIDField()
     database_id = serializers.CharField()
     entity_scope = serializers.ListField(
-        child=serializers.ChoiceField(choices=PoolMasterDataBootstrapImportEntityType.values)
+        child=serializers.ChoiceField(choices=_BOOTSTRAP_ENTITY_SCOPE_CHOICES)
     )
     status = serializers.CharField()
     started_at = serializers.DateTimeField(required=False, allow_null=True)

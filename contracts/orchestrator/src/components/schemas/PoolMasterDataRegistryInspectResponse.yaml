@@ -1,0 +1,14 @@
+type: object
+properties:
+  contract_version:
+    type: string
+  entries:
+    type: array
+    items:
+      $ref: ./PoolMasterDataRegistryEntry.yaml
+  count:
+    type: integer
+required:
+  - contract_version
+  - entries
+  - count

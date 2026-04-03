@@ -15,9 +15,14 @@ from apps.intercompany_pools.master_data_sync_conflict_actions import (
     resolve_master_data_sync_conflict,
     retry_master_data_sync_conflict,
 )
+from apps.intercompany_pools.master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+    get_pool_master_data_entity_types_for_capabilities,
+)
 from apps.intercompany_pools.master_data_sync_read_model import list_master_data_sync_status_rows
 from apps.intercompany_pools.models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
 )
@@ -27,6 +32,11 @@ from .intercompany_pools import _problem, _resolve_tenant_id
 
 SCHEDULING_PRIORITY_CHOICES = ["p0", "p1", "p2", "p3"]
 SCHEDULING_ROLE_CHOICES = ["inbound", "outbound", "reconcile", "manual_remediation"]
+_SYNC_ENTITY_TYPE_CHOICES = get_pool_master_data_entity_types_for_capabilities(
+    POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+)
 
 
 def _validation_problem(*, detail: str, errors: object | None = None) -> Response:
@@ -82,7 +92,7 @@ def _serialize_sync_conflict(conflict: PoolMasterDataSyncConflict) -> dict[str, 
 
 class MasterDataSyncStatusQuerySerializer(serializers.Serializer):
     database_id = serializers.UUIDField(required=False)
-    entity_type = serializers.ChoiceField(required=False, choices=PoolMasterDataEntityType.values)
+    entity_type = serializers.ChoiceField(required=False, choices=_SYNC_ENTITY_TYPE_CHOICES)
     priority = serializers.ChoiceField(required=False, choices=SCHEDULING_PRIORITY_CHOICES)
     role = serializers.ChoiceField(required=False, choices=SCHEDULING_ROLE_CHOICES)
     server_affinity = serializers.CharField(required=False, allow_blank=False, max_length=128)
@@ -95,7 +105,7 @@ class MasterDataSyncStatusQuerySerializer(serializers.Serializer):
 class MasterDataSyncStatusRowSerializer(serializers.Serializer):
     tenant_id = serializers.UUIDField()
     database_id = serializers.UUIDField()
-    entity_type = serializers.ChoiceField(choices=PoolMasterDataEntityType.values)
+    entity_type = serializers.ChoiceField(choices=_SYNC_ENTITY_TYPE_CHOICES)
     checkpoint_token = serializers.CharField(allow_blank=True)
     pending_checkpoint_token = serializers.CharField(allow_blank=True)
     checkpoint_status = serializers.CharField(allow_blank=True)
@@ -148,7 +158,7 @@ class SyncConflictListResponseSerializer(serializers.Serializer):
 
 class MasterDataSyncConflictListQuerySerializer(serializers.Serializer):
     database_id = serializers.UUIDField(required=False)
-    entity_type = serializers.ChoiceField(required=False, choices=PoolMasterDataEntityType.values)
+    entity_type = serializers.ChoiceField(required=False, choices=_SYNC_ENTITY_TYPE_CHOICES)
     status = serializers.ChoiceField(required=False, choices=PoolMasterDataSyncConflictStatus.values)
     limit = serializers.IntegerField(required=False, min_value=1, max_value=500, default=100)
 

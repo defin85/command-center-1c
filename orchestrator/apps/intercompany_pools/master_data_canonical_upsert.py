@@ -11,6 +11,7 @@ from django.db import transaction
 
 from apps.databases.models import Database
 
+from .master_data_registry import POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT, supports_pool_master_data_capability
 from .master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
 from .master_data_sync_origin import (
     MASTER_DATA_SYNC_ORIGIN_IB,
@@ -71,12 +72,17 @@ def enqueue_canonical_mutation_outbox_intents(
         target_system=MASTER_DATA_SYNC_ORIGIN_IB,
     ):
         return
+    if not supports_pool_master_data_capability(
+        entity_type=entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    ):
+        return
 
     database_ids = list(
         Database.objects.filter(tenant_id=tenant_id).values_list("id", flat=True)
     )
     for database_id in database_ids:
-        enqueue_master_data_sync_outbox_intent(
+        outbox_row = enqueue_master_data_sync_outbox_intent(
             tenant_id=str(tenant_id),
             database_id=str(database_id),
             entity_type=entity_type,
@@ -86,6 +92,8 @@ def enqueue_canonical_mutation_outbox_intents(
             origin_system=origin.origin_system,
             origin_event_id=origin.origin_event_id,
         )
+        if outbox_row is None:
+            continue
         _schedule_outbound_master_data_sync_job_trigger(
             tenant_id=str(tenant_id),
             database_id=str(database_id),
@@ -391,4 +399,3 @@ def _schedule_outbound_master_data_sync_job_trigger(
             )
 
     transaction.on_commit(_trigger_after_commit)
-

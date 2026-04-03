@@ -1,0 +1,24 @@
+type: object
+properties:
+  direct_binding:
+    type: boolean
+  token_exposure:
+    type: boolean
+  bootstrap_import:
+    type: boolean
+  outbox_fanout:
+    type: boolean
+  sync_outbound:
+    type: boolean
+  sync_inbound:
+    type: boolean
+  sync_reconcile:
+    type: boolean
+required:
+  - direct_binding
+  - token_exposure
+  - bootstrap_import
+  - outbox_fanout
+  - sync_outbound
+  - sync_inbound
+  - sync_reconcile

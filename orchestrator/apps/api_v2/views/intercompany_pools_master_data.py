@@ -17,19 +17,25 @@ from rest_framework.response import Response
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
 from apps.databases.models import Database
 from apps.intercompany_pools.master_data_canonical_upsert import MasterDataCanonicalUpsertError
-from apps.intercompany_pools.master_data_canonical_upsert import assign_changed_fields
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_contract
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_item
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_party
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_tax_profile
+from apps.intercompany_pools.master_data_errors import MasterDataResolveError
+from apps.intercompany_pools.master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
+    POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    inspect_pool_master_data_registry,
+    get_pool_master_data_entity_types,
+    supports_pool_master_data_capability,
+)
+from apps.intercompany_pools.master_data_bindings import upsert_pool_master_data_binding
 from apps.intercompany_pools.master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
-from apps.intercompany_pools.master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 from apps.intercompany_pools.models import (
     PoolMasterBindingSyncStatus,
     PoolMasterBindingCatalogKind,
     PoolMasterContract,
     PoolMasterDataBinding,
-    PoolMasterDataEntityType,
     PoolMasterItem,
     PoolMasterParty,
     PoolMasterTaxProfile,
@@ -38,6 +44,10 @@ from apps.intercompany_pools.models import (
 from .intercompany_pools import _parse_limit, _problem, _resolve_tenant_id
 
 logger = logging.getLogger(__name__)
+
+_DIRECT_BINDING_ENTITY_CHOICES = get_pool_master_data_entity_types(
+    capability=POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
+)
 
 
 def _parse_offset(raw: object | None, *, default: int = 0) -> int:
@@ -212,7 +222,7 @@ class MasterDataTaxProfileListQuerySerializer(_MasterDataListBaseQuerySerializer
 
 
 class MasterDataBindingListQuerySerializer(_MasterDataListBaseQuerySerializer):
-    entity_type = serializers.ChoiceField(required=False, choices=PoolMasterDataEntityType.values)
+    entity_type = serializers.ChoiceField(required=False, choices=_DIRECT_BINDING_ENTITY_CHOICES)
     canonical_id = serializers.CharField(required=False, allow_blank=True)
     database_id = serializers.UUIDField(required=False)
     ib_catalog_kind = serializers.ChoiceField(
@@ -430,7 +440,7 @@ class PoolMasterDataBindingDetailResponseSerializer(serializers.Serializer):
 
 class PoolMasterDataBindingUpsertRequestSerializer(serializers.Serializer):
     binding_id = serializers.UUIDField(required=False)
-    entity_type = serializers.ChoiceField(choices=PoolMasterDataEntityType.values)
+    entity_type = serializers.ChoiceField(choices=_DIRECT_BINDING_ENTITY_CHOICES)
     canonical_id = serializers.CharField(max_length=128)
     database_id = serializers.UUIDField()
     ib_ref_key = serializers.CharField(max_length=128)
@@ -453,6 +463,61 @@ class PoolMasterDataBindingUpsertRequestSerializer(serializers.Serializer):
 class PoolMasterDataBindingUpsertResponseSerializer(serializers.Serializer):
     binding = PoolMasterDataBindingSerializer()
     created = serializers.BooleanField()
+
+
+class PoolMasterDataRegistryCapabilitiesSerializer(serializers.Serializer):
+    direct_binding = serializers.BooleanField()
+    token_exposure = serializers.BooleanField()
+    bootstrap_import = serializers.BooleanField()
+    outbox_fanout = serializers.BooleanField()
+    sync_outbound = serializers.BooleanField()
+    sync_inbound = serializers.BooleanField()
+    sync_reconcile = serializers.BooleanField()
+
+
+class PoolMasterDataRegistryTokenContractSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    qualifier_kind = serializers.CharField()
+    qualifier_required = serializers.BooleanField()
+    qualifier_options = serializers.ListField(child=serializers.CharField())
+
+
+class PoolMasterDataRegistryBootstrapContractSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    dependency_order = serializers.IntegerField(required=False, allow_null=True)
+
+
+class PoolMasterDataRegistryEntrySerializer(serializers.Serializer):
+    entity_type = serializers.CharField()
+    label = serializers.CharField()
+    kind = serializers.CharField()
+    display_order = serializers.IntegerField(min_value=0)
+    binding_scope_fields = serializers.ListField(child=serializers.CharField())
+    capabilities = PoolMasterDataRegistryCapabilitiesSerializer()
+    token_contract = PoolMasterDataRegistryTokenContractSerializer()
+    bootstrap_contract = PoolMasterDataRegistryBootstrapContractSerializer()
+    runtime_consumers = serializers.ListField(child=serializers.CharField())
+
+
+class PoolMasterDataRegistryInspectResponseSerializer(serializers.Serializer):
+    contract_version = serializers.CharField()
+    entries = PoolMasterDataRegistryEntrySerializer(many=True)
+    count = serializers.IntegerField(min_value=0)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_registry_retrieve",
+    summary="Inspect master-data reusable registry",
+    responses={
+        200: PoolMasterDataRegistryInspectResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def inspect_master_data_registry(request):
+    return Response(inspect_pool_master_data_registry(), status=http_status.HTTP_200_OK)
 
 
 @extend_schema(
@@ -1220,70 +1285,34 @@ def upsert_master_data_binding(request):
                 detail="Binding not found in current tenant context.",
                 status_code=http_status.HTTP_404_NOT_FOUND,
             )
-    if binding is None:
-        binding = PoolMasterDataBinding.objects.filter(
-            tenant_id=tenant_id,
-            entity_type=data["entity_type"],
-            canonical_id=data["canonical_id"],
-            database=database,
-            ib_catalog_kind=data.get("ib_catalog_kind", ""),
-            owner_counterparty_canonical_id=data.get("owner_counterparty_canonical_id", ""),
-        ).first()
-
-    created = binding is None
-    payload = {
-        "tenant_id": tenant_id,
-        "entity_type": data["entity_type"],
-        "canonical_id": data["canonical_id"],
-        "database": database,
-        "ib_ref_key": data["ib_ref_key"],
-        "ib_catalog_kind": data.get("ib_catalog_kind", ""),
-        "owner_counterparty_canonical_id": data.get("owner_counterparty_canonical_id", ""),
-        "sync_status": data.get("sync_status", PoolMasterBindingSyncStatus.RESOLVED),
-        "fingerprint": data.get("fingerprint", ""),
-        "metadata": data.get("metadata", {}),
-    }
+    tenant = binding.tenant if binding is not None else database.tenant
     try:
-        with transaction.atomic():
-            changed = True
-            if created:
-                binding = PoolMasterDataBinding.objects.create(**payload)
-            else:
-                changed = assign_changed_fields(binding, payload)
-                if changed:
-                    binding.save()
-
-            if changed:
-                origin_event_id = f"binding:{binding.id}:{int(binding.updated_at.timestamp())}"
-                enqueue_master_data_sync_outbox_intent(
-                    tenant_id=str(binding.tenant_id),
-                    database_id=str(binding.database_id),
-                    entity_type=str(binding.entity_type),
-                    canonical_id=str(binding.canonical_id),
-                    mutation_kind="binding_upsert",
-                    payload={
-                        "entity_type": str(binding.entity_type),
-                        "canonical_id": str(binding.canonical_id),
-                        "ib_ref_key": str(binding.ib_ref_key or ""),
-                        "ib_catalog_kind": str(binding.ib_catalog_kind or ""),
-                        "owner_counterparty_canonical_id": str(
-                            binding.owner_counterparty_canonical_id or ""
-                        ),
-                        "sync_status": str(binding.sync_status or ""),
-                        "fingerprint": str(binding.fingerprint or ""),
-                        "metadata": dict(binding.metadata or {}),
-                    },
-                    origin_system="cc",
-                    origin_event_id=origin_event_id,
-                )
-                _schedule_outbound_master_data_sync_job_trigger(
-                    tenant_id=str(binding.tenant_id),
-                    database_id=str(binding.database_id),
-                    entity_type=str(binding.entity_type),
-                    canonical_id=str(binding.canonical_id),
-                    origin_system="cc",
-                    origin_event_id=origin_event_id,
-                )
+        result = upsert_pool_master_data_binding(
+            tenant=tenant,
+            entity_type=str(data["entity_type"]),
+            canonical_id=str(data["canonical_id"]),
+            database=database,
+            existing_binding=binding,
+            ib_ref_key=str(data["ib_ref_key"]),
+            ib_catalog_kind=str(data.get("ib_catalog_kind", "")),
+            owner_counterparty_canonical_id=str(data.get("owner_counterparty_canonical_id", "")),
+            sync_status=str(data.get("sync_status", PoolMasterBindingSyncStatus.RESOLVED)),
+            fingerprint=str(data.get("fingerprint", "")),
+            metadata=data.get("metadata", {}),
+            origin_system="cc",
+        )
+    except MasterDataResolveError as exc:
+        if exc.code == "MASTER_DATA_ENTITY_NOT_FOUND":
+            return _problem(
+                code="MASTER_DATA_ENTITY_NOT_FOUND",
+                title="Master Data Entity Not Found",
+                detail=exc.detail,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+            )
+        return _validation_problem(
+            detail="Binding payload validation failed.",
+            errors=exc.errors or [{"detail": exc.detail}],
+        )
     except DjangoValidationError as exc:
         return _validation_problem(
             detail="Binding payload validation failed.",
@@ -1297,5 +1326,20 @@ def upsert_master_data_binding(request):
             status_code=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
-    return Response({"binding": _serialize_binding(binding), "created": created}, status=response_status)
+    binding = result.binding
+    if result.changed and supports_pool_master_data_capability(
+        entity_type=str(binding.entity_type),
+        capability=POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    ):
+        origin_event_id = f"binding:{binding.id}:{int(binding.updated_at.timestamp())}"
+        _schedule_outbound_master_data_sync_job_trigger(
+            tenant_id=str(binding.tenant_id),
+            database_id=str(binding.database_id),
+            entity_type=str(binding.entity_type),
+            canonical_id=str(binding.canonical_id),
+            origin_system="cc",
+            origin_event_id=origin_event_id,
+        )
+
+    response_status = http_status.HTTP_201_CREATED if result.created else http_status.HTTP_200_OK
+    return Response({"binding": _serialize_binding(binding), "created": result.created}, status=response_status)

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from apps.intercompany_pools.models import PoolMasterDataEntityType, PoolMasterDataSyncScope
+from apps.intercompany_pools.master_data_registry import normalize_pool_master_data_entity_type
+from apps.intercompany_pools.models import PoolMasterDataSyncScope
 
 
 MASTER_DATA_SYNC_POLICY_MISSING = "MASTER_DATA_SYNC_POLICY_MISSING"
@@ -38,10 +39,7 @@ class MasterDataSyncPolicyMissingError(ValueError):
 
 
 def _normalize_entity_type(entity_type: str) -> str:
-    normalized = str(entity_type or "").strip()
-    if normalized not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
-    return normalized
+    return normalize_pool_master_data_entity_type(entity_type)
 
 
 def resolve_pool_master_data_sync_policy(

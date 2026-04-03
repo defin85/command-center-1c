@@ -7,6 +7,7 @@ from typing import Any, Callable
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.databases.odata import ODataClient
 
+from .master_data_registry import normalize_pool_master_data_bootstrap_entity_type
 from .master_data_sync_redaction import sanitize_master_data_sync_text, sanitize_master_data_sync_value
 from .models import PoolMasterDataBootstrapImportEntityType
 
@@ -599,12 +600,12 @@ def _normalize_entity_scope(entity_scope: list[str]) -> list[str]:
 
 
 def _normalize_entity_type(entity_type: str) -> str:
-    normalized = str(entity_type or "").strip().lower()
-    if normalized not in set(PoolMasterDataBootstrapImportEntityType.values):
+    try:
+        return normalize_pool_master_data_bootstrap_entity_type(entity_type)
+    except ValueError as exc:
         raise ValueError(
             f"{BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID}: unsupported bootstrap entity_type '{entity_type}'"
-        )
-    return normalized
+        ) from exc
 
 
 def _error(*, code: str, detail: str, path: str) -> dict[str, Any]:

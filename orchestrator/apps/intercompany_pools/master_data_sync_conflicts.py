@@ -6,12 +6,12 @@ from typing import Any, Mapping
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_registry import normalize_pool_master_data_entity_type
 from .master_data_sync_redaction import (
     sanitize_master_data_sync_text,
     sanitize_master_data_sync_value,
 )
 from .models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
 )
@@ -224,7 +224,4 @@ def build_master_data_sync_conflict_queue_key(
 
 
 def _normalize_entity_type(*, entity_type: str) -> str:
-    normalized = str(entity_type or "").strip()
-    if normalized not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
-    return normalized
+    return normalize_pool_master_data_entity_type(entity_type)

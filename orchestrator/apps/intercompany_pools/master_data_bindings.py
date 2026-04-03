@@ -10,10 +10,15 @@ from django.utils import timezone
 from apps.databases.models import Database
 from apps.tenancy.models import Tenant
 
+from .master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
+    POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    normalize_pool_master_data_entity_type,
+    supports_pool_master_data_capability,
+)
 from .models import (
     PoolMasterBindingSyncStatus,
     PoolMasterDataBinding,
-    PoolMasterDataEntityType,
 )
 from .master_data_sync_origin import (
     MASTER_DATA_SYNC_ORIGIN_IB,
@@ -73,6 +78,11 @@ def _enqueue_binding_outbox_intent(
         target_system=MASTER_DATA_SYNC_ORIGIN_IB,
     ):
         return
+    if not supports_pool_master_data_capability(
+        entity_type=str(binding.entity_type),
+        capability=POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
+    ):
+        return
 
     resolved_origin_event_id = origin.origin_event_id
     if not resolved_origin_event_id:
@@ -96,6 +106,7 @@ def upsert_pool_master_data_binding(
     canonical_id: str,
     database: Database,
     ib_ref_key: str,
+    existing_binding: PoolMasterDataBinding | None = None,
     ib_catalog_kind: str = "",
     owner_counterparty_canonical_id: str = "",
     sync_status: str = PoolMasterBindingSyncStatus.UPSERTED,
@@ -105,10 +116,23 @@ def upsert_pool_master_data_binding(
     origin_event_id: str = "",
 ) -> PoolMasterDataBindingUpsertResult:
     normalized_entity_type = str(entity_type or "").strip()
-    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
+    try:
+        normalized_entity_type = normalize_pool_master_data_entity_type(normalized_entity_type)
+    except ValueError:
         raise MasterDataResolveError(
             code=MASTER_DATA_ENTITY_NOT_FOUND,
             detail=f"Unsupported master-data entity_type '{entity_type}'",
+            entity_type=normalized_entity_type,
+            canonical_id=str(canonical_id or "").strip(),
+            target_database_id=str(database.id),
+        )
+    if not supports_pool_master_data_capability(
+        entity_type=normalized_entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
+    ):
+        raise MasterDataResolveError(
+            code=MASTER_DATA_ENTITY_NOT_FOUND,
+            detail=f"Master-data entity_type '{entity_type}' does not support direct bindings.",
             entity_type=normalized_entity_type,
             canonical_id=str(canonical_id or "").strip(),
             target_database_id=str(database.id),
@@ -132,12 +156,58 @@ def upsert_pool_master_data_binding(
 
     try:
         with transaction.atomic():
+            binding = None
+            if existing_binding is not None:
+                binding = (
+                    PoolMasterDataBinding.objects.select_for_update()
+                    .filter(id=existing_binding.id, tenant=tenant)
+                    .first()
+                )
+                if binding is None:
+                    raise MasterDataResolveError(
+                        code=MASTER_DATA_BINDING_CONFLICT,
+                        detail="Binding not found for edit operation.",
+                        entity_type=normalized_entity_type,
+                        canonical_id=str(canonical_id or "").strip(),
+                        target_database_id=str(database.id),
+                    )
+                candidates = [
+                    candidate
+                    for candidate in _load_scope_candidates(scope=scope)
+                    if str(candidate.id) != str(binding.id)
+                ]
+                if candidates:
+                    diagnostics = [{"binding_id": str(candidate.id)} for candidate in candidates]
+                    raise MasterDataResolveError(
+                        code=MASTER_DATA_BINDING_AMBIGUOUS,
+                        detail=(
+                            "Ambiguous master-data binding scope: multiple bindings "
+                            "match the same canonical tuple."
+                        ),
+                        entity_type=normalized_entity_type,
+                        canonical_id=str(canonical_id or "").strip(),
+                        target_database_id=str(database.id),
+                        errors=diagnostics,
+                    )
+                changed_fields: list[str] = []
+                for field_name, new_value in {**scope, **updatable_fields}.items():
+                    if getattr(binding, field_name) != new_value:
+                        setattr(binding, field_name, new_value)
+                        changed_fields.append(field_name)
+                if changed_fields:
+                    binding.last_synced_at = timezone.now()
+                    binding.save(update_fields=[*changed_fields, "last_synced_at", "updated_at"])
+                    _enqueue_binding_outbox_intent(
+                        binding=binding,
+                        origin_system=origin_system,
+                        origin_event_id=origin_event_id,
+                    )
+                    return PoolMasterDataBindingUpsertResult(binding=binding, created=False, changed=True)
+                return PoolMasterDataBindingUpsertResult(binding=binding, created=False, changed=False)
+
             candidates = _load_scope_candidates(scope=scope)
             if len(candidates) > 1:
-                diagnostics = [
-                    {"binding_id": str(candidate.id)}
-                    for candidate in candidates
-                ]
+                diagnostics = [{"binding_id": str(candidate.id)} for candidate in candidates]
                 raise MasterDataResolveError(
                     code=MASTER_DATA_BINDING_AMBIGUOUS,
                     detail=(

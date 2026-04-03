@@ -42,6 +42,7 @@ from .master_data_bootstrap_import_lifecycle_contract import (
     POOL_MASTER_DATA_BOOTSTRAP_IMPORT_STEP_PREFLIGHT,
     resolve_bootstrap_import_next_status,
 )
+from .master_data_registry import normalize_pool_master_data_entity_type
 from .master_data_bootstrap_import_source_adapter import (
     PoolMasterDataBootstrapSourcePreflightResult,
     fetch_pool_master_data_bootstrap_source_rows,
@@ -60,7 +61,6 @@ from .models import (
     PoolMasterDataBootstrapImportJob,
     PoolMasterDataBootstrapImportJobStatus,
     PoolMasterDataBootstrapImportReport,
-    PoolMasterDataEntityType,
     PoolMasterItem,
     PoolMasterParty,
     PoolMasterTaxProfile,
@@ -1258,7 +1258,9 @@ def _apply_binding_row(
             detail="Binding row requires entity_type and canonical_id.",
         )
 
-    if target_entity_type not in set(PoolMasterDataEntityType.values):
+    try:
+        target_entity_type = normalize_pool_master_data_entity_type(target_entity_type)
+    except ValueError:
         return BootstrapRowOutcome(
             action="failed",
             error_code=BOOTSTRAP_IMPORT_BINDING_TARGET_INVALID,

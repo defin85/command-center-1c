@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import { Alert, Card, Space, Tabs, Typography } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, App as AntApp, Card, Space, Tabs, Typography } from 'antd'
 
+import { getPoolMasterDataRegistry, type PoolMasterDataRegistryEntry } from '../../api/intercompanyPools'
 import { BindingsTab } from './masterData/BindingsTab'
 import { BootstrapImportTab } from './masterData/BootstrapImportTab'
 import { ContractsTab } from './masterData/ContractsTab'
@@ -8,6 +9,7 @@ import { ItemsTab } from './masterData/ItemsTab'
 import { PartiesTab } from './masterData/PartiesTab'
 import { SyncStatusTab } from './masterData/SyncStatusTab'
 import { TaxProfilesTab } from './masterData/TaxProfilesTab'
+import { resolveApiError } from './masterData/errorUtils'
 
 const { Title, Text } = Typography
 
@@ -31,10 +33,12 @@ const normalizeMasterDataTab = (rawValue: string | null): MasterDataTabKey => {
 }
 
 export function PoolMasterDataPage() {
+  const { message } = AntApp.useApp()
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), [])
   const [activeTab, setActiveTab] = useState<MasterDataTabKey>(
     normalizeMasterDataTab(searchParams.get('tab'))
   )
+  const [registryEntries, setRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
   const remediationContextLines = useMemo(() => {
     const lines: string[] = []
     const entityType = searchParams.get('entityType')?.trim() ?? ''
@@ -52,6 +56,25 @@ export function PoolMasterDataPage() {
     }
     return lines
   }, [searchParams])
+
+  useEffect(() => {
+    let cancelled = false
+    void getPoolMasterDataRegistry()
+      .then((response) => {
+        if (!cancelled) {
+          setRegistryEntries(response.entries)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const resolved = resolveApiError(error, 'Не удалось загрузить reusable-data registry.')
+          message.error(resolved.message)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [message])
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -86,9 +109,13 @@ export function PoolMasterDataPage() {
           { key: 'item', label: 'Item', children: <ItemsTab /> },
           { key: 'contract', label: 'Contract', children: <ContractsTab /> },
           { key: 'tax-profile', label: 'TaxProfile', children: <TaxProfilesTab /> },
-          { key: 'bindings', label: 'Bindings', children: <BindingsTab /> },
-          { key: 'sync', label: 'Sync', children: <SyncStatusTab /> },
-          { key: 'bootstrap-import', label: 'Bootstrap Import', children: <BootstrapImportTab /> },
+          { key: 'bindings', label: 'Bindings', children: <BindingsTab registryEntries={registryEntries} /> },
+          { key: 'sync', label: 'Sync', children: <SyncStatusTab registryEntries={registryEntries} /> },
+          {
+            key: 'bootstrap-import',
+            label: 'Bootstrap Import',
+            children: <BootstrapImportTab registryEntries={registryEntries} />,
+          },
         ]}
       />
     </Space>

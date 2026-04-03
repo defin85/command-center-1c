@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, Mapping
 from uuid import UUID
 
+from .master_data_registry import normalize_pool_master_data_entity_type
 from .models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncDirection,
     PoolMasterDataSyncJob,
     PoolMasterDataSyncPolicy,
@@ -59,8 +59,10 @@ def validate_master_data_sync_workflow_input_context(
         "origin_event_id": _require_token(payload, "origin_event_id"),
     }
 
-    if normalized["entity_type"] not in set(PoolMasterDataEntityType.values):
-        raise _fail(f"unsupported entity_type '{normalized['entity_type']}'")
+    try:
+        normalized["entity_type"] = normalize_pool_master_data_entity_type(normalized["entity_type"])
+    except ValueError as exc:
+        raise _fail(str(exc)) from exc
     if normalized["sync_policy"] not in set(PoolMasterDataSyncPolicy.values):
         raise _fail(f"unsupported sync_policy '{normalized['sync_policy']}'")
     if normalized["sync_direction"] not in set(PoolMasterDataSyncDirection.values):

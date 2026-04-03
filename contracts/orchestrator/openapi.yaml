@@ -5561,6 +5561,31 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/pools/master-data/registry/:
+    get:
+      operationId: v2_pools_master_data_registry_retrieve
+      summary: Inspect master-data reusable registry
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: ''
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataRegistryInspectResponse'
+        '401':
+          description: Unauthorized
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
   /api/v2/pools/master-data/bindings/{id}/:
     get:
       operationId: v2_pools_master_data_bindings_get
@@ -18800,6 +18825,117 @@ components:
         - count
         - limit
         - offset
+    PoolMasterDataRegistryCapabilities:
+      type: object
+      properties:
+        direct_binding:
+          type: boolean
+        token_exposure:
+          type: boolean
+        bootstrap_import:
+          type: boolean
+        outbox_fanout:
+          type: boolean
+        sync_outbound:
+          type: boolean
+        sync_inbound:
+          type: boolean
+        sync_reconcile:
+          type: boolean
+      required:
+        - direct_binding
+        - token_exposure
+        - bootstrap_import
+        - outbox_fanout
+        - sync_outbound
+        - sync_inbound
+        - sync_reconcile
+    PoolMasterDataRegistryTokenContract:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        qualifier_kind:
+          type: string
+          enum:
+            - none
+            - ib_catalog_kind
+            - owner_counterparty_canonical_id
+        qualifier_required:
+          type: boolean
+        qualifier_options:
+          type: array
+          items:
+            type: string
+      required:
+        - enabled
+        - qualifier_kind
+        - qualifier_required
+        - qualifier_options
+    PoolMasterDataRegistryBootstrapContract:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        dependency_order:
+          type: integer
+          nullable: true
+      required:
+        - enabled
+        - dependency_order
+    PoolMasterDataRegistryEntry:
+      type: object
+      properties:
+        entity_type:
+          type: string
+        label:
+          type: string
+        kind:
+          type: string
+          enum:
+            - canonical
+            - bootstrap_helper
+        display_order:
+          type: integer
+        binding_scope_fields:
+          type: array
+          items:
+            type: string
+        capabilities:
+          $ref: '#/components/schemas/PoolMasterDataRegistryCapabilities'
+        token_contract:
+          $ref: '#/components/schemas/PoolMasterDataRegistryTokenContract'
+        bootstrap_contract:
+          $ref: '#/components/schemas/PoolMasterDataRegistryBootstrapContract'
+        runtime_consumers:
+          type: array
+          items:
+            type: string
+      required:
+        - entity_type
+        - label
+        - kind
+        - display_order
+        - binding_scope_fields
+        - capabilities
+        - token_contract
+        - bootstrap_contract
+        - runtime_consumers
+    PoolMasterDataRegistryInspectResponse:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataRegistryEntry'
+        count:
+          type: integer
+      required:
+        - contract_version
+        - entries
+        - count
     PoolMasterDataBindingDetailResponse:
       type: object
       properties:

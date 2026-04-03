@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import {
+  type PoolMasterDataRegistryEntry,
   listMasterDataBindings,
   listPoolTargetDatabases,
   upsertMasterDataBinding,
@@ -14,6 +15,7 @@ import {
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
+import { getDefaultDirectBindingEntityType, getDirectBindingEntityOptions } from './registry'
 
 type BindingFormValues = {
   entity_type: PoolMasterDataEntityType
@@ -26,20 +28,17 @@ type BindingFormValues = {
   fingerprint: string
 }
 
-const ENTITY_TYPE_OPTIONS: { value: PoolMasterDataEntityType; label: string }[] = [
-  { value: 'party', label: 'party' },
-  { value: 'item', label: 'item' },
-  { value: 'contract', label: 'contract' },
-  { value: 'tax_profile', label: 'tax_profile' },
-]
-
 const SYNC_STATUS_OPTIONS: { value: PoolMasterBindingSyncStatus; label: string }[] = [
   { value: 'resolved', label: 'resolved' },
   { value: 'upserted', label: 'upserted' },
   { value: 'conflict', label: 'conflict' },
 ]
 
-export function BindingsTab() {
+type BindingsTabProps = {
+  registryEntries: PoolMasterDataRegistryEntry[]
+}
+
+export function BindingsTab({ registryEntries }: BindingsTabProps) {
   const { message } = AntApp.useApp()
   const [rows, setRows] = useState<PoolMasterDataBinding[]>([])
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
@@ -50,6 +49,14 @@ export function BindingsTab() {
   const [editingBinding, setEditingBinding] = useState<PoolMasterDataBinding | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [form] = Form.useForm<BindingFormValues>()
+  const entityTypeOptions = useMemo(
+    () => getDirectBindingEntityOptions(registryEntries),
+    [registryEntries]
+  )
+  const defaultEntityType = useMemo(
+    () => getDefaultDirectBindingEntityType(registryEntries),
+    [registryEntries]
+  )
 
   const loadDatabases = useCallback(async () => {
     try {
@@ -90,7 +97,7 @@ export function BindingsTab() {
   const openCreateModal = () => {
     setEditingBinding(null)
     form.setFieldsValue({
-      entity_type: 'party',
+      entity_type: defaultEntityType,
       canonical_id: '',
       database_id: '',
       ib_ref_key: '',
@@ -219,7 +226,7 @@ export function BindingsTab() {
             allowClear
             placeholder="Entity type"
             value={entityTypeFilter}
-            options={ENTITY_TYPE_OPTIONS}
+            options={entityTypeOptions}
             onChange={(value) => setEntityTypeFilter(value)}
             style={{ width: 180 }}
           />
@@ -246,7 +253,7 @@ export function BindingsTab() {
       >
         <Form form={form} layout="vertical">
           <Form.Item name="entity_type" label="Entity Type" rules={[{ required: true }]}>
-            <Select options={ENTITY_TYPE_OPTIONS} />
+            <Select options={entityTypeOptions} />
           </Form.Item>
           <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
             <Input />

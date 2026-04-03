@@ -21,6 +21,7 @@ def test_pool_master_data_paths_and_operation_ids_are_present() -> None:
     assert isinstance(paths, dict)
 
     expected = {
+        "/api/v2/pools/master-data/registry/": ("get", "v2_pools_master_data_registry_retrieve"),
         "/api/v2/pools/master-data/parties/": ("get", "v2_pools_master_data_parties_list"),
         "/api/v2/pools/master-data/parties/{id}/": ("get", "v2_pools_master_data_parties_get"),
         "/api/v2/pools/master-data/parties/upsert/": ("post", "v2_pools_master_data_parties_upsert"),

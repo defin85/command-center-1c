@@ -6,11 +6,11 @@ from typing import Any, Callable, Mapping
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_registry import normalize_pool_master_data_entity_type
 from .master_data_sync_conflicts import MasterDataSyncConflictError
 from .master_data_sync_invariants import build_inbound_dedupe_fingerprint
 from .master_data_sync_redaction import sanitize_master_data_sync_text
 from .models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncCheckpoint,
     PoolMasterDataSyncCheckpointStatus,
 )
@@ -200,10 +200,7 @@ def poll_master_data_sync_inbound_changes(
 
 
 def _normalize_entity_type(*, entity_type: str) -> str:
-    normalized = str(entity_type or "").strip()
-    if normalized not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
-    return normalized
+    return normalize_pool_master_data_entity_type(entity_type)
 
 
 def _get_or_create_checkpoint(

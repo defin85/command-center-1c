@@ -7,6 +7,13 @@ from uuid import uuid4
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_registry import (
+    POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+    POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+    normalize_pool_master_data_entity_type,
+    supports_pool_master_data_capability,
+)
 from .master_data_sync_conflicts import (
     MASTER_DATA_SYNC_CONFLICT_APPLY,
     MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
@@ -27,7 +34,6 @@ from .master_data_sync_workflow_runtime import (
     start_pool_master_data_sync_job_workflow,
 )
 from .models import (
-    PoolMasterDataEntityType,
     PoolMasterDataSyncDirection,
     PoolMasterDataSyncJob,
     PoolMasterDataSyncJobStatus,
@@ -37,6 +43,9 @@ from .models import (
 MASTER_DATA_SYNC_DISABLED = "MASTER_DATA_SYNC_DISABLED"
 MASTER_DATA_SYNC_OUTBOUND_DISABLED = "MASTER_DATA_SYNC_OUTBOUND_DISABLED"
 MASTER_DATA_SYNC_INBOUND_DISABLED = "MASTER_DATA_SYNC_INBOUND_DISABLED"
+MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED = "MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED"
+MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED = "MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED"
+MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED = "MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED"
 MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED = "MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED"
 SYNC_LEGACY_INBOUND_ROUTE_DISABLED = "SYNC_LEGACY_INBOUND_ROUTE_DISABLED"
 
@@ -147,14 +156,26 @@ def trigger_pool_master_data_outbound_sync_job(
 ) -> PoolMasterDataSyncTriggerResult:
     normalized_tenant_id = str(tenant_id or "").strip()
     normalized_database_id = str(database_id or "").strip()
-    normalized_entity_type = str(entity_type or "").strip()
+    normalized_entity_type = normalize_pool_master_data_entity_type(entity_type)
     normalized_origin_system = str(origin_system or "cc").strip().lower() or "cc"
     normalized_origin_event_id = str(origin_event_id or "").strip() or f"evt-{uuid4()}"
     normalized_canonical_id = str(canonical_id or "").strip()
     normalized_correlation_id = str(correlation_id or "").strip() or f"corr-{uuid4()}"
 
-    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+    if not supports_pool_master_data_capability(
+        entity_type=normalized_entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+    ):
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
 
     runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=normalized_tenant_id)
     if not runtime_settings.enabled:
@@ -308,13 +329,25 @@ def trigger_pool_master_data_inbound_sync_job(
 ) -> PoolMasterDataSyncTriggerResult:
     normalized_tenant_id = str(tenant_id or "").strip()
     normalized_database_id = str(database_id or "").strip()
-    normalized_entity_type = str(entity_type or "").strip()
+    normalized_entity_type = normalize_pool_master_data_entity_type(entity_type)
     normalized_origin_system = str(origin_system or "ib").strip().lower() or "ib"
     normalized_origin_event_id = str(origin_event_id or "").strip() or f"evt-{uuid4()}"
     normalized_correlation_id = str(correlation_id or "").strip() or f"corr-{uuid4()}"
 
-    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+    if not supports_pool_master_data_capability(
+        entity_type=normalized_entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    ):
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
 
     runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=normalized_tenant_id)
     if not runtime_settings.enabled:
@@ -466,15 +499,27 @@ def trigger_pool_master_data_reconcile_sync_job(
 ) -> PoolMasterDataSyncTriggerResult:
     normalized_tenant_id = str(tenant_id or "").strip()
     normalized_database_id = str(database_id or "").strip()
-    normalized_entity_type = str(entity_type or "").strip()
+    normalized_entity_type = normalize_pool_master_data_entity_type(entity_type)
     normalized_origin_system = str(origin_system or "reconcile_scheduler").strip().lower() or "reconcile_scheduler"
     normalized_origin_event_id = str(origin_event_id or "").strip() or f"evt-{uuid4()}"
     normalized_correlation_id = str(correlation_id or "").strip() or f"corr-{uuid4()}"
     normalized_window_id = str(reconcile_window_id or "").strip()
     normalized_window_deadline_at = str(reconcile_window_deadline_at or "").strip()
 
-    if normalized_entity_type not in set(PoolMasterDataEntityType.values):
-        raise ValueError(f"Unsupported master-data entity_type '{entity_type}'")
+    if not supports_pool_master_data_capability(
+        entity_type=normalized_entity_type,
+        capability=POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+    ):
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
 
     runtime_settings = require_pool_master_data_sync_runtime_settings(tenant_id=normalized_tenant_id)
     if not runtime_settings.enabled:
@@ -655,6 +700,20 @@ def execute_pool_master_data_sync_inbound_step(
             "skipped": True,
             "reason": "direction_without_inbound",
         }
+    if not supports_pool_master_data_capability(
+        entity_type=str(sync_job.entity_type),
+        capability=POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+    ):
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+            detail="Inbound capability is disabled for master-data entity type.",
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics={"runtime_gate": MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED},
+        )
 
     if not runtime_settings.inbound_enabled:
         raise_fail_closed_master_data_sync_conflict(
@@ -790,6 +849,20 @@ def execute_pool_master_data_sync_dispatch_step(
         PoolMasterDataSyncDirection.OUTBOUND,
         PoolMasterDataSyncDirection.BIDIRECTIONAL,
     }:
+        if not supports_pool_master_data_capability(
+            entity_type=str(sync_job.entity_type),
+            capability=POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
+        ):
+            raise_fail_closed_master_data_sync_conflict(
+                tenant_id=str(sync_job.tenant_id),
+                database_id=str(sync_job.database_id),
+                entity_type=str(sync_job.entity_type),
+                conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+                detail="Outbound capability is disabled for master-data entity type.",
+                origin_system=str(normalized_context["origin_system"]),
+                origin_event_id=str(normalized_context["origin_event_id"]),
+                diagnostics={"runtime_gate": MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED},
+            )
         if not runtime_settings.outbound_enabled:
             raise_fail_closed_master_data_sync_conflict(
                 tenant_id=str(sync_job.tenant_id),
@@ -819,6 +892,20 @@ def execute_pool_master_data_sync_dispatch_step(
         PoolMasterDataSyncDirection.INBOUND,
         PoolMasterDataSyncDirection.BIDIRECTIONAL,
     }:
+        if not supports_pool_master_data_capability(
+            entity_type=str(sync_job.entity_type),
+            capability=POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
+        ):
+            raise_fail_closed_master_data_sync_conflict(
+                tenant_id=str(sync_job.tenant_id),
+                database_id=str(sync_job.database_id),
+                entity_type=str(sync_job.entity_type),
+                conflict_code=MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+                detail="Inbound capability is disabled for master-data entity type.",
+                origin_system=str(normalized_context["origin_system"]),
+                origin_event_id=str(normalized_context["origin_event_id"]),
+                diagnostics={"runtime_gate": MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED},
+            )
         if not runtime_settings.inbound_enabled:
             raise_fail_closed_master_data_sync_conflict(
                 tenant_id=str(sync_job.tenant_id),

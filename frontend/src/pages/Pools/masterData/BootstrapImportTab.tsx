@@ -29,10 +29,12 @@ import {
   type PoolMasterDataBootstrapImportEntityType,
   type PoolMasterDataBootstrapImportJob,
   type PoolMasterDataBootstrapImportPreflightResult,
+  type PoolMasterDataRegistryEntry,
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
+import { getBootstrapEntityOptions, getDefaultBootstrapScope } from './registry'
 
 const { Text } = Typography
 
@@ -40,14 +42,6 @@ type BootstrapScopeFormValues = {
   database_id: string
   entity_scope: PoolMasterDataBootstrapImportEntityType[]
 }
-
-const ENTITY_SCOPE_OPTIONS: { value: PoolMasterDataBootstrapImportEntityType; label: string }[] = [
-  { value: 'party', label: 'party' },
-  { value: 'item', label: 'item' },
-  { value: 'tax_profile', label: 'tax_profile' },
-  { value: 'contract', label: 'contract' },
-  { value: 'binding', label: 'binding' },
-]
 
 const TERMINAL_JOB_STATUSES = new Set(['finalized', 'failed', 'canceled'])
 
@@ -63,7 +57,11 @@ const STATUS_COLOR: Record<string, string> = {
   canceled: 'default',
 }
 
-export function BootstrapImportTab() {
+type BootstrapImportTabProps = {
+  registryEntries: PoolMasterDataRegistryEntry[]
+}
+
+export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps) {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm<BootstrapScopeFormValues>()
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
@@ -80,6 +78,14 @@ export function BootstrapImportTab() {
   const [runningExecute, setRunningExecute] = useState(false)
   const [runningJobAction, setRunningJobAction] = useState(false)
   const [jobActionError, setJobActionError] = useState('')
+  const entityScopeOptions = useMemo(
+    () => getBootstrapEntityOptions(registryEntries),
+    [registryEntries]
+  )
+  const defaultScope = useMemo(
+    () => getDefaultBootstrapScope(registryEntries),
+    [registryEntries]
+  )
 
   const loadDatabases = useCallback(async () => {
     setLoadingDatabases(true)
@@ -143,6 +149,14 @@ export function BootstrapImportTab() {
     void loadDatabases()
     void loadJobs()
   }, [loadDatabases, loadJobs])
+
+  useEffect(() => {
+    const currentScope = form.getFieldValue('entity_scope') as PoolMasterDataBootstrapImportEntityType[] | undefined
+    if ((currentScope?.length ?? 0) > 0 || defaultScope.length === 0) {
+      return
+    }
+    form.setFieldsValue({ entity_scope: defaultScope })
+  }, [defaultScope, form])
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -383,7 +397,7 @@ export function BootstrapImportTab() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ entity_scope: ['party', 'item'] }}
+          initialValues={{ entity_scope: defaultScope }}
         >
           <Space wrap align="start">
             <Form.Item
@@ -410,7 +424,7 @@ export function BootstrapImportTab() {
                 mode="multiple"
                 allowClear
                 placeholder="Select entities"
-                options={ENTITY_SCOPE_OPTIONS}
+                options={entityScopeOptions}
               />
             </Form.Item>
           </Space>

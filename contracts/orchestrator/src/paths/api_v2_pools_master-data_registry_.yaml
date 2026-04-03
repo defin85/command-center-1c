@@ -1,0 +1,27 @@
+get:
+  operationId: v2_pools_master_data_registry_retrieve
+  summary: Inspect master-data reusable registry
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PoolMasterDataRegistryInspectResponse.yaml
+    '401':
+      description: Unauthorized
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

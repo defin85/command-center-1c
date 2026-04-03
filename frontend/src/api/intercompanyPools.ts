@@ -1476,6 +1476,42 @@ export async function abortPoolRunPublication(
 export type PoolMasterDataEntityType = 'party' | 'item' | 'contract' | 'tax_profile'
 export type PoolMasterBindingCatalogKind = 'organization' | 'counterparty' | ''
 export type PoolMasterBindingSyncStatus = 'resolved' | 'upserted' | 'conflict'
+export type PoolMasterDataRegistryKind = 'canonical' | 'bootstrap_helper'
+export type PoolMasterDataTokenQualifierKind = 'none' | 'ib_catalog_kind' | 'owner_counterparty_canonical_id'
+
+export type PoolMasterDataRegistryCapabilities = {
+  direct_binding: boolean
+  token_exposure: boolean
+  bootstrap_import: boolean
+  outbox_fanout: boolean
+  sync_outbound: boolean
+  sync_inbound: boolean
+  sync_reconcile: boolean
+}
+
+export type PoolMasterDataRegistryTokenContract = {
+  enabled: boolean
+  qualifier_kind: PoolMasterDataTokenQualifierKind
+  qualifier_required: boolean
+  qualifier_options: string[]
+}
+
+export type PoolMasterDataRegistryBootstrapContract = {
+  enabled: boolean
+  dependency_order: number | null
+}
+
+export type PoolMasterDataRegistryEntry = {
+  entity_type: PoolMasterDataEntityType | 'binding'
+  label: string
+  kind: PoolMasterDataRegistryKind
+  display_order: number
+  binding_scope_fields: string[]
+  capabilities: PoolMasterDataRegistryCapabilities
+  token_contract: PoolMasterDataRegistryTokenContract
+  bootstrap_contract: PoolMasterDataRegistryBootstrapContract
+  runtime_consumers: string[]
+}
 
 export type PoolMasterParty = {
   id: string
@@ -1707,6 +1743,12 @@ export type PoolMasterDataBootstrapImportJob = {
 export type PoolMasterDataBootstrapImportScopePayload = {
   database_id: string
   entity_scope: PoolMasterDataBootstrapImportEntityType[]
+}
+
+export type PoolMasterDataRegistryResponse = {
+  contract_version: string
+  entries: PoolMasterDataRegistryEntry[]
+  count: number
 }
 
 export type CreatePoolMasterDataBootstrapImportJobPayload = PoolMasterDataBootstrapImportScopePayload & {
@@ -2010,6 +2052,18 @@ export async function listMasterDataBindings(
       limit: response.data.limit ?? (params.limit ?? 50),
       offset: response.data.offset ?? (params.offset ?? 0),
     },
+  }
+}
+
+export async function getPoolMasterDataRegistry(): Promise<PoolMasterDataRegistryResponse> {
+  const response = await apiClient.get<PoolMasterDataRegistryResponse>(
+    '/api/v2/pools/master-data/registry/',
+    { skipGlobalError: true }
+  )
+  return {
+    contract_version: response.data.contract_version ?? '',
+    entries: response.data.entries ?? [],
+    count: response.data.count ?? 0,
   }
 }
 

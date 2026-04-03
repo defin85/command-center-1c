@@ -193,6 +193,11 @@ urlpatterns = [
     path('pools/organizations/sync/', intercompany_pools.sync_organizations_catalog, name='pools-organizations-sync'),
     path('pools/organizations/<uuid:organization_id>/', intercompany_pools.get_organization, name='pools-organizations-get'),
     path(
+        'pools/master-data/registry/',
+        intercompany_pools_master_data.inspect_master_data_registry,
+        name='pools-master-data-registry',
+    ),
+    path(
         'pools/master-data/parties/',
         intercompany_pools_master_data.list_master_data_parties,
         name='pools-master-data-parties-list',
