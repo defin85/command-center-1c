@@ -28,7 +28,6 @@ from .master_data_registry import (
     supports_pool_master_data_capability,
 )
 from .models import (
-    PoolMasterBindingCatalogKind,
     PoolMasterBindingSyncStatus,
     PoolMasterContract,
     PoolMasterDataBinding,
@@ -340,8 +339,8 @@ def _extract_requirements_from_document(
 
 def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataTokenRequirement:
     body = token.removeprefix(MASTER_DATA_TOKEN_PREFIX).removesuffix(MASTER_DATA_TOKEN_SUFFIX)
-    segments = [segment.strip() for segment in body.split(".") if segment.strip()]
-    if len(segments) < 2:
+    separator_index = body.find(".")
+    if separator_index <= 0 or separator_index == len(body) - 1:
         raise MasterDataResolveError(
             code=MASTER_DATA_BINDING_CONFLICT,
             detail=f"Invalid master-data token '{token}': expected master_data.<entity>.<canonical>.<...>.ref",
@@ -350,10 +349,20 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
             target_database_id=database_id,
         )
 
-    entity_type = segments[0]
-    canonical_id = segments[1]
-    qualifier = segments[2] if len(segments) > 2 else ""
+    entity_type = body[:separator_index].strip()
+    remainder = body[separator_index + 1 :].strip()
+    if not entity_type or not remainder:
+        raise MasterDataResolveError(
+            code=MASTER_DATA_BINDING_CONFLICT,
+            detail=f"Invalid master-data token '{token}': expected master_data.<entity>.<canonical>.<...>.ref",
+            entity_type="",
+            canonical_id="",
+            target_database_id=database_id,
+        )
+
     entry = get_pool_master_data_registry_entry(entity_type)
+    canonical_id = remainder
+    qualifier = ""
     if entry is None or not supports_pool_master_data_capability(
         entity_type=entity_type,
         capability=POOL_MASTER_DATA_CAPABILITY_TOKEN_EXPOSURE,
@@ -367,14 +376,97 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
         )
 
     qualifier_kind = entry.token_contract.qualifier_kind
-    if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_IB_CATALOG_KIND:
-        if qualifier not in {
-            PoolMasterBindingCatalogKind.ORGANIZATION,
-            PoolMasterBindingCatalogKind.COUNTERPARTY,
-        }:
+    qualifier_options = tuple(
+        str(value or "").strip()
+        for value in entry.token_contract.qualifier_options
+        if str(value or "").strip()
+    )
+    if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_NONE:
+        return MasterDataTokenRequirement(
+            token=token,
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+            database_id=database_id,
+        )
+
+    if qualifier_options:
+        matched_qualifier = next(
+            (
+                option
+                for option in sorted(qualifier_options, key=len, reverse=True)
+                if remainder.endswith(f".{option}")
+            ),
+            "",
+        )
+        if matched_qualifier:
+            canonical_id = remainder[: -(len(matched_qualifier) + 1)].strip()
+            qualifier = matched_qualifier
+        elif entry.token_contract.qualifier_required:
             raise MasterDataResolveError(
                 code=MASTER_DATA_BINDING_CONFLICT,
-                detail=f"Party token '{token}' must include role qualifier organization|counterparty.",
+                detail=(
+                    f"Token '{token}' must use one of registry qualifier options: "
+                    f"{'|'.join(qualifier_options)}."
+                ),
+                entity_type=entity_type,
+                canonical_id=remainder,
+                target_database_id=database_id,
+            )
+        if not canonical_id:
+            raise MasterDataResolveError(
+                code=MASTER_DATA_BINDING_CONFLICT,
+                detail=f"Token '{token}' must include canonical id for entity_type '{entity_type}'.",
+                entity_type=entity_type,
+                canonical_id="",
+                target_database_id=database_id,
+            )
+    elif qualifier_kind != POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_NONE:
+        if entry.token_contract.qualifier_required:
+            qualifier_separator_index = remainder.rfind(".")
+            if (
+                qualifier_separator_index <= 0
+                or qualifier_separator_index == len(remainder) - 1
+            ):
+                raise MasterDataResolveError(
+                    code=MASTER_DATA_BINDING_CONFLICT,
+                    detail=(
+                        f"Token '{token}' must include qualifier for entity_type '{entity_type}'."
+                    ),
+                    entity_type=entity_type,
+                    canonical_id=remainder,
+                    target_database_id=database_id,
+                )
+            canonical_id = remainder[:qualifier_separator_index].strip()
+            qualifier = remainder[qualifier_separator_index + 1 :].strip()
+            if not canonical_id or not qualifier:
+                raise MasterDataResolveError(
+                    code=MASTER_DATA_BINDING_CONFLICT,
+                    detail=(
+                        f"Token '{token}' must include qualifier for entity_type '{entity_type}'."
+                    ),
+                    entity_type=entity_type,
+                    canonical_id=remainder,
+                    target_database_id=database_id,
+                )
+
+    if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_IB_CATALOG_KIND:
+        if entry.token_contract.qualifier_required and not qualifier:
+            raise MasterDataResolveError(
+                code=MASTER_DATA_BINDING_CONFLICT,
+                detail=(
+                    f"Token '{token}' must include qualifier for entity_type '{entity_type}'."
+                ),
+                entity_type=entity_type,
+                canonical_id=canonical_id,
+                target_database_id=database_id,
+            )
+        if qualifier_options and qualifier and qualifier not in qualifier_options:
+            raise MasterDataResolveError(
+                code=MASTER_DATA_BINDING_CONFLICT,
+                detail=(
+                    f"Token '{token}' must use one of registry qualifier options: "
+                    f"{'|'.join(qualifier_options)}."
+                ),
                 entity_type=entity_type,
                 canonical_id=canonical_id,
                 target_database_id=database_id,
@@ -388,7 +480,7 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
         )
 
     if qualifier_kind == POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_OWNER_COUNTERPARTY_CANONICAL_ID:
-        if not qualifier:
+        if entry.token_contract.qualifier_required and not qualifier:
             raise MasterDataResolveError(
                 code=MASTER_DATA_BINDING_CONFLICT,
                 detail=f"Contract token '{token}' must include owner counterparty canonical id.",
@@ -412,20 +504,6 @@ def _parse_master_data_token(*, token: str, database_id: str) -> MasterDataToken
             canonical_id=canonical_id,
             target_database_id=database_id,
         )
-    if qualifier:
-        raise MasterDataResolveError(
-            code=MASTER_DATA_BINDING_CONFLICT,
-            detail=f"Token '{token}' has unexpected qualifier for entity_type '{entity_type}'.",
-            entity_type=entity_type,
-            canonical_id=canonical_id,
-            target_database_id=database_id,
-        )
-    return MasterDataTokenRequirement(
-        token=token,
-        entity_type=entity_type,
-        canonical_id=canonical_id,
-        database_id=database_id,
-    )
 
 
 def _resolve_requirement_ib_ref_key(

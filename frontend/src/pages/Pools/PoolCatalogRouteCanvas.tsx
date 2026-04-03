@@ -59,7 +59,6 @@ import {
   type PoolMasterContract,
   type PoolMasterItem,
   type PoolMasterParty,
-  type PoolMasterDataEntityType,
   type PoolMasterDataRegistryEntry,
   type PoolMasterTaxProfile,
   type PoolTopologyTemplate,
@@ -112,6 +111,7 @@ import {
 } from './routes'
 import {
   buildMasterDataToken,
+  findRegistryEntryByEntityType,
   getTokenEntityOptions,
   getTokenQualifierOptions,
   isMasterDataTokenLike,
@@ -283,8 +283,8 @@ type TopologyFormValues = {
 }
 
 type DocumentPolicySourceType = 'expression' | 'master_data_token'
-type MasterDataTokenEntityType = PoolMasterDataEntityType
-type MasterDataTokenPartyRole = Exclude<PoolMasterBindingCatalogKind, ''>
+type MasterDataTokenEntityType = string
+type MasterDataTokenPartyRole = PoolMasterBindingCatalogKind
 
 type DocumentPolicyBuilderSourceValue = {
   source_type?: DocumentPolicySourceType
@@ -1101,13 +1101,44 @@ const decodeDocumentPolicySourceValue = (
     expression_source: '',
     token_entity_type: parsedToken.entity_type,
     token_canonical_id: parsedToken.canonical_id,
-    token_party_role: parsedToken.qualifier_kind === 'ib_catalog_kind'
-      ? parsedToken.qualifier as MasterDataTokenPartyRole
-      : undefined,
+    token_party_role: (
+      parsedToken.qualifier_kind !== 'none'
+      && parsedToken.qualifier_kind !== 'owner_counterparty_canonical_id'
+        ? parsedToken.qualifier
+        : undefined
+    ),
     token_owner_counterparty_canonical_id: parsedToken.qualifier_kind === 'owner_counterparty_canonical_id'
       ? parsedToken.qualifier
       : undefined,
   }
+}
+
+const getDocumentPolicyTokenQualifierField = (
+  entry: PoolMasterDataRegistryEntry | null
+): 'token_party_role' | 'token_owner_counterparty_canonical_id' | null => {
+  if (!entry || !entry.token_contract.enabled) {
+    return null
+  }
+  if (entry.token_contract.qualifier_kind === 'none') {
+    return null
+  }
+  if (entry.token_contract.qualifier_kind === 'owner_counterparty_canonical_id') {
+    return 'token_owner_counterparty_canonical_id'
+  }
+  return 'token_party_role'
+}
+
+const getDocumentPolicyTokenQualifierLabel = (entry: PoolMasterDataRegistryEntry | null): string => {
+  if (!entry) {
+    return 'qualifier'
+  }
+  if (entry.token_contract.qualifier_kind === 'ib_catalog_kind') {
+    return 'IB catalog kind'
+  }
+  if (entry.token_contract.qualifier_kind === 'owner_counterparty_canonical_id') {
+    return 'Owner counterparty canonical id'
+  }
+  return entry.token_contract.qualifier_kind
 }
 
 const hasDocumentPolicySourceInput = (sourceValue: DocumentPolicyBuilderSourceValue): boolean => (
@@ -1159,24 +1190,31 @@ const resolveDocumentPolicySourceValue = (
       error: `${rowLabel}: source_type=master_data_token требует canonical_id.`,
     }
   }
-  if (entityType === 'party') {
-    const partyRole = String(sourceValue.token_party_role ?? '').trim()
-    if (partyRole !== 'organization' && partyRole !== 'counterparty') {
-      return {
-        source: null,
-        error: `${rowLabel}: для entity_type=party требуется role organization|counterparty.`,
-      }
+  const registryEntry = findRegistryEntryByEntityType(registryEntries, entityType)
+  if (!registryEntry || !registryEntry.capabilities.token_exposure || !registryEntry.token_contract.enabled) {
+    return {
+      source: null,
+      error: `${rowLabel}: entity_type=${entityType} не опубликован в reusable-data registry для token exposure.`,
     }
   }
-  if (entityType === 'contract') {
-    const ownerCounterpartyCanonicalId = String(
-      sourceValue.token_owner_counterparty_canonical_id ?? ''
-    ).trim()
-    if (!ownerCounterpartyCanonicalId) {
-      return {
-        source: null,
-        error: `${rowLabel}: для entity_type=contract требуется owner_counterparty_canonical_id.`,
-      }
+  const qualifierField = getDocumentPolicyTokenQualifierField(registryEntry)
+  const qualifierValue = qualifierField
+    ? String(sourceValue[qualifierField] ?? '').trim()
+    : ''
+  const qualifierOptions = getTokenQualifierOptions(registryEntries, entityType).map((item) => item.value)
+  if (registryEntry.token_contract.qualifier_required && !qualifierValue) {
+    return {
+      source: null,
+      error: `${rowLabel}: для entity_type=${entityType} требуется ${getDocumentPolicyTokenQualifierLabel(registryEntry)}.`,
+    }
+  }
+  if (qualifierOptions.length > 0 && qualifierValue && !qualifierOptions.includes(qualifierValue)) {
+    return {
+      source: null,
+      error: (
+        `${rowLabel}: ${getDocumentPolicyTokenQualifierLabel(registryEntry)} должен быть одним из `
+        + `${qualifierOptions.join('|')}.`
+      ),
     }
   }
 
@@ -5288,8 +5326,12 @@ export function PoolCatalogPage() {
                                                                                           'token_owner_counterparty_canonical_id',
                                                                                         ]) || ''
                                                                                       ).trim()
+                                                                                      const tokenRegistryEntry = findRegistryEntryByEntityType(
+                                                                                        masterDataRegistryEntries,
+                                                                                        tokenEntityType,
+                                                                                      )
                                                                                       const contractOwnerDefault = (
-                                                                                        tokenEntityType === 'contract' && tokenCanonicalId
+                                                                                        tokenRegistryEntry?.entity_type === 'contract' && tokenCanonicalId
                                                                                           ? String(
                                                                                             masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
                                                                                             || ''
@@ -5310,6 +5352,14 @@ export function PoolCatalogPage() {
                                                                                       const tokenPartyRoleOptions = getTokenQualifierOptions(
                                                                                         masterDataRegistryEntries,
                                                                                         tokenEntityType,
+                                                                                      )
+                                                                                      const showsOptionQualifier = tokenPartyRoleOptions.length > 0
+                                                                                      const usesOwnerCounterpartyQualifier = (
+                                                                                        tokenRegistryEntry?.token_contract.qualifier_kind
+                                                                                        === 'owner_counterparty_canonical_id'
+                                                                                      )
+                                                                                      const tokenQualifierLabel = getDocumentPolicyTokenQualifierLabel(
+                                                                                        tokenRegistryEntry,
                                                                                       )
                                                                                       const ownerCounterpartyOptions = (
                                                                                         contractOwnerDefault
@@ -5408,14 +5458,14 @@ export function PoolCatalogPage() {
                                                                                                     </Form.Item>
                                                                                                   </Col>
                                                                                                 </Row>
-                                                                                                {tokenEntityType === 'party' && (
+                                                                                                {showsOptionQualifier && (
                                                                                                   <Form.Item
                                                                                                     name={[mappingField.name, 'token_party_role']}
                                                                                                     style={{ marginBottom: 0 }}
                                                                                                   >
                                                                                                     <Select
                                                                                                       allowClear
-                                                                                                      placeholder="party role"
+                                                                                                      placeholder={tokenQualifierLabel}
                                                                                                       options={tokenPartyRoleOptions}
                                                                                                       data-testid={(
                                                                                                         `pool-catalog-topology-field-mapping-token-party-role-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
@@ -5423,7 +5473,7 @@ export function PoolCatalogPage() {
                                                                                                     />
                                                                                                   </Form.Item>
                                                                                                 )}
-                                                                                                {tokenEntityType === 'contract' && (
+                                                                                                {usesOwnerCounterpartyQualifier && (
                                                                                                   <Form.Item
                                                                                                     name={[mappingField.name, 'token_owner_counterparty_canonical_id']}
                                                                                                     style={{ marginBottom: 0 }}
@@ -5433,7 +5483,7 @@ export function PoolCatalogPage() {
                                                                                                       showSearch
                                                                                                       optionFilterProp="label"
                                                                                                       allowClear
-                                                                                                      placeholder="owner_counterparty_canonical_id"
+                                                                                                      placeholder={tokenQualifierLabel}
                                                                                                       options={ownerCounterpartyOptions}
                                                                                                       loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                       data-testid={(
@@ -5638,8 +5688,12 @@ export function PoolCatalogPage() {
                                                                                                       'token_owner_counterparty_canonical_id',
                                                                                                     ]) || ''
                                                                                                   ).trim()
+                                                                                                  const tokenRegistryEntry = findRegistryEntryByEntityType(
+                                                                                                    masterDataRegistryEntries,
+                                                                                                    tokenEntityType,
+                                                                                                  )
                                                                                                   const contractOwnerDefault = (
-                                                                                                    tokenEntityType === 'contract' && tokenCanonicalId
+                                                                                                    tokenRegistryEntry?.entity_type === 'contract' && tokenCanonicalId
                                                                                                       ? String(
                                                                                                         masterDataContractByCanonicalId[tokenCanonicalId]?.owner_counterparty_canonical_id
                                                                                                         || ''
@@ -5660,6 +5714,14 @@ export function PoolCatalogPage() {
                                                                                                   const tokenPartyRoleOptions = getTokenQualifierOptions(
                                                                                                     masterDataRegistryEntries,
                                                                                                     tokenEntityType,
+                                                                                                  )
+                                                                                                  const showsOptionQualifier = tokenPartyRoleOptions.length > 0
+                                                                                                  const usesOwnerCounterpartyQualifier = (
+                                                                                                    tokenRegistryEntry?.token_contract.qualifier_kind
+                                                                                                    === 'owner_counterparty_canonical_id'
+                                                                                                  )
+                                                                                                  const tokenQualifierLabel = getDocumentPolicyTokenQualifierLabel(
+                                                                                                    tokenRegistryEntry,
                                                                                                   )
                                                                                                   const ownerCounterpartyOptions = (
                                                                                                     contractOwnerDefault
@@ -5747,19 +5809,19 @@ export function PoolCatalogPage() {
                                                                                                                 </Form.Item>
                                                                                                               </Col>
                                                                                                             </Row>
-                                                                                                            {tokenEntityType === 'party' && (
+                                                                                                            {showsOptionQualifier && (
                                                                                                               <Form.Item
                                                                                                                 name={[rowMappingField.name, 'token_party_role']}
                                                                                                                 style={{ marginBottom: 0 }}
                                                                                                               >
                                                                                                                 <Select
                                                                                                                   allowClear
-                                                                                                                  placeholder="party role"
+                                                                                                                  placeholder={tokenQualifierLabel}
                                                                                                                   options={tokenPartyRoleOptions}
                                                                                                                 />
                                                                                                               </Form.Item>
                                                                                                             )}
-                                                                                                            {tokenEntityType === 'contract' && (
+                                                                                                            {usesOwnerCounterpartyQualifier && (
                                                                                                               <Form.Item
                                                                                                                 name={[rowMappingField.name, 'token_owner_counterparty_canonical_id']}
                                                                                                                 style={{ marginBottom: 0 }}
@@ -5769,7 +5831,7 @@ export function PoolCatalogPage() {
                                                                                                                   showSearch
                                                                                                                   optionFilterProp="label"
                                                                                                                   allowClear
-                                                                                                                  placeholder="owner_counterparty_canonical_id"
+                                                                                                                  placeholder={tokenQualifierLabel}
                                                                                                                   options={ownerCounterpartyOptions}
                                                                                                                   loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                                 />

@@ -10,7 +10,6 @@ import {
   resolveMasterDataSyncConflict,
   retryMasterDataSyncConflict,
   type PoolMasterDataSyncDeadlineState,
-  type PoolMasterDataEntityType,
   type PoolMasterDataRegistryEntry,
   type PoolMasterDataSyncPriority,
   type PoolMasterDataSyncRole,
@@ -20,7 +19,7 @@ import {
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
-import { getSyncEntityOptions } from './registry'
+import { findRegistryEntryByEntityType, getSyncEntityOptions } from './registry'
 
 const { Text } = Typography
 
@@ -66,7 +65,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const { message } = AntApp.useApp()
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [databaseId, setDatabaseId] = useState<string | undefined>(undefined)
-  const [entityType, setEntityType] = useState<PoolMasterDataEntityType | undefined>(undefined)
+  const [entityType, setEntityType] = useState<string | undefined>(undefined)
   const [priority, setPriority] = useState<PoolMasterDataSyncPriority | undefined>(undefined)
   const [role, setRole] = useState<PoolMasterDataSyncRole | undefined>(undefined)
   const [serverAffinity, setServerAffinity] = useState<string | undefined>(undefined)
@@ -79,6 +78,10 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const entityTypeOptions = useMemo(
     () => getSyncEntityOptions(registryEntries),
     [registryEntries]
+  )
+  const visibleSyncEntityTypes = useMemo(
+    () => new Set(entityTypeOptions.map((option) => option.value)),
+    [entityTypeOptions]
   )
 
   const databaseNameById = useMemo(() => {
@@ -168,6 +171,23 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       }
     },
     [loadData, message]
+  )
+
+  const canRunConflictWorkflowAction = useCallback(
+    (conflict: PoolMasterDataSyncConflict): boolean => {
+      const entry = findRegistryEntryByEntityType(registryEntries, conflict.entity_type)
+      if (!entry) {
+        return false
+      }
+      return String(conflict.origin_system || '').trim().toLowerCase() === 'ib'
+        ? entry.capabilities.sync_inbound
+        : entry.capabilities.sync_outbound
+    },
+    [registryEntries]
+  )
+  const visibleStatusRows = useMemo(
+    () => statusRows.filter((row) => visibleSyncEntityTypes.has(row.entity_type)),
+    [statusRows, visibleSyncEntityTypes]
   )
 
   const statusColumns: ColumnsType<PoolMasterDataSyncStatus> = [
@@ -275,22 +295,26 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       width: 300,
       render: (_, row) => (
         <Space>
-          <Button
-            size="small"
-            onClick={() => void runConflictAction(row, 'retry')}
-            loading={actionConflictId === row.id}
-            disabled={row.status === 'resolved'}
-          >
-            Retry
-          </Button>
-          <Button
-            size="small"
-            onClick={() => void runConflictAction(row, 'reconcile')}
-            loading={actionConflictId === row.id}
-            disabled={row.status === 'resolved'}
-          >
-            Reconcile
-          </Button>
+          {canRunConflictWorkflowAction(row) && (
+            <Button
+              size="small"
+              onClick={() => void runConflictAction(row, 'retry')}
+              loading={actionConflictId === row.id}
+              disabled={row.status === 'resolved'}
+            >
+              Retry
+            </Button>
+          )}
+          {canRunConflictWorkflowAction(row) && (
+            <Button
+              size="small"
+              onClick={() => void runConflictAction(row, 'reconcile')}
+              loading={actionConflictId === row.id}
+              disabled={row.status === 'resolved'}
+            >
+              Reconcile
+            </Button>
+          )}
           <Button
             size="small"
             type="primary"
@@ -387,7 +411,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
           rowKey={(row) => `${row.database_id}:${row.entity_type}`}
           loading={loading}
           columns={statusColumns}
-          dataSource={statusRows}
+          dataSource={visibleStatusRows}
           pagination={false}
           scroll={{ x: 2320 }}
         />

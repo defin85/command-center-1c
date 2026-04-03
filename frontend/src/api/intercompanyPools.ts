@@ -1473,11 +1473,11 @@ export async function abortPoolRunPublication(
   return executePoolRunSafeCommand(runId, 'abort-publication', idempotencyKey)
 }
 
-export type PoolMasterDataEntityType = 'party' | 'item' | 'contract' | 'tax_profile'
-export type PoolMasterBindingCatalogKind = 'organization' | 'counterparty' | ''
+export type PoolMasterDataEntityType = string
+export type PoolMasterBindingCatalogKind = string
 export type PoolMasterBindingSyncStatus = 'resolved' | 'upserted' | 'conflict'
 export type PoolMasterDataRegistryKind = 'canonical' | 'bootstrap_helper'
-export type PoolMasterDataTokenQualifierKind = 'none' | 'ib_catalog_kind' | 'owner_counterparty_canonical_id'
+export type PoolMasterDataTokenQualifierKind = string
 
 export type PoolMasterDataRegistryCapabilities = {
   direct_binding: boolean
@@ -1502,7 +1502,7 @@ export type PoolMasterDataRegistryBootstrapContract = {
 }
 
 export type PoolMasterDataRegistryEntry = {
-  entity_type: PoolMasterDataEntityType | 'binding'
+  entity_type: string
   label: string
   kind: PoolMasterDataRegistryKind
   display_order: number
@@ -1569,7 +1569,7 @@ export type PoolMasterTaxProfile = {
 export type PoolMasterDataBinding = {
   id: string
   tenant_id: string
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   canonical_id: string
   database_id: string
   ib_ref_key: string
@@ -1600,7 +1600,7 @@ export type PoolMasterDataSyncQueueStates = {
 export type PoolMasterDataSyncStatus = {
   tenant_id: string
   database_id: string
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   checkpoint_token: string
   pending_checkpoint_token: string
   checkpoint_status: string
@@ -1625,7 +1625,7 @@ export type PoolMasterDataSyncConflict = {
   id: string
   tenant_id: string
   database_id: string
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   status: 'pending' | 'retrying' | 'resolved'
   conflict_code: string
   canonical_id: string
@@ -1639,7 +1639,7 @@ export type PoolMasterDataSyncConflict = {
   updated_at: string
 }
 
-export type PoolMasterDataBootstrapImportEntityType = PoolMasterDataEntityType | 'binding'
+export type PoolMasterDataBootstrapImportEntityType = string
 
 export type PoolMasterDataBootstrapImportJobStatus =
   | 'preflight_pending'
@@ -1835,7 +1835,7 @@ export type UpsertMasterDataTaxProfilePayload = {
 }
 
 export type ListMasterDataBindingsParams = {
-  entity_type?: PoolMasterDataEntityType
+  entity_type?: string
   canonical_id?: string
   database_id?: string
   ib_catalog_kind?: Exclude<PoolMasterBindingCatalogKind, ''>
@@ -1847,7 +1847,7 @@ export type ListMasterDataBindingsParams = {
 
 export type UpsertMasterDataBindingPayload = {
   binding_id?: string
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   canonical_id: string
   database_id: string
   ib_ref_key: string
@@ -1860,7 +1860,7 @@ export type UpsertMasterDataBindingPayload = {
 
 export type ListMasterDataSyncStatusParams = {
   database_id?: string
-  entity_type?: PoolMasterDataEntityType
+  entity_type?: string
   priority?: PoolMasterDataSyncPriority
   role?: PoolMasterDataSyncRole
   server_affinity?: string
@@ -1869,7 +1869,7 @@ export type ListMasterDataSyncStatusParams = {
 
 export type ListMasterDataSyncConflictsParams = {
   database_id?: string
-  entity_type?: PoolMasterDataEntityType
+  entity_type?: string
   status?: 'pending' | 'retrying' | 'resolved'
   limit?: number
 }

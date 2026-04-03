@@ -12,6 +12,7 @@ import type {
   PoolWorkflowBinding,
   PoolWorkflowBindingCollection,
 } from '../../../api/intercompanyPools'
+import { poolMasterDataRegistryResponse } from './poolMasterDataRegistryFixture'
 import { PoolCatalogPage } from '../PoolCatalogPage'
 
 const mockGetDecisionsCollection = vi.fn()
@@ -35,6 +36,7 @@ const mockListMasterDataParties = vi.fn()
 const mockListMasterDataItems = vi.fn()
 const mockListMasterDataContracts = vi.fn()
 const mockListMasterDataTaxProfiles = vi.fn()
+const mockGetPoolMasterDataRegistry = vi.fn()
 const mockUseAuthz = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseBindingProfiles = vi.fn()
@@ -89,6 +91,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertPoolWorkflowBinding: (...args: unknown[]) => mockUpsertPoolWorkflowBinding(...args),
   deletePoolWorkflowBinding: (...args: unknown[]) => mockDeletePoolWorkflowBinding(...args),
   migratePoolEdgeDocumentPolicy: (...args: unknown[]) => mockMigratePoolEdgeDocumentPolicy(...args),
+  getPoolMasterDataRegistry: (...args: unknown[]) => mockGetPoolMasterDataRegistry(...args),
   listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
   listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
   listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
@@ -575,6 +578,7 @@ describe('PoolCatalogPage', () => {
     mockListMasterDataItems.mockReset()
     mockListMasterDataContracts.mockReset()
     mockListMasterDataTaxProfiles.mockReset()
+    mockGetPoolMasterDataRegistry.mockReset()
     mockUseAuthz.mockReset()
     mockUseDatabases.mockReset()
     mockUseBindingProfiles.mockReset()
@@ -768,6 +772,7 @@ describe('PoolCatalogPage', () => {
       },
     })
     mockSyncPoolWorkflowBindings.mockResolvedValue(undefined)
+    mockGetPoolMasterDataRegistry.mockResolvedValue(poolMasterDataRegistryResponse)
     mockListMasterDataParties.mockResolvedValue({
       parties: [
         {

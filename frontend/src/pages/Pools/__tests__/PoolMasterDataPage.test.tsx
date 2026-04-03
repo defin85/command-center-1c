@@ -503,6 +503,104 @@ describe('PoolMasterDataPage', () => {
     )
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('hides retry and reconcile actions when registry disables the required sync direction', async () => {
+    mockGetPoolMasterDataRegistry.mockResolvedValue({
+      contract_version: 'pool_master_data_registry.v1',
+      count: 1,
+      entries: [
+        {
+          entity_type: 'item',
+          label: 'Item',
+          kind: 'canonical',
+          display_order: 20,
+          binding_scope_fields: ['canonical_id', 'database_id'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: true,
+            sync_outbound: false,
+            sync_inbound: false,
+            sync_reconcile: false,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 20 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+        },
+      ],
+    })
+    mockListMasterDataSyncStatus.mockResolvedValue({
+      statuses: [
+        {
+          tenant_id: 'tenant-1',
+          database_id: 'db-1',
+          entity_type: 'item',
+          checkpoint_token: 'cp-disabled-001',
+          pending_checkpoint_token: '',
+          checkpoint_status: 'active',
+          pending_count: 0,
+          retry_count: 0,
+          conflict_pending_count: 1,
+          conflict_retrying_count: 0,
+          lag_seconds: 0,
+          last_success_at: null,
+          last_applied_at: null,
+          last_error_code: '',
+          last_error_reason: '',
+          priority: '',
+          role: '',
+          server_affinity: '',
+          deadline_at: '',
+          deadline_state: 'none',
+          queue_states: {
+            queued: 0,
+            processing: 0,
+            retrying: 0,
+            failed: 0,
+            completed: 0,
+          },
+        },
+      ],
+      count: 1,
+    })
+    mockListMasterDataSyncConflicts.mockResolvedValue({
+      conflicts: [
+        {
+          id: 'conflict-disabled-1',
+          tenant_id: 'tenant-1',
+          database_id: 'db-1',
+          entity_type: 'item',
+          status: 'pending',
+          conflict_code: 'POLICY_VIOLATION',
+          canonical_id: 'item-disabled-001',
+          origin_system: 'ib',
+          origin_event_id: 'evt-disabled-001',
+          diagnostics: {},
+          metadata: {},
+          resolved_at: null,
+          resolved_by_id: null,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      count: 1,
+    })
+
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByText('Conflict Queue')).toBeInTheDocument()
+    await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+    expect(screen.queryByText('cp-disabled-001')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reconcile' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resolve' })).toBeInTheDocument()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('applies scheduling filters for sync status operator view', async () => {
     const user = userEvent.setup()
     renderPage()

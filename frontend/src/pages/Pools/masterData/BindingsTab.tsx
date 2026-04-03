@@ -10,15 +10,19 @@ import {
   type PoolMasterBindingCatalogKind,
   type PoolMasterBindingSyncStatus,
   type PoolMasterDataBinding,
-  type PoolMasterDataEntityType,
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
-import { getDefaultDirectBindingEntityType, getDirectBindingEntityOptions } from './registry'
+import {
+  findRegistryEntryByEntityType,
+  getDefaultDirectBindingEntityType,
+  getDirectBindingEntityOptions,
+  getTokenQualifierOptions,
+} from './registry'
 
 type BindingFormValues = {
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   canonical_id: string
   database_id: string
   ib_ref_key: string
@@ -44,11 +48,12 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [loading, setLoading] = useState(false)
   const [queryCanonicalId, setQueryCanonicalId] = useState('')
-  const [entityTypeFilter, setEntityTypeFilter] = useState<PoolMasterDataEntityType | undefined>(undefined)
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string | undefined>(undefined)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingBinding, setEditingBinding] = useState<PoolMasterDataBinding | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [form] = Form.useForm<BindingFormValues>()
+  const selectedEntityType = Form.useWatch('entity_type', form)
   const entityTypeOptions = useMemo(
     () => getDirectBindingEntityOptions(registryEntries),
     [registryEntries]
@@ -56,6 +61,18 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
   const defaultEntityType = useMemo(
     () => getDefaultDirectBindingEntityType(registryEntries),
     [registryEntries]
+  )
+  const selectedRegistryEntry = useMemo(
+    () => findRegistryEntryByEntityType(registryEntries, selectedEntityType),
+    [registryEntries, selectedEntityType]
+  )
+  const requiresCatalogKind = Boolean(selectedRegistryEntry?.binding_scope_fields.includes('ib_catalog_kind'))
+  const requiresOwnerCounterparty = Boolean(
+    selectedRegistryEntry?.binding_scope_fields.includes('owner_counterparty_canonical_id')
+  )
+  const catalogKindOptions = useMemo(
+    () => getTokenQualifierOptions(registryEntries, selectedEntityType),
+    [registryEntries, selectedEntityType]
   )
 
   const loadDatabases = useCallback(async () => {
@@ -126,21 +143,31 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
 
   const handleSubmit = async () => {
     const values = await form.validateFields()
-    if (values.entity_type === 'party' && !values.ib_catalog_kind) {
-      form.setFields([{ name: 'ib_catalog_kind', errors: ['Required for party bindings.'] }])
+    const registryEntry = findRegistryEntryByEntityType(registryEntries, values.entity_type)
+    if (!registryEntry) {
+      message.error('Не удалось определить registry contract для выбранного entity_type.')
       return
     }
-    if (values.entity_type === 'contract' && !values.owner_counterparty_canonical_id.trim()) {
+    const requiresBindingCatalogKind = registryEntry.binding_scope_fields.includes('ib_catalog_kind')
+    const requiresBindingOwnerCounterparty = registryEntry.binding_scope_fields.includes(
+      'owner_counterparty_canonical_id'
+    )
+
+    if (requiresBindingCatalogKind && !values.ib_catalog_kind) {
+      form.setFields([{ name: 'ib_catalog_kind', errors: ['Required by registry binding scope.'] }])
+      return
+    }
+    if (requiresBindingOwnerCounterparty && !values.owner_counterparty_canonical_id.trim()) {
       form.setFields([
-        { name: 'owner_counterparty_canonical_id', errors: ['Required for contract bindings.'] },
+        { name: 'owner_counterparty_canonical_id', errors: ['Required by registry binding scope.'] },
       ])
       return
     }
 
     const normalizedCatalogKind: PoolMasterBindingCatalogKind =
-      values.entity_type === 'party' ? values.ib_catalog_kind : ''
+      requiresBindingCatalogKind ? values.ib_catalog_kind : ''
     const normalizedOwnerCounterpartyCanonicalId =
-      values.entity_type === 'contract' ? values.owner_counterparty_canonical_id.trim() : ''
+      requiresBindingOwnerCounterparty ? values.owner_counterparty_canonical_id.trim() : ''
 
     setIsSaving(true)
     try {
@@ -267,18 +294,16 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
           <Form.Item name="ib_ref_key" label="IB Ref Key" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="ib_catalog_kind" label="IB Catalog Kind">
-            <Select
-              allowClear
-              options={[
-                { value: 'organization', label: 'organization' },
-                { value: 'counterparty', label: 'counterparty' },
-              ]}
-            />
-          </Form.Item>
-          <Form.Item name="owner_counterparty_canonical_id" label="Owner Counterparty Canonical ID">
-            <Input />
-          </Form.Item>
+          {requiresCatalogKind && (
+            <Form.Item name="ib_catalog_kind" label="IB Catalog Kind">
+              <Select allowClear options={catalogKindOptions} />
+            </Form.Item>
+          )}
+          {requiresOwnerCounterparty && (
+            <Form.Item name="owner_counterparty_canonical_id" label="Owner Counterparty Canonical ID">
+              <Input />
+            </Form.Item>
+          )}
           <Form.Item name="sync_status" label="Sync Status" rules={[{ required: true }]}>
             <Select options={SYNC_STATUS_OPTIONS} />
           </Form.Item>

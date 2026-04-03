@@ -1,6 +1,4 @@
 import type {
-  PoolMasterBindingCatalogKind,
-  PoolMasterDataEntityType,
   PoolMasterDataRegistryEntry,
 } from '../../../api/intercompanyPools'
 
@@ -12,9 +10,9 @@ export type PoolMasterDataRegistryOption<T extends string> = {
 }
 
 export type ParsedMasterDataToken = {
-  entity_type: PoolMasterDataEntityType
+  entity_type: string
   canonical_id: string
-  qualifier_kind: 'none' | 'ib_catalog_kind' | 'owner_counterparty_canonical_id'
+  qualifier_kind: string
   qualifier?: string
 }
 
@@ -37,29 +35,34 @@ const sortByBootstrapOrder = (entries: PoolMasterDataRegistryEntry[]): PoolMaste
   })
 )
 
-const asCanonicalEntityType = (value: string): PoolMasterDataEntityType | null => {
-  if (value === 'party' || value === 'item' || value === 'contract' || value === 'tax_profile') {
-    return value
+const normalizeRegistryEntityType = (value: string | undefined): string | null => {
+  const normalized = String(value ?? '').trim()
+  return normalized ? normalized : null
+}
+
+export function findRegistryEntryByEntityType(
+  entries: PoolMasterDataRegistryEntry[],
+  entityType: string | undefined
+): PoolMasterDataRegistryEntry | null {
+  const normalizedEntityType = normalizeRegistryEntityType(entityType)
+  if (!normalizedEntityType) {
+    return null
   }
-  return null
+  return entries.find((entry) => entry.entity_type === normalizedEntityType) ?? null
 }
 
 export function getDirectBindingEntityOptions(
   entries: PoolMasterDataRegistryEntry[]
-): Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>> {
+): Array<PoolMasterDataRegistryOption<string>> {
   return sortByDisplayOrder(
     entries.filter((entry) => entry.capabilities.direct_binding)
   )
-    .map((entry) => {
-      const entityType = asCanonicalEntityType(entry.entity_type)
-      return entityType ? { value: entityType, label: entry.entity_type } : null
-    })
-    .filter(Boolean) as Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>>
+    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
 }
 
 export function getBootstrapEntityOptions(
   entries: PoolMasterDataRegistryEntry[]
-): Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType | 'binding'>> {
+): Array<PoolMasterDataRegistryOption<string>> {
   return sortByBootstrapOrder(
     entries.filter((entry) => entry.capabilities.bootstrap_import)
   ).map((entry) => ({
@@ -70,56 +73,47 @@ export function getBootstrapEntityOptions(
 
 export function getSyncEntityOptions(
   entries: PoolMasterDataRegistryEntry[]
-): Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>> {
+): Array<PoolMasterDataRegistryOption<string>> {
   return sortByDisplayOrder(
     entries.filter(
       (entry) => entry.capabilities.sync_outbound || entry.capabilities.sync_inbound || entry.capabilities.sync_reconcile
     )
   )
-    .map((entry) => {
-      const entityType = asCanonicalEntityType(entry.entity_type)
-      return entityType ? { value: entityType, label: entry.entity_type } : null
-    })
-    .filter(Boolean) as Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>>
+    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
 }
 
 export function getTokenEntityOptions(
   entries: PoolMasterDataRegistryEntry[]
-): Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>> {
+): Array<PoolMasterDataRegistryOption<string>> {
   return sortByDisplayOrder(
     entries.filter((entry) => entry.capabilities.token_exposure && entry.token_contract.enabled)
   )
-    .map((entry) => {
-      const entityType = asCanonicalEntityType(entry.entity_type)
-      return entityType ? { value: entityType, label: entry.entity_type } : null
-    })
-    .filter(Boolean) as Array<PoolMasterDataRegistryOption<PoolMasterDataEntityType>>
+    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
 }
 
 export function getTokenQualifierOptions(
   entries: PoolMasterDataRegistryEntry[],
   entityType: string | undefined
-): Array<PoolMasterDataRegistryOption<Exclude<PoolMasterBindingCatalogKind, ''>>> {
-  const entry = entries.find((item) => item.entity_type === entityType)
-  if (!entry || entry.token_contract.qualifier_kind !== 'ib_catalog_kind') {
+): Array<PoolMasterDataRegistryOption<string>> {
+  const entry = findRegistryEntryByEntityType(entries, entityType)
+  if (!entry) {
     return []
   }
   return entry.token_contract.qualifier_options
-    .filter((value): value is Exclude<PoolMasterBindingCatalogKind, ''> => (
-      value === 'organization' || value === 'counterparty'
-    ))
+    .map((value) => String(value).trim())
+    .filter((value) => value.length > 0)
     .map((value) => ({ value, label: value }))
 }
 
 export function getDefaultDirectBindingEntityType(
   entries: PoolMasterDataRegistryEntry[]
-): PoolMasterDataEntityType | undefined {
+): string | undefined {
   return getDirectBindingEntityOptions(entries)[0]?.value
 }
 
 export function getDefaultBootstrapScope(
   entries: PoolMasterDataRegistryEntry[]
-): Array<PoolMasterDataEntityType | 'binding'> {
+): string[] {
   return getBootstrapEntityOptions(entries)
     .filter((entry) => entry.value !== 'binding')
     .slice(0, 2)
@@ -135,47 +129,82 @@ export function parseMasterDataToken(
   entries: PoolMasterDataRegistryEntry[]
 ): ParsedMasterDataToken | null {
   const source = value.trim()
-  if (!source.startsWith(MASTER_DATA_TOKEN_PREFIX)) {
+  if (!source.startsWith(MASTER_DATA_TOKEN_PREFIX) || !source.endsWith('.ref')) {
     return null
   }
-  const parts = source.split('.')
-  if (parts[0] !== 'master_data' || parts[parts.length - 1] !== 'ref' || parts.length < 4) {
+  const body = source.slice(MASTER_DATA_TOKEN_PREFIX.length, -'.ref'.length)
+  const separatorIndex = body.indexOf('.')
+  if (separatorIndex <= 0 || separatorIndex === body.length - 1) {
     return null
   }
-
-  const entityType = asCanonicalEntityType(String(parts[1] || '').trim())
+  const entityType = normalizeRegistryEntityType(body.slice(0, separatorIndex))
   if (!entityType) {
     return null
   }
-  const entry = entries.find((item) => item.entity_type === entityType)
+  const entry = findRegistryEntryByEntityType(entries, entityType)
   if (!entry || !entry.capabilities.token_exposure || !entry.token_contract.enabled) {
     return null
   }
-
-  const canonicalId = String(parts[2] || '').trim()
-  if (!canonicalId) {
+  const remainder = String(body.slice(separatorIndex + 1)).trim()
+  if (!remainder) {
     return null
   }
-  const qualifier = String(parts[3] || '').trim()
 
   if (entry.token_contract.qualifier_kind === 'none') {
-    if (parts.length !== 4) {
-      return null
-    }
     return {
       entity_type: entityType,
-      canonical_id: canonicalId,
+      canonical_id: remainder,
       qualifier_kind: 'none',
     }
   }
 
-  if (parts.length !== 5 || !qualifier) {
+  const qualifierOptions = entry.token_contract.qualifier_options
+    .map((value) => String(value).trim())
+    .filter((value) => value.length > 0)
+
+  if (qualifierOptions.length > 0) {
+    const matchedQualifier = [...qualifierOptions]
+      .sort((left, right) => right.length - left.length)
+      .find((option) => remainder.endsWith(`.${option}`))
+    if (matchedQualifier) {
+      const canonicalId = remainder.slice(0, -(matchedQualifier.length + 1)).trim()
+      if (!canonicalId) {
+        return null
+      }
+      return {
+        entity_type: entityType,
+        canonical_id: canonicalId,
+        qualifier_kind: entry.token_contract.qualifier_kind,
+        qualifier: matchedQualifier,
+      }
+    }
+    if (entry.token_contract.qualifier_required) {
+      return null
+    }
+    return {
+      entity_type: entityType,
+      canonical_id: remainder,
+      qualifier_kind: entry.token_contract.qualifier_kind,
+      qualifier: '',
+    }
+  }
+
+  if (!entry.token_contract.qualifier_required) {
+    return {
+      entity_type: entityType,
+      canonical_id: remainder,
+      qualifier_kind: entry.token_contract.qualifier_kind,
+      qualifier: '',
+    }
+  }
+
+  const lastSeparatorIndex = remainder.lastIndexOf('.')
+  if (lastSeparatorIndex <= 0 || lastSeparatorIndex === remainder.length - 1) {
     return null
   }
-  if (
-    entry.token_contract.qualifier_options.length > 0
-    && !entry.token_contract.qualifier_options.includes(qualifier)
-  ) {
+  const canonicalId = remainder.slice(0, lastSeparatorIndex).trim()
+  const qualifier = remainder.slice(lastSeparatorIndex + 1).trim()
+  if (!canonicalId || !qualifier) {
     return null
   }
 
@@ -191,12 +220,12 @@ export function buildMasterDataToken(
   sourceValue: MasterDataTokenSourceShape,
   entries: PoolMasterDataRegistryEntry[]
 ): string | null {
-  const entityType = asCanonicalEntityType(String(sourceValue.token_entity_type ?? '').trim())
+  const entityType = normalizeRegistryEntityType(String(sourceValue.token_entity_type ?? '').trim())
   const canonicalId = String(sourceValue.token_canonical_id ?? '').trim()
   if (!entityType || !canonicalId) {
     return null
   }
-  const entry = entries.find((item) => item.entity_type === entityType)
+  const entry = findRegistryEntryByEntityType(entries, entityType)
   if (!entry || !entry.capabilities.token_exposure || !entry.token_contract.enabled) {
     return null
   }
@@ -204,11 +233,18 @@ export function buildMasterDataToken(
     return `${MASTER_DATA_TOKEN_PREFIX}${entityType}.${canonicalId}.ref`
   }
 
-  const qualifier = entry.token_contract.qualifier_kind === 'ib_catalog_kind'
-    ? String(sourceValue.token_party_role ?? '').trim()
-    : String(sourceValue.token_owner_counterparty_canonical_id ?? '').trim()
-  if (!qualifier) {
+  let qualifier = ''
+  if (entry.token_contract.qualifier_options.length > 0) {
+    qualifier = String(sourceValue.token_party_role ?? '').trim()
+  } else if (entry.token_contract.qualifier_kind === 'owner_counterparty_canonical_id') {
+    qualifier = String(sourceValue.token_owner_counterparty_canonical_id ?? '').trim()
+  } else {
     return null
+  }
+  if (!qualifier) {
+    return entry.token_contract.qualifier_required
+      ? null
+      : `${MASTER_DATA_TOKEN_PREFIX}${entityType}.${canonicalId}.ref`
   }
   if (
     entry.token_contract.qualifier_options.length > 0

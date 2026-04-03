@@ -131,6 +131,73 @@ describe('pool master-data registry helpers', () => {
     ])
   })
 
+  it('supports arbitrary registry entity keys without hardcoded canonical list edits', () => {
+    const extendedEntries: PoolMasterDataRegistryEntry[] = [
+      ...registryEntries,
+      {
+        entity_type: 'gl_account',
+        label: 'GL Account',
+        kind: 'canonical',
+        display_order: 25,
+        binding_scope_fields: ['canonical_id', 'database_id'],
+        capabilities: {
+          direct_binding: true,
+          token_exposure: true,
+          bootstrap_import: true,
+          outbox_fanout: false,
+          sync_outbound: false,
+          sync_inbound: false,
+          sync_reconcile: false,
+        },
+        token_contract: {
+          enabled: true,
+          qualifier_kind: 'none',
+          qualifier_required: false,
+          qualifier_options: [],
+        },
+        bootstrap_contract: { enabled: true, dependency_order: 25 },
+        runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+      },
+      {
+        entity_type: 'cost_center',
+        label: 'Cost Center',
+        kind: 'canonical',
+        display_order: 30,
+        binding_scope_fields: ['canonical_id', 'database_id', 'ib_catalog_kind'],
+        capabilities: {
+          direct_binding: true,
+          token_exposure: true,
+          bootstrap_import: false,
+          outbox_fanout: false,
+          sync_outbound: false,
+          sync_inbound: false,
+          sync_reconcile: false,
+        },
+        token_contract: {
+          enabled: true,
+          qualifier_kind: 'ib_catalog_kind',
+          qualifier_required: true,
+          qualifier_options: ['vendor'],
+        },
+        bootstrap_contract: { enabled: false, dependency_order: null },
+        runtime_consumers: ['bindings', 'token_catalog', 'token_parser'],
+      },
+    ]
+
+    expect(getDirectBindingEntityOptions(extendedEntries).map((item) => item.value)).toContain('gl_account')
+    expect(getTokenEntityOptions(extendedEntries).map((item) => item.value)).toContain('gl_account')
+    expect(getTokenQualifierOptions(extendedEntries, 'cost_center').map((item) => item.value)).toEqual(['vendor'])
+    expect(buildMasterDataToken({
+      token_entity_type: 'gl_account',
+      token_canonical_id: '10.01',
+    }, extendedEntries)).toBe('master_data.gl_account.10.01.ref')
+    expect(parseMasterDataToken('master_data.gl_account.10.01.ref', extendedEntries)).toEqual({
+      entity_type: 'gl_account',
+      canonical_id: '10.01',
+      qualifier_kind: 'none',
+    })
+  })
+
   it('parses and builds tokens using registry token contract', () => {
     expect(buildMasterDataToken({
       token_entity_type: 'party',
