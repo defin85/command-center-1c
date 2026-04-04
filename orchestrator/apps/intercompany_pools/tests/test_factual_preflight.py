@@ -8,7 +8,14 @@ import pytest
 
 from apps.databases.models import Database
 from apps.intercompany_pools.metadata_catalog import MetadataCatalogSnapshotResolution
-from apps.intercompany_pools.models import Organization, OrganizationPool, PoolNodeVersion
+from apps.intercompany_pools.models import (
+    Organization,
+    OrganizationPool,
+    PoolMasterDataBinding,
+    PoolMasterDataEntityType,
+    PoolMasterGLAccountSetRevisionMember,
+    PoolNodeVersion,
+)
 from apps.tenancy.models import Tenant
 
 
@@ -95,6 +102,38 @@ def _snapshot_for(database: Database, payload: dict[str, object]) -> SimpleNames
     )
 
 
+def _seed_factual_scope_bindings(
+    *,
+    pool: OrganizationPool,
+    database: Database,
+    quarter_start: date,
+) -> dict[str, str]:
+    from apps.intercompany_pools.factual_scope_selection import ensure_pool_factual_scope_selection
+
+    selection = ensure_pool_factual_scope_selection(
+        pool=pool,
+        quarter_start=quarter_start,
+    )
+    members = list(
+        PoolMasterGLAccountSetRevisionMember.objects.filter(
+            revision_id=selection.gl_account_set_revision_id
+        ).order_by("sort_order", "created_at")
+    )
+    account_refs: dict[str, str] = {}
+    for member in members:
+        ref_key = f"account-{str(member.gl_account_code).replace('.', '-')}"
+        PoolMasterDataBinding.objects.create(
+            tenant=pool.tenant,
+            entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+            canonical_id=member.gl_account_canonical_id,
+            database=database,
+            ib_ref_key=ref_key,
+            chart_identity=member.chart_identity,
+        )
+        account_refs[str(member.gl_account_code)] = ref_key
+    return account_refs
+
+
 @pytest.mark.django_db
 def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_probe(
     monkeypatch: pytest.MonkeyPatch,
@@ -103,6 +142,11 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
 
     _, pool, database = _create_pool_with_single_database()
     snapshot = _snapshot_for(database, _valid_metadata_payload())
+    account_refs = _seed_factual_scope_bindings(
+        pool=pool,
+        database=database,
+        quarter_start=date(2026, 1, 1),
+    )
     query_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
@@ -147,6 +191,10 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
         "apps.intercompany_pools.factual_preflight._probe_entity_rows",
         lambda **kwargs: [{"Ref_Key": "probe-info"}],
     )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_scope_selection._query_chart_ref_map",
+        lambda **kwargs: {ref_key: code for code, ref_key in account_refs.items()},
+    )
 
     report = run_pool_factual_sync_preflight(
         pool_id=str(pool.id),
@@ -161,6 +209,7 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
     assert checks["source_availability"]["ok"] is True
     assert checks["published_metadata_refresh"]["ok"] is True
     assert checks["published_boundary"]["ok"] is True
+    assert checks["gl_account_bindings"]["ok"] is True
     assert checks["bounded_scope"]["ok"] is True
     assert checks["live_probe"]["ok"] is True
     assert database_report["live_probe"]["boundary_reads"]["accounting_register"] == 1
@@ -185,10 +234,13 @@ def test_run_pool_factual_sync_preflight_reports_go_for_valid_surfaces_and_live_
     assert "StartPeriod=datetime'2026-01-01T00:00:00'" in database_report["live_probe"]["accounting_register_entity"]
     assert "EndPeriod=datetime'2026-03-31T23:59:59'" in database_report["live_probe"]["accounting_register_entity"]
     assert "Condition='(Организация_Key eq guid''" in database_report["live_probe"]["accounting_register_entity"]
-    assert "AccountCondition='Account_Key eq guid''account-62'' or Account_Key eq guid''account-90'''" in (
+    assert "AccountCondition='Account_Key eq guid''account-62-01'' or Account_Key eq guid''account-90-01'''" in (
         database_report["live_probe"]["accounting_register_entity"]
     )
-    assert any(call["entity"] == "ChartOfAccounts_Хозрасчетный" for call in query_calls)
+    assert database_report["live_probe"]["account_code_refs"] == {
+        "62.01": "account-62-01",
+        "90.01": "account-90-01",
+    }
 
 
 @pytest.mark.django_db
@@ -199,6 +251,11 @@ def test_run_pool_factual_sync_preflight_records_successful_accounting_probe_eve
 
     _, pool, database = _create_pool_with_single_database()
     snapshot = _snapshot_for(database, _valid_metadata_payload())
+    account_refs = _seed_factual_scope_bindings(
+        pool=pool,
+        database=database,
+        quarter_start=date(2026, 1, 1),
+    )
 
     monkeypatch.setattr(
         "apps.intercompany_pools.factual_preflight.refresh_metadata_catalog_snapshot",
@@ -232,6 +289,10 @@ def test_run_pool_factual_sync_preflight_records_successful_accounting_probe_eve
     monkeypatch.setattr(
         "apps.intercompany_pools.factual_preflight._probe_entity_rows",
         lambda **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_scope_selection._query_chart_ref_map",
+        lambda **kwargs: {ref_key: code for code, ref_key in account_refs.items()},
     )
 
     report = run_pool_factual_sync_preflight(
@@ -311,6 +372,11 @@ def test_run_pool_factual_sync_preflight_uses_live_metadata_when_shared_snapshot
     snapshot_payload = _valid_metadata_payload()
     snapshot_payload["information_registers"] = []
     snapshot = _snapshot_for(database, snapshot_payload)
+    account_refs = _seed_factual_scope_bindings(
+        pool=pool,
+        database=database,
+        quarter_start=date(2026, 1, 1),
+    )
     database.metadata = {
         BUSINESS_CONFIGURATION_PROFILE_KEY: {
             "config_name": "Accounting",
@@ -368,6 +434,10 @@ def test_run_pool_factual_sync_preflight_uses_live_metadata_when_shared_snapshot
     monkeypatch.setattr(
         "apps.intercompany_pools.factual_preflight._probe_entity_rows",
         lambda **kwargs: [{"Ref_Key": "probe-info"}],
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_scope_selection._query_chart_ref_map",
+        lambda **kwargs: {ref_key: code for code, ref_key in account_refs.items()},
     )
 
     report = run_pool_factual_sync_preflight(

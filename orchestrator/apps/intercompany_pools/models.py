@@ -2365,4 +2365,5 @@ PoolFactualLane = _factual_models.PoolFactualLane
 PoolFactualReviewItem = _factual_models.PoolFactualReviewItem
 PoolFactualReviewReason = _factual_models.PoolFactualReviewReason
 PoolFactualReviewStatus = _factual_models.PoolFactualReviewStatus
+PoolFactualScopeSelection = _factual_models.PoolFactualScopeSelection
 PoolFactualSyncCheckpoint = _factual_models.PoolFactualSyncCheckpoint

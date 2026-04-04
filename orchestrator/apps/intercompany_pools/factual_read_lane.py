@@ -4,7 +4,11 @@ from datetime import date, datetime
 from typing import Any, Iterable, Mapping
 from uuid import UUID
 
-from .factual_sync_runtime import build_factual_sales_report_sync_contract
+from .factual_sync_runtime import (
+    FactualSalesReportSyncScope,
+    build_factual_sales_report_sync_contract,
+    build_factual_sales_report_sync_contract_from_scope,
+)
 
 
 POOL_FACTUAL_READ_LANE_CONTRACT = "pool_factual_read_lane.v1"
@@ -55,17 +59,26 @@ def build_factual_read_lane_execution_context(
     actions: Iterable[str],
     activity: str = "active",
     now: datetime | None = None,
+    scope: FactualSalesReportSyncScope | None = None,
 ) -> dict[str, Any]:
-    sync_contract = build_factual_sales_report_sync_contract(
-        database=database,
-        quarter_start=quarter_start,
-        quarter_end=quarter_end,
-        organization_ids=organization_ids,
-        account_codes=account_codes,
-        movement_kinds=movement_kinds,
-        activity=activity,
-        now=now,
-    )
+    if scope is not None:
+        sync_contract = build_factual_sales_report_sync_contract_from_scope(
+            database=database,
+            scope=scope,
+            activity=activity,
+            now=now,
+        )
+    else:
+        sync_contract = build_factual_sales_report_sync_contract(
+            database=database,
+            quarter_start=quarter_start,
+            quarter_end=quarter_end,
+            organization_ids=organization_ids,
+            account_codes=account_codes,
+            movement_kinds=movement_kinds,
+            activity=activity,
+            now=now,
+        )
     payload = {
         **sync_contract,
         "contract_version": POOL_FACTUAL_READ_LANE_CONTRACT,

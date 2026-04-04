@@ -273,3 +273,61 @@ def test_mark_factual_sync_checkpoint_error_marks_stale_and_sanitizes_detail() -
     assert "password=***" in checkpoint.last_error
     assert "http://***:***@localhost/odata" in checkpoint.last_error
     assert "super-secret" not in checkpoint.last_error
+
+
+@pytest.mark.django_db
+def test_build_factual_sales_report_sync_scope_fingerprint_is_stable_for_same_revision_and_changes_on_repin() -> None:
+    from apps.intercompany_pools.factual_scope_selection import FACTUAL_SCOPE_CONTRACT_VERSION
+    from apps.intercompany_pools.factual_sync_runtime import build_factual_sales_report_sync_scope
+
+    base_kwargs = {
+        "quarter_start": date(2026, 1, 1),
+        "quarter_end": date(2026, 3, 31),
+        "organization_ids": ("org-a",),
+        "account_codes": ("62.01", "90.01"),
+        "movement_kinds": ("credit", "debit"),
+        "selector_key": "pool:pool-1:sales_report_v1:2026-01-01",
+        "gl_account_set_id": str(uuid4()),
+        "contract_version": FACTUAL_SCOPE_CONTRACT_VERSION,
+    }
+    effective_members_v1 = (
+        {
+            "canonical_id": "factual_sales_report_62_01",
+            "code": "62.01",
+            "name": "62.01",
+            "chart_identity": "ChartOfAccounts_Хозрасчетный",
+            "sort_order": 0,
+        },
+        {
+            "canonical_id": "factual_sales_report_90_01",
+            "code": "90.01",
+            "name": "90.01",
+            "chart_identity": "ChartOfAccounts_Хозрасчетный",
+            "sort_order": 1,
+        },
+    )
+
+    retry_scope = build_factual_sales_report_sync_scope(
+        **base_kwargs,
+        gl_account_set_revision_id="gl_account_set_rev_v1",
+        effective_members=effective_members_v1,
+        resolved_bindings=(),
+    )
+    same_scope_retry = build_factual_sales_report_sync_scope(
+        **base_kwargs,
+        gl_account_set_revision_id="gl_account_set_rev_v1",
+        effective_members=effective_members_v1,
+        resolved_bindings=(),
+    )
+    repinned_scope = build_factual_sales_report_sync_scope(
+        **base_kwargs,
+        gl_account_set_revision_id="gl_account_set_rev_v2",
+        effective_members=(
+            effective_members_v1[1],
+            effective_members_v1[0],
+        ),
+        resolved_bindings=(),
+    )
+
+    assert retry_scope.scope_fingerprint == same_scope_retry.scope_fingerprint
+    assert repinned_scope.scope_fingerprint != retry_scope.scope_fingerprint

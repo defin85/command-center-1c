@@ -13,6 +13,7 @@ from .factual_scheduling import (
     build_factual_closed_quarter_reconcile_contract,
     build_factual_read_contract,
 )
+from .factual_sync_runtime import FactualSalesReportSyncScope
 from .factual_workflow_contract import build_pool_factual_sync_workflow_input_context
 from .factual_workflow_template import ensure_pool_factual_sync_workflow_template
 from .runtime_template_registry import sync_pool_runtime_template_registry
@@ -53,6 +54,7 @@ def start_pool_factual_sync_workflow(
     origin_event_id: str,
     activity: str = "active",
     freeze_quarter: bool = False,
+    scope: FactualSalesReportSyncScope | None = None,
 ):
     execution_id: str | None = None
     created_execution = False
@@ -129,6 +131,7 @@ def start_pool_factual_sync_workflow(
             origin_event_id=origin_event_id,
             activity=activity,
             freeze_quarter=freeze_quarter,
+            scope=scope,
         )
         execution = workflow_template.create_execution(
             input_context,
@@ -157,7 +160,8 @@ def start_pool_factual_sync_workflow(
             "checkpoint_id": str(checkpoint.id),
             "execution_consumer": "pools",
             "idempotency_key": (
-                f"pool.factual.sync:{checkpoint.id}:{checkpoint.lane}:"
+                f"pool.factual.sync:{scope.scope_fingerprint if scope is not None else checkpoint.scope_fingerprint or 'legacy'}:"
+                f"{checkpoint.id}:{checkpoint.lane}:"
                 f"{checkpoint.quarter_start.isoformat()}:{checkpoint.quarter_end.isoformat()}"
             ),
             "trace_id": str(correlation_id or "").strip(),

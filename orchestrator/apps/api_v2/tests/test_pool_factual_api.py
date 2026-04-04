@@ -105,6 +105,27 @@ def _create_pool_scope(*, tenant: Tenant, suffix: str) -> tuple[OrganizationPool
     return pool, leaf, edge, database
 
 
+def _build_resolved_factual_scope(
+    *,
+    pool: OrganizationPool,
+    organization_ids: tuple[str, ...],
+    quarter_start: date = date(2026, 1, 1),
+):
+    from apps.intercompany_pools.factual_sync_runtime import build_factual_sales_report_sync_scope
+
+    if quarter_start.month == 10:
+        quarter_end = date(quarter_start.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        quarter_end = date(quarter_start.year, quarter_start.month + 3, 1) - timedelta(days=1)
+    return build_factual_sales_report_sync_scope(
+        quarter_start=quarter_start,
+        quarter_end=quarter_end,
+        organization_ids=organization_ids,
+        account_codes=("62.01", "90.01"),
+        movement_kinds=("credit", "debit"),
+    )
+
+
 def test_build_pool_factual_workspace_summary_uses_review_attention_when_settlement_attention_is_clear() -> None:
     from apps.api_v2.views.intercompany_pools import _build_pool_factual_workspace_summary
 
@@ -196,6 +217,41 @@ def test_build_pool_factual_workspace_summary_uses_worst_checkpoint_source_state
     assert summary["freshness_state"] == "fresh"
     assert summary["source_availability"] == "blocked_external_sessions"
     assert summary["source_availability_detail"] == "locked by external sessions"
+
+
+def test_build_pool_factual_workspace_summary_exposes_latest_scope_lineage() -> None:
+    from apps.api_v2.views.intercompany_pools import _build_pool_factual_workspace_summary
+
+    synced_at = datetime.now(dt_timezone.utc)
+    checkpoint = PoolFactualSyncCheckpoint(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        last_synced_at=synced_at,
+        updated_at=synced_at,
+        scope_fingerprint="scope-fp-001",
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "freshness_target_seconds": 120,
+            "factual_scope_contract": {
+                "contract_version": "factual_scope_contract.v2",
+                "gl_account_set_revision_id": "gl_account_set_rev_test",
+            },
+        },
+    )
+
+    summary = _build_pool_factual_workspace_summary(
+        quarter_start=date(2026, 1, 1),
+        settlements=[],
+        edge_balances=[],
+        checkpoints=[checkpoint],
+        review_queue={"summary": {"pending_total": 0, "attention_required_total": 0}},
+    )
+
+    assert summary["scope_fingerprint"] == "scope-fp-001"
+    assert summary["scope_contract_version"] == "factual_scope_contract.v2"
+    assert summary["gl_account_set_revision_id"] == "gl_account_set_rev_test"
 
 
 @pytest.mark.django_db
@@ -299,7 +355,11 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
         source_document_ref="Document_КорректировкаРеализации(guid'workspace-late')",
     )
 
-    response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.ensure_pool_factual_workspace_default_sync",
+        return_value=tuple(),
+    ):
+        response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
 
     assert response.status_code == 200
     payload = response.json()
@@ -685,10 +745,18 @@ def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_miss
     default_tenant: Tenant,
 ) -> None:
     pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-bootstrap")
+    factual_scope = _build_resolved_factual_scope(
+        pool=pool,
+        organization_ids=(str(leaf.id),),
+        quarter_start=date(2026, 4, 1),
+    )
 
     with patch(
         "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow"
-    ) as start_workflow:
+    ) as start_workflow, patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ):
         def _fake_start(**kwargs):
             checkpoint = kwargs["checkpoint"]
             checkpoint.workflow_status = "running"
@@ -705,7 +773,9 @@ def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_miss
 
         start_workflow.side_effect = _fake_start
 
-        response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}")
+        response = authenticated_client.get(
+            f"/api/v2/pools/factual/workspace/?pool_id={pool.id}&quarter_start=2026-04-01"
+        )
 
     assert response.status_code == 200
     checkpoint = PoolFactualSyncCheckpoint.objects.get(
@@ -729,7 +799,7 @@ def test_get_pool_factual_workspace_surfaces_read_backlog_in_summary(
     authenticated_client: APIClient,
     default_tenant: Tenant,
 ) -> None:
-    pool, _leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-backlog")
+    pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-backlog")
     stale_synced_at = datetime(2026, 3, 27, 10, 0, tzinfo=dt_timezone.utc)
     PoolFactualSyncCheckpoint.objects.create(
         tenant=default_tenant,
@@ -747,10 +817,14 @@ def test_get_pool_factual_workspace_surfaces_read_backlog_in_summary(
             "freshness_target_seconds": 120,
         },
     )
+    factual_scope = _build_resolved_factual_scope(pool=pool, organization_ids=(str(leaf.id),))
 
     with patch(
         "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow"
-    ) as start_workflow:
+    ) as start_workflow, patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ):
         def _fake_start(**kwargs):
             checkpoint = kwargs["checkpoint"]
             checkpoint.workflow_status = "running"

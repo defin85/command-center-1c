@@ -2436,6 +2436,12 @@ def _build_pool_factual_workspace_summary(
         if latest_checkpoint is not None and latest_checkpoint.last_synced_at is not None
         else latest_settlement_freshness_at
     )
+    latest_metadata = _pool_factual_checkpoint_metadata(checkpoint=latest_checkpoint)
+    latest_factual_scope_contract = (
+        dict(latest_metadata.get("factual_scope_contract") or {})
+        if isinstance(latest_metadata.get("factual_scope_contract"), dict)
+        else {}
+    )
 
     return {
         "quarter": _format_quarter_label(quarter_start),
@@ -2457,6 +2463,17 @@ def _build_pool_factual_workspace_summary(
         "source_availability": checkpoint_summary["source_availability"],
         "source_availability_detail": checkpoint_summary["source_availability_detail"],
         "last_synced_at": last_synced_at,
+        "scope_fingerprint": str(
+            (
+                getattr(latest_checkpoint, "scope_fingerprint", "")
+                if latest_checkpoint is not None
+                else ""
+            )
+            or latest_metadata.get("scope_fingerprint")
+            or ""
+        ),
+        "scope_contract_version": str(latest_factual_scope_contract.get("contract_version") or ""),
+        "gl_account_set_revision_id": str(latest_factual_scope_contract.get("gl_account_set_revision_id") or ""),
         "settlement_total": len(settlements),
         "checkpoint_total": len(checkpoints),
     }

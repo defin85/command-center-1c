@@ -362,6 +362,7 @@ func resolvePoolFactualPayloadFromContext(execCtx *wfcontext.ExecutionContext) m
 		"source_profile",
 		"freshness_target_seconds",
 		"scope_fingerprint",
+		"factual_scope_contract",
 		"subsystem",
 		"read_boundary_kind",
 		"direct_db_access",

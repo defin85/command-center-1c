@@ -10,6 +10,7 @@ from .batch_intake_models import (
 from .factual_projection_models import (
     PoolFactualBalanceSnapshot,
     PoolFactualLane,
+    PoolFactualScopeSelection,
     PoolFactualSyncCheckpoint,
 )
 from .factual_review_models import (
@@ -32,5 +33,6 @@ __all__ = [
     "PoolFactualReviewItem",
     "PoolFactualReviewReason",
     "PoolFactualReviewStatus",
+    "PoolFactualScopeSelection",
     "PoolFactualSyncCheckpoint",
 ]

@@ -92,6 +92,90 @@ class PoolFactualLane(models.TextChoices):
     RECONCILE = "reconcile", "Reconcile"
 
 
+class PoolFactualScopeSelection(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_factual_scope_selections",
+    )
+    pool = models.ForeignKey(
+        "intercompany_pools.OrganizationPool",
+        on_delete=models.CASCADE,
+        related_name="factual_scope_selections",
+    )
+    source_profile = models.CharField(max_length=64, db_index=True)
+    quarter_start = models.DateField(db_index=True)
+    quarter_end = models.DateField(db_index=True)
+    gl_account_set = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSet",
+        on_delete=models.PROTECT,
+        related_name="factual_scope_selections",
+    )
+    gl_account_set_revision = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSetRevision",
+        on_delete=models.PROTECT,
+        related_name="factual_scope_selections",
+    )
+    selection_mode = models.CharField(max_length=32, default="system_managed", db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_factual_scope_selections"
+        indexes = [
+            models.Index(fields=["tenant", "pool", "source_profile", "quarter_start"]),
+            models.Index(fields=["tenant", "gl_account_set_revision"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(quarter_end__gte=F("quarter_start")),
+                name="chk_pool_factual_scope_selection_quarter_range",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "pool", "source_profile", "quarter_start"],
+                name="uniq_pool_factual_scope_selection",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.pool_id and self.tenant_id and self.pool.tenant_id != self.tenant_id:
+            raise ValidationError({"pool": "Factual scope selection pool must belong to the same tenant."})
+        if self.gl_account_set_id and self.tenant_id and self.gl_account_set.tenant_id != self.tenant_id:
+            raise ValidationError(
+                {"gl_account_set": "Factual scope selection GLAccountSet must belong to the same tenant."}
+            )
+        if (
+            self.gl_account_set_revision_id
+            and self.tenant_id
+            and self.gl_account_set_revision.tenant_id != self.tenant_id
+        ):
+            raise ValidationError(
+                {
+                    "gl_account_set_revision": (
+                        "Factual scope selection GLAccountSet revision must belong to the same tenant."
+                    )
+                }
+            )
+        if (
+            self.gl_account_set_id
+            and self.gl_account_set_revision_id
+            and self.gl_account_set_revision.profile_id != self.gl_account_set_id
+        ):
+            raise ValidationError(
+                {
+                    "gl_account_set_revision": (
+                        "Factual scope selection revision must belong to the selected GLAccountSet."
+                    )
+                }
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 class PoolFactualSyncCheckpoint(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -122,6 +206,7 @@ class PoolFactualSyncCheckpoint(models.Model):
     workflow_status = models.CharField(max_length=32, blank=True, default="", db_index=True)
     quarter_start = models.DateField(db_index=True)
     quarter_end = models.DateField(db_index=True)
+    scope_fingerprint = models.CharField(max_length=64, blank=True, default="", db_index=True)
     source_checkpoint_token = models.CharField(max_length=255, blank=True, default="")
     last_synced_at = models.DateTimeField(null=True, blank=True, db_index=True)
     last_error_code = models.CharField(max_length=64, blank=True, default="")
@@ -140,6 +225,11 @@ class PoolFactualSyncCheckpoint(models.Model):
             models.CheckConstraint(
                 condition=Q(quarter_end__gte=F("quarter_start")),
                 name="chk_pool_factual_checkpoint_quarter_range",
+            ),
+            models.UniqueConstraint(
+                fields=["tenant", "pool", "database", "lane", "quarter_start", "scope_fingerprint"],
+                condition=~Q(scope_fingerprint=""),
+                name="uniq_pool_factual_checkpoint_scope_fingerprint",
             ),
         ]
 

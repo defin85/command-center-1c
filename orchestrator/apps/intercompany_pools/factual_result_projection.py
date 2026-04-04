@@ -63,6 +63,27 @@ class _FactualDocumentRecord:
     unattributed: bool
 
 
+def _build_scope_kwargs_from_input_context(*, input_context: Mapping[str, Any]) -> dict[str, Any]:
+    factual_scope_contract = (
+        dict(input_context.get("factual_scope_contract") or {})
+        if isinstance(input_context.get("factual_scope_contract"), Mapping)
+        else {}
+    )
+    return {
+        "quarter_start": date.fromisoformat(str(input_context["quarter_start"])),
+        "quarter_end": date.fromisoformat(str(input_context["quarter_end"])),
+        "organization_ids": str(input_context["organization_ids"]).split(","),
+        "account_codes": str(input_context["account_codes"]).split(","),
+        "movement_kinds": str(input_context["movement_kinds"]).split(","),
+        "selector_key": str(factual_scope_contract.get("selector_key") or ""),
+        "gl_account_set_id": str(factual_scope_contract.get("gl_account_set_id") or ""),
+        "gl_account_set_revision_id": str(factual_scope_contract.get("gl_account_set_revision_id") or ""),
+        "effective_members": tuple(factual_scope_contract.get("effective_members") or ()),
+        "resolved_bindings": tuple(factual_scope_contract.get("resolved_bindings") or ()),
+        "contract_version": str(factual_scope_contract.get("contract_version") or ""),
+    }
+
+
 def is_pool_factual_sync_execution(*, execution) -> bool:
     input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
     return str(input_context.get("contract_version") or "").strip() == POOL_FACTUAL_SYNC_WORKFLOW_CONTRACT
@@ -154,11 +175,7 @@ def project_pool_factual_result_from_execution(*, execution, result_payload: Map
     )
 
     scope = build_factual_sales_report_sync_scope(
-        quarter_start=date.fromisoformat(input_context["quarter_start"]),
-        quarter_end=date.fromisoformat(input_context["quarter_end"]),
-        organization_ids=input_context["organization_ids"].split(","),
-        account_codes=input_context["account_codes"].split(","),
-        movement_kinds=input_context["movement_kinds"].split(","),
+        **_build_scope_kwargs_from_input_context(input_context=input_context),
     )
     source_state = resolve_factual_sync_source_state(database=database)
     source_checkpoint_token = _resolve_source_checkpoint_token(step_payload=step_payload)
@@ -247,11 +264,7 @@ def mark_pool_factual_execution_failed(*, execution) -> bool:
     if database is None:
         return False
     scope = build_factual_sales_report_sync_scope(
-        quarter_start=date.fromisoformat(input_context["quarter_start"]),
-        quarter_end=date.fromisoformat(input_context["quarter_end"]),
-        organization_ids=input_context["organization_ids"].split(","),
-        account_codes=input_context["account_codes"].split(","),
-        movement_kinds=input_context["movement_kinds"].split(","),
+        **_build_scope_kwargs_from_input_context(input_context=input_context),
     )
     source_state = resolve_factual_sync_source_state(database=database)
     mark_factual_sync_checkpoint_error(

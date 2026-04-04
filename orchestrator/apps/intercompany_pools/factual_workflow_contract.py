@@ -5,7 +5,9 @@ from typing import Any, Iterable, Mapping
 from uuid import UUID
 
 from .factual_read_lane import build_factual_read_lane_execution_context
+from .factual_scope_selection import FACTUAL_SCOPE_CONTRACT_VERSION
 from .factual_scheduling import build_factual_closed_quarter_reconcile_contract
+from .factual_sync_runtime import FactualSalesReportSyncScope
 from .models import PoolFactualLane
 
 
@@ -119,6 +121,11 @@ def _normalize_shared_source_scope_fields(payload: Mapping[str, Any]) -> dict[st
                 "read_boundary_operation_name": _require_token(payload, "read_boundary_operation_name"),
             }
         )
+    factual_scope_contract = _normalize_factual_scope_contract(payload.get("factual_scope_contract"))
+    if factual_scope_contract:
+        if normalized["scope_fingerprint"] != factual_scope_contract["scope_fingerprint"]:
+            raise _fail("field 'scope_fingerprint' must match factual_scope_contract.scope_fingerprint")
+        normalized["factual_scope_contract"] = factual_scope_contract
     return normalized
 
 
@@ -159,6 +166,24 @@ def validate_pool_factual_sync_workflow_input_context(*, input_context: Any) -> 
         "origin_event_id": _require_token(payload, "origin_event_id"),
     }
     normalized.update(_normalize_shared_source_scope_fields(payload))
+    factual_scope_contract = normalized.get("factual_scope_contract")
+    if isinstance(factual_scope_contract, Mapping):
+        top_level_codes = tuple(
+            part.strip()
+            for part in str(normalized["account_codes"] or "").split(",")
+            if part.strip()
+        )
+        contract_codes = tuple(
+            sorted(
+                {
+                    str(item.get("code") or "").strip()
+                    for item in factual_scope_contract.get("effective_members", [])
+                    if str(item.get("code") or "").strip()
+                }
+            )
+        )
+        if contract_codes and top_level_codes != contract_codes:
+            raise _fail("field 'account_codes' must match factual_scope_contract.effective_members codes")
     if lane == PoolFactualLane.READ:
         normalized.update(
             {
@@ -199,6 +224,7 @@ def build_pool_factual_sync_workflow_input_context(
     activity: str = "active",
     freeze_quarter: bool = False,
     now=None,
+    scope: FactualSalesReportSyncScope | None = None,
 ) -> dict[str, Any]:
     normalized_lane = str(lane or "").strip().lower()
     if normalized_lane == PoolFactualLane.READ:
@@ -214,6 +240,7 @@ def build_pool_factual_sync_workflow_input_context(
             actions=("sync_source_slice", "update_checkpoint", "refresh_batch_settlement", "materialize_carry_forward"),
             activity=activity,
             now=now,
+            scope=scope,
         )
         payload = dict(read_context)
         payload["activity"] = str(activity or "").strip().lower() or "active"
@@ -230,6 +257,7 @@ def build_pool_factual_sync_workflow_input_context(
             actions=("sync_source_slice", "update_checkpoint", "refresh_batch_settlement", "materialize_carry_forward"),
             activity=activity,
             now=now,
+            scope=scope,
         )
         reconcile_contract = build_factual_closed_quarter_reconcile_contract(
             database=database,
@@ -261,6 +289,70 @@ def build_pool_factual_sync_workflow_input_context(
         }
     )
     return validate_pool_factual_sync_workflow_input_context(input_context=payload)
+
+
+def _normalize_factual_scope_contract(raw_value: Any) -> dict[str, Any]:
+    if raw_value in (None, "", {}):
+        return {}
+    if not isinstance(raw_value, Mapping):
+        raise _fail("field 'factual_scope_contract' must be an object")
+    payload = dict(raw_value)
+    normalized = {
+        "contract_version": _require_token(payload, "contract_version"),
+        "selector_key": _require_token(payload, "selector_key"),
+        "gl_account_set_id": _require_uuid(payload, "gl_account_set_id"),
+        "gl_account_set_revision_id": _require_token(payload, "gl_account_set_revision_id"),
+        "scope_fingerprint": _require_token(payload, "scope_fingerprint"),
+        "effective_members": _normalize_factual_scope_contract_items(
+            payload.get("effective_members"),
+            field_name="effective_members",
+            require_target_ref=False,
+        ),
+        "resolved_bindings": _normalize_factual_scope_contract_items(
+            payload.get("resolved_bindings"),
+            field_name="resolved_bindings",
+            require_target_ref=True,
+        ),
+    }
+    if normalized["contract_version"] != FACTUAL_SCOPE_CONTRACT_VERSION:
+        raise _fail(
+            "field 'factual_scope_contract.contract_version' must be "
+            f"'{FACTUAL_SCOPE_CONTRACT_VERSION}'"
+        )
+    return normalized
+
+
+def _normalize_factual_scope_contract_items(
+    raw_value: Any,
+    *,
+    field_name: str,
+    require_target_ref: bool,
+) -> list[dict[str, Any]]:
+    if not isinstance(raw_value, list) or not raw_value:
+        raise _fail(f"field 'factual_scope_contract.{field_name}' must be a non-empty array")
+    normalized: list[dict[str, Any]] = []
+    for item in raw_value:
+        if not isinstance(item, Mapping):
+            raise _fail(f"field 'factual_scope_contract.{field_name}' must contain objects")
+        payload = dict(item)
+        normalized_item = {
+            "canonical_id": _require_token(payload, "canonical_id"),
+            "code": _require_token(payload, "code"),
+            "name": str(payload.get("name") or "").strip(),
+            "chart_identity": _require_token(payload, "chart_identity"),
+        }
+        if "sort_order" in payload and payload.get("sort_order") not in (None, ""):
+            try:
+                normalized_item["sort_order"] = int(payload.get("sort_order"))
+            except (TypeError, ValueError) as exc:
+                raise _fail(f"field 'factual_scope_contract.{field_name}.sort_order' must be an integer") from exc
+        if require_target_ref:
+            normalized_item["target_ref_key"] = _require_token(payload, "target_ref_key")
+            binding_source = str(payload.get("binding_source") or "").strip()
+            if binding_source:
+                normalized_item["binding_source"] = binding_source
+        normalized.append(normalized_item)
+    return normalized
 
 
 __all__ = [

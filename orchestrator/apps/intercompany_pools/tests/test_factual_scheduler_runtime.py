@@ -63,6 +63,7 @@ def test_trigger_pool_factual_closed_quarter_reconcile_window_creates_reconcile_
         PoolFactualScope,
         trigger_pool_factual_closed_quarter_reconcile_window,
     )
+    from apps.intercompany_pools.factual_sync_runtime import build_factual_sales_report_sync_scope
 
     tenant = Tenant.objects.create(
         slug=f"factual-scheduler-reconcile-{uuid4().hex[:6]}",
@@ -80,6 +81,13 @@ def test_trigger_pool_factual_closed_quarter_reconcile_window_creates_reconcile_
         metadata={"frozen_at": "2026-03-31T23:59:59+00:00"},
     )
     fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+    factual_scope = build_factual_sales_report_sync_scope(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        organization_ids=("org-1",),
+        account_codes=("62.01", "90.01"),
+        movement_kinds=("credit", "debit"),
+    )
 
     with patch(
         "apps.intercompany_pools.factual_scheduler_runtime.resolve_pool_factual_scope",
@@ -89,6 +97,9 @@ def test_trigger_pool_factual_closed_quarter_reconcile_window_creates_reconcile_
             quarter_end=date(2026, 3, 31),
             freeze_quarter=True,
         ),
+    ), patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
     ), patch(
         "apps.intercompany_pools.factual_scheduler_runtime.start_pool_factual_sync_workflow",
         side_effect=lambda **kwargs: SimpleNamespace(

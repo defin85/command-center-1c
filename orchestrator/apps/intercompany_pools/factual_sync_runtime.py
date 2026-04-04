@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone as dt_timezone
 from typing import Any, Iterable
 
@@ -63,9 +63,15 @@ class FactualSalesReportSyncScope:
     source_profile: str
     freshness_target_seconds: int
     scope_fingerprint: str
+    contract_version: str = ""
+    selector_key: str = ""
+    gl_account_set_id: str = ""
+    gl_account_set_revision_id: str = ""
+    effective_members: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    resolved_bindings: tuple[dict[str, Any], ...] = field(default_factory=tuple)
 
     def as_metadata(self) -> dict[str, Any]:
-        return {
+        payload = {
             "quarter_start": self.quarter_start.isoformat(),
             "quarter_end": self.quarter_end.isoformat(),
             "organization_ids": list(self.organization_ids),
@@ -75,6 +81,23 @@ class FactualSalesReportSyncScope:
             "accounting_register_entity": self.accounting_register_entity,
             "accounting_register_function": self.accounting_register_function,
             "information_register_entity": self.information_register_entity,
+            "scope_fingerprint": self.scope_fingerprint,
+        }
+        factual_scope_contract = self.as_factual_scope_contract()
+        if factual_scope_contract:
+            payload["factual_scope_contract"] = factual_scope_contract
+        return payload
+
+    def as_factual_scope_contract(self) -> dict[str, Any]:
+        if not self.contract_version:
+            return {}
+        return {
+            "contract_version": self.contract_version,
+            "selector_key": self.selector_key,
+            "gl_account_set_id": self.gl_account_set_id,
+            "gl_account_set_revision_id": self.gl_account_set_revision_id,
+            "effective_members": [dict(item) for item in self.effective_members],
+            "resolved_bindings": [dict(item) for item in self.resolved_bindings],
             "scope_fingerprint": self.scope_fingerprint,
         }
 
@@ -107,6 +130,12 @@ def build_factual_sales_report_sync_scope(
     organization_ids: Iterable[str],
     account_codes: Iterable[str],
     movement_kinds: Iterable[str],
+    selector_key: str = "",
+    gl_account_set_id: str = "",
+    gl_account_set_revision_id: str = "",
+    effective_members: Iterable[dict[str, Any]] = (),
+    resolved_bindings: Iterable[dict[str, Any]] = (),
+    contract_version: str = "",
 ) -> FactualSalesReportSyncScope:
     if quarter_end < quarter_start:
         raise ValueError(
@@ -116,12 +145,19 @@ def build_factual_sales_report_sync_scope(
     normalized_org_ids = _normalize_scope_tokens(values=organization_ids, field_name="organization_ids")
     normalized_account_codes = _normalize_scope_tokens(values=account_codes, field_name="account_codes")
     normalized_movement_kinds = _normalize_scope_tokens(values=movement_kinds, field_name="movement_kinds")
+    normalized_effective_members = _normalize_scope_snapshot_items(
+        values=effective_members,
+        key_fields=("sort_order", "canonical_id", "code"),
+    )
+    normalized_resolved_bindings = _normalize_scope_snapshot_items(
+        values=resolved_bindings,
+        key_fields=("canonical_id", "code", "target_ref_key"),
+    )
     document_entities = tuple(sorted(REQUIRED_FACTUAL_DOCUMENTS))
     fingerprint_payload = {
         "quarter_start": quarter_start.isoformat(),
         "quarter_end": quarter_end.isoformat(),
         "organization_ids": normalized_org_ids,
-        "account_codes": normalized_account_codes,
         "movement_kinds": normalized_movement_kinds,
         "document_entities": document_entities,
         "accounting_register_entity": REQUIRED_FACTUAL_ACCOUNTING_REGISTER,
@@ -130,6 +166,24 @@ def build_factual_sales_report_sync_scope(
         "source_profile": FACTUAL_SOURCE_PROFILE_SALES_REPORT_V1,
         "freshness_target_seconds": FACTUAL_SYNC_FRESHNESS_TARGET_SECONDS,
     }
+    if selector_key and gl_account_set_revision_id and normalized_effective_members:
+        fingerprint_payload.update(
+            {
+                "selector_key": selector_key,
+                "gl_account_set_id": str(gl_account_set_id or "").strip(),
+                "gl_account_set_revision_id": str(gl_account_set_revision_id or "").strip(),
+                "effective_members": [
+                    {
+                        "canonical_id": str(item.get("canonical_id") or "").strip(),
+                        "code": str(item.get("code") or "").strip(),
+                        "chart_identity": str(item.get("chart_identity") or "").strip(),
+                    }
+                    for item in normalized_effective_members
+                ],
+            }
+        )
+    else:
+        fingerprint_payload["account_codes"] = normalized_account_codes
     scope_fingerprint = hashlib.sha256(
         json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -146,7 +200,48 @@ def build_factual_sales_report_sync_scope(
         source_profile=FACTUAL_SOURCE_PROFILE_SALES_REPORT_V1,
         freshness_target_seconds=FACTUAL_SYNC_FRESHNESS_TARGET_SECONDS,
         scope_fingerprint=scope_fingerprint,
+        contract_version=str(contract_version or "").strip(),
+        selector_key=str(selector_key or "").strip(),
+        gl_account_set_id=str(gl_account_set_id or "").strip(),
+        gl_account_set_revision_id=str(gl_account_set_revision_id or "").strip(),
+        effective_members=normalized_effective_members,
+        resolved_bindings=normalized_resolved_bindings,
     )
+
+
+def build_factual_sales_report_sync_contract_from_scope(
+    *,
+    database: Any,
+    scope: FactualSalesReportSyncScope,
+    activity: str = "active",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    contract = build_factual_read_contract(
+        database=database,
+        activity=activity,
+        now=now,
+    )
+    read_boundary = build_default_factual_odata_read_boundary()
+    payload: dict[str, Any] = {
+        **contract,
+        **read_boundary.as_contract(),
+        "source_profile": scope.source_profile,
+        "quarter_start": scope.quarter_start.isoformat(),
+        "quarter_end": scope.quarter_end.isoformat(),
+        "organization_ids": ",".join(scope.organization_ids),
+        "account_codes": ",".join(scope.account_codes),
+        "movement_kinds": ",".join(scope.movement_kinds),
+        "document_entities": ",".join(scope.document_entities),
+        "accounting_register_entity": scope.accounting_register_entity,
+        "accounting_register_function": scope.accounting_register_function,
+        "information_register_entity": scope.information_register_entity,
+        "freshness_target_seconds": str(scope.freshness_target_seconds),
+        "scope_fingerprint": scope.scope_fingerprint,
+    }
+    factual_scope_contract = scope.as_factual_scope_contract()
+    if factual_scope_contract:
+        payload["factual_scope_contract"] = factual_scope_contract
+    return payload
 
 
 def build_factual_sales_report_sync_contract(
@@ -167,28 +262,12 @@ def build_factual_sales_report_sync_contract(
         account_codes=account_codes,
         movement_kinds=movement_kinds,
     )
-    contract = build_factual_read_contract(
+    return build_factual_sales_report_sync_contract_from_scope(
         database=database,
+        scope=scope,
         activity=activity,
         now=now,
     )
-    read_boundary = build_default_factual_odata_read_boundary()
-    return {
-        **contract,
-        **read_boundary.as_contract(),
-        "source_profile": scope.source_profile,
-        "quarter_start": scope.quarter_start.isoformat(),
-        "quarter_end": scope.quarter_end.isoformat(),
-        "organization_ids": ",".join(scope.organization_ids),
-        "account_codes": ",".join(scope.account_codes),
-        "movement_kinds": ",".join(scope.movement_kinds),
-        "document_entities": ",".join(scope.document_entities),
-        "accounting_register_entity": scope.accounting_register_entity,
-        "accounting_register_function": scope.accounting_register_function,
-        "information_register_entity": scope.information_register_entity,
-        "freshness_target_seconds": str(scope.freshness_target_seconds),
-        "scope_fingerprint": scope.scope_fingerprint,
-    }
 
 
 def resolve_factual_sync_source_state(
@@ -261,6 +340,7 @@ def mark_factual_sync_checkpoint_success(
     metadata["freshness_at"] = timestamp.isoformat()
     metadata["last_synced_at"] = timestamp.isoformat()
     metadata.pop("last_error_at", None)
+    checkpoint.scope_fingerprint = scope.scope_fingerprint
     checkpoint.source_checkpoint_token = str(source_checkpoint_token or checkpoint.source_checkpoint_token or "")
     checkpoint.last_synced_at = timestamp
     checkpoint.last_error_code = ""
@@ -268,6 +348,7 @@ def mark_factual_sync_checkpoint_success(
     checkpoint.metadata = metadata
     checkpoint.save(
         update_fields=[
+            "scope_fingerprint",
             "source_checkpoint_token",
             "last_synced_at",
             "last_error_code",
@@ -294,11 +375,13 @@ def mark_factual_sync_checkpoint_error(
     metadata["freshness_target_seconds"] = int(scope.freshness_target_seconds)
     metadata["freshness_state"] = "stale"
     metadata["last_error_at"] = timestamp.isoformat()
+    checkpoint.scope_fingerprint = scope.scope_fingerprint
     checkpoint.last_error_code = error_code
     checkpoint.last_error = sanitize_master_data_sync_text(error_detail)
     checkpoint.metadata = metadata
     checkpoint.save(
         update_fields=[
+            "scope_fingerprint",
             "last_error_code",
             "last_error",
             "metadata",
@@ -315,6 +398,7 @@ def _build_checkpoint_scope_metadata(
 ) -> dict[str, Any]:
     payload = dict(source_state.as_metadata())
     payload["source_profile"] = scope.source_profile
+    payload["scope_fingerprint"] = scope.scope_fingerprint
     payload["source_scope"] = scope.as_metadata()
     return payload
 
@@ -352,6 +436,27 @@ def _normalize_scope_tokens(*, values: Iterable[str], field_name: str) -> tuple[
     if normalized:
         return tuple(normalized)
     raise ValueError(f"{ERROR_CODE_POOL_FACTUAL_SYNC_SCOPE_INVALID}: {field_name} must not be empty")
+
+
+def _normalize_scope_snapshot_items(
+    *,
+    values: Iterable[dict[str, Any]],
+    key_fields: tuple[str, ...],
+) -> tuple[dict[str, Any], ...]:
+    normalized: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        normalized.append({str(key): value for key, value in item.items()})
+    return tuple(
+        sorted(
+            normalized,
+            key=lambda item: tuple(
+                int(item.get(field) or 0) if field == "sort_order" else str(item.get(field) or "")
+                for field in key_fields
+            ),
+        )
+    )
 
 
 def _parse_metadata_datetime(value: object) -> datetime | None:
@@ -399,6 +504,7 @@ __all__ = [
     "SOURCE_STATE_MAINTENANCE",
     "SOURCE_STATE_UNAVAILABLE",
     "build_factual_sales_report_sync_contract",
+    "build_factual_sales_report_sync_contract_from_scope",
     "build_factual_sales_report_sync_scope",
     "mark_factual_sync_checkpoint_error",
     "mark_factual_sync_checkpoint_success",

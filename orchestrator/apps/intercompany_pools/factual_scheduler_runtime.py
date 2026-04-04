@@ -4,14 +4,24 @@ from datetime import datetime
 
 from django.utils import timezone
 
-from .factual_workspace_runtime import (
-    DEFAULT_FACTUAL_ACCOUNT_CODES,
+from .factual_scope_selection import (
     DEFAULT_FACTUAL_MOVEMENT_KINDS,
+    FactualScopeSelectionError,
+    resolve_pool_factual_sync_scope_for_database,
+)
+from .factual_workspace_runtime import (
     PoolFactualScope,
     _checkpoint_requires_sync,
     _current_quarter_start,
+    _get_or_create_checkpoint_for_scope,
+    _update_checkpoint_scope_contract,
     ensure_pool_factual_workspace_default_sync,
     resolve_pool_factual_scope,
+)
+from .factual_sync_runtime import (
+    FactualSyncTransportError,
+    mark_factual_sync_checkpoint_error,
+    resolve_factual_sync_source_state,
 )
 from .factual_workflow_runtime import start_pool_factual_sync_workflow
 from .models import OrganizationPool, PoolFactualLane, PoolFactualSyncCheckpoint
@@ -103,18 +113,59 @@ def trigger_pool_factual_closed_quarter_reconcile_window(
         if not scope.organization_ids or not _scope_contains_database(scope=scope, database_id=str(read_checkpoint.database_id)):
             continue
 
-        reconcile_checkpoint, created = PoolFactualSyncCheckpoint.objects.get_or_create(
+        try:
+            factual_scope = resolve_pool_factual_sync_scope_for_database(
+                pool=read_checkpoint.pool,
+                database=read_checkpoint.database,
+                quarter_start=read_checkpoint.quarter_start,
+                quarter_end=read_checkpoint.quarter_end,
+                organization_ids=scope.organization_ids,
+                movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
+                verify_live_bindings=True,
+            )
+        except FactualScopeSelectionError as exc:
+            reconcile_checkpoint, created = _get_or_create_checkpoint_for_scope(
+                tenant=read_checkpoint.tenant,
+                pool=read_checkpoint.pool,
+                database=read_checkpoint.database,
+                lane=PoolFactualLane.RECONCILE,
+                quarter_start=read_checkpoint.quarter_start,
+                quarter_end=read_checkpoint.quarter_end,
+                scope_fingerprint=exc.scope.scope_fingerprint,
+                default_entrypoint="pools_factual_reconcile_scheduler",
+            )
+            _update_checkpoint_scope_contract(
+                checkpoint=reconcile_checkpoint,
+                scope=exc.scope,
+                default_entrypoint="pools_factual_reconcile_scheduler",
+                extra_metadata={"scope_resolution_blockers": list(exc.blockers)},
+            )
+            reconcile_checkpoints_touched += 1
+            if created:
+                reconcile_checkpoints_created += 1
+            mark_factual_sync_checkpoint_error(
+                checkpoint=reconcile_checkpoint,
+                scope=exc.scope,
+                source_state=resolve_factual_sync_source_state(database=read_checkpoint.database, now=timestamp),
+                error=FactualSyncTransportError(code=exc.code, detail=exc.detail),
+                failed_at=timestamp,
+            )
+            continue
+
+        reconcile_checkpoint, created = _get_or_create_checkpoint_for_scope(
             tenant=read_checkpoint.tenant,
             pool=read_checkpoint.pool,
             database=read_checkpoint.database,
             lane=PoolFactualLane.RECONCILE,
             quarter_start=read_checkpoint.quarter_start,
-            defaults={
-                "quarter_end": read_checkpoint.quarter_end,
-                "metadata": {
-                    "default_entrypoint": "pools_factual_reconcile_scheduler",
-                },
-            },
+            quarter_end=read_checkpoint.quarter_end,
+            scope_fingerprint=factual_scope.scope_fingerprint,
+            default_entrypoint="pools_factual_reconcile_scheduler",
+        )
+        reconcile_checkpoint = _update_checkpoint_scope_contract(
+            checkpoint=reconcile_checkpoint,
+            scope=factual_scope,
+            default_entrypoint="pools_factual_reconcile_scheduler",
         )
         reconcile_checkpoints_touched += 1
         if created:
@@ -126,7 +177,7 @@ def trigger_pool_factual_closed_quarter_reconcile_window(
             checkpoint=reconcile_checkpoint,
             database=read_checkpoint.database,
             organization_ids=scope.organization_ids,
-            account_codes=DEFAULT_FACTUAL_ACCOUNT_CODES,
+            account_codes=factual_scope.account_codes,
             movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
             correlation_id=f"reconcile-scheduler:{read_checkpoint.pool_id}:{read_checkpoint.quarter_start.isoformat()}",
             origin_system=FACTUAL_RECONCILE_SYNC_ORIGIN_SYSTEM,
@@ -135,6 +186,7 @@ def trigger_pool_factual_closed_quarter_reconcile_window(
             ),
             activity="cold",
             freeze_quarter=True,
+            scope=factual_scope,
         )
         if result.enqueue_success or str(result.enqueue_status or "").strip().lower() in {"pending", "running"}:
             reconcile_checkpoints_running += 1

@@ -15,16 +15,14 @@ from apps.databases.odata import (
 
 from .business_configuration_profile import get_business_configuration_profile
 from .factual_read_boundary import build_factual_odata_read_boundary
-from .factual_source_profile import REQUIRED_FACTUAL_INFORMATION_REGISTER
-from .factual_sync_runtime import (
-    build_factual_sales_report_sync_scope,
-    resolve_factual_sync_source_state,
-)
-from .factual_workspace_runtime import (
-    DEFAULT_FACTUAL_ACCOUNT_CODES,
+from .factual_scope_selection import (
     DEFAULT_FACTUAL_MOVEMENT_KINDS,
-    resolve_pool_factual_scope,
+    FactualScopeSelectionError,
+    resolve_pool_factual_sync_scope_for_database,
 )
+from .factual_source_profile import REQUIRED_FACTUAL_INFORMATION_REGISTER
+from .factual_sync_runtime import resolve_factual_sync_source_state
+from .factual_workspace_runtime import resolve_pool_factual_scope
 from .metadata_catalog import (
     _fetch_live_catalog_payload,
     describe_metadata_catalog_snapshot_resolution,
@@ -80,19 +78,13 @@ def run_pool_factual_sync_preflight(
             "databases": [],
         }
 
-    scope_contract = build_factual_sales_report_sync_scope(
-        quarter_start=quarter_start,
-        quarter_end=scope.quarter_end,
-        organization_ids=scope.organization_ids,
-        account_codes=DEFAULT_FACTUAL_ACCOUNT_CODES,
-        movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
-    )
-
     database_reports = [
         _run_database_preflight(
             pool=pool,
             database=database,
-            scope_contract=scope_contract,
+            quarter_start=quarter_start,
+            quarter_end=scope.quarter_end,
+            organization_ids=scope.organization_ids,
             requested_by_username=requested_by_username,
         )
         for database in databases
@@ -121,11 +113,14 @@ def _run_database_preflight(
     *,
     pool,
     database: Database,
-    scope_contract,
+    quarter_start: date,
+    quarter_end: date,
+    organization_ids: tuple[str, ...],
     requested_by_username: str,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     source_state = resolve_factual_sync_source_state(database=database)
+    scope_contract = None
     source_ok = source_state.state == "available"
     checks.append(
         _check(
@@ -142,6 +137,7 @@ def _run_database_preflight(
     if not source_ok:
         checks.append(_skipped_check("published_metadata_refresh", "source is not available for preflight"))
         checks.append(_skipped_check("published_boundary", "published metadata refresh did not run"))
+        checks.append(_skipped_check("gl_account_bindings", "published boundary validation did not succeed"))
         checks.append(_skipped_check("bounded_scope", "published boundary validation did not succeed"))
         checks.append(_skipped_check("live_probe", "source availability gate did not pass"))
         return _database_report(
@@ -188,6 +184,7 @@ def _run_database_preflight(
     except Exception as exc:
         checks.append(_check(key="published_metadata_refresh", ok=False, detail=str(exc)))
         checks.append(_skipped_check("published_boundary", "published metadata refresh did not succeed"))
+        checks.append(_skipped_check("gl_account_bindings", "published metadata refresh did not succeed"))
         checks.append(_skipped_check("bounded_scope", "published boundary validation did not succeed"))
         checks.append(_skipped_check("live_probe", "published metadata refresh did not succeed"))
         return _database_report(
@@ -220,8 +217,57 @@ def _run_database_preflight(
         checks.append(_check(key="published_boundary", ok=False, detail=str(exc)))
 
     if not boundary_ok:
+        checks.append(_skipped_check("gl_account_bindings", "published boundary validation did not succeed"))
         checks.append(_skipped_check("bounded_scope", "published boundary validation did not succeed"))
         checks.append(_skipped_check("live_probe", "published boundary validation did not succeed"))
+        return _database_report(
+            database=database,
+            decision="no_go",
+            scope_contract=scope_contract,
+            checks=checks,
+            source_state=source_state,
+            metadata_snapshot=metadata_snapshot,
+            live_probe=live_probe,
+        )
+
+    try:
+        scope_contract = resolve_pool_factual_sync_scope_for_database(
+            pool=pool,
+            database=database,
+            quarter_start=quarter_start,
+            quarter_end=quarter_end,
+            organization_ids=organization_ids,
+            movement_kinds=DEFAULT_FACTUAL_MOVEMENT_KINDS,
+            verify_live_bindings=True,
+        )
+        checks.append(
+            _check(
+                key="gl_account_bindings",
+                ok=True,
+                detail="selected GLAccountSet coverage resolved and pinned for the target database",
+                resolved_bindings=list(scope_contract.resolved_bindings),
+            )
+        )
+    except FactualScopeSelectionError as exc:
+        scope_contract = exc.scope
+        checks.append(
+            _check(
+                key="gl_account_bindings",
+                ok=False,
+                detail=exc.detail,
+                code=exc.code,
+                blockers=list(exc.blockers),
+            )
+        )
+        checks.append(
+            _check(
+                key="bounded_scope",
+                ok=False,
+                detail="scope contract could not be materialized from selected GLAccountSet bindings",
+                scope=scope_contract.as_metadata(),
+            )
+        )
+        checks.append(_skipped_check("live_probe", "GLAccountSet binding coverage did not succeed"))
         return _database_report(
             database=database,
             decision="no_go",
@@ -236,7 +282,7 @@ def _run_database_preflight(
         _check(
             key="bounded_scope",
             ok=True,
-            detail="scope is bounded by quarter, organizations, account codes, and movement kinds",
+            detail="scope is bounded by quarter, organizations, pinned GLAccountSet members, and movement kinds",
             scope=scope_contract.as_metadata(),
         )
     )
@@ -309,7 +355,7 @@ def _database_report(
         "database_name": str(database.name or ""),
         "decision": decision,
         "source_state": source_state.as_metadata(),
-        "scope": scope_contract.as_metadata(),
+        "scope": scope_contract.as_metadata() if scope_contract is not None else {},
         "metadata_snapshot": metadata_snapshot,
         "live_probe": live_probe,
         "checks": checks,
@@ -326,11 +372,17 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
             detail="Database OData URL and service credentials must be configured for factual live probe.",
         )
 
-    account_code_refs = _resolve_account_code_refs(
-        database=database,
-        accounting_register_entity=scope_contract.accounting_register_entity,
-        account_codes=scope_contract.account_codes,
-    )
+    account_code_refs = {
+        str(binding.get("code") or "").strip(): str(binding.get("target_ref_key") or "").strip()
+        for binding in getattr(scope_contract, "resolved_bindings", ())
+        if str(binding.get("code") or "").strip() and str(binding.get("target_ref_key") or "").strip()
+    }
+    if not account_code_refs:
+        account_code_refs = _resolve_account_code_refs(
+            database=database,
+            accounting_register_entity=scope_contract.accounting_register_entity,
+            account_codes=scope_contract.account_codes,
+        )
     accounting_entity = _build_accounting_register_entity(
         scope_contract=scope_contract,
         account_code_refs=account_code_refs,
@@ -385,6 +437,7 @@ def _run_live_probe(*, database: Database, scope_contract) -> dict[str, Any]:
         "read_boundary_kind": "odata",
         "accounting_register_entity": accounting_entity,
         "account_code_refs": account_code_refs,
+        "resolved_bindings": list(getattr(scope_contract, "resolved_bindings", ())),
         "information_register_entity": REQUIRED_FACTUAL_INFORMATION_REGISTER,
         "boundary_reads": boundary_reads,
         "boundary_probes": boundary_probes,

@@ -53,6 +53,19 @@ type factualSyncInput struct {
 	AccountingRegisterEntity string
 	AccountingFunction       string
 	InformationRegister      string
+	ScopeFingerprint         string
+	ResolvedAccountRefs      []string
+}
+
+type factualScopeContract struct {
+	ContractVersion string
+	ScopeFingerprint string
+	ResolvedBindings []factualResolvedBinding
+}
+
+type factualResolvedBinding struct {
+	Code         string
+	TargetRefKey string
 }
 
 func NewODataFactualTransport(
@@ -109,15 +122,18 @@ func (t *ODataFactualTransport) ExecuteFactualSyncSourceSlice(
 	}
 
 	boundaryReads := map[string]int{}
-	accountRefs, err := resolveAccountCodeRefs(
-		ctx,
-		t.service,
-		odataCreds,
-		input.AccountingRegisterEntity,
-		input.AccountCodes,
-	)
-	if err != nil {
-		return nil, mapFactualODataError("chart_of_accounts", err)
+	accountRefs := input.ResolvedAccountRefs
+	if len(accountRefs) == 0 {
+		accountRefs, err = resolveAccountCodeRefs(
+			ctx,
+			t.service,
+			odataCreds,
+			input.AccountingRegisterEntity,
+			input.AccountCodes,
+		)
+		if err != nil {
+			return nil, mapFactualODataError("chart_of_accounts", err)
+		}
 	}
 	accountingRows, err := queryAllFactualRows(
 		ctx,
@@ -233,6 +249,42 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 			"account_codes must not be empty",
 		)
 	}
+	scopeContract, err := parseFactualScopeContract(payload["factual_scope_contract"])
+	if err != nil {
+		return factualSyncInput{}, err
+	}
+	resolvedAccountRefs := make([]string, 0)
+	if scopeContract != nil {
+		bindingsByCode := make(map[string]string, len(scopeContract.ResolvedBindings))
+		codes := make([]string, 0, len(scopeContract.ResolvedBindings))
+		for _, binding := range scopeContract.ResolvedBindings {
+			if _, exists := bindingsByCode[binding.Code]; exists {
+				return factualSyncInput{}, handlers.NewOperationExecutionError(
+					ErrorCodePoolFactualSyncPayloadInvalid,
+					fmt.Sprintf("factual_scope_contract has duplicate binding for code '%s'", binding.Code),
+				)
+			}
+			bindingsByCode[binding.Code] = binding.TargetRefKey
+			codes = append(codes, binding.Code)
+		}
+		contractCodes := normalizeScopeTokens(codes)
+		if strings.Join(accountCodes, ",") != strings.Join(contractCodes, ",") {
+			return factualSyncInput{}, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				"account_codes must match factual_scope_contract.resolved_bindings codes",
+			)
+		}
+		for _, code := range contractCodes {
+			targetRefKey := strings.TrimSpace(bindingsByCode[code])
+			if targetRefKey == "" {
+				return factualSyncInput{}, handlers.NewOperationExecutionError(
+					ErrorCodePoolFactualSyncPayloadInvalid,
+					fmt.Sprintf("factual_scope_contract binding for code '%s' must include target_ref_key", code),
+				)
+			}
+			resolvedAccountRefs = append(resolvedAccountRefs, targetRefKey)
+		}
+	}
 	movementKinds, err := normalizeMovementKinds(splitCSV(readRequiredString(payload, "movement_kinds")))
 	if err != nil {
 		return factualSyncInput{}, err
@@ -256,6 +308,54 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 		AccountingRegisterEntity: readRequiredString(payload, "accounting_register_entity"),
 		AccountingFunction:       readRequiredString(payload, "accounting_register_function"),
 		InformationRegister:      readRequiredString(payload, "information_register_entity"),
+		ScopeFingerprint:         strings.TrimSpace(fmt.Sprintf("%v", payload["scope_fingerprint"])),
+		ResolvedAccountRefs:      resolvedAccountRefs,
+	}, nil
+}
+
+func parseFactualScopeContract(raw interface{}) (*factualScopeContract, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	payload, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"factual_scope_contract must be an object",
+		)
+	}
+	contractVersion := readRequiredString(payload, "contract_version")
+	if contractVersion != "factual_scope_contract.v2" {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			fmt.Sprintf("unsupported factual_scope_contract version '%s'", contractVersion),
+		)
+	}
+	rawBindings, ok := payload["resolved_bindings"].([]interface{})
+	if !ok || len(rawBindings) == 0 {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"factual_scope_contract.resolved_bindings must be a non-empty array",
+		)
+	}
+	bindings := make([]factualResolvedBinding, 0, len(rawBindings))
+	for _, item := range rawBindings {
+		binding, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				"factual_scope_contract.resolved_bindings must contain objects",
+			)
+		}
+		bindings = append(bindings, factualResolvedBinding{
+			Code:         strings.TrimSpace(readRequiredString(binding, "code")),
+			TargetRefKey: strings.TrimSpace(readRequiredString(binding, "target_ref_key")),
+		})
+	}
+	return &factualScopeContract{
+		ContractVersion: contractVersion,
+		ScopeFingerprint: strings.TrimSpace(readRequiredString(payload, "scope_fingerprint")),
+		ResolvedBindings: bindings,
 	}, nil
 }
 
