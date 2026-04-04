@@ -11,8 +11,9 @@
 3. [RUNBOOK.md](./RUNBOOK.md) — canonical start/restart/eval flows
 4. [VERIFY.md](./VERIFY.md) — minimal validation paths по типам задач
 5. [TASK_ROUTING.md](./TASK_ROUTING.md) — bounded matrix для быстрого выбора first docs/code/test route
-6. [PLANS.md](./PLANS.md) — template для multi-step execution plans
-7. [code_review.md](./code_review.md) — acceptance/self-review checklist
+6. [ui-skills.md](./ui-skills.md) — routing для shared UI skills и их сочетания с repo verification
+7. [PLANS.md](./PLANS.md) — template для multi-step execution plans
+8. [code_review.md](./code_review.md) — acceptance/self-review checklist
 
 ## Вопросы первых 10 минут
 
@@ -30,6 +31,8 @@
   - см. [VERIFY.md](./VERIFY.md)
 - Как выбрать первый рабочий маршрут для задачи:
   - см. [TASK_ROUTING.md](./TASK_ROUTING.md)
+- Где policy для активного использования shared UI skills:
+  - см. [ui-skills.md](./ui-skills.md)
 - Где workflow intent:
   - `openspec/`
   - `openspec/project.md`
@@ -78,6 +81,7 @@ Legacy documents могут сохранять полезный историче
 - `frontend/AGENTS.md`
 - `orchestrator/AGENTS.md`
 - `go-services/AGENTS.md`
+- `docs/agent/ui-skills.md` для frontend/UI/UX/browser tasks
 
 ## Skills Surfaces
 
@@ -93,6 +97,17 @@ Legacy documents могут сохранять полезный историче
 
 Если routed workflow ссылается на общий skill, которого нет в checked-in `.agents/skills/`, ищи его в user-level каталоге `/home/egor/.agents/skills/`.
 
+- UI skill routing для этого repo описан в [ui-skills.md](./ui-skills.md).
+- Для frontend/UI задач default expectation: агент proactively выбирает минимальный релевантный набор shared UI skills, а не ждёт явного запроса пользователя.
+
+- `frontend-design` — `/home/egor/.agents/skills/frontend-design/SKILL.md`
+- `dogfood` — `/home/egor/.agents/skills/dogfood/SKILL.md`
+- `critique` — `/home/egor/.agents/skills/critique/SKILL.md`
+- `adapt` — `/home/egor/.agents/skills/adapt/SKILL.md`
+- `harden` — `/home/egor/.agents/skills/harden/SKILL.md`
+- `polish` — `/home/egor/.agents/skills/polish/SKILL.md`
+- `normalize` — `/home/egor/.agents/skills/normalize/SKILL.md`
+- `audit` — `/home/egor/.agents/skills/audit/SKILL.md`
 - `openspec-architecture-plan-and-audit` — `/home/egor/.agents/skills/openspec-architecture-plan-and-audit/SKILL.md`
 - `openspec-proposal` — `/home/egor/.agents/skills/openspec-proposal/SKILL.md`
 - `openspec-apply` — `/home/egor/.agents/skills/openspec-apply/SKILL.md`

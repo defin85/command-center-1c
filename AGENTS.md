@@ -64,6 +64,7 @@ Open these docs for the first 10 minutes of a task:
 - `docs/agent/RUNBOOK.md`
 - `docs/agent/VERIFY.md`
 - `docs/agent/TASK_ROUTING.md` — bounded first route to docs, code entry points and validation paths
+- `docs/agent/ui-skills.md` when the task touches frontend/UI/UX/browser verification
 - `docs/agent/PLANS.md`
 - `docs/agent/code_review.md`
 - repo-local skill: `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches a checked-in repo skill
@@ -72,6 +73,7 @@ Open these docs for the first 10 minutes of a task:
 ## UI Platform Contract
 
 - Основной UI stack проекта: `antd` + `@ant-design/pro-components` + project-owned thin design layer в `frontend/src/components/platform`.
+- UI skill routing lives in `docs/agent/ui-skills.md`; для frontend/UI задач агент должен активно использовать минимальный релевантный набор shared UI skills из `/home/egor/.agents/skills/`.
 - Для catalog/detail/authoring surfaces сначала использовать platform primitives:
   - `DashboardPage`
   - `WorkspacePage`
@@ -129,6 +131,7 @@ Rules:
 
 - Use the smallest relevant validation set first, then widen only as needed.
 - Canonical validation paths live in `docs/agent/VERIFY.md`.
+- UI skill selection does not replace frontend verification gates; после UI-задач всё равно прогоняй релевантные команды из `docs/agent/VERIFY.md`.
 - For docs and guidance changes, run `./scripts/dev/check-agent-doc-freshness.sh`.
 - For OpenSpec changes, run `openspec validate <change-id> --strict --no-interactive`.
 - Work is not complete until:

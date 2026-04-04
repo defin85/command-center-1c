@@ -22,6 +22,8 @@ openspec validate <change-id> --strict --no-interactive
 
 ### Frontend
 
+UI skill routing lives in [ui-skills.md](./ui-skills.md). Выбор shared UI skills не заменяет проверки ниже.
+
 ```bash
 cd frontend && npm run generate:api
 cd frontend && npm run lint

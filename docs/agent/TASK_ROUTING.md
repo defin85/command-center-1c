@@ -29,12 +29,16 @@
 - Первые docs:
   - [frontend/AGENTS.md](../../frontend/AGENTS.md)
   - [VERIFY.md](./VERIFY.md)
+  - [ui-skills.md](./ui-skills.md)
   - root [AGENTS.md](../../AGENTS.md) section `UI Platform Contract`
 - Первые code entry points:
   - [frontend/src/main.tsx](../../frontend/src/main.tsx)
   - [frontend/src/App.tsx](../../frontend/src/App.tsx)
-  - `frontend/src/components/platform/`
-  - `frontend/src/pages/`
+- `frontend/src/components/platform/`
+- `frontend/src/pages/`
+- Skill routing:
+  - для frontend/UI/UX/browser tasks proactively выбирай минимальный релевантный набор shared UI skills из `/home/egor/.agents/skills/` по [ui-skills.md](./ui-skills.md)
+  - при live-runtime debugging или restart flows дополнительно подключай repo-local `.agents/skills/runtime-debug/SKILL.md`
 - Первые проверки:
   - `cd frontend && npm run generate:api`
   - `cd frontend && npm run lint`
@@ -127,6 +131,7 @@
   - [DOMAIN_MAP.md](./DOMAIN_MAP.md)
   - [RUNBOOK.md](./RUNBOOK.md)
   - [VERIFY.md](./VERIFY.md)
+  - [ui-skills.md](./ui-skills.md), если change затрагивает frontend/UI guidance
 - Первые code entry points:
   - `docs/agent/*`
   - [AGENTS.md](../../AGENTS.md)

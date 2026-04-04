@@ -5,6 +5,7 @@
 - First read:
   - `docs/agent/INDEX.md`
   - `docs/agent/TASK_ROUTING.md`
+  - `docs/agent/ui-skills.md`
   - `docs/agent/DOMAIN_MAP.md`
   - `docs/agent/VERIFY.md`
   - `docs/agent/RUNBOOK.md`
@@ -15,6 +16,7 @@
   - `frontend/src/pages/`
 - Local constraints:
   - follow the root UI Platform Contract in `AGENTS.md`
+  - if the task matches a UI skill profile, follow `docs/agent/ui-skills.md` and proactively use the minimal relevant shared skill set from `/home/egor/.agents/skills/`
   - generated API client lives in `frontend/src/api/generated/**`
   - prefer page composition through platform primitives, not raw page-level `antd` shells
 - Canonical validation commands:
