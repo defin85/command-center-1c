@@ -428,3 +428,130 @@ def test_master_data_gl_account_sets_upsert_publish_and_get_detail(authenticated
         "gl-account-100",
         "gl-account-200",
     ]
+
+
+@pytest.mark.django_db
+def test_master_data_gl_account_set_upsert_updates_draft_without_mutating_published_revision(
+    authenticated_client: APIClient,
+) -> None:
+    for canonical_id, code, name in (
+        ("gl-account-100", "10.01", "Основной счет"),
+        ("gl-account-200", "60.01", "Расчеты с поставщиками"),
+        ("gl-account-300", "62.01", "Расчеты с покупателями"),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/master-data/gl-accounts/upsert/",
+            {
+                "canonical_id": canonical_id,
+                "code": code,
+                "name": name,
+                "chart_identity": "ChartOfAccounts_Main",
+                "config_name": "Accounting Enterprise",
+                "config_version": "3.0.1",
+            },
+            format="json",
+        )
+        assert response.status_code == 201
+
+    create_response = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-account-sets/upsert/",
+        {
+            "canonical_id": "gl-set-immutable-001",
+            "name": "Набор счетов v1",
+            "description": "Черновик до первой публикации",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+            "members": [
+                {"canonical_id": "gl-account-100"},
+                {"canonical_id": "gl-account-200"},
+            ],
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    gl_account_set_id = create_response.json()["gl_account_set"]["gl_account_set_id"]
+
+    publish_response = authenticated_client.post(
+        f"/api/v2/pools/master-data/gl-account-sets/{gl_account_set_id}/publish/",
+        {},
+        format="json",
+    )
+    assert publish_response.status_code == 200
+    published_revision = publish_response.json()["gl_account_set"]["published_revision"]
+    assert published_revision is not None
+    published_revision_id = published_revision["gl_account_set_revision_id"]
+    assert published_revision["revision_number"] == 1
+    assert published_revision["name"] == "Набор счетов v1"
+    assert published_revision["description"] == "Черновик до первой публикации"
+    assert [item["canonical_id"] for item in published_revision["members"]] == [
+        "gl-account-100",
+        "gl-account-200",
+    ]
+
+    update_response = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-account-sets/upsert/",
+        {
+            "gl_account_set_id": gl_account_set_id,
+            "canonical_id": "gl-set-immutable-001",
+            "name": "Набор счетов v2 draft",
+            "description": "Черновик после публикации",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+            "members": [
+                {"canonical_id": "gl-account-100"},
+                {"canonical_id": "gl-account-300"},
+            ],
+        },
+        format="json",
+    )
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["created"] is False
+    updated = update_payload["gl_account_set"]
+    assert updated["name"] == "Набор счетов v2 draft"
+    assert updated["description"] == "Черновик после публикации"
+    assert updated["draft_members_count"] == 2
+    assert [item["canonical_id"] for item in updated["draft_members"]] == [
+        "gl-account-100",
+        "gl-account-300",
+    ]
+    assert updated["published_revision_number"] == 1
+    assert updated["published_revision_id"] == published_revision_id
+    assert updated["published_revision"] is not None
+    assert updated["published_revision"]["gl_account_set_revision_id"] == published_revision_id
+    assert updated["published_revision"]["revision_number"] == 1
+    assert updated["published_revision"]["name"] == "Набор счетов v1"
+    assert updated["published_revision"]["description"] == "Черновик до первой публикации"
+    assert [item["canonical_id"] for item in updated["published_revision"]["members"]] == [
+        "gl-account-100",
+        "gl-account-200",
+    ]
+    assert len(updated["revisions"]) == 1
+    assert updated["revisions"][0]["gl_account_set_revision_id"] == published_revision_id
+
+    detail_response = authenticated_client.get(
+        f"/api/v2/pools/master-data/gl-account-sets/{gl_account_set_id}/"
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["gl_account_set"]
+    assert detail["name"] == "Набор счетов v2 draft"
+    assert detail["description"] == "Черновик после публикации"
+    assert [item["canonical_id"] for item in detail["draft_members"]] == [
+        "gl-account-100",
+        "gl-account-300",
+    ]
+    assert detail["published_revision_number"] == 1
+    assert detail["published_revision_id"] == published_revision_id
+    assert detail["published_revision"] is not None
+    assert detail["published_revision"]["gl_account_set_revision_id"] == published_revision_id
+    assert detail["published_revision"]["revision_number"] == 1
+    assert detail["published_revision"]["name"] == "Набор счетов v1"
+    assert detail["published_revision"]["description"] == "Черновик до первой публикации"
+    assert [item["canonical_id"] for item in detail["published_revision"]["members"]] == [
+        "gl-account-100",
+        "gl-account-200",
+    ]
+    assert len(detail["revisions"]) == 1
+    assert detail["revisions"][0]["gl_account_set_revision_id"] == published_revision_id
