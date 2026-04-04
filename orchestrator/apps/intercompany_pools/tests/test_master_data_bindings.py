@@ -241,6 +241,57 @@ def test_contract_binding_scope_includes_owner_counterparty() -> None:
 
 
 @pytest.mark.django_db
+def test_gl_account_binding_requires_chart_identity() -> None:
+    tenant = Tenant.objects.create(slug="mdm-bind-gl-account-kind", name="MDM Binding GL Account")
+    database = _create_database(tenant=tenant, suffix="gl-account-kind")
+
+    with pytest.raises(ValidationError):
+        PoolMasterDataBinding.objects.create(
+            tenant=tenant,
+            entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+            canonical_id="gl-account-001",
+            database=database,
+            ib_ref_key="ref-gl-account",
+            chart_identity="",
+        )
+
+
+@pytest.mark.django_db
+def test_gl_account_binding_scope_includes_chart_identity() -> None:
+    tenant = Tenant.objects.create(slug="mdm-bind-gl-account-scope", name="MDM Binding GL Account Scope")
+    database = _create_database(tenant=tenant, suffix="gl-account-scope")
+
+    first = upsert_pool_master_data_binding(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+        canonical_id="gl-account-001",
+        database=database,
+        ib_ref_key="gl-account-ref-a",
+        chart_identity="ChartOfAccounts_Main",
+    )
+    second = upsert_pool_master_data_binding(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+        canonical_id="gl-account-001",
+        database=database,
+        ib_ref_key="gl-account-ref-b",
+        chart_identity="ChartOfAccounts_Tax",
+    )
+
+    assert first.created is True
+    assert second.created is True
+    assert first.binding.id != second.binding.id
+    assert (
+        PoolMasterDataSyncOutbox.objects.filter(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+        ).count()
+        == 0
+    )
+
+
+@pytest.mark.django_db
 def test_upsert_returns_entity_not_found_code_for_unsupported_entity_type() -> None:
     tenant = Tenant.objects.create(slug="mdm-bind-unsupported", name="MDM Binding Unsupported")
     database = _create_database(tenant=tenant, suffix="unsupported")

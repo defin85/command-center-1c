@@ -551,6 +551,8 @@ def _required_source_fields_for_entity(*, entity_type: str) -> set[str]:
         return {"canonical_id", "name"}
     if entity_type == PoolMasterDataBootstrapImportEntityType.TAX_PROFILE:
         return {"canonical_id", "vat_code"}
+    if entity_type == PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT:
+        return {"canonical_id", "code", "name", "chart_identity"}
     if entity_type == PoolMasterDataBootstrapImportEntityType.CONTRACT:
         return {"canonical_id", "name", "owner_counterparty_canonical_id"}
     if entity_type == PoolMasterDataBootstrapImportEntityType.BINDING:

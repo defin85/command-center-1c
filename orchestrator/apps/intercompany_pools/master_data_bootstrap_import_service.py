@@ -14,8 +14,10 @@ from django.utils import timezone
 from apps.databases.models import Database
 from apps.tenancy.models import Tenant
 
+from .business_configuration_profile import get_business_configuration_profile
 from .master_data_canonical_upsert import MasterDataCanonicalUpsertError
 from .master_data_canonical_upsert import upsert_pool_master_data_contract
+from .master_data_canonical_upsert import upsert_pool_master_data_gl_account
 from .master_data_canonical_upsert import upsert_pool_master_data_item
 from .master_data_canonical_upsert import upsert_pool_master_data_party
 from .master_data_canonical_upsert import upsert_pool_master_data_tax_profile
@@ -61,6 +63,7 @@ from .models import (
     PoolMasterDataBootstrapImportJob,
     PoolMasterDataBootstrapImportJobStatus,
     PoolMasterDataBootstrapImportReport,
+    PoolMasterGLAccount,
     PoolMasterItem,
     PoolMasterParty,
     PoolMasterTaxProfile,
@@ -974,6 +977,14 @@ def _apply_row(
             origin_event_id=origin_event_id,
             job_id=str(job.id),
         )
+    if entity_type == PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT:
+        return _apply_gl_account_row(
+            tenant=job.tenant,
+            database=job.database,
+            row=row,
+            origin_event_id=origin_event_id,
+            job_id=str(job.id),
+        )
     if entity_type == PoolMasterDataBootstrapImportEntityType.CONTRACT:
         return _apply_contract_row(
             tenant=job.tenant,
@@ -1156,6 +1167,81 @@ def _apply_tax_profile_row(
     return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
 
 
+def _apply_gl_account_row(
+    *,
+    tenant: Tenant,
+    database: Database,
+    row: Mapping[str, Any],
+    origin_event_id: str,
+    job_id: str,
+) -> BootstrapRowOutcome:
+    canonical_id = _read_required_token(row, "canonical_id")
+    if not canonical_id:
+        return BootstrapRowOutcome(
+            action="failed",
+            error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
+            detail="GLAccount row requires canonical_id.",
+        )
+    code = _read_required_token(row, "code")
+    if not code:
+        return BootstrapRowOutcome(
+            action="failed",
+            error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
+            detail=f"GLAccount '{canonical_id}' requires code.",
+        )
+    name = _read_required_token(row, "name")
+    if not name:
+        return BootstrapRowOutcome(
+            action="failed",
+            error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
+            detail=f"GLAccount '{canonical_id}' requires name.",
+        )
+    chart_identity = _read_required_token(row, "chart_identity")
+    if not chart_identity:
+        return BootstrapRowOutcome(
+            action="failed",
+            error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
+            detail=f"GLAccount '{canonical_id}' requires chart_identity.",
+        )
+
+    profile = get_business_configuration_profile(database=database) or {}
+    config_name = _read_token(row, "config_name") or str(profile.get("config_name") or "").strip()
+    config_version = _read_token(row, "config_version") or str(profile.get("config_version") or "").strip()
+    if not config_name or not config_version:
+        return BootstrapRowOutcome(
+            action="failed",
+            error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
+            detail=(
+                f"GLAccount '{canonical_id}' requires config_name and config_version "
+                "from row mapping or database business configuration profile."
+            ),
+        )
+
+    metadata = _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id)
+    try:
+        result = upsert_pool_master_data_gl_account(
+            tenant_id=str(tenant.id),
+            canonical_id=canonical_id,
+            code=code,
+            name=name,
+            chart_identity=chart_identity,
+            config_name=config_name,
+            config_version=config_version,
+            metadata=metadata,
+            origin_system="ib",
+            origin_event_id=origin_event_id,
+        )
+    except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
+        error_code, detail = _resolve_canonical_upsert_error(exc)
+        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+
+    if result.created:
+        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
+    if result.changed:
+        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+
+
 def _apply_contract_row(
     *,
     tenant: Tenant,
@@ -1296,6 +1382,7 @@ def _apply_binding_row(
 
     ib_catalog_kind = _read_token(row, "ib_catalog_kind")
     owner_counterparty_canonical_id = _read_token(row, "owner_counterparty_canonical_id")
+    chart_identity = _read_token(row, "chart_identity")
     binding_metadata = _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id)
     result = upsert_pool_master_data_binding(
         tenant=tenant,
@@ -1305,6 +1392,7 @@ def _apply_binding_row(
         ib_ref_key=ib_ref_key,
         ib_catalog_kind=ib_catalog_kind,
         owner_counterparty_canonical_id=owner_counterparty_canonical_id,
+        chart_identity=chart_identity,
         sync_status=PoolMasterBindingSyncStatus.UPSERTED,
         metadata=binding_metadata,
         origin_system="ib",
@@ -1327,6 +1415,9 @@ def _load_resolved_canonical_ids(job: PoolMasterDataBootstrapImportJob) -> dict[
         ),
         PoolMasterDataBootstrapImportEntityType.TAX_PROFILE: set(
             PoolMasterTaxProfile.objects.filter(tenant=job.tenant).values_list("canonical_id", flat=True)
+        ),
+        PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT: set(
+            PoolMasterGLAccount.objects.filter(tenant=job.tenant).values_list("canonical_id", flat=True)
         ),
         PoolMasterDataBootstrapImportEntityType.CONTRACT: set(
             PoolMasterContract.objects.filter(tenant=job.tenant).values_list("canonical_id", flat=True)

@@ -20,7 +20,9 @@ from .document_policy_contract import (
     validate_document_policy_v1,
 )
 from .document_policy_topology_aliases import rewrite_document_policy_mappings_for_edge
+from .metadata_catalog import collect_document_policy_document_token_context
 from .models import PoolBatch, PoolEdgeVersion, PoolNodeVersion, PoolRun
+from .models import PoolODataMetadataCatalogSnapshot
 
 
 DOCUMENT_PLAN_ARTIFACT_VERSION = "document_plan_artifact.v1"
@@ -98,6 +100,7 @@ def compile_document_plan_artifact_v1(
     chains_count = 0
     documents_count = 0
     source_batch = _resolve_source_batch_for_run(run=run)
+    metadata_snapshots_by_database: dict[str, PoolODataMetadataCatalogSnapshot | None] = {}
 
     allocations = sorted(
         (
@@ -190,6 +193,7 @@ def compile_document_plan_artifact_v1(
             database_id=database_id,
             amount_text=amount_text,
             source_batch=source_batch,
+            metadata_snapshot_by_database=metadata_snapshots_by_database,
         )
         if not chain_payloads:
             continue
@@ -632,6 +636,9 @@ def build_publication_payload_from_document_plan_artifact(
                 completeness_requirements = document.get("completeness_requirements")
                 if isinstance(completeness_requirements, Mapping):
                     compiled_document["completeness_requirements"] = dict(completeness_requirements)
+                master_data_token_context = document.get("master_data_token_context")
+                if isinstance(master_data_token_context, Mapping):
+                    compiled_document["master_data_token_context"] = dict(master_data_token_context)
                 compiled_documents.append(compiled_document)
 
             if not compiled_documents:
@@ -674,6 +681,7 @@ def _compile_chains_for_edge(
     database_id: str,
     amount_text: str,
     source_batch: PoolBatch | None,
+    metadata_snapshot_by_database: dict[str, PoolODataMetadataCatalogSnapshot | None],
 ) -> list[dict[str, Any]]:
     chains_raw = policy.get("chains")
     if not isinstance(chains_raw, list):
@@ -714,6 +722,39 @@ def _compile_chains_for_edge(
                 run=run,
                 field_mapping=field_mapping,
             )
+            metadata_snapshot = metadata_snapshot_by_database.get(database_id)
+            if metadata_snapshot is None and _document_contains_gl_account_token(
+                field_mapping
+            ):
+                metadata_snapshot = _resolve_current_metadata_snapshot(
+                    tenant_id=str(run.tenant_id),
+                    database_id=database_id,
+                )
+                metadata_snapshot_by_database[database_id] = metadata_snapshot
+            if metadata_snapshot is None and _document_contains_gl_account_token(table_parts_mapping):
+                metadata_snapshot = _resolve_current_metadata_snapshot(
+                    tenant_id=str(run.tenant_id),
+                    database_id=database_id,
+                )
+                metadata_snapshot_by_database[database_id] = metadata_snapshot
+            token_errors, token_context = ([], {})
+            if _document_contains_gl_account_token(field_mapping) or _document_contains_gl_account_token(
+                table_parts_mapping
+            ):
+                token_errors, token_context = collect_document_policy_document_token_context(
+                    document={
+                        "entity_name": str(document.get("entity_name") or "").strip(),
+                        "field_mapping": field_mapping,
+                        "table_parts_mapping": table_parts_mapping,
+                    },
+                    snapshot=metadata_snapshot,
+                    path_prefix=f"document_policy.chains[{chain_index}].documents[{document_index}]",
+                )
+                if token_errors:
+                    first_error = token_errors[0]
+                    raise ValueError(
+                        f"{first_error['code']}: {first_error['path']}: {first_error['detail']}"
+                    )
             compiled_document = {
                 "document_id": document_id,
                 "entity_name": str(document.get("entity_name") or "").strip(),
@@ -731,6 +772,8 @@ def _compile_chains_for_edge(
                     amount_text=amount_text,
                 ),
             }
+            if token_context:
+                compiled_document["master_data_token_context"] = token_context
             traceability = build_ccpool_document_traceability(
                 pool_id=str(run.pool_id),
                 run_id=str(run.id),
@@ -872,6 +915,33 @@ def _materialize_document_field_mapping(
     if "Date" in materialized_mapping:
         materialized_mapping["Date"] = _serialize_odata_date_value(run.period_start)
     return materialized_mapping
+
+
+def _resolve_current_metadata_snapshot(
+    *,
+    tenant_id: str,
+    database_id: str,
+) -> PoolODataMetadataCatalogSnapshot | None:
+    return (
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            tenant_id=tenant_id,
+            database_id=database_id,
+            is_current=True,
+        )
+        .order_by("-fetched_at", "-created_at")
+        .first()
+    )
+
+
+def _document_contains_gl_account_token(value: Any) -> bool:
+    if isinstance(value, str):
+        token = str(value or "").strip()
+        return token.startswith("master_data.gl_account.") and token.endswith(".ref")
+    if isinstance(value, Mapping):
+        return any(_document_contains_gl_account_token(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_document_contains_gl_account_token(item) for item in value)
+    return False
 
 
 def _serialize_odata_date_value(value) -> str:

@@ -1,0 +1,6 @@
+type: object
+properties:
+  gl_account_set:
+    $ref: ./PoolMasterDataGLAccountSetDetail.yaml
+required:
+  - gl_account_set

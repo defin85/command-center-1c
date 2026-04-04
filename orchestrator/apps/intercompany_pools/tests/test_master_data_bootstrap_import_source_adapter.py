@@ -80,6 +80,44 @@ def test_source_fetch_rows_reads_rows_from_database_metadata_only_in_explicit_me
 
 
 @pytest.mark.django_db
+def test_source_fetch_rows_supports_gl_account_rows_in_metadata_mode() -> None:
+    tenant = Tenant.objects.create(slug=f"bootstrap-source-gl-{uuid4().hex[:8]}", name="Bootstrap Source GL")
+    database = _create_database(
+        tenant=tenant,
+        name=f"bootstrap-source-gl-db-{uuid4().hex[:8]}",
+        metadata={
+            "bootstrap_import_source_mode": BOOTSTRAP_SOURCE_MODE_METADATA_ROWS,
+            "bootstrap_import_rows": {
+                "gl_account": [
+                    {
+                        "canonical_id": "gl-001",
+                        "code": "10.01",
+                        "name": "Основной счет",
+                        "chart_identity": "ChartOfAccounts_Main",
+                    }
+                ]
+            },
+        },
+    )
+
+    rows = fetch_pool_master_data_bootstrap_source_rows(
+        tenant_id=str(tenant.id),
+        database=database,
+        entity_type="gl_account",
+        actor_id="",
+    )
+
+    assert rows == [
+        {
+            "canonical_id": "gl-001",
+            "code": "10.01",
+            "name": "Основной счет",
+            "chart_identity": "ChartOfAccounts_Main",
+        }
+    ]
+
+
+@pytest.mark.django_db
 def test_source_fetch_rows_reads_full_odata_pages_with_mapping(monkeypatch) -> None:
     tenant = Tenant.objects.create(slug=f"bootstrap-source-odata-{uuid4().hex[:8]}", name="Bootstrap Source OData")
     database = _create_database(

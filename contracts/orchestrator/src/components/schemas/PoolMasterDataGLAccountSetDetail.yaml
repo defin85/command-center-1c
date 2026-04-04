@@ -1,0 +1,19 @@
+allOf:
+  - $ref: ./PoolMasterDataGLAccountSetSummary.yaml
+  - type: object
+    properties:
+      draft_members:
+        type: array
+        items:
+          $ref: ./PoolMasterDataGLAccountSetMemberRead.yaml
+      revisions:
+        type: array
+        items:
+          $ref: ./PoolMasterDataGLAccountSetRevision.yaml
+      published_revision:
+        allOf:
+          - $ref: ./PoolMasterDataGLAccountSetRevision.yaml
+        nullable: true
+    required:
+      - draft_members
+      - revisions

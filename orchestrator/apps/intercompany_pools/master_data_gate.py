@@ -32,6 +32,7 @@ from .models import (
     PoolMasterContract,
     PoolMasterDataBinding,
     PoolMasterDataEntityType,
+    PoolMasterGLAccount,
     PoolMasterItem,
     PoolMasterParty,
     PoolMasterTaxProfile,
@@ -49,8 +50,10 @@ class MasterDataTokenRequirement:
     entity_type: str
     canonical_id: str
     database_id: str
+    mapping_path: str = ""
     ib_catalog_kind: str = ""
     owner_counterparty_canonical_id: str = ""
+    chart_identity: str = ""
 
 
 def execute_master_data_resolve_upsert_gate(
@@ -108,29 +111,47 @@ def execute_master_data_resolve_upsert_gate(
                     if isinstance(document_raw.get("resolved_master_data_refs"), dict)
                     else {}
                 )
+                resolved_master_data_refs_by_path = (
+                    dict(document_raw.get("resolved_master_data_refs_by_path"))
+                    if isinstance(document_raw.get("resolved_master_data_refs_by_path"), dict)
+                    else {}
+                )
                 requirements = _extract_requirements_from_document(
                     document=document_raw,
                     database_id=database_id,
                 )
+                token_conflicts: set[str] = set()
                 for requirement in requirements:
                     ib_ref_key = _resolve_requirement_ib_ref_key(
                         run=run,
                         requirement=requirement,
                     )
-                    resolved_master_data_refs[requirement.token] = ib_ref_key
+                    if requirement.mapping_path:
+                        resolved_master_data_refs_by_path[requirement.mapping_path] = ib_ref_key
+                    if requirement.token not in token_conflicts:
+                        existing_ref = str(resolved_master_data_refs.get(requirement.token) or "").strip()
+                        if not existing_ref:
+                            resolved_master_data_refs[requirement.token] = ib_ref_key
+                        elif existing_ref != ib_ref_key:
+                            token_conflicts.add(requirement.token)
+                            resolved_master_data_refs.pop(requirement.token, None)
                     bindings_rows.append(
                         {
                             "database_id": database_id,
                             "token": requirement.token,
+                            "mapping_path": requirement.mapping_path,
                             "entity_type": requirement.entity_type,
                             "canonical_id": requirement.canonical_id,
                             "ib_catalog_kind": requirement.ib_catalog_kind,
                             "owner_counterparty_canonical_id": requirement.owner_counterparty_canonical_id,
+                            "chart_identity": requirement.chart_identity,
                             "ib_ref_key": ib_ref_key,
                         }
                     )
                 if resolved_master_data_refs:
                     document_raw["resolved_master_data_refs"] = resolved_master_data_refs
+                if resolved_master_data_refs_by_path:
+                    document_raw["resolved_master_data_refs_by_path"] = resolved_master_data_refs_by_path
 
         bindings_count_by_database[database_id] = sum(
             1
@@ -149,6 +170,7 @@ def execute_master_data_resolve_upsert_gate(
         bindings_rows,
         key=lambda item: (
             str(item.get("database_id") or ""),
+            str(item.get("mapping_path") or ""),
             str(item.get("token") or ""),
         ),
     )
@@ -267,7 +289,11 @@ def collect_master_data_resolution_readiness_blockers(
                     )
                     continue
                 for requirement in requirements:
-                    requirement_key = (requirement.database_id, requirement.token)
+                    requirement_key = (
+                        requirement.database_id,
+                        requirement.mapping_path or requirement.token,
+                        requirement.chart_identity,
+                    )
                     if requirement_key in seen_requirements:
                         continue
                     seen_requirements.add(requirement_key)
@@ -308,32 +334,83 @@ def _extract_requirements_from_document(
     database_id: str,
 ) -> list[MasterDataTokenRequirement]:
     requirements: list[MasterDataTokenRequirement] = []
-    seen_tokens: set[str] = set()
+    seen_tokens: set[tuple[str, str]] = set()
+    token_context = (
+        dict(document.get("master_data_token_context"))
+        if isinstance(document.get("master_data_token_context"), Mapping)
+        else {}
+    )
 
-    def _collect(value: Any) -> None:
+    def _collect(value: Any, path: str) -> None:
         if isinstance(value, str):
             token = value.strip()
             if (
                 token
                 and token.startswith(MASTER_DATA_TOKEN_PREFIX)
                 and token.endswith(MASTER_DATA_TOKEN_SUFFIX)
-                and token not in seen_tokens
+                and (path, token) not in seen_tokens
             ):
-                requirements.append(
-                    _parse_master_data_token(token=token, database_id=database_id)
-                )
-                seen_tokens.add(token)
+                requirement = _parse_master_data_token(token=token, database_id=database_id)
+                context_entry = token_context.get(path)
+                if requirement.entity_type == PoolMasterDataEntityType.GL_ACCOUNT:
+                    if not isinstance(context_entry, Mapping):
+                        raise MasterDataResolveError(
+                            code=MASTER_DATA_BINDING_CONFLICT,
+                            detail=(
+                                f"GLAccount token '{token}' requires typed metadata context for mapping path '{path}'."
+                            ),
+                            entity_type=requirement.entity_type,
+                            canonical_id=requirement.canonical_id,
+                            target_database_id=database_id,
+                        )
+                    context_token = str(context_entry.get("token") or "").strip()
+                    chart_identity = str(context_entry.get("chart_identity") or "").strip()
+                    if context_token != token or not chart_identity:
+                        raise MasterDataResolveError(
+                            code=MASTER_DATA_BINDING_CONFLICT,
+                            detail=(
+                                f"GLAccount token '{token}' requires chart_identity metadata for mapping path '{path}'."
+                            ),
+                            entity_type=requirement.entity_type,
+                            canonical_id=requirement.canonical_id,
+                            target_database_id=database_id,
+                        )
+                    requirement = MasterDataTokenRequirement(
+                        token=requirement.token,
+                        entity_type=requirement.entity_type,
+                        canonical_id=requirement.canonical_id,
+                        database_id=requirement.database_id,
+                        mapping_path=path,
+                        chart_identity=chart_identity,
+                    )
+                else:
+                    requirement = MasterDataTokenRequirement(
+                        token=requirement.token,
+                        entity_type=requirement.entity_type,
+                        canonical_id=requirement.canonical_id,
+                        database_id=requirement.database_id,
+                        mapping_path=path,
+                        ib_catalog_kind=requirement.ib_catalog_kind,
+                        owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+                    )
+                requirements.append(requirement)
+                seen_tokens.add((path, token))
             return
         if isinstance(value, Mapping):
-            for nested in value.values():
-                _collect(nested)
+            for key, nested in value.items():
+                key_token = str(key or "").strip()
+                if not key_token:
+                    continue
+                nested_path = f"{path}.{key_token}" if path else key_token
+                _collect(nested, nested_path)
             return
         if isinstance(value, list):
-            for nested in value:
-                _collect(nested)
+            for index, nested in enumerate(value):
+                nested_path = f"{path}[{index}]"
+                _collect(nested, nested_path)
 
-    _collect(document.get("field_mapping"))
-    _collect(document.get("table_parts_mapping"))
+    _collect(document.get("field_mapping"), "field_mapping")
+    _collect(document.get("table_parts_mapping"), "table_parts_mapping")
     return requirements
 
 
@@ -528,6 +605,7 @@ def _resolve_requirement_ib_ref_key(
         database=database,
         ib_catalog_kind=requirement.ib_catalog_kind,
         owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        chart_identity=requirement.chart_identity,
     ).order_by("created_at", "id")
     existing = list(existing_qs[:2])
     if len(existing) > 1:
@@ -555,6 +633,7 @@ def _resolve_requirement_ib_ref_key(
         ib_ref_key=ib_ref_key,
         ib_catalog_kind=requirement.ib_catalog_kind,
         owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        chart_identity=requirement.chart_identity,
         sync_status=PoolMasterBindingSyncStatus.UPSERTED,
     )
     return str(upsert_result.binding.ib_ref_key)
@@ -581,6 +660,7 @@ def _collect_requirement_readiness_blocker(
         database=database,
         ib_catalog_kind=requirement.ib_catalog_kind,
         owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        chart_identity=requirement.chart_identity,
     ).order_by("created_at", "id")
     existing = list(existing_qs[:2])
     if len(existing) > 1:
@@ -615,6 +695,7 @@ def _collect_requirement_readiness_blocker(
         database_id=requirement.database_id,
         party_catalog_kind=requirement.ib_catalog_kind,
         owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        chart_identity=requirement.chart_identity,
     )
     if ib_ref_key:
         return None
@@ -641,6 +722,7 @@ def _resolve_ib_ref_key_from_canonical_entity(
         database_id=database_id,
         party_catalog_kind=requirement.ib_catalog_kind,
         owner_counterparty_canonical_id=requirement.owner_counterparty_canonical_id,
+        chart_identity=requirement.chart_identity,
     )
     if not ib_ref_key:
         raise MasterDataResolveError(
@@ -683,6 +765,12 @@ def _load_canonical_entity(
             canonical_id=requirement.canonical_id,
             owner_counterparty__canonical_id=requirement.owner_counterparty_canonical_id,
         ).select_related("owner_counterparty").first()
+    elif requirement.entity_type == PoolMasterDataEntityType.GL_ACCOUNT:
+        entity = PoolMasterGLAccount.objects.filter(
+            tenant=run.tenant,
+            canonical_id=requirement.canonical_id,
+            chart_identity=requirement.chart_identity,
+        ).first()
 
     if entity is None:
         raise MasterDataResolveError(
@@ -702,6 +790,7 @@ def _read_ib_ref_key_from_metadata(
     database_id: str,
     party_catalog_kind: str,
     owner_counterparty_canonical_id: str,
+    chart_identity: str,
 ) -> str:
     ib_ref_keys = metadata.get("ib_ref_keys")
     if not isinstance(ib_ref_keys, Mapping):
@@ -719,6 +808,11 @@ def _read_ib_ref_key_from_metadata(
         if not isinstance(database_entry, Mapping):
             return ""
         return str(database_entry.get(owner_counterparty_canonical_id) or "").strip()
+
+    if entity_type == PoolMasterDataEntityType.GL_ACCOUNT:
+        if not isinstance(database_entry, Mapping):
+            return ""
+        return str(database_entry.get(chart_identity) or database_entry.get("ref") or "").strip()
 
     if isinstance(database_entry, str):
         return database_entry.strip()
@@ -740,7 +834,7 @@ def _build_requirement_readiness_blocker(
         "detail": detail,
         "kind": kind,
         "entity_name": requirement.entity_type,
-        "field_or_table_path": requirement.canonical_id,
+        "field_or_table_path": requirement.mapping_path or requirement.canonical_id,
         "database_id": requirement.database_id,
     }
     diagnostic = _build_requirement_readiness_diagnostic(
@@ -766,6 +860,10 @@ def _build_requirement_readiness_diagnostic(
         diagnostic["scope_hint"] = scope_hint
     if requirement.owner_counterparty_canonical_id:
         diagnostic["owner_counterparty_canonical_id"] = requirement.owner_counterparty_canonical_id
+    if requirement.chart_identity:
+        diagnostic["chart_identity"] = requirement.chart_identity
+    if requirement.mapping_path:
+        diagnostic["mapping_path"] = requirement.mapping_path
     if diagnostic_extra:
         diagnostic.update(dict(diagnostic_extra))
     return diagnostic
@@ -792,6 +890,9 @@ def _build_readiness_blocker_from_master_data_error(
     diagnostic = exc.to_diagnostic()
     if diagnostic:
         blocker["diagnostic"] = diagnostic
+        mapping_path = str(diagnostic.get("mapping_path") or "").strip()
+        if mapping_path:
+            blocker["field_or_table_path"] = mapping_path
     return blocker
 
 
@@ -810,6 +911,8 @@ def _resolve_requirement_scope_hint(*, requirement: MasterDataTokenRequirement) 
         return requirement.ib_catalog_kind
     if requirement.owner_counterparty_canonical_id:
         return requirement.owner_counterparty_canonical_id
+    if requirement.chart_identity:
+        return requirement.chart_identity
     return ""
 
 

@@ -13,6 +13,7 @@ properties:
       - item
       - contract
       - tax_profile
+      - gl_account
   canonical_id:
     type: string
     maxLength: 128
@@ -28,6 +29,9 @@ properties:
   owner_counterparty_canonical_id:
     type: string
     maxLength: 128
+  chart_identity:
+    type: string
+    maxLength: 255
   sync_status:
     type: string
     enum:
@@ -58,4 +62,3 @@ required:
   - ib_ref_key
   - sync_status
   - last_synced_at
-

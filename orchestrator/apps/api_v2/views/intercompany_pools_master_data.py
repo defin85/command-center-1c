@@ -16,8 +16,19 @@ from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
 from apps.databases.models import Database
+from apps.intercompany_pools.gl_account_sets_store import (
+    GLAccountSetCanonicalConflictError,
+    GLAccountSetMemberResolutionError,
+    GLAccountSetNotFoundError,
+    GLAccountSetStoreError,
+    get_canonical_gl_account_set,
+    list_canonical_gl_account_sets,
+    publish_canonical_gl_account_set,
+    upsert_canonical_gl_account_set,
+)
 from apps.intercompany_pools.master_data_canonical_upsert import MasterDataCanonicalUpsertError
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_contract
+from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_gl_account
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_item
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_party
 from apps.intercompany_pools.master_data_canonical_upsert import upsert_pool_master_data_tax_profile
@@ -36,10 +47,12 @@ from apps.intercompany_pools.models import (
     PoolMasterBindingCatalogKind,
     PoolMasterContract,
     PoolMasterDataBinding,
+    PoolMasterGLAccount,
     PoolMasterItem,
     PoolMasterParty,
     PoolMasterTaxProfile,
 )
+from apps.tenancy.models import Tenant
 
 from .intercompany_pools import _parse_limit, _problem, _resolve_tenant_id
 
@@ -133,6 +146,22 @@ def _serialize_tax_profile(tax_profile: PoolMasterTaxProfile) -> dict[str, Any]:
     }
 
 
+def _serialize_gl_account(gl_account: PoolMasterGLAccount) -> dict[str, Any]:
+    return {
+        "id": str(gl_account.id),
+        "tenant_id": str(gl_account.tenant_id),
+        "canonical_id": gl_account.canonical_id,
+        "code": gl_account.code,
+        "name": gl_account.name,
+        "chart_identity": gl_account.chart_identity,
+        "config_name": gl_account.config_name,
+        "config_version": gl_account.config_version,
+        "metadata": gl_account.metadata if isinstance(gl_account.metadata, dict) else {},
+        "created_at": gl_account.created_at,
+        "updated_at": gl_account.updated_at,
+    }
+
+
 def _serialize_binding(binding: PoolMasterDataBinding) -> dict[str, Any]:
     return {
         "id": str(binding.id),
@@ -143,6 +172,7 @@ def _serialize_binding(binding: PoolMasterDataBinding) -> dict[str, Any]:
         "ib_ref_key": binding.ib_ref_key,
         "ib_catalog_kind": binding.ib_catalog_kind,
         "owner_counterparty_canonical_id": binding.owner_counterparty_canonical_id,
+        "chart_identity": binding.chart_identity,
         "sync_status": binding.sync_status,
         "fingerprint": binding.fingerprint,
         "metadata": binding.metadata if isinstance(binding.metadata, dict) else {},
@@ -150,6 +180,25 @@ def _serialize_binding(binding: PoolMasterDataBinding) -> dict[str, Any]:
         "created_at": binding.created_at,
         "updated_at": binding.updated_at,
     }
+
+
+def _gl_account_set_store_problem(exc: GLAccountSetStoreError) -> Response:
+    if isinstance(exc, GLAccountSetCanonicalConflictError):
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_SET_CANONICAL_CONFLICT",
+            title="GLAccountSet Canonical Conflict",
+            detail=str(exc),
+            status_code=http_status.HTTP_409_CONFLICT,
+        )
+    if isinstance(exc, GLAccountSetMemberResolutionError):
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_SET_MEMBERS_INVALID",
+            title="GLAccountSet Members Invalid",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    return _validation_problem(detail=str(exc))
 
 
 def _schedule_outbound_master_data_sync_job_trigger(
@@ -221,6 +270,23 @@ class MasterDataTaxProfileListQuerySerializer(_MasterDataListBaseQuerySerializer
     vat_code = serializers.CharField(required=False, allow_blank=True)
 
 
+class MasterDataGLAccountListQuerySerializer(_MasterDataListBaseQuerySerializer):
+    query = serializers.CharField(required=False, allow_blank=True)
+    canonical_id = serializers.CharField(required=False, allow_blank=True)
+    code = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField(required=False, allow_blank=True)
+    config_name = serializers.CharField(required=False, allow_blank=True)
+    config_version = serializers.CharField(required=False, allow_blank=True)
+
+
+class MasterDataGLAccountSetListQuerySerializer(_MasterDataListBaseQuerySerializer):
+    query = serializers.CharField(required=False, allow_blank=True)
+    canonical_id = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField(required=False, allow_blank=True)
+    config_name = serializers.CharField(required=False, allow_blank=True)
+    config_version = serializers.CharField(required=False, allow_blank=True)
+
+
 class MasterDataBindingListQuerySerializer(_MasterDataListBaseQuerySerializer):
     entity_type = serializers.ChoiceField(required=False, choices=_DIRECT_BINDING_ENTITY_CHOICES)
     canonical_id = serializers.CharField(required=False, allow_blank=True)
@@ -230,6 +296,7 @@ class MasterDataBindingListQuerySerializer(_MasterDataListBaseQuerySerializer):
         choices=[PoolMasterBindingCatalogKind.ORGANIZATION, PoolMasterBindingCatalogKind.COUNTERPARTY],
     )
     owner_counterparty_canonical_id = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField(required=False, allow_blank=True)
     sync_status = serializers.ChoiceField(required=False, choices=PoolMasterBindingSyncStatus.values)
 
 
@@ -410,6 +477,145 @@ class PoolMasterDataTaxProfileUpsertResponseSerializer(serializers.Serializer):
     created = serializers.BooleanField()
 
 
+class PoolMasterDataGLAccountSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    tenant_id = serializers.UUIDField()
+    canonical_id = serializers.CharField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    chart_identity = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    metadata = serializers.JSONField(required=False)
+    created_at = serializers.DateTimeField(required=False)
+    updated_at = serializers.DateTimeField(required=False)
+
+
+class PoolMasterDataGLAccountListResponseSerializer(serializers.Serializer):
+    gl_accounts = PoolMasterDataGLAccountSerializer(many=True)
+    count = serializers.IntegerField()
+    limit = serializers.IntegerField()
+    offset = serializers.IntegerField()
+
+
+class PoolMasterDataGLAccountDetailResponseSerializer(serializers.Serializer):
+    gl_account = PoolMasterDataGLAccountSerializer()
+
+
+class PoolMasterDataGLAccountUpsertRequestSerializer(serializers.Serializer):
+    gl_account_id = serializers.UUIDField(required=False)
+    canonical_id = serializers.CharField(max_length=128)
+    code = serializers.CharField(max_length=128)
+    name = serializers.CharField(max_length=255)
+    chart_identity = serializers.CharField(max_length=255)
+    config_name = serializers.CharField(max_length=255)
+    config_version = serializers.CharField(max_length=128)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class PoolMasterDataGLAccountUpsertResponseSerializer(serializers.Serializer):
+    gl_account = PoolMasterDataGLAccountSerializer()
+    created = serializers.BooleanField()
+
+
+class PoolMasterDataGLAccountSetMemberWriteSerializer(serializers.Serializer):
+    canonical_id = serializers.CharField(max_length=128)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class PoolMasterDataGLAccountSetMemberReadSerializer(serializers.Serializer):
+    gl_account_id = serializers.UUIDField()
+    canonical_id = serializers.CharField()
+    code = serializers.CharField()
+    name = serializers.CharField()
+    chart_identity = serializers.CharField()
+    config_name = serializers.CharField(required=False)
+    config_version = serializers.CharField(required=False)
+    sort_order = serializers.IntegerField(min_value=0)
+    metadata = serializers.JSONField(required=False)
+
+
+class PoolMasterDataGLAccountSetRevisionSerializer(serializers.Serializer):
+    gl_account_set_revision_id = serializers.CharField()
+    gl_account_set_id = serializers.UUIDField()
+    contract_version = serializers.CharField()
+    revision_number = serializers.IntegerField(min_value=1)
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    members = PoolMasterDataGLAccountSetMemberReadSerializer(many=True)
+    metadata = serializers.JSONField(required=False)
+    created_by = serializers.CharField(required=False, allow_blank=True)
+    created_at = serializers.DateTimeField()
+
+
+class PoolMasterDataGLAccountSetSummarySerializer(serializers.Serializer):
+    gl_account_set_id = serializers.UUIDField()
+    canonical_id = serializers.CharField()
+    name = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    draft_members_count = serializers.IntegerField(min_value=0)
+    published_revision_number = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    published_revision_id = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    metadata = serializers.JSONField(required=False)
+    created_at = serializers.DateTimeField()
+    updated_at = serializers.DateTimeField()
+
+
+class PoolMasterDataGLAccountSetDetailSerializer(PoolMasterDataGLAccountSetSummarySerializer):
+    draft_members = PoolMasterDataGLAccountSetMemberReadSerializer(many=True)
+    revisions = PoolMasterDataGLAccountSetRevisionSerializer(many=True)
+    published_revision = PoolMasterDataGLAccountSetRevisionSerializer(required=False, allow_null=True)
+
+
+class PoolMasterDataGLAccountSetListResponseSerializer(serializers.Serializer):
+    gl_account_sets = PoolMasterDataGLAccountSetSummarySerializer(many=True)
+    count = serializers.IntegerField()
+    limit = serializers.IntegerField()
+    offset = serializers.IntegerField()
+
+
+class PoolMasterDataGLAccountSetDetailResponseSerializer(serializers.Serializer):
+    gl_account_set = PoolMasterDataGLAccountSetDetailSerializer()
+
+
+class PoolMasterDataGLAccountSetUpsertRequestSerializer(serializers.Serializer):
+    gl_account_set_id = serializers.UUIDField(required=False)
+    canonical_id = serializers.CharField(max_length=128)
+    name = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    chart_identity = serializers.CharField(max_length=255)
+    config_name = serializers.CharField(max_length=255)
+    config_version = serializers.CharField(max_length=128)
+    members = PoolMasterDataGLAccountSetMemberWriteSerializer(many=True, required=False, default=list)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+    def validate_metadata(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("metadata must be an object")
+        return value
+
+
+class PoolMasterDataGLAccountSetMutationResponseSerializer(serializers.Serializer):
+    gl_account_set = PoolMasterDataGLAccountSetDetailSerializer()
+    created = serializers.BooleanField(required=False)
+
+
 class PoolMasterDataBindingSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -419,6 +625,7 @@ class PoolMasterDataBindingSerializer(serializers.Serializer):
     ib_ref_key = serializers.CharField()
     ib_catalog_kind = serializers.CharField(required=False, allow_blank=True)
     owner_counterparty_canonical_id = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField(required=False, allow_blank=True)
     sync_status = serializers.CharField()
     fingerprint = serializers.CharField(required=False, allow_blank=True)
     metadata = serializers.JSONField(required=False)
@@ -446,6 +653,7 @@ class PoolMasterDataBindingUpsertRequestSerializer(serializers.Serializer):
     ib_ref_key = serializers.CharField(max_length=128)
     ib_catalog_kind = serializers.CharField(required=False, allow_blank=True, default="")
     owner_counterparty_canonical_id = serializers.CharField(required=False, allow_blank=True, default="")
+    chart_identity = serializers.CharField(required=False, allow_blank=True, default="")
     sync_status = serializers.ChoiceField(
         required=False,
         default=PoolMasterBindingSyncStatus.RESOLVED,
@@ -1155,6 +1363,383 @@ def upsert_master_data_tax_profile(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_master_data_gl_accounts_list",
+    summary="List master-data GL accounts",
+    parameters=[MasterDataGLAccountListQuerySerializer],
+    responses={
+        200: PoolMasterDataGLAccountListResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_master_data_gl_accounts(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    query_serializer = MasterDataGLAccountListQuerySerializer(data=request.query_params)
+    if not query_serializer.is_valid():
+        return _validation_problem(detail="Invalid query parameters.", errors=query_serializer.errors)
+    params = query_serializer.validated_data
+    limit = _parse_limit(params.get("limit"), default=50, max_value=200)
+    offset = _parse_offset(params.get("offset"), default=0)
+
+    queryset = PoolMasterGLAccount.objects.filter(tenant_id=tenant_id)
+    query = str(params.get("query") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            Q(canonical_id__icontains=query)
+            | Q(code__icontains=query)
+            | Q(name__icontains=query)
+            | Q(chart_identity__icontains=query)
+        )
+    canonical_id = str(params.get("canonical_id") or "").strip()
+    if canonical_id:
+        queryset = queryset.filter(canonical_id=canonical_id)
+    code = str(params.get("code") or "").strip()
+    if code:
+        queryset = queryset.filter(code__icontains=code)
+    chart_identity = str(params.get("chart_identity") or "").strip()
+    if chart_identity:
+        queryset = queryset.filter(chart_identity=chart_identity)
+    config_name = str(params.get("config_name") or "").strip()
+    if config_name:
+        queryset = queryset.filter(config_name=config_name)
+    config_version = str(params.get("config_version") or "").strip()
+    if config_version:
+        queryset = queryset.filter(config_version=config_version)
+
+    count = queryset.count()
+    gl_accounts = list(queryset.order_by("code", "canonical_id")[offset : offset + limit])
+    return Response(
+        {
+            "gl_accounts": [_serialize_gl_account(gl_account) for gl_account in gl_accounts],
+            "count": count,
+            "limit": limit,
+            "offset": offset,
+        },
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_accounts_get",
+    summary="Get master-data GL account by id",
+    responses={
+        200: PoolMasterDataGLAccountDetailResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_master_data_gl_account(request, id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    gl_account = PoolMasterGLAccount.objects.filter(id=id, tenant_id=tenant_id).first()
+    if gl_account is None:
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_NOT_FOUND",
+            title="Master Data GL Account Not Found",
+            detail="GL account not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    return Response({"gl_account": _serialize_gl_account(gl_account)}, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_accounts_upsert",
+    summary="Create or update master-data GL account",
+    request=PoolMasterDataGLAccountUpsertRequestSerializer,
+    responses={
+        200: PoolMasterDataGLAccountUpsertResponseSerializer,
+        201: PoolMasterDataGLAccountUpsertResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_master_data_gl_account(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    serializer = PoolMasterDataGLAccountUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _validation_problem(detail="GL account payload validation failed.", errors=serializer.errors)
+    data = serializer.validated_data
+
+    gl_account = None
+    gl_account_id = data.get("gl_account_id")
+    if gl_account_id is not None:
+        gl_account = PoolMasterGLAccount.objects.filter(id=gl_account_id, tenant_id=tenant_id).first()
+        if gl_account is None:
+            return _problem(
+                code="MASTER_DATA_GL_ACCOUNT_NOT_FOUND",
+                title="Master Data GL Account Not Found",
+                detail="GL account not found in current tenant context.",
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+    try:
+        result = upsert_pool_master_data_gl_account(
+            tenant_id=tenant_id,
+            canonical_id=str(data["canonical_id"]),
+            code=str(data["code"]),
+            name=str(data["name"]),
+            chart_identity=str(data["chart_identity"]),
+            config_name=str(data["config_name"]),
+            config_version=str(data["config_version"]),
+            metadata=dict(data.get("metadata", {})),
+            existing=gl_account,
+            origin_system="cc",
+        )
+        gl_account = result.entity
+        created = bool(result.created)
+    except DjangoValidationError as exc:
+        return _validation_problem(
+            detail="GL account payload validation failed.",
+            errors=exc.message_dict if hasattr(exc, "message_dict") else str(exc),
+        )
+    except IntegrityError:
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_CANONICAL_CONFLICT",
+            title="Master Data GL Account Canonical Conflict",
+            detail="GL account with this canonical_id already exists in tenant.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
+    return Response(
+        {"gl_account": _serialize_gl_account(gl_account), "created": created},
+        status=response_status,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_account_sets_list",
+    summary="List reusable GL account sets",
+    parameters=[MasterDataGLAccountSetListQuerySerializer],
+    responses={
+        200: PoolMasterDataGLAccountSetListResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_master_data_gl_account_sets(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+    tenant = Tenant.objects.filter(id=tenant_id).first()
+    if tenant is None:
+        return _problem(
+            code="TENANT_NOT_FOUND",
+            title="Tenant Not Found",
+            detail="Tenant not found in current context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    query_serializer = MasterDataGLAccountSetListQuerySerializer(data=request.query_params)
+    if not query_serializer.is_valid():
+        return _validation_problem(detail="Invalid query parameters.", errors=query_serializer.errors)
+    params = query_serializer.validated_data
+    limit = _parse_limit(params.get("limit"), default=50, max_value=200)
+    offset = _parse_offset(params.get("offset"), default=0)
+
+    gl_account_sets = list_canonical_gl_account_sets(tenant=tenant)
+    query = str(params.get("query") or "").strip().lower()
+    canonical_id = str(params.get("canonical_id") or "").strip()
+    chart_identity = str(params.get("chart_identity") or "").strip()
+    config_name = str(params.get("config_name") or "").strip()
+    config_version = str(params.get("config_version") or "").strip()
+
+    filtered = []
+    for item in gl_account_sets:
+        if canonical_id and str(item.get("canonical_id") or "") != canonical_id:
+            continue
+        if chart_identity and str(item.get("chart_identity") or "") != chart_identity:
+            continue
+        if config_name and str(item.get("config_name") or "") != config_name:
+            continue
+        if config_version and str(item.get("config_version") or "") != config_version:
+            continue
+        if query:
+            haystack = " ".join(
+                [
+                    str(item.get("canonical_id") or ""),
+                    str(item.get("name") or ""),
+                    str(item.get("description") or ""),
+                    str(item.get("chart_identity") or ""),
+                ]
+            ).lower()
+            if query not in haystack:
+                continue
+        filtered.append(item)
+
+    count = len(filtered)
+    page = filtered[offset : offset + limit]
+    return Response(
+        {
+            "gl_account_sets": page,
+            "count": count,
+            "limit": limit,
+            "offset": offset,
+        },
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_account_sets_get",
+    summary="Get reusable GL account set detail",
+    responses={
+        200: PoolMasterDataGLAccountSetDetailResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_master_data_gl_account_set(request, id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+    tenant = Tenant.objects.filter(id=tenant_id).first()
+    if tenant is None:
+        return _problem(
+            code="TENANT_NOT_FOUND",
+            title="Tenant Not Found",
+            detail="Tenant not found in current context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    try:
+        gl_account_set = get_canonical_gl_account_set(tenant=tenant, gl_account_set_id=str(id))
+    except GLAccountSetNotFoundError:
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_SET_NOT_FOUND",
+            title="GLAccountSet Not Found",
+            detail="GLAccountSet not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    except GLAccountSetStoreError as exc:
+        return _gl_account_set_store_problem(exc)
+    return Response({"gl_account_set": gl_account_set}, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_account_sets_upsert",
+    summary="Create or update reusable GL account set draft",
+    request=PoolMasterDataGLAccountSetUpsertRequestSerializer,
+    responses={
+        200: PoolMasterDataGLAccountSetMutationResponseSerializer,
+        201: PoolMasterDataGLAccountSetMutationResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def upsert_master_data_gl_account_set(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+    tenant = Tenant.objects.filter(id=tenant_id).first()
+    if tenant is None:
+        return _problem(
+            code="TENANT_NOT_FOUND",
+            title="Tenant Not Found",
+            detail="Tenant not found in current context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    serializer = PoolMasterDataGLAccountSetUpsertRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _validation_problem(detail="GLAccountSet payload validation failed.", errors=serializer.errors)
+    try:
+        gl_account_set, created = upsert_canonical_gl_account_set(
+            tenant=tenant,
+            gl_account_set=dict(serializer.validated_data),
+            actor_username=request.user.username if request.user and request.user.is_authenticated else "",
+        )
+    except GLAccountSetNotFoundError:
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_SET_NOT_FOUND",
+            title="GLAccountSet Not Found",
+            detail="GLAccountSet not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    except GLAccountSetStoreError as exc:
+        return _gl_account_set_store_problem(exc)
+
+    response_status = http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK
+    return Response(
+        {"gl_account_set": gl_account_set, "created": created},
+        status=response_status,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_master_data_gl_account_sets_publish",
+    summary="Publish immutable GL account set revision",
+    request=None,
+    responses={
+        200: PoolMasterDataGLAccountSetMutationResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def publish_master_data_gl_account_set(request, id: UUID):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+    tenant = Tenant.objects.filter(id=tenant_id).first()
+    if tenant is None:
+        return _problem(
+            code="TENANT_NOT_FOUND",
+            title="Tenant Not Found",
+            detail="Tenant not found in current context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    try:
+        gl_account_set = publish_canonical_gl_account_set(
+            tenant=tenant,
+            gl_account_set_id=str(id),
+            actor_username=request.user.username if request.user and request.user.is_authenticated else "",
+        )
+    except GLAccountSetNotFoundError:
+        return _problem(
+            code="MASTER_DATA_GL_ACCOUNT_SET_NOT_FOUND",
+            title="GLAccountSet Not Found",
+            detail="GLAccountSet not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+    except GLAccountSetStoreError as exc:
+        return _gl_account_set_store_problem(exc)
+    return Response({"gl_account_set": gl_account_set}, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
     operation_id="v2_pools_master_data_bindings_list",
     summary="List master-data bindings",
     parameters=[MasterDataBindingListQuerySerializer],
@@ -1194,6 +1779,9 @@ def list_master_data_bindings(request):
     owner_counterparty_canonical_id = str(params.get("owner_counterparty_canonical_id") or "").strip()
     if owner_counterparty_canonical_id:
         queryset = queryset.filter(owner_counterparty_canonical_id=owner_counterparty_canonical_id)
+    chart_identity = str(params.get("chart_identity") or "").strip()
+    if chart_identity:
+        queryset = queryset.filter(chart_identity=chart_identity)
     sync_status = str(params.get("sync_status") or "").strip()
     if sync_status:
         queryset = queryset.filter(sync_status=sync_status)
@@ -1296,6 +1884,7 @@ def upsert_master_data_binding(request):
             ib_ref_key=str(data["ib_ref_key"]),
             ib_catalog_kind=str(data.get("ib_catalog_kind", "")),
             owner_counterparty_canonical_id=str(data.get("owner_counterparty_canonical_id", "")),
+            chart_identity=str(data.get("chart_identity", "")),
             sync_status=str(data.get("sync_status", PoolMasterBindingSyncStatus.RESOLVED)),
             fingerprint=str(data.get("fingerprint", "")),
             metadata=data.get("metadata", {}),

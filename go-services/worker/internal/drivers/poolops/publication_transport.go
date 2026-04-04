@@ -120,23 +120,24 @@ type publicationTargetResult struct {
 }
 
 type publicationDocument struct {
-	ChainID                string
-	ParentNodeID           string
-	ChildNodeID            string
-	DocumentID             string
-	DocumentIndex          int
-	DocumentRole           string
-	InvoiceMode            string
-	LinkTo                 string
-	EntityName             string
-	IdempotencyKey         string
-	Payload                map[string]interface{}
-	Allocation             map[string]interface{}
-	FieldMapping           map[string]interface{}
-	TablePartsMapping      map[string]interface{}
-	LinkRules              map[string]interface{}
-	ResolvedLinkRefs       map[string]string
-	ResolvedMasterDataRefs map[string]string
+	ChainID                      string
+	ParentNodeID                 string
+	ChildNodeID                  string
+	DocumentID                   string
+	DocumentIndex                int
+	DocumentRole                 string
+	InvoiceMode                  string
+	LinkTo                       string
+	EntityName                   string
+	IdempotencyKey               string
+	Payload                      map[string]interface{}
+	Allocation                   map[string]interface{}
+	FieldMapping                 map[string]interface{}
+	TablePartsMapping            map[string]interface{}
+	LinkRules                    map[string]interface{}
+	ResolvedLinkRefs             map[string]string
+	ResolvedMasterDataRefs       map[string]string
+	ResolvedMasterDataRefsByPath map[string]string
 }
 
 type publicationDocumentsExecutionResult struct {
@@ -1034,30 +1035,42 @@ func normalizeDocumentChainsByDatabase(value interface{}) (map[string][]publicat
 				tablePartsMapping := readOptionalObject(document["table_parts_mapping"])
 				resolvedLinkRefs := readOptionalStringMap(document["resolved_link_refs"])
 				resolvedMasterDataRefs := readOptionalStringMap(document["resolved_master_data_refs"])
-				if err := validateMasterDataMappingResolution(fieldMapping, resolvedMasterDataRefs); err != nil {
+				resolvedMasterDataRefsByPath := readOptionalStringMap(document["resolved_master_data_refs_by_path"])
+				if err := validateMasterDataMappingResolution(
+					fieldMapping,
+					"field_mapping",
+					resolvedMasterDataRefs,
+					resolvedMasterDataRefsByPath,
+				); err != nil {
 					return nil, fmt.Errorf("document_chains_by_database[%s] %w", databaseID, err)
 				}
-				if err := validateMasterDataMappingResolution(tablePartsMapping, resolvedMasterDataRefs); err != nil {
+				if err := validateMasterDataMappingResolution(
+					tablePartsMapping,
+					"table_parts_mapping",
+					resolvedMasterDataRefs,
+					resolvedMasterDataRefsByPath,
+				); err != nil {
 					return nil, fmt.Errorf("document_chains_by_database[%s] %w", databaseID, err)
 				}
 				chainDocuments = append(chainDocuments, publicationDocument{
-					ChainID:                chainID,
-					ParentNodeID:           parentNodeID,
-					ChildNodeID:            childNodeID,
-					DocumentID:             documentID,
-					DocumentIndex:          documentIndex,
-					DocumentRole:           documentRole,
-					InvoiceMode:            invoiceMode,
-					LinkTo:                 readOptionalString(document["link_to"]),
-					EntityName:             entityName,
-					IdempotencyKey:         readOptionalString(document["idempotency_key"]),
-					Payload:                cloneMap(payload),
-					Allocation:             allocation,
-					FieldMapping:           fieldMapping,
-					TablePartsMapping:      tablePartsMapping,
-					LinkRules:              readOptionalObject(document["link_rules"]),
-					ResolvedLinkRefs:       resolvedLinkRefs,
-					ResolvedMasterDataRefs: resolvedMasterDataRefs,
+					ChainID:                      chainID,
+					ParentNodeID:                 parentNodeID,
+					ChildNodeID:                  childNodeID,
+					DocumentID:                   documentID,
+					DocumentIndex:                documentIndex,
+					DocumentRole:                 documentRole,
+					InvoiceMode:                  invoiceMode,
+					LinkTo:                       readOptionalString(document["link_to"]),
+					EntityName:                   entityName,
+					IdempotencyKey:               readOptionalString(document["idempotency_key"]),
+					Payload:                      cloneMap(payload),
+					Allocation:                   allocation,
+					FieldMapping:                 fieldMapping,
+					TablePartsMapping:            tablePartsMapping,
+					LinkRules:                    readOptionalObject(document["link_rules"]),
+					ResolvedLinkRefs:             resolvedLinkRefs,
+					ResolvedMasterDataRefs:       resolvedMasterDataRefs,
+					ResolvedMasterDataRefsByPath: resolvedMasterDataRefsByPath,
 				})
 			}
 			if requiresInvoice && !hasInvoiceDocument {
@@ -1251,13 +1264,17 @@ func resolveDocumentPayloadForPublication(
 ) (map[string]interface{}, error) {
 	if err := validateMasterDataMappingResolution(
 		document.FieldMapping,
+		"field_mapping",
 		document.ResolvedMasterDataRefs,
+		document.ResolvedMasterDataRefsByPath,
 	); err != nil {
 		return nil, err
 	}
 	if err := validateMasterDataMappingResolution(
 		document.TablePartsMapping,
+		"table_parts_mapping",
 		document.ResolvedMasterDataRefs,
+		document.ResolvedMasterDataRefsByPath,
 	); err != nil {
 		return nil, err
 	}
@@ -1269,6 +1286,7 @@ func resolveDocumentPayloadForPublication(
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
 		document.ResolvedMasterDataRefs,
+		document.ResolvedMasterDataRefsByPath,
 	); err != nil {
 		return nil, err
 	}
@@ -1279,6 +1297,7 @@ func resolveDocumentPayloadForPublication(
 		createdDocumentRefs,
 		document.ResolvedLinkRefs,
 		document.ResolvedMasterDataRefs,
+		document.ResolvedMasterDataRefsByPath,
 	); err != nil {
 		return nil, err
 	}
@@ -1299,18 +1318,22 @@ func applyFieldMappings(
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
+	resolvedMasterDataRefsByPath map[string]string,
 ) error {
 	for rawFieldName, mappingValue := range fieldMapping {
 		fieldName := strings.TrimSpace(rawFieldName)
 		if fieldName == "" {
 			continue
 		}
+		mappingPath := fmt.Sprintf("field_mapping.%s", fieldName)
 		resolvedValue, ok, err := resolveMappingValue(
 			mappingValue,
+			mappingPath,
 			allocation,
 			createdDocumentRefs,
 			resolvedLinkRefs,
 			resolvedMasterDataRefs,
+			resolvedMasterDataRefsByPath,
 		)
 		if err != nil {
 			return err
@@ -1330,6 +1353,7 @@ func applyTablePartsMappings(
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
+	resolvedMasterDataRefsByPath map[string]string,
 ) error {
 	for rawTableName, rawRows := range tablePartsMapping {
 		tableName := strings.TrimSpace(rawTableName)
@@ -1341,7 +1365,7 @@ func applyTablePartsMappings(
 			continue
 		}
 		compiledRows := make([]interface{}, 0, len(rows))
-		for _, rawRow := range rows {
+		for rowIndex, rawRow := range rows {
 			row, ok := rawRow.(map[string]interface{})
 			if !ok {
 				continue
@@ -1352,12 +1376,15 @@ func applyTablePartsMappings(
 				if columnName == "" {
 					continue
 				}
+				mappingPath := fmt.Sprintf("table_parts_mapping.%s[%d].%s", tableName, rowIndex, columnName)
 				resolvedValue, resolved, err := resolveMappingValue(
 					mappingValue,
+					mappingPath,
 					allocation,
 					createdDocumentRefs,
 					resolvedLinkRefs,
 					resolvedMasterDataRefs,
+					resolvedMasterDataRefsByPath,
 				)
 				if err != nil {
 					return err
@@ -1379,10 +1406,12 @@ func applyTablePartsMappings(
 
 func resolveMappingValue(
 	mappingValue interface{},
+	mappingPath string,
 	allocation map[string]interface{},
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
+	resolvedMasterDataRefsByPath map[string]string,
 ) (interface{}, bool, error) {
 	switch value := mappingValue.(type) {
 	case string:
@@ -1406,6 +1435,9 @@ func resolveMappingValue(
 		}
 		if strings.HasSuffix(token, ".ref") {
 			if strings.HasPrefix(token, "master_data.") {
+				if ref := strings.TrimSpace(resolvedMasterDataRefsByPath[mappingPath]); ref != "" {
+					return ref, true, nil
+				}
 				if ref := strings.TrimSpace(resolvedMasterDataRefs[token]); ref != "" {
 					return ref, true, nil
 				}
@@ -1428,10 +1460,12 @@ func resolveMappingValue(
 		if _, hasDerivedExpression := value[derivedMappingKey]; hasDerivedExpression {
 			return resolveDerivedMappingValue(
 				value,
+				mappingPath,
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
 				resolvedMasterDataRefs,
+				resolvedMasterDataRefsByPath,
 			)
 		}
 		resolvedMap := map[string]interface{}{}
@@ -1440,12 +1474,18 @@ func resolveMappingValue(
 			if key == "" {
 				continue
 			}
+			nestedPath := key
+			if strings.TrimSpace(mappingPath) != "" {
+				nestedPath = fmt.Sprintf("%s.%s", mappingPath, key)
+			}
 			resolvedValue, ok, err := resolveMappingValue(
 				nested,
+				nestedPath,
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
 				resolvedMasterDataRefs,
+				resolvedMasterDataRefsByPath,
 			)
 			if err != nil {
 				return nil, false, err
@@ -1457,13 +1497,16 @@ func resolveMappingValue(
 		return resolvedMap, len(resolvedMap) > 0, nil
 	case []interface{}:
 		items := make([]interface{}, 0, len(value))
-		for _, nested := range value {
+		for index, nested := range value {
+			nestedPath := fmt.Sprintf("%s[%d]", mappingPath, index)
 			resolvedValue, ok, err := resolveMappingValue(
 				nested,
+				nestedPath,
 				allocation,
 				createdDocumentRefs,
 				resolvedLinkRefs,
 				resolvedMasterDataRefs,
+				resolvedMasterDataRefsByPath,
 			)
 			if err != nil {
 				return nil, false, err
@@ -1482,10 +1525,12 @@ func resolveMappingValue(
 
 func resolveDerivedMappingValue(
 	mappingValue map[string]interface{},
+	mappingPath string,
 	allocation map[string]interface{},
 	createdDocumentRefs map[string]string,
 	resolvedLinkRefs map[string]string,
 	resolvedMasterDataRefs map[string]string,
+	resolvedMasterDataRefsByPath map[string]string,
 ) (interface{}, bool, error) {
 	if len(mappingValue) != 1 {
 		return nil, false, fmt.Errorf(
@@ -1533,10 +1578,12 @@ func resolveDerivedMappingValue(
 	for idx, rawArg := range args {
 		resolvedValue, isResolved, err := resolveMappingValue(
 			rawArg,
+			fmt.Sprintf("%s.%s.args[%d]", mappingPath, derivedMappingKey, idx),
 			allocation,
 			createdDocumentRefs,
 			resolvedLinkRefs,
 			resolvedMasterDataRefs,
+			resolvedMasterDataRefsByPath,
 		)
 		if err != nil {
 			return nil, false, err
@@ -1675,12 +1722,17 @@ func ratToJSONNumber(value *big.Rat) interface{} {
 
 func validateMasterDataMappingResolution(
 	mappingValue interface{},
+	mappingPath string,
 	resolvedMasterDataRefs map[string]string,
+	resolvedMasterDataRefsByPath map[string]string,
 ) error {
 	switch value := mappingValue.(type) {
 	case string:
 		token := strings.TrimSpace(value)
 		if strings.HasPrefix(token, "master_data.") && strings.HasSuffix(token, ".ref") {
+			if ref := strings.TrimSpace(resolvedMasterDataRefsByPath[mappingPath]); ref != "" {
+				return nil
+			}
 			if ref := strings.TrimSpace(resolvedMasterDataRefs[token]); ref == "" {
 				return fmt.Errorf(
 					"%s: unresolved master-data mapping token %s",
@@ -1691,15 +1743,34 @@ func validateMasterDataMappingResolution(
 		}
 		return nil
 	case map[string]interface{}:
-		for _, nested := range value {
-			if err := validateMasterDataMappingResolution(nested, resolvedMasterDataRefs); err != nil {
+		for rawKey, nested := range value {
+			key := strings.TrimSpace(rawKey)
+			if key == "" {
+				continue
+			}
+			nestedPath := key
+			if strings.TrimSpace(mappingPath) != "" {
+				nestedPath = fmt.Sprintf("%s.%s", mappingPath, key)
+			}
+			if err := validateMasterDataMappingResolution(
+				nested,
+				nestedPath,
+				resolvedMasterDataRefs,
+				resolvedMasterDataRefsByPath,
+			); err != nil {
 				return err
 			}
 		}
 		return nil
 	case []interface{}:
-		for _, nested := range value {
-			if err := validateMasterDataMappingResolution(nested, resolvedMasterDataRefs); err != nil {
+		for index, nested := range value {
+			nestedPath := fmt.Sprintf("%s[%d]", mappingPath, index)
+			if err := validateMasterDataMappingResolution(
+				nested,
+				nestedPath,
+				resolvedMasterDataRefs,
+				resolvedMasterDataRefsByPath,
+			); err != nil {
 				return err
 			}
 		}

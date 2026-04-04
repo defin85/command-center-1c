@@ -17,6 +17,7 @@ _DEPENDENCY_ORDER = (
     PoolMasterDataBootstrapImportEntityType.PARTY,
     PoolMasterDataBootstrapImportEntityType.ITEM,
     PoolMasterDataBootstrapImportEntityType.TAX_PROFILE,
+    PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
     PoolMasterDataBootstrapImportEntityType.CONTRACT,
     PoolMasterDataBootstrapImportEntityType.BINDING,
 )

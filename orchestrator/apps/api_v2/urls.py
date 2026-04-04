@@ -258,6 +258,41 @@ urlpatterns = [
         name='pools-master-data-tax-profiles-upsert',
     ),
     path(
+        'pools/master-data/gl-accounts/',
+        intercompany_pools_master_data.list_master_data_gl_accounts,
+        name='pools-master-data-gl-accounts-list',
+    ),
+    path(
+        'pools/master-data/gl-accounts/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_gl_account,
+        name='pools-master-data-gl-accounts-get',
+    ),
+    path(
+        'pools/master-data/gl-accounts/upsert/',
+        intercompany_pools_master_data.upsert_master_data_gl_account,
+        name='pools-master-data-gl-accounts-upsert',
+    ),
+    path(
+        'pools/master-data/gl-account-sets/',
+        intercompany_pools_master_data.list_master_data_gl_account_sets,
+        name='pools-master-data-gl-account-sets-list',
+    ),
+    path(
+        'pools/master-data/gl-account-sets/<uuid:id>/',
+        intercompany_pools_master_data.get_master_data_gl_account_set,
+        name='pools-master-data-gl-account-sets-get',
+    ),
+    path(
+        'pools/master-data/gl-account-sets/upsert/',
+        intercompany_pools_master_data.upsert_master_data_gl_account_set,
+        name='pools-master-data-gl-account-sets-upsert',
+    ),
+    path(
+        'pools/master-data/gl-account-sets/<uuid:id>/publish/',
+        intercompany_pools_master_data.publish_master_data_gl_account_set,
+        name='pools-master-data-gl-account-sets-publish',
+    ),
+    path(
         'pools/master-data/bindings/',
         intercompany_pools_master_data.list_master_data_bindings,
         name='pools-master-data-bindings-list',

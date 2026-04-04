@@ -267,17 +267,76 @@ class PoolMasterContract(models.Model):
         return super().save(*args, **kwargs)
 
 
+class PoolMasterGLAccount(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_gl_accounts",
+    )
+    canonical_id = models.CharField(max_length=128)
+    code = models.CharField(max_length=128)
+    name = models.CharField(max_length=255)
+    chart_identity = models.CharField(max_length=255)
+    config_name = models.CharField(max_length=255)
+    config_version = models.CharField(max_length=128)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_gl_accounts"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "chart_identity"]),
+            models.Index(fields=["tenant", "config_name", "config_version"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id"],
+                name="uniq_pool_master_gl_account_tenant_canonical",
+            ),
+            models.CheckConstraint(
+                condition=~Q(code=""),
+                name="chk_pool_master_gl_account_code_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name=""),
+                name="chk_pool_master_gl_account_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(chart_identity=""),
+                name="chk_pool_master_gl_account_chart_identity_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_name=""),
+                name="chk_pool_master_gl_account_config_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_version=""),
+                name="chk_pool_master_gl_account_config_version_nonempty",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
 class PoolMasterDataEntityType(models.TextChoices):
     PARTY = "party", "Party"
     ITEM = "item", "Item"
     CONTRACT = "contract", "Contract"
     TAX_PROFILE = "tax_profile", "Tax Profile"
+    GL_ACCOUNT = "gl_account", "GL Account"
+    GL_ACCOUNT_SET = "gl_account_set", "GL Account Set"
 
 
 class PoolMasterDataBootstrapImportEntityType(models.TextChoices):
     PARTY = "party", "Party"
     ITEM = "item", "Item"
     TAX_PROFILE = "tax_profile", "Tax Profile"
+    GL_ACCOUNT = "gl_account", "GL Account"
     CONTRACT = "contract", "Contract"
     BINDING = "binding", "Binding"
 
@@ -793,6 +852,7 @@ class PoolMasterDataBinding(models.Model):
     ib_ref_key = models.CharField(max_length=128)
     ib_catalog_kind = models.CharField(max_length=32, blank=True, default="")
     owner_counterparty_canonical_id = models.CharField(max_length=128, blank=True, default="")
+    chart_identity = models.CharField(max_length=255, blank=True, default="")
     sync_status = models.CharField(
         max_length=16,
         choices=PoolMasterBindingSyncStatus.choices,
@@ -810,6 +870,7 @@ class PoolMasterDataBinding(models.Model):
         indexes = [
             models.Index(fields=["tenant", "entity_type", "database"]),
             models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "chart_identity"]),
             models.Index(fields=["tenant", "sync_status", "-updated_at"]),
         ]
         constraints = [
@@ -825,6 +886,7 @@ class PoolMasterDataBinding(models.Model):
                     "database",
                     "ib_catalog_kind",
                     "owner_counterparty_canonical_id",
+                    "chart_identity",
                 ],
                 name="uniq_pool_master_binding_scope",
             ),
@@ -846,6 +908,8 @@ class PoolMasterDataBinding(models.Model):
                 raise ValidationError(
                     {"owner_counterparty_canonical_id": "Party binding must not define owner counterparty."}
                 )
+            if self.chart_identity:
+                raise ValidationError({"chart_identity": "Party binding must not define chart identity."})
             return
 
         if self.entity_type == PoolMasterDataEntityType.CONTRACT:
@@ -855,6 +919,19 @@ class PoolMasterDataBinding(models.Model):
                 )
             if self.ib_catalog_kind:
                 raise ValidationError({"ib_catalog_kind": "Contract binding must not define catalog kind."})
+            if self.chart_identity:
+                raise ValidationError({"chart_identity": "Contract binding must not define chart identity."})
+            return
+
+        if self.entity_type == PoolMasterDataEntityType.GL_ACCOUNT:
+            if not self.chart_identity:
+                raise ValidationError({"chart_identity": "GLAccount binding requires chart identity."})
+            if self.ib_catalog_kind:
+                raise ValidationError({"ib_catalog_kind": "GLAccount binding must not define catalog kind."})
+            if self.owner_counterparty_canonical_id:
+                raise ValidationError(
+                    {"owner_counterparty_canonical_id": "GLAccount binding must not define owner counterparty."}
+                )
             return
 
         if self.ib_catalog_kind:
@@ -863,6 +940,275 @@ class PoolMasterDataBinding(models.Model):
             raise ValidationError(
                 {"owner_counterparty_canonical_id": "Only Contract binding may define owner counterparty."}
             )
+        if self.chart_identity:
+            raise ValidationError({"chart_identity": "Only GLAccount binding may define chart identity."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterGLAccountSet(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_gl_account_sets",
+    )
+    canonical_id = models.CharField(max_length=128)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    chart_identity = models.CharField(max_length=255)
+    config_name = models.CharField(max_length=255)
+    config_version = models.CharField(max_length=128)
+    published_revision = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSetRevision",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="published_for_sets",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_gl_account_sets"
+        indexes = [
+            models.Index(fields=["tenant", "canonical_id"]),
+            models.Index(fields=["tenant", "chart_identity"]),
+            models.Index(fields=["tenant", "config_name", "config_version"]),
+            models.Index(fields=["tenant", "-updated_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "canonical_id"],
+                name="uniq_pool_master_gl_account_set_tenant_canonical",
+            ),
+            models.CheckConstraint(
+                condition=~Q(canonical_id=""),
+                name="chk_pool_master_gl_account_set_canonical_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name=""),
+                name="chk_pool_master_gl_account_set_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(chart_identity=""),
+                name="chk_pool_master_gl_account_set_chart_identity_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_name=""),
+                name="chk_pool_master_gl_account_set_config_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_version=""),
+                name="chk_pool_master_gl_account_set_config_version_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.published_revision_id and self.published_revision.profile_id != self.id:
+            raise ValidationError({"published_revision": "Published revision must belong to the selected GLAccountSet."})
+        if self.published_revision_id and self.published_revision.tenant_id != self.tenant_id:
+            raise ValidationError({"published_revision": "Published revision must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterGLAccountSetDraftMember(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_gl_account_set_draft_members",
+    )
+    profile = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSet",
+        on_delete=models.CASCADE,
+        related_name="draft_members",
+    )
+    gl_account = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccount",
+        on_delete=models.PROTECT,
+        related_name="gl_account_set_draft_memberships",
+    )
+    sort_order = models.PositiveIntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_gl_account_set_draft_members"
+        indexes = [
+            models.Index(fields=["tenant", "profile", "sort_order"]),
+            models.Index(fields=["tenant", "gl_account"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "gl_account"],
+                name="uniq_pool_master_gl_account_set_draft_member",
+            ),
+            models.UniqueConstraint(
+                fields=["profile", "sort_order"],
+                name="uniq_pool_master_gl_account_set_draft_sort",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.profile_id and self.profile.tenant_id != self.tenant_id:
+            raise ValidationError({"profile": "Draft member profile must belong to the same tenant."})
+        if self.gl_account_id and self.gl_account.tenant_id != self.tenant_id:
+            raise ValidationError({"gl_account": "Draft member account must belong to the same tenant."})
+        if self.profile_id and self.gl_account_id:
+            if self.profile.chart_identity != self.gl_account.chart_identity:
+                raise ValidationError({"gl_account": "Draft member account chart_identity must match the GLAccountSet."})
+            if self.profile.config_name != self.gl_account.config_name:
+                raise ValidationError({"gl_account": "Draft member account config_name must match the GLAccountSet."})
+            if self.profile.config_version != self.gl_account.config_version:
+                raise ValidationError({"gl_account": "Draft member account config_version must match the GLAccountSet."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterGLAccountSetRevision(models.Model):
+    gl_account_set_revision_id = models.CharField(primary_key=True, max_length=128, serialize=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_gl_account_set_revisions",
+    )
+    profile = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSet",
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    contract_version = models.CharField(max_length=64, default="gl_account_set_revision.v1")
+    revision_number = models.PositiveIntegerField()
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    chart_identity = models.CharField(max_length=255)
+    config_name = models.CharField(max_length=255)
+    config_version = models.CharField(max_length=128)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "pool_master_gl_account_set_revisions"
+        indexes = [
+            models.Index(fields=["tenant", "profile", "-revision_number"]),
+            models.Index(fields=["tenant", "chart_identity"]),
+            models.Index(fields=["tenant", "config_name", "config_version"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["profile", "revision_number"],
+                name="uniq_pool_master_gl_account_set_revision_number",
+            ),
+            models.CheckConstraint(
+                condition=~Q(gl_account_set_revision_id=""),
+                name="chk_pool_master_gl_account_set_revision_id_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(name=""),
+                name="chk_pool_master_gl_account_set_revision_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(chart_identity=""),
+                name="chk_pool_master_gl_account_set_revision_chart_identity_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_name=""),
+                name="chk_pool_master_gl_account_set_revision_config_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_version=""),
+                name="chk_pool_master_gl_account_set_revision_config_version_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.profile_id and self.profile.tenant_id != self.tenant_id:
+            raise ValidationError({"profile": "GLAccountSet revision must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterGLAccountSetRevisionMember(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_gl_account_set_revision_members",
+    )
+    revision = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccountSetRevision",
+        on_delete=models.CASCADE,
+        related_name="members",
+    )
+    gl_account = models.ForeignKey(
+        "intercompany_pools.PoolMasterGLAccount",
+        on_delete=models.PROTECT,
+        related_name="gl_account_set_revision_memberships",
+    )
+    gl_account_canonical_id = models.CharField(max_length=128)
+    gl_account_code = models.CharField(max_length=128)
+    gl_account_name = models.CharField(max_length=255)
+    chart_identity = models.CharField(max_length=255)
+    sort_order = models.PositiveIntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "pool_master_gl_account_set_revision_members"
+        indexes = [
+            models.Index(fields=["tenant", "revision", "sort_order"]),
+            models.Index(fields=["tenant", "gl_account_canonical_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["revision", "gl_account_canonical_id"],
+                name="uniq_pool_master_gl_account_set_revision_member_canonical",
+            ),
+            models.UniqueConstraint(
+                fields=["revision", "sort_order"],
+                name="uniq_pool_master_gl_account_set_revision_member_sort",
+            ),
+            models.CheckConstraint(
+                condition=~Q(gl_account_canonical_id=""),
+                name="chk_pool_master_gl_account_set_revision_member_canonical_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(gl_account_code=""),
+                name="chk_pool_master_gl_account_set_revision_member_code_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(gl_account_name=""),
+                name="chk_pool_master_gl_account_set_revision_member_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(chart_identity=""),
+                name="chk_pool_master_gl_account_set_revision_member_chart_identity_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.revision_id and self.revision.tenant_id != self.tenant_id:
+            raise ValidationError({"revision": "Revision member must belong to the same tenant."})
+        if self.gl_account_id and self.gl_account.tenant_id != self.tenant_id:
+            raise ValidationError({"gl_account": "Revision member account must belong to the same tenant."})
+        if self.revision_id and self.gl_account_id:
+            if self.revision.chart_identity != self.chart_identity:
+                raise ValidationError({"chart_identity": "Revision member chart_identity must match the revision."})
+            if self.gl_account.chart_identity != self.chart_identity:
+                raise ValidationError({"gl_account": "Revision member account chart_identity must match the revision."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

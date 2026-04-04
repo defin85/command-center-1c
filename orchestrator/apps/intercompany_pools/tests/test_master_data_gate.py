@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.intercompany_pools.master_data_errors import MasterDataResolveError
-from apps.intercompany_pools.master_data_gate import _parse_master_data_token
+from apps.intercompany_pools.master_data_gate import _extract_requirements_from_document, _parse_master_data_token
 from apps.intercompany_pools.master_data_registry import (
     POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_IB_CATALOG_KIND,
     PoolMasterDataRegistryTokenContract,
@@ -75,3 +75,41 @@ def test_parse_master_data_token_keeps_dotted_canonical_id_for_qualifierless_reg
     assert requirement.canonical_id == "10.01"
     assert requirement.ib_catalog_kind == ""
     assert requirement.owner_counterparty_canonical_id == ""
+
+
+def test_extract_requirements_from_document_uses_gl_account_chart_identity_context() -> None:
+    requirements = _extract_requirements_from_document(
+        document={
+            "field_mapping": {
+                "DebitAccount": "master_data.gl_account.10.01.ref",
+            },
+            "table_parts_mapping": {},
+            "master_data_token_context": {
+                "field_mapping.DebitAccount": {
+                    "token": "master_data.gl_account.10.01.ref",
+                    "chart_identity": "ChartOfAccounts_Main",
+                }
+            },
+        },
+        database_id="db-1",
+    )
+
+    assert len(requirements) == 1
+    requirement = requirements[0]
+    assert requirement.entity_type == "gl_account"
+    assert requirement.canonical_id == "10.01"
+    assert requirement.mapping_path == "field_mapping.DebitAccount"
+    assert requirement.chart_identity == "ChartOfAccounts_Main"
+
+
+def test_extract_requirements_from_document_rejects_gl_account_without_typed_context() -> None:
+    with pytest.raises(MasterDataResolveError, match="typed metadata context"):
+        _extract_requirements_from_document(
+            document={
+                "field_mapping": {
+                    "DebitAccount": "master_data.gl_account.10.01.ref",
+                },
+                "table_parts_mapping": {},
+            },
+            database_id="db-1",
+        )

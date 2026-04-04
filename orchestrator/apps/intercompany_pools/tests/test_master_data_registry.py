@@ -60,7 +60,12 @@ def test_registry_exposes_sync_capabilities_for_current_canonical_types() -> Non
         POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
         POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
         POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
-    ) == tuple(PoolMasterDataEntityType.values)
+    ) == (
+        PoolMasterDataEntityType.PARTY,
+        PoolMasterDataEntityType.ITEM,
+        PoolMasterDataEntityType.CONTRACT,
+        PoolMasterDataEntityType.TAX_PROFILE,
+    )
 
 
 def test_registry_normalizers_fail_closed_for_unknown_entities() -> None:
@@ -83,11 +88,22 @@ def test_registry_inspect_payload_contains_capability_matrix() -> None:
     payload = inspect_pool_master_data_registry()
 
     assert payload["contract_version"] == "pool_master_data_registry.v1"
-    assert payload["count"] == 5
-    assert len(payload["entries"]) == 5
+    assert payload["count"] == 7
+    assert len(payload["entries"]) == 7
     binding_entry = next(item for item in payload["entries"] if item["entity_type"] == "binding")
     assert binding_entry["capabilities"]["bootstrap_import"] is True
     assert binding_entry["capabilities"]["token_exposure"] is False
     party_entry = next(item for item in payload["entries"] if item["entity_type"] == "party")
     assert party_entry["token_contract"]["qualifier_kind"] == "ib_catalog_kind"
     assert party_entry["token_contract"]["qualifier_options"] == ["organization", "counterparty"]
+    gl_account_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account")
+    assert gl_account_entry["binding_scope_fields"] == ["canonical_id", "database_id", "chart_identity"]
+    assert gl_account_entry["capabilities"]["direct_binding"] is True
+    assert gl_account_entry["capabilities"]["token_exposure"] is True
+    assert gl_account_entry["capabilities"]["bootstrap_import"] is True
+    assert gl_account_entry["capabilities"]["outbox_fanout"] is False
+    assert gl_account_entry["capabilities"]["sync_outbound"] is False
+    gl_account_set_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account_set")
+    assert gl_account_set_entry["binding_scope_fields"] == []
+    assert gl_account_set_entry["capabilities"]["direct_binding"] is False
+    assert gl_account_set_entry["capabilities"]["bootstrap_import"] is False

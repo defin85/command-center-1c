@@ -1,0 +1,51 @@
+type: object
+properties:
+  gl_account_set_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+  chart_identity:
+    type: string
+    maxLength: 255
+  config_name:
+    type: string
+    maxLength: 255
+  config_version:
+    type: string
+    maxLength: 128
+  draft_members_count:
+    type: integer
+    minimum: 0
+  published_revision_number:
+    type: integer
+    minimum: 1
+    nullable: true
+  published_revision_id:
+    type: string
+    nullable: true
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - gl_account_set_id
+  - canonical_id
+  - name
+  - chart_identity
+  - config_name
+  - config_version
+  - draft_members_count
+  - created_at
+  - updated_at

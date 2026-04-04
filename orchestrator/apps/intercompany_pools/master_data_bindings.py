@@ -56,6 +56,7 @@ def _build_binding_outbox_payload(*, binding: PoolMasterDataBinding) -> dict[str
         "ib_ref_key": str(binding.ib_ref_key or "").strip(),
         "ib_catalog_kind": str(binding.ib_catalog_kind or "").strip(),
         "owner_counterparty_canonical_id": str(binding.owner_counterparty_canonical_id or "").strip(),
+        "chart_identity": str(binding.chart_identity or "").strip(),
         "sync_status": str(binding.sync_status or "").strip(),
         "fingerprint": str(binding.fingerprint or "").strip(),
         "metadata": dict(binding.metadata or {}),
@@ -109,6 +110,7 @@ def upsert_pool_master_data_binding(
     existing_binding: PoolMasterDataBinding | None = None,
     ib_catalog_kind: str = "",
     owner_counterparty_canonical_id: str = "",
+    chart_identity: str = "",
     sync_status: str = PoolMasterBindingSyncStatus.UPSERTED,
     fingerprint: str = "",
     metadata: dict[str, Any] | None = None,
@@ -145,6 +147,7 @@ def upsert_pool_master_data_binding(
         "database": database,
         "ib_catalog_kind": str(ib_catalog_kind or "").strip(),
         "owner_counterparty_canonical_id": str(owner_counterparty_canonical_id or "").strip(),
+        "chart_identity": str(chart_identity or "").strip(),
     }
 
     updatable_fields = {

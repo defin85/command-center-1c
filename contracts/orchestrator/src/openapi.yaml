@@ -262,6 +262,20 @@ paths:
     $ref: paths/api_v2_pools_master-data_tax-profiles_{id}_.yaml
   /api/v2/pools/master-data/tax-profiles/upsert/:
     $ref: paths/api_v2_pools_master-data_tax-profiles_upsert_.yaml
+  /api/v2/pools/master-data/gl-accounts/:
+    $ref: paths/api_v2_pools_master-data_gl-accounts_.yaml
+  /api/v2/pools/master-data/gl-accounts/{id}/:
+    $ref: paths/api_v2_pools_master-data_gl-accounts_{id}_.yaml
+  /api/v2/pools/master-data/gl-accounts/upsert/:
+    $ref: paths/api_v2_pools_master-data_gl-accounts_upsert_.yaml
+  /api/v2/pools/master-data/gl-account-sets/:
+    $ref: paths/api_v2_pools_master-data_gl-account-sets_.yaml
+  /api/v2/pools/master-data/gl-account-sets/{id}/:
+    $ref: paths/api_v2_pools_master-data_gl-account-sets_{id}_.yaml
+  /api/v2/pools/master-data/gl-account-sets/upsert/:
+    $ref: paths/api_v2_pools_master-data_gl-account-sets_upsert_.yaml
+  /api/v2/pools/master-data/gl-account-sets/{id}/publish/:
+    $ref: paths/api_v2_pools_master-data_gl-account-sets_{id}_publish_.yaml
   /api/v2/pools/master-data/sync-status/:
     $ref: paths/api_v2_pools_master-data_sync-status_.yaml
   /api/v2/pools/master-data/sync-conflicts/:

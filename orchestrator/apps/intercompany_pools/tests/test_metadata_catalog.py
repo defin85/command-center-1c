@@ -20,6 +20,7 @@ from apps.intercompany_pools.metadata_catalog import (
     ERROR_CODE_POOL_METADATA_PROFILE_UNAVAILABLE,
     ERROR_CODE_POOL_METADATA_REFRESH_IN_PROGRESS,
     ERROR_CODE_ODATA_MAPPING_NOT_CONFIGURED,
+    collect_document_policy_document_token_context,
     describe_metadata_catalog_snapshot_resolution,
     MetadataCatalogError,
     _read_snapshot_from_cache,
@@ -1522,6 +1523,96 @@ def test_validate_document_policy_references_accepts_row_mapping_from_companion_
     )
 
     assert errors == []
+
+
+def test_validate_document_policy_references_accepts_gl_account_token_for_chart_of_accounts_field() -> None:
+    snapshot = SimpleNamespace(
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {
+                            "name": "DebitAccount",
+                            "type": "StandardODATA.ChartOfAccounts_Хозрасчетный",
+                            "nullable": False,
+                        },
+                    ],
+                    "table_parts": [],
+                },
+            ]
+        }
+    )
+    document = {
+        "document_id": "sale",
+        "entity_name": "Document_Sales",
+        "document_role": "sale",
+        "field_mapping": {"DebitAccount": "master_data.gl_account.10.01.ref"},
+        "table_parts_mapping": {},
+        "link_rules": {},
+    }
+    policy = {
+        "version": "document_policy.v1",
+        "chains": [{"chain_id": "sale_chain", "documents": [document]}],
+    }
+
+    errors = validate_document_policy_references(policy=policy, snapshot=snapshot)  # type: ignore[arg-type]
+    token_errors, context = collect_document_policy_document_token_context(
+        document=document,
+        snapshot=snapshot,  # type: ignore[arg-type]
+        path_prefix="document_policy.chains[0].documents[0]",
+    )
+
+    assert errors == []
+    assert token_errors == []
+    assert context == {
+        "field_mapping.DebitAccount": {
+            "token": "master_data.gl_account.10.01.ref",
+            "chart_identity": "ChartOfAccounts_Хозрасчетный",
+        }
+    }
+
+
+def test_validate_document_policy_references_rejects_gl_account_token_without_chart_type() -> None:
+    snapshot = SimpleNamespace(
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {"name": "DebitAccount", "type": "Edm.String", "nullable": False},
+                    ],
+                    "table_parts": [],
+                },
+            ]
+        }
+    )
+    policy = {
+        "version": "document_policy.v1",
+        "chains": [
+            {
+                "chain_id": "sale_chain",
+                "documents": [
+                    {
+                        "document_id": "sale",
+                        "entity_name": "Document_Sales",
+                        "document_role": "sale",
+                        "field_mapping": {"DebitAccount": "master_data.gl_account.10.01.ref"},
+                        "table_parts_mapping": {},
+                        "link_rules": {},
+                    }
+                ],
+            }
+        ],
+    }
+
+    errors = validate_document_policy_references(policy=policy, snapshot=snapshot)  # type: ignore[arg-type]
+
+    assert len(errors) == 1
+    assert errors[0]["path"] == "document_policy.chains[0].documents[0].field_mapping.DebitAccount"
+    assert "chart-of-accounts reference" in errors[0]["detail"]
 
 
 @pytest.mark.django_db

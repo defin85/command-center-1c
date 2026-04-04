@@ -31,6 +31,7 @@ from apps.intercompany_pools.models import (
     PoolEdgeVersion,
     PoolMasterParty,
     PoolNodeVersion,
+    PoolODataMetadataCatalogSnapshot,
     PoolRun,
     PoolRunDirection,
     PoolRunMode,
@@ -478,6 +479,72 @@ def test_build_publication_payload_from_document_plan_artifact_resolves_derived_
     assert sale_payload["Услуги"] == [{"Сумма": pytest.approx(100.0), "СуммаНДС": pytest.approx(16.67)}]
     assert isinstance(sale_payload["Услуги"][0]["Сумма"], (int, float))
     assert isinstance(sale_payload["Услуги"][0]["СуммаНДС"], (int, float))
+
+
+@pytest.mark.django_db
+def test_compile_document_plan_artifact_persists_gl_account_token_context_into_publication_payload() -> None:
+    fixture = _create_compile_fixture(slot_keys=["slot.gl-account"])
+    database_id = fixture["database_ids"][0]
+    database = Database.objects.get(id=database_id)
+    PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=fixture["run"].tenant,
+        database=database,
+        config_name="Accounting Enterprise",
+        config_version="3.0.1",
+        extensions_fingerprint="",
+        metadata_hash="hash-gl-account",
+        catalog_version="catalog-v1",
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_Sales",
+                    "display_name": "Sales",
+                    "fields": [
+                        {
+                            "name": "DebitAccount",
+                            "type": "StandardODATA.ChartOfAccounts_Хозрасчетный",
+                            "nullable": False,
+                        },
+                    ],
+                    "table_parts": [],
+                }
+            ]
+        },
+        is_current=True,
+    )
+    policy = _build_document_policy(
+        chain_id="sale_chain",
+        document_id="sale",
+        entity_name="Document_Sales",
+        field_mapping={"DebitAccount": "master_data.gl_account.10.01.ref"},
+    )
+
+    artifact = compile_document_plan_artifact_v1(
+        run=fixture["run"],
+        distribution_artifact=fixture["distribution_artifact"],
+        topology=fixture["topology"],
+        compiled_document_policy_slots={
+            "slot.gl-account": _build_compiled_slot_entry(
+                slot_key="slot.gl-account",
+                decision_table_id="gl-account-policy",
+                decision_revision=1,
+                document_policy=policy,
+            )
+        },
+    )
+
+    assert artifact is not None
+    compiled_document = artifact["targets"][0]["chains"][0]["documents"][0]
+    assert compiled_document["master_data_token_context"] == {
+        "field_mapping.DebitAccount": {
+            "token": "master_data.gl_account.10.01.ref",
+            "chart_identity": "ChartOfAccounts_Хозрасчетный",
+        }
+    }
+
+    payload = build_publication_payload_from_document_plan_artifact(artifact=artifact)
+    published_document = payload["pool_runtime"]["document_chains_by_database"][database_id][0]["documents"][0]
+    assert published_document["master_data_token_context"] == compiled_document["master_data_token_context"]
 
 
 def test_inject_ccpool_traceability_comment_preserves_existing_human_tail() -> None:

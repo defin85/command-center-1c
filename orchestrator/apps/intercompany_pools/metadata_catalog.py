@@ -683,7 +683,46 @@ def validate_document_policy_references(
                             ),
                         }
                     )
+            token_errors, _ = collect_document_policy_document_token_context(
+                document=raw_document,
+                snapshot=snapshot,
+                path_prefix=document_path,
+            )
+            errors.extend(token_errors)
     return errors
+
+
+def collect_document_policy_document_token_context(
+    *,
+    document: Mapping[str, Any],
+    snapshot: PoolODataMetadataCatalogSnapshot | None,
+    path_prefix: str,
+) -> tuple[list[dict[str, str]], dict[str, dict[str, str]]]:
+    if snapshot is None:
+        return (
+            [
+                {
+                    "code": ERROR_CODE_POOL_METADATA_SNAPSHOT_UNAVAILABLE,
+                    "path": path_prefix,
+                    "detail": "Current metadata snapshot is missing for selected database scope.",
+                }
+            ],
+            {},
+        )
+
+    payload = normalize_catalog_payload(
+        payload=snapshot.payload if isinstance(snapshot.payload, dict) else {}
+    )
+    documents_index = _build_catalog_documents_index(payload)
+    entity_name = str(document.get("entity_name") or "").strip()
+    catalog_document = documents_index.get(entity_name)
+    if not entity_name or catalog_document is None:
+        return ([], {})
+    return _collect_document_gl_account_token_context(
+        document=document,
+        catalog_document=catalog_document,
+        path_prefix=path_prefix,
+    )
 
 
 def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
@@ -739,6 +778,172 @@ def normalize_catalog_payload(*, payload: dict[str, Any]) -> dict[str, Any]:
         "information_registers": _normalize_catalog_entities(payload.get("information_registers")),
         "accounting_registers": _normalize_register_entities(payload.get("accounting_registers")),
     }
+
+
+def _build_catalog_documents_index(payload: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    documents_raw = payload.get("documents")
+    if not isinstance(documents_raw, list):
+        return {}
+    return {
+        str(item.get("entity_name") or "").strip(): dict(item)
+        for item in documents_raw
+        if isinstance(item, Mapping) and str(item.get("entity_name") or "").strip()
+    }
+
+
+def _collect_document_gl_account_token_context(
+    *,
+    document: Mapping[str, Any],
+    catalog_document: Mapping[str, Any],
+    path_prefix: str,
+) -> tuple[list[dict[str, str]], dict[str, dict[str, str]]]:
+    errors: list[dict[str, str]] = []
+    context: dict[str, dict[str, str]] = {}
+    catalog_fields = {
+        str(field.get("name") or "").strip(): dict(field)
+        for field in (catalog_document.get("fields") or [])
+        if isinstance(field, Mapping) and str(field.get("name") or "").strip()
+    }
+    catalog_table_parts = {
+        str(table_part.get("name") or "").strip(): {
+            str(field.get("name") or "").strip(): dict(field)
+            for field in (table_part.get("row_fields") or [])
+            if isinstance(field, Mapping) and str(field.get("name") or "").strip()
+        }
+        for table_part in (catalog_document.get("table_parts") or [])
+        if isinstance(table_part, Mapping) and str(table_part.get("name") or "").strip()
+    }
+
+    field_mapping = document.get("field_mapping")
+    if isinstance(field_mapping, Mapping):
+        for raw_field_name, raw_mapping in field_mapping.items():
+            field_name = str(raw_field_name or "").strip()
+            if not field_name:
+                continue
+            catalog_field = catalog_fields.get(field_name)
+            if catalog_field is None:
+                continue
+            _collect_direct_gl_account_token_context(
+                mapping_value=raw_mapping,
+                field_type=str(catalog_field.get("type") or ""),
+                mapping_path=f"{path_prefix}.field_mapping.{field_name}",
+                context_key=f"field_mapping.{field_name}",
+                errors=errors,
+                context=context,
+            )
+
+    table_parts_mapping = document.get("table_parts_mapping")
+    if isinstance(table_parts_mapping, Mapping):
+        for raw_table_part_name, raw_row_mapping in table_parts_mapping.items():
+            table_part_name = str(raw_table_part_name or "").strip()
+            if not table_part_name:
+                continue
+            row_fields = catalog_table_parts.get(table_part_name)
+            if row_fields is None:
+                continue
+            if isinstance(raw_row_mapping, Mapping):
+                for raw_row_field_name, raw_mapping in raw_row_mapping.items():
+                    row_field_name = str(raw_row_field_name or "").strip()
+                    if not row_field_name:
+                        continue
+                    row_field = row_fields.get(row_field_name)
+                    if row_field is None:
+                        continue
+                    _collect_direct_gl_account_token_context(
+                        mapping_value=raw_mapping,
+                        field_type=str(row_field.get("type") or ""),
+                        mapping_path=f"{path_prefix}.table_parts_mapping.{table_part_name}.{row_field_name}",
+                        context_key=f"table_parts_mapping.{table_part_name}.{row_field_name}",
+                        errors=errors,
+                        context=context,
+                    )
+                continue
+            if isinstance(raw_row_mapping, list):
+                for row_index, raw_row in enumerate(raw_row_mapping):
+                    if not isinstance(raw_row, Mapping):
+                        continue
+                    for raw_row_field_name, raw_mapping in raw_row.items():
+                        row_field_name = str(raw_row_field_name or "").strip()
+                        if not row_field_name:
+                            continue
+                        row_field = row_fields.get(row_field_name)
+                        if row_field is None:
+                            continue
+                        _collect_direct_gl_account_token_context(
+                            mapping_value=raw_mapping,
+                            field_type=str(row_field.get("type") or ""),
+                            mapping_path=(
+                                f"{path_prefix}.table_parts_mapping.{table_part_name}[{row_index}].{row_field_name}"
+                            ),
+                            context_key=f"table_parts_mapping.{table_part_name}[{row_index}].{row_field_name}",
+                            errors=errors,
+                            context=context,
+                        )
+    return errors, context
+
+
+def _collect_direct_gl_account_token_context(
+    *,
+    mapping_value: Any,
+    field_type: str,
+    mapping_path: str,
+    context_key: str,
+    errors: list[dict[str, str]],
+    context: dict[str, dict[str, str]],
+) -> None:
+    token = _read_direct_gl_account_token(mapping_value)
+    if token:
+        chart_identity = _extract_chart_identity_from_field_type(field_type)
+        if not chart_identity:
+            errors.append(
+                {
+                    "code": ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
+                    "path": mapping_path,
+                    "detail": (
+                        "GLAccount token requires a field typed as chart-of-accounts reference in metadata snapshot."
+                    ),
+                }
+            )
+            return
+        context[context_key] = {
+            "token": token,
+            "chart_identity": chart_identity,
+        }
+        return
+    if _contains_gl_account_token(mapping_value):
+        errors.append(
+            {
+                "code": ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
+                "path": mapping_path,
+                "detail": "GLAccount token must be mapped directly to a typed field path.",
+            }
+        )
+
+
+def _read_direct_gl_account_token(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    token = str(value or "").strip()
+    if token.startswith("master_data.gl_account.") and token.endswith(".ref"):
+        return token
+    return ""
+
+
+def _contains_gl_account_token(value: Any) -> bool:
+    if _read_direct_gl_account_token(value):
+        return True
+    if isinstance(value, Mapping):
+        return any(_contains_gl_account_token(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_gl_account_token(item) for item in value)
+    return False
+
+
+def _extract_chart_identity_from_field_type(type_token: str) -> str:
+    entity_name = _extract_entity_name_from_type(type_token)
+    if entity_name.startswith("ChartOfAccounts_"):
+        return entity_name
+    return ""
 
 
 def _shared_scope_filters(scope: MetadataCatalogScope) -> dict[str, str]:

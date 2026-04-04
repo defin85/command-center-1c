@@ -1,0 +1,49 @@
+type: object
+properties:
+  gl_account_set_revision_id:
+    type: string
+  gl_account_set_id:
+    type: string
+    format: uuid
+  contract_version:
+    type: string
+  revision_number:
+    type: integer
+    minimum: 1
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+  chart_identity:
+    type: string
+    maxLength: 255
+  config_name:
+    type: string
+    maxLength: 255
+  config_version:
+    type: string
+    maxLength: 128
+  members:
+    type: array
+    items:
+      $ref: ./PoolMasterDataGLAccountSetMemberRead.yaml
+  metadata:
+    type: object
+    additionalProperties: true
+  created_by:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+required:
+  - gl_account_set_revision_id
+  - gl_account_set_id
+  - contract_version
+  - revision_number
+  - name
+  - chart_identity
+  - config_name
+  - config_version
+  - members
+  - created_at

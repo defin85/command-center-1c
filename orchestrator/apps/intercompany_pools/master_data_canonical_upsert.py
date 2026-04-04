@@ -21,6 +21,7 @@ from .master_data_sync_origin import (
 from .master_data_sync_outbox import enqueue_master_data_sync_outbox_intent
 from .models import PoolMasterContract
 from .models import PoolMasterDataEntityType
+from .models import PoolMasterGLAccount
 from .models import PoolMasterItem
 from .models import PoolMasterParty
 from .models import PoolMasterTaxProfile
@@ -231,6 +232,72 @@ def upsert_pool_master_data_item(
                 origin_system=origin_system,
             )
     return CanonicalUpsertResult(entity=item, created=created, changed=changed)
+
+
+def upsert_pool_master_data_gl_account(
+    *,
+    tenant_id: str | UUID,
+    canonical_id: str,
+    code: str,
+    name: str,
+    chart_identity: str,
+    config_name: str,
+    config_version: str,
+    metadata: Mapping[str, Any] | None = None,
+    existing: PoolMasterGLAccount | None = None,
+    origin_system: str = "cc",
+    origin_event_id: str = "",
+) -> CanonicalUpsertResult:
+    tenant_id_token = str(tenant_id)
+    canonical_id_token = str(canonical_id)
+    payload = {
+        "tenant_id": tenant_id_token,
+        "canonical_id": canonical_id_token,
+        "code": str(code or ""),
+        "name": str(name or ""),
+        "chart_identity": str(chart_identity or ""),
+        "config_name": str(config_name or ""),
+        "config_version": str(config_version or ""),
+        "metadata": dict(metadata or {}),
+    }
+    with transaction.atomic():
+        gl_account = existing
+        if gl_account is None:
+            gl_account = PoolMasterGLAccount.objects.filter(
+                tenant_id=tenant_id_token,
+                canonical_id=canonical_id_token,
+            ).first()
+        created = gl_account is None
+        changed = True
+        if created:
+            gl_account = PoolMasterGLAccount.objects.create(**payload)
+        else:
+            changed = assign_changed_fields(gl_account, payload)
+            if changed:
+                gl_account.save()
+
+        if changed:
+            resolved_origin_event_id = str(origin_event_id or "").strip() or (
+                f"gl_account:{gl_account.id}:{int(gl_account.updated_at.timestamp())}"
+            )
+            enqueue_canonical_mutation_outbox_intents(
+                tenant_id=tenant_id_token,
+                entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+                canonical_id=str(gl_account.canonical_id),
+                mutation_kind="gl_account_upsert",
+                payload={
+                    "canonical_id": str(gl_account.canonical_id),
+                    "code": str(gl_account.code or ""),
+                    "name": str(gl_account.name or ""),
+                    "chart_identity": str(gl_account.chart_identity or ""),
+                    "config_name": str(gl_account.config_name or ""),
+                    "config_version": str(gl_account.config_version or ""),
+                    "metadata": dict(gl_account.metadata or {}),
+                },
+                origin_event_id=resolved_origin_event_id,
+                origin_system=origin_system,
+            )
+    return CanonicalUpsertResult(entity=gl_account, created=created, changed=changed)
 
 
 def upsert_pool_master_data_tax_profile(

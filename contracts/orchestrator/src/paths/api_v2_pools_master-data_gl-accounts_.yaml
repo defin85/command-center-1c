@@ -1,6 +1,6 @@
 get:
-  operationId: v2_pools_master_data_bindings_list
-  summary: List master-data bindings
+  operationId: v2_pools_master_data_gl_accounts_list
+  summary: List master-data GL accounts
   tags:
     - v2
   security:
@@ -31,37 +31,17 @@ get:
         type: integer
         minimum: 0
         default: 0
-    - name: entity_type
+    - name: query
       in: query
       required: false
       schema:
         type: string
-        enum:
-          - party
-          - item
-          - contract
-          - tax_profile
-          - gl_account
     - name: canonical_id
       in: query
       required: false
       schema:
         type: string
-    - name: database_id
-      in: query
-      required: false
-      schema:
-        type: string
-        format: uuid
-    - name: ib_catalog_kind
-      in: query
-      required: false
-      schema:
-        type: string
-        enum:
-          - organization
-          - counterparty
-    - name: owner_counterparty_canonical_id
+    - name: code
       in: query
       required: false
       schema:
@@ -71,21 +51,22 @@ get:
       required: false
       schema:
         type: string
-    - name: sync_status
+    - name: config_name
       in: query
       required: false
       schema:
         type: string
-        enum:
-          - resolved
-          - upserted
-          - conflict
+    - name: config_version
+      in: query
+      required: false
+      schema:
+        type: string
   responses:
     '200':
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/PoolMasterDataBindingListResponse.yaml
+            $ref: ../components/schemas/PoolMasterDataGLAccountListResponse.yaml
       description: ''
     '400':
       content:

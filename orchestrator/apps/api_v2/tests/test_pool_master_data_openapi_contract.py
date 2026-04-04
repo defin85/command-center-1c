@@ -34,6 +34,19 @@ def test_pool_master_data_paths_and_operation_ids_are_present() -> None:
         "/api/v2/pools/master-data/tax-profiles/": ("get", "v2_pools_master_data_tax_profiles_list"),
         "/api/v2/pools/master-data/tax-profiles/{id}/": ("get", "v2_pools_master_data_tax_profiles_get"),
         "/api/v2/pools/master-data/tax-profiles/upsert/": ("post", "v2_pools_master_data_tax_profiles_upsert"),
+        "/api/v2/pools/master-data/gl-accounts/": ("get", "v2_pools_master_data_gl_accounts_list"),
+        "/api/v2/pools/master-data/gl-accounts/{id}/": ("get", "v2_pools_master_data_gl_accounts_get"),
+        "/api/v2/pools/master-data/gl-accounts/upsert/": ("post", "v2_pools_master_data_gl_accounts_upsert"),
+        "/api/v2/pools/master-data/gl-account-sets/": ("get", "v2_pools_master_data_gl_account_sets_list"),
+        "/api/v2/pools/master-data/gl-account-sets/{id}/": ("get", "v2_pools_master_data_gl_account_sets_get"),
+        "/api/v2/pools/master-data/gl-account-sets/upsert/": (
+            "post",
+            "v2_pools_master_data_gl_account_sets_upsert",
+        ),
+        "/api/v2/pools/master-data/gl-account-sets/{id}/publish/": (
+            "post",
+            "v2_pools_master_data_gl_account_sets_publish",
+        ),
         "/api/v2/pools/master-data/bindings/": ("get", "v2_pools_master_data_bindings_list"),
         "/api/v2/pools/master-data/bindings/{id}/": ("get", "v2_pools_master_data_bindings_get"),
         "/api/v2/pools/master-data/bindings/upsert/": ("post", "v2_pools_master_data_bindings_upsert"),
@@ -77,6 +90,8 @@ def test_pool_master_data_list_contract_has_pagination_and_problem_details() -> 
         "/api/v2/pools/master-data/items/",
         "/api/v2/pools/master-data/contracts/",
         "/api/v2/pools/master-data/tax-profiles/",
+        "/api/v2/pools/master-data/gl-accounts/",
+        "/api/v2/pools/master-data/gl-account-sets/",
         "/api/v2/pools/master-data/bindings/",
     ]
 

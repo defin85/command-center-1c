@@ -10,6 +10,7 @@ properties:
       - item
       - contract
       - tax_profile
+      - gl_account
   canonical_id:
     type: string
     maxLength: 128
@@ -23,6 +24,9 @@ properties:
     type: string
     description: Relevant only for party bindings (organization|counterparty).
   owner_counterparty_canonical_id:
+    type: string
+    default: ''
+  chart_identity:
     type: string
     default: ''
   sync_status:
@@ -44,4 +48,3 @@ required:
   - canonical_id
   - database_id
   - ib_ref_key
-

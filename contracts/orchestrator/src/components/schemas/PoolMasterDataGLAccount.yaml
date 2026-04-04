@@ -1,0 +1,44 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  code:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  chart_identity:
+    type: string
+    maxLength: 255
+  config_name:
+    type: string
+    maxLength: 255
+  config_version:
+    type: string
+    maxLength: 128
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - canonical_id
+  - code
+  - name
+  - chart_identity
+  - config_name
+  - config_version

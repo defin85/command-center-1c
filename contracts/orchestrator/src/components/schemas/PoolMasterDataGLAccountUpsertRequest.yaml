@@ -1,0 +1,34 @@
+type: object
+properties:
+  gl_account_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  code:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  chart_identity:
+    type: string
+    maxLength: 255
+  config_name:
+    type: string
+    maxLength: 255
+  config_version:
+    type: string
+    maxLength: 128
+  metadata:
+    type: object
+    default: {}
+    additionalProperties: true
+required:
+  - canonical_id
+  - code
+  - name
+  - chart_identity
+  - config_name
+  - config_version

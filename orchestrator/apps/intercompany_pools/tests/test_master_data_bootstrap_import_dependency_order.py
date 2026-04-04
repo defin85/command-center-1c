@@ -18,11 +18,13 @@ def test_resolve_bootstrap_import_dependency_order_is_deterministic() -> None:
         selected_scope=[
             PoolMasterDataBootstrapImportEntityType.BINDING,
             PoolMasterDataBootstrapImportEntityType.PARTY,
+            PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
             PoolMasterDataBootstrapImportEntityType.CONTRACT,
         ]
     )
     assert order == (
         PoolMasterDataBootstrapImportEntityType.PARTY,
+        PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
         PoolMasterDataBootstrapImportEntityType.CONTRACT,
         PoolMasterDataBootstrapImportEntityType.BINDING,
     )

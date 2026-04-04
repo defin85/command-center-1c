@@ -144,12 +144,16 @@ def test_master_data_registry_inspect_returns_shared_capability_contract(
     assert response.status_code == 200
     payload = response.json()
     assert payload["contract_version"] == "pool_master_data_registry.v1"
-    assert payload["count"] == 5
-    assert len(payload["entries"]) == 5
+    assert payload["count"] == 7
+    assert len(payload["entries"]) == 7
     binding_entry = next(item for item in payload["entries"] if item["entity_type"] == "binding")
     assert binding_entry["kind"] == "bootstrap_helper"
     assert binding_entry["capabilities"]["bootstrap_import"] is True
     assert binding_entry["capabilities"]["outbox_fanout"] is False
+    gl_account_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account")
+    assert gl_account_entry["binding_scope_fields"] == ["canonical_id", "database_id", "chart_identity"]
+    gl_account_set_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account_set")
+    assert gl_account_set_entry["capabilities"]["direct_binding"] is False
 
 
 @pytest.mark.django_db
@@ -323,3 +327,104 @@ def test_master_data_bindings_validate_party_catalog_kind_and_list_filters(
     assert list_response.status_code == 200
     assert list_response.json()["count"] == 1
     assert list_response.json()["bindings"][0]["id"] == binding_id
+
+
+@pytest.mark.django_db
+def test_master_data_gl_accounts_upsert_list_get_roundtrip(authenticated_client: APIClient) -> None:
+    create_response = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-accounts/upsert/",
+        {
+            "canonical_id": "gl-account-001",
+            "code": "10.01",
+            "name": "Основной счет",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    gl_account_id = create_response.json()["gl_account"]["id"]
+
+    list_response = authenticated_client.get(
+        "/api/v2/pools/master-data/gl-accounts/?code=10.01&chart_identity=ChartOfAccounts_Main"
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] == 1
+
+    get_response = authenticated_client.get(f"/api/v2/pools/master-data/gl-accounts/{gl_account_id}/")
+    assert get_response.status_code == 200
+    assert get_response.json()["gl_account"]["canonical_id"] == "gl-account-001"
+
+
+@pytest.mark.django_db
+def test_master_data_gl_account_sets_upsert_publish_and_get_detail(authenticated_client: APIClient) -> None:
+    first_gl_account = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-accounts/upsert/",
+        {
+            "canonical_id": "gl-account-100",
+            "code": "10.01",
+            "name": "Основной счет",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+        },
+        format="json",
+    )
+    second_gl_account = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-accounts/upsert/",
+        {
+            "canonical_id": "gl-account-200",
+            "code": "60.01",
+            "name": "Расчеты с поставщиками",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+        },
+        format="json",
+    )
+    assert first_gl_account.status_code == 201
+    assert second_gl_account.status_code == 201
+
+    upsert_response = authenticated_client.post(
+        "/api/v2/pools/master-data/gl-account-sets/upsert/",
+        {
+            "canonical_id": "gl-set-001",
+            "name": "Основной набор счетов",
+            "description": "Черновик для публикации",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+            "members": [
+                {"canonical_id": "gl-account-100"},
+                {"canonical_id": "gl-account-200"},
+            ],
+        },
+        format="json",
+    )
+    assert upsert_response.status_code == 201
+    payload = upsert_response.json()["gl_account_set"]
+    gl_account_set_id = payload["gl_account_set_id"]
+    assert payload["draft_members_count"] == 2
+    assert payload["published_revision"] is None
+
+    publish_response = authenticated_client.post(
+        f"/api/v2/pools/master-data/gl-account-sets/{gl_account_set_id}/publish/",
+        {},
+        format="json",
+    )
+    assert publish_response.status_code == 200
+    published = publish_response.json()["gl_account_set"]
+    assert published["published_revision"]["revision_number"] == 1
+    assert len(published["published_revision"]["members"]) == 2
+
+    detail_response = authenticated_client.get(
+        f"/api/v2/pools/master-data/gl-account-sets/{gl_account_set_id}/"
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["gl_account_set"]
+    assert detail["published_revision_number"] == 1
+    assert [item["canonical_id"] for item in detail["draft_members"]] == [
+        "gl-account-100",
+        "gl-account-200",
+    ]

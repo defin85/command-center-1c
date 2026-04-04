@@ -1,0 +1,38 @@
+type: object
+properties:
+  gl_account_set_id:
+    type: string
+    format: uuid
+  canonical_id:
+    type: string
+    maxLength: 128
+  name:
+    type: string
+    maxLength: 255
+  description:
+    type: string
+    default: ''
+  chart_identity:
+    type: string
+    maxLength: 255
+  config_name:
+    type: string
+    maxLength: 255
+  config_version:
+    type: string
+    maxLength: 128
+  members:
+    type: array
+    default: []
+    items:
+      $ref: ./PoolMasterDataGLAccountSetMemberWrite.yaml
+  metadata:
+    type: object
+    default: {}
+    additionalProperties: true
+required:
+  - canonical_id
+  - name
+  - chart_identity
+  - config_name
+  - config_version

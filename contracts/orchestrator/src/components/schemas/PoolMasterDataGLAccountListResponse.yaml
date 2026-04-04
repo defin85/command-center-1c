@@ -1,0 +1,17 @@
+type: object
+properties:
+  gl_accounts:
+    type: array
+    items:
+      $ref: ./PoolMasterDataGLAccount.yaml
+  count:
+    type: integer
+  limit:
+    type: integer
+  offset:
+    type: integer
+required:
+  - gl_accounts
+  - count
+  - limit
+  - offset
