@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: CC master-data hub MUST быть каноническим reusable-data layer для pool publication
+### Requirement: CC master-data hub MUST быть каноническим источником для pool publication
 Система ДОЛЖНА (SHALL) хранить tenant-scoped канонический reusable-data слой в CC для publication-сценариев pools.
 
 Минимальный поддерживаемый набор reusable entity families после этого change:
@@ -19,7 +19,7 @@
 - **THEN** accounts доступны в том же canonical hub
 - **AND** система не требует отдельного каталога для account references
 
-### Requirement: Master-data resolve+upsert MUST поддерживать идемпотентный per-infobase binding с type-specific scope
+### Requirement: Master-data resolve+upsert MUST поддерживать идемпотентный per-infobase binding
 Система ДОЛЖНА (SHALL) использовать режим `resolve+upsert` для reusable-data gate и хранить binding канонической reusable сущности к конкретной ИБ в deterministic type-specific scope.
 
 Binding scope ключи ДОЛЖНЫ (SHALL) включать как минимум:

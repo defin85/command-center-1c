@@ -4,57 +4,46 @@
 TBD - created by archiving change add-05-cc-master-data-hub. Update Purpose after archive.
 ## Requirements
 ### Requirement: CC master-data hub MUST быть каноническим источником для pool publication
-Система ДОЛЖНА (SHALL) хранить tenant-scoped канонический master-data слой в CC для publication-сценариев pools.
+Система ДОЛЖНА (SHALL) хранить tenant-scoped канонический reusable-data слой в CC для publication-сценариев pools.
 
-Минимальный MVP-набор канонических сущностей:
-- `Party` (role-based: как минимум `our_organization` и `counterparty`);
+Минимальный поддерживаемый набор reusable entity families после этого change:
+- `Party`;
 - `Item`;
-- `Contract` (строго owner-scoped к конкретному `counterparty`, без shared contract profiles);
-- `TaxProfile` (минимум `vat_rate`, `vat_included`, `vat_code`).
+- `Contract`;
+- `TaxProfile`;
+- `GLAccount`;
+- `GLAccountSet` как versioned reusable profile с draft и published revisions.
 
-Система НЕ ДОЛЖНА (SHALL NOT) требовать, чтобы оператор дублировал эти сущности вручную в каждой целевой ИБ перед каждым run.
+Система НЕ ДОЛЖНА (SHALL NOT) требовать отдельный ad hoc каталог reusable accounts вне канонического hub.
 
-#### Scenario: Run использует master-data из CC как source-of-truth
-- **GIVEN** в CC сохранены канонические `Party`, `Item`, `Contract`, `TaxProfile` для tenant
-- **WHEN** запускается pool run с publication path
-- **THEN** runtime использует канонические сущности CC как source-of-truth для resolve/sync
-- **AND** не требует ручного предварительного заполнения всех справочников в каждой ИБ
+#### Scenario: Reusable accounts живут в том же hub, что и publication master-data
+- **GIVEN** в CC сохранены canonical `Party`, `Item`, `Contract`, `TaxProfile`, `GLAccount` и `GLAccountSet`
+- **WHEN** оператор работает с reusable data для pool publication
+- **THEN** accounts доступны в том же canonical hub
+- **AND** система не требует отдельного каталога для account references
 
 ### Requirement: Master-data resolve+upsert MUST поддерживать идемпотентный per-infobase binding
-Система ДОЛЖНА (SHALL) использовать режим `resolve+upsert` в pre-publication gate: при отсутствии binding создавать его детерминированно, при наличии — переиспользовать или обновлять в рамках политики ownership.
+Система ДОЛЖНА (SHALL) использовать режим `resolve+upsert` для reusable-data gate и хранить binding канонической reusable сущности к конкретной ИБ в deterministic type-specific scope.
 
-Система ДОЛЖНА (SHALL) хранить binding канонической сущности к конкретной ИБ в виде ключа:
-- для `Party`: `(canonical_id, entity_type, database_id, ib_catalog_kind)`, где `ib_catalog_kind` как минимум `organization|counterparty`;
+Binding scope ключи ДОЛЖНЫ (SHALL) включать как минимум:
+- для `Party`: `(canonical_id, entity_type, database_id, ib_catalog_kind)`;
 - для `Contract`: `(canonical_id, entity_type, database_id, owner_counterparty_id)`;
-- для остальных сущностей MVP: `(canonical_id, entity_type, database_id)`.
+- для `Item/TaxProfile`: `(canonical_id, entity_type, database_id)`;
+- для `GLAccount`: `(canonical_id, entity_type, database_id, chart_identity)`.
 
-Binding ДОЛЖЕН (SHALL) содержать ссылку на объект ИБ (`ib_ref_key` или эквивалент).
+Для `GLAccount` `ib_ref_key` / `Ref_Key` ДОЛЖЕН (SHALL) использоваться только как per-infobase binding surface и НЕ ДОЛЖЕН (SHALL NOT) трактоваться как canonical или cross-infobase identity.
 
-Система ДОЛЖНА (SHALL) выполнять resolve/sync идемпотентно по этой паре и НЕ ДОЛЖНА (SHALL NOT) создавать дубликаты binding при повторных запусках с тем же входом.
+#### Scenario: `chart_identity` участвует в deterministic GLAccount binding scope
+- **GIVEN** canonical `GLAccount` уже имеет binding для `(database_id=db-1, chart_identity=ChartOfAccounts_Хозрасчетный)`
+- **WHEN** система повторно резолвит тот же scope
+- **THEN** она переиспользует существующий binding
+- **AND** не создаёт duplicate row только из-за того, что `chart_identity` был hidden metadata instead of first-class field
 
-#### Scenario: Повторный resolve/sync переиспользует существующий binding
-- **GIVEN** для `(canonical_id, entity_type, database_id)` уже существует валидный binding
-- **WHEN** следующий run выполняет pre-publication resolve/sync
-- **THEN** система переиспользует существующий binding
-- **AND** новый дублирующий binding не создаётся
-
-#### Scenario: Отсутствующий binding создаётся детерминированно
-- **GIVEN** для канонической сущности отсутствует binding в конкретной target ИБ
-- **WHEN** runtime выполняет pre-publication resolve/sync
-- **THEN** система создаёт binding и фиксирует `ib_ref_key` в artifact
-- **AND** последующие повторные вызовы с тем же входом возвращают тот же resolved результат
-
-#### Scenario: Один Party использует role-specific bindings в одной ИБ
-- **GIVEN** один `Party` участвует в run одновременно в ролях `our_organization` и `counterparty`
-- **WHEN** runtime выполняет pre-publication resolve+upsert
-- **THEN** система использует/создаёт отдельные bindings для `ib_catalog_kind=organization` и `ib_catalog_kind=counterparty`
-- **AND** publication payload использует binding, соответствующий роли документа
-
-#### Scenario: Contract binding не переиспользуется между разными counterparty
-- **GIVEN** договор канонически принадлежит `counterparty=A` и уже имеет binding в target ИБ
-- **WHEN** runtime пытается использовать этот договор для документа с `counterparty=B`
-- **THEN** binding для `counterparty=A` не переиспользуется
-- **AND** выполнение завершается fail-closed с machine-readable конфликтом owner-scope
+#### Scenario: `Ref_Key` остаётся target-local, а не canonical identity
+- **GIVEN** один и тот же canonical `GLAccount` связан с несколькими target ИБ
+- **WHEN** runtime или оператор читает bindings
+- **THEN** каждая ИБ имеет собственный target-local `Ref_Key`
+- **AND** этот `Ref_Key` не используется как cross-infobase key reusable account entity
 
 ### Requirement: Master-data conflicts MUST блокировать publication fail-closed
 Система ДОЛЖНА (SHALL) останавливать run до `pool.publication_odata`, если resolve/sync возвращает конфликт или неоднозначность соответствий master-data.
@@ -203,4 +192,35 @@ Backend-owned registry ДОЛЖЕН (SHALL) materialize-иться в generated 
 - **WHEN** runtime оценивает eligibility этого типа
 - **THEN** sync enqueue и outbox fan-out остаются заблокированными
 - **AND** система завершает проверку fail-closed вместо implicit enablement
+
+### Requirement: Reusable account entities MUST иметь explicit compatibility contract
+Система ДОЛЖНА (SHALL) хранить для `GLAccount` и `GLAccountSet` operator-facing compatibility class:
+- `config_name`;
+- `config_version`;
+- `chart_identity`.
+
+Система ДОЛЖНА (SHALL) отделять этот compatibility class от runtime admission provenance, который может требовать pinned metadata snapshot и published-surface evidence.
+
+#### Scenario: Совпадение compatibility class не подменяет runtime provenance
+- **GIVEN** reusable account и target database имеют одинаковые `config_name`, `config_version` и `chart_identity`
+- **WHEN** система оценивает только operator-facing compatibility
+- **THEN** результат можно использовать для grouping/discovery
+- **AND** runtime admission остаётся отдельной проверкой, а не implicit success
+
+### Requirement: `GLAccountSet` MUST быть versioned reusable profile с immutable revisions
+Система ДОЛЖНА (SHALL) хранить `GLAccountSet` как profile с current draft и published immutable revisions.
+
+Система НЕ ДОЛЖНА (SHALL NOT) мутировать уже опубликованную revision через generic `upsert`.
+
+#### Scenario: Publish создаёт новую immutable revision
+- **GIVEN** оператор подготовил draft `GLAccountSet`
+- **WHEN** он выполняет `publish`
+- **THEN** система создаёт новую immutable revision
+- **AND** дальнейшие edits изменяют draft/profile state, а не уже опубликованную revision
+
+#### Scenario: Upsert обновляет draft, но не published revision
+- **GIVEN** у `GLAccountSet` уже есть опубликованная revision
+- **WHEN** оператор редактирует profile через `upsert`
+- **THEN** меняется current draft
+- **AND** ранее опубликованная revision остаётся неизменной
 
