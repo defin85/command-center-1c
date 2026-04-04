@@ -87,6 +87,7 @@
   - [openspec/AGENTS.md](../../openspec/AGENTS.md)
   - [openspec/project.md](../../openspec/project.md)
   - [PLANS.md](./PLANS.md)
+  - shared OpenSpec skills: `/home/egor/.agents/skills/openspec-*/SKILL.md`
 - Первые code entry points:
   - `openspec/changes/<change-id>/`
   - `openspec/specs/`

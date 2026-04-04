@@ -79,13 +79,28 @@ Legacy documents могут сохранять полезный историче
 - `orchestrator/AGENTS.md`
 - `go-services/AGENTS.md`
 
-## Shared Team Skills
+## Skills Surfaces
 
 Открывай конкретный `SKILL.md` только когда routed task совпадает с его workflow.
+
+### Repo-Local Skills
 
 - `runtime-debug` — `.agents/skills/runtime-debug/SKILL.md`
 - `pool-run-verification` — `.agents/skills/pool-run-verification/SKILL.md`
 - `openspec-change-delivery` — `.agents/skills/openspec-change-delivery/SKILL.md`
+
+### Shared User-Level Skills
+
+Если routed workflow ссылается на общий skill, которого нет в checked-in `.agents/skills/`, ищи его в user-level каталоге `/home/egor/.agents/skills/`.
+
+- `openspec-architecture-plan-and-audit` — `/home/egor/.agents/skills/openspec-architecture-plan-and-audit/SKILL.md`
+- `openspec-proposal` — `/home/egor/.agents/skills/openspec-proposal/SKILL.md`
+- `openspec-apply` — `/home/egor/.agents/skills/openspec-apply/SKILL.md`
+- `openspec-archive` — `/home/egor/.agents/skills/openspec-archive/SKILL.md`
+- `openspec-finish-to-100` — `/home/egor/.agents/skills/openspec-finish-to-100/SKILL.md`
+- `openspec-review-impl-vs-plan` — `/home/egor/.agents/skills/openspec-review-impl-vs-plan/SKILL.md`
+- `openspec-review-impl-vs-plan-compact` — `/home/egor/.agents/skills/openspec-review-impl-vs-plan-compact/SKILL.md`
+- `openspec-to-beads` — `/home/egor/.agents/skills/openspec-to-beads/SKILL.md`
 
 ## OpenSpec And Beads
 

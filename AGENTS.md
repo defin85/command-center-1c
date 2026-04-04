@@ -66,7 +66,8 @@ Open these docs for the first 10 minutes of a task:
 - `docs/agent/TASK_ROUTING.md` — bounded first route to docs, code entry points and validation paths
 - `docs/agent/PLANS.md`
 - `docs/agent/code_review.md`
-- `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches
+- repo-local skill: `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches a checked-in repo skill
+- shared skill: `/home/egor/.agents/skills/<relevant>/SKILL.md` when the routed workflow maps to the user-level shared skill catalog
 
 ## UI Platform Contract
 
