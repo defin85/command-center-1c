@@ -7,6 +7,11 @@ import type { PoolMasterDataRegistryEntryKind as GeneratedPoolMasterDataRegistry
 import type { PoolMasterDataRegistryInspectResponse as GeneratedPoolMasterDataRegistryResponse } from './generated/model/poolMasterDataRegistryInspectResponse'
 import type { PoolMasterDataRegistryTokenContract as GeneratedPoolMasterDataRegistryTokenContract } from './generated/model/poolMasterDataRegistryTokenContract'
 import type { PoolMasterDataRegistryTokenContractQualifierKind as GeneratedPoolMasterDataTokenQualifierKind } from './generated/model/poolMasterDataRegistryTokenContractQualifierKind'
+import type { PoolMasterDataGLAccount as GeneratedPoolMasterDataGLAccount } from './generated/model/poolMasterDataGLAccount'
+import type { PoolMasterDataGLAccountSetDetail as GeneratedPoolMasterDataGLAccountSetDetail } from './generated/model/poolMasterDataGLAccountSetDetail'
+import type { PoolMasterDataGLAccountSetMemberRead as GeneratedPoolMasterDataGLAccountSetMemberRead } from './generated/model/poolMasterDataGLAccountSetMemberRead'
+import type { PoolMasterDataGLAccountSetRevision as GeneratedPoolMasterDataGLAccountSetRevision } from './generated/model/poolMasterDataGLAccountSetRevision'
+import type { PoolMasterDataGLAccountSetSummary as GeneratedPoolMasterDataGLAccountSetSummary } from './generated/model/poolMasterDataGLAccountSetSummary'
 
 export type PoolSchemaTemplateFormat = 'xlsx' | 'json'
 
@@ -1571,6 +1576,16 @@ export type PoolMasterTaxProfile = {
   updated_at: string
 }
 
+export type PoolMasterGLAccount = GeneratedPoolMasterDataGLAccount
+
+export type PoolMasterGLAccountSetMember = GeneratedPoolMasterDataGLAccountSetMemberRead
+
+export type PoolMasterGLAccountSetRevision = GeneratedPoolMasterDataGLAccountSetRevision
+
+export type PoolMasterGLAccountSetSummary = GeneratedPoolMasterDataGLAccountSetSummary
+
+export type PoolMasterGLAccountSet = GeneratedPoolMasterDataGLAccountSetDetail
+
 export type PoolMasterDataBinding = {
   id: string
   tenant_id: string
@@ -1578,14 +1593,15 @@ export type PoolMasterDataBinding = {
   canonical_id: string
   database_id: string
   ib_ref_key: string
-  ib_catalog_kind: PoolMasterBindingCatalogKind
-  owner_counterparty_canonical_id: string
+  ib_catalog_kind?: PoolMasterBindingCatalogKind
+  owner_counterparty_canonical_id?: string
+  chart_identity?: string
   sync_status: PoolMasterBindingSyncStatus
-  fingerprint: string
+  fingerprint?: string
   metadata: Record<string, unknown>
-  last_synced_at: string
-  created_at: string
-  updated_at: string
+  last_synced_at: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 export type PoolMasterDataSyncPriority = 'p0' | 'p1' | 'p2' | 'p3'
@@ -1835,12 +1851,60 @@ export type UpsertMasterDataTaxProfilePayload = {
   metadata?: Record<string, unknown>
 }
 
+export type ListMasterDataGlAccountsParams = {
+  query?: string
+  canonical_id?: string
+  code?: string
+  chart_identity?: string
+  config_name?: string
+  config_version?: string
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataGlAccountPayload = {
+  gl_account_id?: string
+  canonical_id: string
+  code: string
+  name: string
+  chart_identity: string
+  config_name: string
+  config_version: string
+  metadata?: Record<string, unknown>
+}
+
+export type ListMasterDataGlAccountSetsParams = {
+  query?: string
+  canonical_id?: string
+  chart_identity?: string
+  config_name?: string
+  config_version?: string
+  limit?: number
+  offset?: number
+}
+
+export type UpsertMasterDataGlAccountSetPayload = {
+  gl_account_set_id?: string
+  canonical_id: string
+  name: string
+  description?: string
+  chart_identity: string
+  config_name: string
+  config_version: string
+  members?: Array<{
+    canonical_id: string
+    metadata?: Record<string, unknown>
+  }>
+  metadata?: Record<string, unknown>
+}
+
 export type ListMasterDataBindingsParams = {
   entity_type?: string
   canonical_id?: string
   database_id?: string
   ib_catalog_kind?: Exclude<PoolMasterBindingCatalogKind, ''>
   owner_counterparty_canonical_id?: string
+  chart_identity?: string
   sync_status?: PoolMasterBindingSyncStatus
   limit?: number
   offset?: number
@@ -1854,6 +1918,7 @@ export type UpsertMasterDataBindingPayload = {
   ib_ref_key: string
   ib_catalog_kind?: PoolMasterBindingCatalogKind
   owner_counterparty_canonical_id?: string
+  chart_identity?: string
   sync_status?: PoolMasterBindingSyncStatus
   fingerprint?: string
   metadata?: Record<string, unknown>
@@ -2029,6 +2094,103 @@ export async function upsertMasterDataTaxProfile(
   const response = await apiClient.post<{ tax_profile: PoolMasterTaxProfile; created: boolean }>(
     '/api/v2/pools/master-data/tax-profiles/upsert/',
     payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataGlAccounts(
+  params: ListMasterDataGlAccountsParams = {}
+): Promise<{ gl_accounts: PoolMasterGLAccount[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    gl_accounts: PoolMasterGLAccount[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/gl-accounts/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    gl_accounts: response.data.gl_accounts ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function getMasterDataGlAccount(
+  glAccountId: string
+): Promise<{ gl_account: PoolMasterGLAccount }> {
+  const response = await apiClient.get<{ gl_account: PoolMasterGLAccount }>(
+    `/api/v2/pools/master-data/gl-accounts/${glAccountId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function upsertMasterDataGlAccount(
+  payload: UpsertMasterDataGlAccountPayload
+): Promise<{ gl_account: PoolMasterGLAccount; created: boolean }> {
+  const response = await apiClient.post<{ gl_account: PoolMasterGLAccount; created: boolean }>(
+    '/api/v2/pools/master-data/gl-accounts/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listMasterDataGlAccountSets(
+  params: ListMasterDataGlAccountSetsParams = {}
+): Promise<{ gl_account_sets: PoolMasterGLAccountSetSummary[]; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    gl_account_sets: PoolMasterGLAccountSetSummary[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/gl-account-sets/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    gl_account_sets: response.data.gl_account_sets ?? [],
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.limit ?? (params.limit ?? 50),
+      offset: response.data.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function getMasterDataGlAccountSet(
+  glAccountSetId: string
+): Promise<{ gl_account_set: PoolMasterGLAccountSet }> {
+  const response = await apiClient.get<{ gl_account_set: PoolMasterGLAccountSet }>(
+    `/api/v2/pools/master-data/gl-account-sets/${glAccountSetId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function upsertMasterDataGlAccountSet(
+  payload: UpsertMasterDataGlAccountSetPayload
+): Promise<{ gl_account_set: PoolMasterGLAccountSet; created: boolean }> {
+  const response = await apiClient.post<{ gl_account_set: PoolMasterGLAccountSet; created: boolean }>(
+    '/api/v2/pools/master-data/gl-account-sets/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function publishMasterDataGlAccountSet(
+  glAccountSetId: string
+): Promise<{ gl_account_set: PoolMasterGLAccountSet }> {
+  const response = await apiClient.post<{ gl_account_set: PoolMasterGLAccountSet }>(
+    `/api/v2/pools/master-data/gl-account-sets/${glAccountSetId}/publish/`,
+    {},
     { skipGlobalError: true }
   )
   return response.data

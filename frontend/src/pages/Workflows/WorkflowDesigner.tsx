@@ -62,6 +62,7 @@ import {
   convertTemplateToLegacy,
   convertValidationToLegacy,
 } from '../../utils/workflowTransforms'
+import { buildRelativeHref, normalizeInternalReturnTo } from './routeState'
 
 import './WorkflowDesigner.css'
 
@@ -73,12 +74,16 @@ const buildRouteWithWorkflowContext = ({
   basePath,
   databaseId,
   nodeId,
+  returnTo,
   surface,
+  execute,
 }: {
   basePath: string
   databaseId?: string
   nodeId?: string | null
+  returnTo?: string | null
   surface?: string
+  execute?: boolean
 }) => {
   const params = new URLSearchParams()
   if (surface) {
@@ -90,8 +95,13 @@ const buildRouteWithWorkflowContext = ({
   if (nodeId) {
     params.set('node', nodeId)
   }
-  const query = params.toString()
-  return query ? `${basePath}?${query}` : basePath
+  if (execute) {
+    params.set('execute', 'true')
+  }
+  if (returnTo) {
+    params.set('returnTo', returnTo)
+  }
+  return buildRelativeHref(basePath, params)
 }
 
 interface WorkflowDesignerState {
@@ -269,27 +279,44 @@ const WorkflowDesigner = () => {
   })
 
   const [saveModalVisible, setSaveModalVisible] = useState(false)
-  const [executeModalVisible, setExecuteModalVisible] = useState(false)
   const [executeInput, setExecuteInput] = useState('{}')
   const [paletteDrawerOpen, setPaletteDrawerOpen] = useState(false)
   const dagStructureRef = useRef<DAGStructure>(initialDagStructure)
   const selectedNodeFromUrl = normalizeRouteParam(searchParams.get('node'))
+  const executeModalFromUrl = searchParams.get('execute') === 'true'
+  const returnToFromUrl = normalizeInternalReturnTo(searchParams.get('returnTo'))
   const isSystemManagedProjection = state.template?.is_system_managed === true
   const decisionDatabaseId = String(searchParams.get('database_id') || '').trim()
+  const isRuntimeDiagnosticsSurface =
+    searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
+  const designerSurface = isRuntimeDiagnosticsSurface ? 'runtime_diagnostics' : undefined
+  const [executeModalVisible, setExecuteModalVisible] = useState(executeModalFromUrl)
   const authoringReferencesQuery = useAuthoringReferences({
     databaseId: decisionDatabaseId || undefined,
   })
   const availableWorkflows = authoringReferencesQuery.data?.availableWorkflows ?? []
   const availableDecisions = authoringReferencesQuery.data?.availableDecisions ?? []
-  const isRuntimeDiagnosticsSurface =
-    searchParams.get('surface') === 'runtime_diagnostics' || isSystemManagedProjection
-  const backTarget = buildRouteWithWorkflowContext({
+  const backTarget = returnToFromUrl ?? buildRouteWithWorkflowContext({
     basePath: '/workflows',
     databaseId: decisionDatabaseId,
-    surface: isRuntimeDiagnosticsSurface ? 'runtime_diagnostics' : undefined,
+    surface: designerSurface,
   })
   const runtimeProjectionReadOnlyReason = state.template?.read_only_reason
     || 'System-managed runtime workflow projections are available for diagnostics only.'
+  const designerReturnTarget = useMemo(() => {
+    const basePath = state.template?.id
+      ? `/workflows/${state.template.id}`
+      : templateId
+        ? `/workflows/${templateId}`
+        : '/workflows/new'
+    return buildRouteWithWorkflowContext({
+      basePath,
+      databaseId: decisionDatabaseId,
+      nodeId: state.selectedNodeId,
+      returnTo: returnToFromUrl,
+      surface: designerSurface,
+    })
+  }, [decisionDatabaseId, designerSurface, returnToFromUrl, state.selectedNodeId, state.template?.id, templateId])
 
   useEffect(() => {
     setState((prev) => (
@@ -298,6 +325,14 @@ const WorkflowDesigner = () => {
         : { ...prev, selectedNodeId: selectedNodeFromUrl }
     ))
   }, [selectedNodeFromUrl])
+
+  useEffect(() => {
+    setExecuteModalVisible((current) => (
+      current === executeModalFromUrl
+        ? current
+        : executeModalFromUrl
+    ))
+  }, [executeModalFromUrl])
 
   useEffect(() => {
     if (state.isLoading || !state.selectedNodeId) {
@@ -317,6 +352,11 @@ const WorkflowDesigner = () => {
     } else {
       next.delete('node')
     }
+    if (executeModalVisible) {
+      next.set('execute', 'true')
+    } else {
+      next.delete('execute')
+    }
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(
         next,
@@ -326,7 +366,7 @@ const WorkflowDesigner = () => {
       )
     }
     routeUpdateModeRef.current = 'replace'
-  }, [searchParams, setSearchParams, state.selectedNodeId])
+  }, [executeModalVisible, searchParams, setSearchParams, state.selectedNodeId])
 
   // Load template if editing
   useEffect(() => {
@@ -584,6 +624,8 @@ const WorkflowDesigner = () => {
             basePath: `/workflows/${savedTemplate.id}`,
             databaseId: decisionDatabaseId,
             nodeId: state.selectedNodeId,
+            returnTo: returnToFromUrl,
+            surface: designerSurface,
           }),
           { replace: true }
         )
@@ -628,13 +670,9 @@ const WorkflowDesigner = () => {
 
       message.success('Workflow execution started')
       setExecuteModalVisible(false)
-
-      navigate(
-        buildRouteWithWorkflowContext({
-          basePath: `/workflows/executions/${response.execution_id}`,
-          databaseId: decisionDatabaseId,
-        })
-      )
+      const params = new URLSearchParams()
+      params.set('returnTo', designerReturnTarget)
+      navigate(buildRelativeHref(`/workflows/executions/${response.execution_id}`, params))
     } catch (error: unknown) {
       if (error instanceof SyntaxError) {
         message.error('Invalid JSON input')
@@ -717,7 +755,10 @@ const WorkflowDesigner = () => {
                 </Button>
                 <Button
                   icon={<PlayCircleOutlined />}
-                  onClick={() => setExecuteModalVisible(true)}
+                  onClick={() => {
+                    routeUpdateModeRef.current = 'push'
+                    setExecuteModalVisible(true)
+                  }}
                   disabled={isSystemManagedProjection || !state.template?.is_valid}
                 >
                   Execute
@@ -893,7 +934,10 @@ const WorkflowDesigner = () => {
 
         <ModalFormShell
           open={executeModalVisible}
-          onClose={() => setExecuteModalVisible(false)}
+          onClose={() => {
+            routeUpdateModeRef.current = 'push'
+            setExecuteModalVisible(false)
+          }}
           onSubmit={() => {
             void handleExecute()
           }}

@@ -36,6 +36,7 @@ const mockListMasterDataParties = vi.fn()
 const mockListMasterDataItems = vi.fn()
 const mockListMasterDataContracts = vi.fn()
 const mockListMasterDataTaxProfiles = vi.fn()
+const mockListMasterDataGlAccounts = vi.fn()
 const mockGetPoolMasterDataRegistry = vi.fn()
 const mockUseAuthz = vi.fn()
 const mockUseDatabases = vi.fn()
@@ -96,6 +97,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   listMasterDataItems: (...args: unknown[]) => mockListMasterDataItems(...args),
   listMasterDataContracts: (...args: unknown[]) => mockListMasterDataContracts(...args),
   listMasterDataTaxProfiles: (...args: unknown[]) => mockListMasterDataTaxProfiles(...args),
+  listMasterDataGlAccounts: (...args: unknown[]) => mockListMasterDataGlAccounts(...args),
 }))
 
 vi.mock('../poolWorkflowBindingsSync', async () => {
@@ -593,6 +595,7 @@ describe('PoolCatalogPage', () => {
     mockListMasterDataItems.mockReset()
     mockListMasterDataContracts.mockReset()
     mockListMasterDataTaxProfiles.mockReset()
+    mockListMasterDataGlAccounts.mockReset()
     mockGetPoolMasterDataRegistry.mockReset()
     mockUseAuthz.mockReset()
     mockUseDatabases.mockReset()
@@ -857,6 +860,10 @@ describe('PoolCatalogPage', () => {
       ],
       meta: { limit: 500, offset: 0, total: 1 },
     })
+    mockListMasterDataGlAccounts.mockResolvedValue({
+      gl_accounts: [],
+      meta: { limit: 500, offset: 0, total: 0 },
+    })
   })
 
   it('deactivates selected pool via toggle action', async () => {
@@ -939,6 +946,70 @@ describe('PoolCatalogPage', () => {
       expect(mockListMasterDataContracts).toHaveBeenCalledWith({ limit: 200, offset: 0 })
       expect(mockListMasterDataTaxProfiles).toHaveBeenCalledWith({ limit: 200, offset: 0 })
     })
+  }, SYNC_MODAL_TIMEOUT_MS)
+
+  it('loads registry-published GLAccount token catalog coverage in topology mode without compatibility gap', async () => {
+    localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+    const user = userEvent.setup()
+
+    mockGetPoolMasterDataRegistry.mockResolvedValueOnce({
+      ...poolMasterDataRegistryResponse,
+      count: poolMasterDataRegistryResponse.count + 1,
+      entries: [
+        ...poolMasterDataRegistryResponse.entries,
+        {
+          entity_type: 'gl_account',
+          label: 'GL Account',
+          kind: 'canonical',
+          display_order: 45,
+          binding_scope_fields: ['canonical_id', 'database_id', 'chart_identity'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: false,
+            sync_outbound: false,
+            sync_inbound: false,
+            sync_reconcile: false,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 35 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+        },
+      ],
+    })
+    mockListMasterDataGlAccounts.mockResolvedValueOnce({
+      gl_accounts: [
+        {
+          id: 'gl-account-1',
+          tenant_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          canonical_id: 'gl-account-001',
+          code: '10.01',
+          name: 'Main Account',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 200, offset: 0, total: 1 },
+    })
+
+    renderPage()
+    await initialCatalogLoadPromise
+    await openWorkspaceTab(user, 'Topology Editor')
+
+    await waitFor(() => {
+      expect(mockListMasterDataGlAccounts).toHaveBeenCalledWith({ limit: 200, offset: 0 })
+    })
+    expect(screen.queryByText(/Token catalog compatibility loader is missing/i)).not.toBeInTheDocument()
   }, SYNC_MODAL_TIMEOUT_MS)
 
   it('loads topology snapshots list and switches graph date from snapshot row', async () => {

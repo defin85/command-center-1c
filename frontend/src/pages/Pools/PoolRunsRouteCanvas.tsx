@@ -2567,6 +2567,7 @@ export function PoolRunsPage() {
   const readinessChecklist = runDetails?.readiness_checklist ?? buildLegacyReadinessChecklist(readinessBlockers)
   const verificationStatus = runDetails?.verification_status ?? 'not_verified'
   const verificationSummary = runDetails?.verification_summary ?? null
+  const reportDetails = report?.run?.id === runDetails?.id ? report : null
   const factualWorkspaceHref = buildPoolFactualRoute({
     poolId: selectedPoolId,
     runId: selectedRunId,
@@ -3219,21 +3220,34 @@ export function PoolRunsPage() {
                       </div>
                     </Card>
 
-                    <Card title="Run Lineage / Operator Report" loading={loadingReport}>
+                    <Card title="Run Lineage / Operator Report">
                   {!runDetails && (
                     <Text type="secondary">Select a run to inspect report.</Text>
                   )}
-                  {runDetails && report && (
+                  {runDetails && (
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                      <Space size="small" wrap>
-                        <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
-                        <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
-                        {runDetails.status_reason && <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>}
-                        <Tag>attempts: {report.publication_attempts.length}</Tag>
-                        {Object.entries(report.attempts_by_status ?? {}).map(([status, count]) => (
-                          <Tag key={status}>{status}: {count}</Tag>
-                        ))}
-                      </Space>
+                      {reportDetails ? (
+                        <Space size="small" wrap>
+                          <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
+                          <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
+                          {runDetails.status_reason ? (
+                            <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>
+                          ) : null}
+                          <Tag>attempts: {reportDetails.publication_attempts.length}</Tag>
+                          {Object.entries(reportDetails.attempts_by_status ?? {}).map(([status, count]) => (
+                            <Tag key={status}>{status}: {count}</Tag>
+                          ))}
+                        </Space>
+                      ) : (
+                        <Alert
+                          type="info"
+                          showIcon
+                          message={loadingReport ? 'Operator report is loading' : 'Operator report is unavailable'}
+                          description={loadingReport
+                            ? 'Run lineage, readiness, and runtime context are already available. Publication attempts and diagnostics JSON will appear when report loading finishes.'
+                            : 'Publication attempts and diagnostics JSON are unavailable for the selected run.'}
+                        />
+                      )}
 
                       <Alert
                         type="info"
@@ -3640,40 +3654,56 @@ export function PoolRunsPage() {
                         </Space>
                       </Card>
 
-                      <Text strong>Publication Attempts</Text>
-                      <Table
-                        rowKey="id"
-                        size="small"
-                        columns={publicationAttemptColumns}
-                        dataSource={report.publication_attempts}
-                        pagination={{ pageSize: 5 }}
-                      />
+                      {reportDetails ? (
+                        <>
+                          <Text strong>Publication Attempts</Text>
+                          <Table
+                            rowKey="id"
+                            size="small"
+                            columns={publicationAttemptColumns}
+                            dataSource={reportDetails.publication_attempts}
+                            pagination={{ pageSize: 5 }}
+                          />
 
-                      <Collapse
-                        items={[
-                          {
-                            key: 'diagnostics-json',
-                            label: 'Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)',
-                            children: (
-                              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                                <Text strong>Run Input</Text>
-                                <TextArea
-                                  data-testid="pool-runs-run-input"
-                                  readOnly
-                                  rows={6}
-                                  value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
-                                />
-                                <Text strong>Validation Summary</Text>
-                                <TextArea readOnly rows={4} value={JSON.stringify(report.validation_summary ?? {}, null, 2)} />
-                                <Text strong>Publication Summary</Text>
-                                <TextArea readOnly rows={4} value={JSON.stringify(report.publication_summary ?? {}, null, 2)} />
-                                <Text strong>Step Diagnostics</Text>
-                                <TextArea readOnly rows={6} value={JSON.stringify(report.diagnostics ?? [], null, 2)} />
-                              </Space>
-                            ),
-                          },
-                        ]}
-                      />
+                          <Collapse
+                            items={[
+                              {
+                                key: 'diagnostics-json',
+                                label: 'Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)',
+                                children: (
+                                  <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                                    <Text strong>Run Input</Text>
+                                    <TextArea
+                                      data-testid="pool-runs-run-input"
+                                      readOnly
+                                      rows={6}
+                                      value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
+                                    />
+                                    <Text strong>Validation Summary</Text>
+                                    <TextArea
+                                      readOnly
+                                      rows={4}
+                                      value={JSON.stringify(reportDetails.validation_summary ?? {}, null, 2)}
+                                    />
+                                    <Text strong>Publication Summary</Text>
+                                    <TextArea
+                                      readOnly
+                                      rows={4}
+                                      value={JSON.stringify(reportDetails.publication_summary ?? {}, null, 2)}
+                                    />
+                                    <Text strong>Step Diagnostics</Text>
+                                    <TextArea
+                                      readOnly
+                                      rows={6}
+                                      value={JSON.stringify(reportDetails.diagnostics ?? [], null, 2)}
+                                    />
+                                  </Space>
+                                ),
+                              },
+                            ]}
+                          />
+                        </>
+                      ) : null}
                     </Space>
                   )}
                     </Card>

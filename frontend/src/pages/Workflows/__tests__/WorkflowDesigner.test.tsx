@@ -421,6 +421,62 @@ describe('WorkflowDesigner', () => {
     expect(screen.getByTestId('workflow-designer-selected-node')).toHaveTextContent('Selected node: Start')
   })
 
+  it('opens execute authoring surface from route-backed state', async () => {
+    mockGetWorkflowsGetWorkflow.mockResolvedValueOnce({
+      workflow: {
+        id: 'analyst-1',
+        name: 'Services Publication',
+        description: 'analyst-authored',
+        workflow_type: 'complex',
+        category: 'custom',
+        dag_structure: {
+          nodes: [
+            {
+              id: 'start',
+              name: 'Start',
+              type: 'operation',
+              template_id: 'noop',
+            },
+          ],
+          edges: [],
+        },
+        config: {},
+        is_valid: true,
+        is_active: true,
+        is_system_managed: false,
+        management_mode: 'user_authored',
+        visibility_surface: 'workflow_library',
+        read_only_reason: null,
+        version_number: 3,
+        parent_version: null,
+        parent_version_name: null,
+        created_by: null,
+        created_by_username: 'analyst',
+        execution_count: 0,
+        created_at: '2026-03-08T12:00:00Z',
+        updated_at: '2026-03-08T12:00:00Z',
+      },
+      statistics: {
+        total_executions: 0,
+        successful: 0,
+        failed: 0,
+        cancelled: 0,
+        running: 0,
+        average_duration: null,
+      },
+      executions: [],
+    })
+
+    renderPage('/workflows/analyst-1?execute=true')
+
+    await waitFor(() => {
+      expect(screen.getByText('Services Publication')).toBeInTheDocument()
+    })
+
+    expect(screen.getByTestId('json-editor')).toBeInTheDocument()
+    expect(screen.getByText('Provide input variables for the workflow')).toBeInTheDocument()
+  })
+
   it('filters incompatible decision revisions from default selector options while keeping drift-compatible ones', async () => {
     mockGetDecisionsCollection.mockResolvedValueOnce({
       decisions: [

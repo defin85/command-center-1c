@@ -16,8 +16,10 @@ import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import {
   findRegistryEntryByEntityType,
+  getBindingScopePresentationFields,
   getDefaultDirectBindingEntityType,
   getDirectBindingEntityOptions,
+  getRegistryEntityLabel,
   getTokenQualifierOptions,
 } from './registry'
 
@@ -28,6 +30,7 @@ type BindingFormValues = {
   ib_ref_key: string
   ib_catalog_kind: PoolMasterBindingCatalogKind
   owner_counterparty_canonical_id: string
+  chart_identity: string
   sync_status: PoolMasterBindingSyncStatus
   fingerprint: string
 }
@@ -37,6 +40,22 @@ const SYNC_STATUS_OPTIONS: { value: PoolMasterBindingSyncStatus; label: string }
   { value: 'upserted', label: 'upserted' },
   { value: 'conflict', label: 'conflict' },
 ]
+
+const BINDING_SCOPE_FIELD_LABELS: Record<string, string> = {
+  ib_catalog_kind: 'IB Catalog Kind',
+  owner_counterparty_canonical_id: 'Owner Counterparty Canonical ID',
+  chart_identity: 'Chart Identity',
+}
+
+const BINDING_SCOPE_FIELD_COLORS: Record<string, string> = {
+  ib_catalog_kind: 'blue',
+  owner_counterparty_canonical_id: 'purple',
+  chart_identity: 'gold',
+}
+
+const getBindingScopeFieldLabel = (field: string): string => (
+  BINDING_SCOPE_FIELD_LABELS[field] ?? field
+)
 
 type BindingsTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
@@ -62,14 +81,13 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     () => getDefaultDirectBindingEntityType(registryEntries),
     [registryEntries]
   )
-  const selectedRegistryEntry = useMemo(
-    () => findRegistryEntryByEntityType(registryEntries, selectedEntityType),
+  const bindingScopeFields = useMemo(
+    () => getBindingScopePresentationFields(registryEntries, selectedEntityType),
     [registryEntries, selectedEntityType]
   )
-  const requiresCatalogKind = Boolean(selectedRegistryEntry?.binding_scope_fields.includes('ib_catalog_kind'))
-  const requiresOwnerCounterparty = Boolean(
-    selectedRegistryEntry?.binding_scope_fields.includes('owner_counterparty_canonical_id')
-  )
+  const requiresCatalogKind = bindingScopeFields.includes('ib_catalog_kind')
+  const requiresOwnerCounterparty = bindingScopeFields.includes('owner_counterparty_canonical_id')
+  const requiresChartIdentity = bindingScopeFields.includes('chart_identity')
   const catalogKindOptions = useMemo(
     () => getTokenQualifierOptions(registryEntries, selectedEntityType),
     [registryEntries, selectedEntityType]
@@ -120,6 +138,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       ib_ref_key: '',
       ib_catalog_kind: 'organization',
       owner_counterparty_canonical_id: '',
+      chart_identity: '',
       sync_status: 'resolved',
       fingerprint: '',
     })
@@ -135,6 +154,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       ib_ref_key: binding.ib_ref_key,
       ib_catalog_kind: binding.ib_catalog_kind || '',
       owner_counterparty_canonical_id: binding.owner_counterparty_canonical_id || '',
+      chart_identity: binding.chart_identity || '',
       sync_status: binding.sync_status,
       fingerprint: binding.fingerprint || '',
     })
@@ -148,26 +168,34 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       message.error('Не удалось определить registry contract для выбранного entity_type.')
       return
     }
-    const requiresBindingCatalogKind = registryEntry.binding_scope_fields.includes('ib_catalog_kind')
-    const requiresBindingOwnerCounterparty = registryEntry.binding_scope_fields.includes(
-      'owner_counterparty_canonical_id'
-    )
+    const requiredScopeFields = getBindingScopePresentationFields(registryEntries, values.entity_type)
+    const missingFieldErrors = requiredScopeFields.flatMap((field) => {
+      if (field === 'ib_catalog_kind' && !values.ib_catalog_kind) {
+        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+      }
+      if (field === 'owner_counterparty_canonical_id' && !values.owner_counterparty_canonical_id.trim()) {
+        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+      }
+      if (field === 'chart_identity' && !values.chart_identity.trim()) {
+        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+      }
+      return []
+    })
 
-    if (requiresBindingCatalogKind && !values.ib_catalog_kind) {
-      form.setFields([{ name: 'ib_catalog_kind', errors: ['Required by registry binding scope.'] }])
+    if (missingFieldErrors.length > 0) {
+      form.setFields(missingFieldErrors as never)
       return
     }
-    if (requiresBindingOwnerCounterparty && !values.owner_counterparty_canonical_id.trim()) {
-      form.setFields([
-        { name: 'owner_counterparty_canonical_id', errors: ['Required by registry binding scope.'] },
-      ])
-      return
-    }
 
-    const normalizedCatalogKind: PoolMasterBindingCatalogKind =
-      requiresBindingCatalogKind ? values.ib_catalog_kind : ''
-    const normalizedOwnerCounterpartyCanonicalId =
-      requiresBindingOwnerCounterparty ? values.owner_counterparty_canonical_id.trim() : ''
+    const normalizedCatalogKind: PoolMasterBindingCatalogKind = requiredScopeFields.includes('ib_catalog_kind')
+      ? values.ib_catalog_kind
+      : ''
+    const normalizedOwnerCounterpartyCanonicalId = requiredScopeFields.includes('owner_counterparty_canonical_id')
+      ? values.owner_counterparty_canonical_id.trim()
+      : ''
+    const normalizedChartIdentity = requiredScopeFields.includes('chart_identity')
+      ? values.chart_identity.trim()
+      : ''
 
     setIsSaving(true)
     try {
@@ -179,6 +207,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
         ib_ref_key: values.ib_ref_key.trim(),
         ib_catalog_kind: normalizedCatalogKind,
         owner_counterparty_canonical_id: normalizedOwnerCounterpartyCanonicalId,
+        chart_identity: normalizedChartIdentity,
         sync_status: values.sync_status,
         fingerprint: values.fingerprint.trim(),
       })
@@ -199,7 +228,13 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
   }
 
   const columns: ColumnsType<PoolMasterDataBinding> = [
-    { title: 'Entity Type', dataIndex: 'entity_type', key: 'entity_type', width: 120 },
+    {
+      title: 'Entity Type',
+      dataIndex: 'entity_type',
+      key: 'entity_type',
+      width: 160,
+      render: (value: string) => getRegistryEntityLabel(registryEntries, value),
+    },
     { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
     {
       title: 'Database',
@@ -212,15 +247,32 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     {
       title: 'Scope',
       key: 'scope',
-      width: 220,
-      render: (_, row) => (
+      width: 320,
+      render: (_, row) => {
+        const scopeFields = getBindingScopePresentationFields(registryEntries, row.entity_type)
+        return (
         <Space>
-          {row.ib_catalog_kind && <Tag color="blue">{row.ib_catalog_kind}</Tag>}
-          {row.owner_counterparty_canonical_id && (
-            <Tag color="purple">{row.owner_counterparty_canonical_id}</Tag>
-          )}
+          {scopeFields.map((field) => {
+            const rawValue = field === 'ib_catalog_kind'
+              ? row.ib_catalog_kind
+              : field === 'owner_counterparty_canonical_id'
+                ? row.owner_counterparty_canonical_id
+                : field === 'chart_identity'
+                  ? row.chart_identity
+                  : undefined
+            const value = String(rawValue || '').trim()
+            if (!value) {
+              return null
+            }
+            return (
+              <Tag key={`${row.id}:${field}`} color={BINDING_SCOPE_FIELD_COLORS[field] ?? 'default'}>
+                {getBindingScopeFieldLabel(field)}: {value}
+              </Tag>
+            )
+          })}
         </Space>
-      ),
+        )
+      },
     },
     { title: 'Sync Status', dataIndex: 'sync_status', key: 'sync_status', width: 120 },
     {
@@ -295,12 +347,20 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
             <Input />
           </Form.Item>
           {requiresCatalogKind && (
-            <Form.Item name="ib_catalog_kind" label="IB Catalog Kind">
+            <Form.Item name="ib_catalog_kind" label={getBindingScopeFieldLabel('ib_catalog_kind')}>
               <Select allowClear options={catalogKindOptions} />
             </Form.Item>
           )}
           {requiresOwnerCounterparty && (
-            <Form.Item name="owner_counterparty_canonical_id" label="Owner Counterparty Canonical ID">
+            <Form.Item
+              name="owner_counterparty_canonical_id"
+              label={getBindingScopeFieldLabel('owner_counterparty_canonical_id')}
+            >
+              <Input />
+            </Form.Item>
+          )}
+          {requiresChartIdentity && (
+            <Form.Item name="chart_identity" label={getBindingScopeFieldLabel('chart_identity')}>
               <Input />
             </Form.Item>
           )}

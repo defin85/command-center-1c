@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -177,5 +177,50 @@ describe('WorkflowMonitor', () => {
     expect(screen.getByText('Execution Info')).toBeInTheDocument()
     expect(screen.getByTestId('workflow-monitor-node-drawer')).toHaveTextContent('Start:start')
     expect(screen.getByTestId('workflow-monitor-selected-node')).toHaveTextContent('Selected node: Start')
+  })
+
+  it('renders final result from execution payload when websocket result is unavailable', async () => {
+    mockGetWorkflowsGetExecution.mockResolvedValueOnce({
+      execution: {
+        id: 'exec-1',
+        workflow_template: 'workflow-1',
+        template_name: 'Services Publication',
+        template_version: 4,
+        status: 'completed',
+        input_context: { pool_id: 'pool-1' },
+        final_result: { document_id: 'doc-42', status: 'published' },
+        current_node_id: '',
+        completed_nodes: {},
+        failed_nodes: {},
+        node_statuses: {
+          start: {
+            status: 'completed',
+          },
+        },
+        progress_percent: '100.00',
+        error_message: '',
+        error_node_id: '',
+        trace_id: '',
+        started_at: '2026-03-08T12:00:00Z',
+        completed_at: '2026-03-08T12:00:30Z',
+        duration: 30,
+        step_results: [],
+      },
+      execution_plan: {
+        kind: 'workflow',
+        workflow_id: 'workflow-1',
+      },
+      bindings: [],
+      steps: [],
+    })
+
+    renderPage('/workflows/executions/exec-1')
+
+    await waitFor(() => {
+      expect(screen.getByText('Workflow Execution')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Execution Completed'))
+    expect(await screen.findByTestId('workflow-monitor-final-result')).toHaveTextContent('doc-42')
   })
 })

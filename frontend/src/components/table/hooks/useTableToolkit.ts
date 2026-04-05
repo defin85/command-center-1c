@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ColumnsType } from 'antd/es/table'
 import { useTableMetadata } from '../../../api/queries'
 import type { TableFilterConfig, TableFilterValue, TableFilters, TableSortOrder } from '../types'
@@ -165,6 +165,15 @@ export const useTableToolkit = <T,>({
     initialFilters: defaultFilterState,
     initialPageSize,
   })
+  const filtersRef = useRef(filters)
+  const sortRef = useRef(sort)
+  const pageRef = useRef(pagination.page)
+
+  useEffect(() => {
+    filtersRef.current = filters
+    sortRef.current = sort
+    pageRef.current = pagination.page
+  }, [filters, pagination.page, sort])
 
   const {
     preferences,
@@ -192,28 +201,24 @@ export const useTableToolkit = <T,>({
         nextFilters[key] = value
       }
     })
-    if (!areFiltersEqual(filters, nextFilters)) {
+    if (!areFiltersEqual(filtersRef.current, nextFilters)) {
       setFilters(nextFilters)
     }
     const nextSortKey = activePreset.defaultSort?.key ?? null
     const nextSortOrder = activePreset.defaultSort?.order ?? null
-    if (sort.key !== nextSortKey || sort.order !== nextSortOrder) {
+    if (sortRef.current.key !== nextSortKey || sortRef.current.order !== nextSortOrder) {
       setSort(nextSortKey, nextSortOrder)
     }
-    if (pagination.page !== 1) {
+    if (pageRef.current !== 1) {
       setPage(1)
     }
   }, [
     activePreset.defaultFilters,
     activePreset.defaultSort,
     defaultFilterState,
-    filters,
-    pagination.page,
     setFilters,
     setPage,
     setSort,
-    sort.key,
-    sort.order,
   ])
 
   const hasFilterValue = useCallback((value: TableFilterValue) => {

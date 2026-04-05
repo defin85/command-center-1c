@@ -165,7 +165,69 @@ describe('WorkflowList', () => {
     const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
     expect(link).toHaveAttribute(
       'href',
-      '/workflows/workflow-1?database_id=22222222-2222-2222-2222-222222222222'
+      '/workflows/workflow-1?database_id=22222222-2222-2222-2222-222222222222&returnTo=%2Fworkflows%3Fdatabase_id%3D22222222-2222-2222-2222-222222222222%26workflow%3Dworkflow-1%26detail%3D1'
+    )
+  })
+
+  it('hydrates search, filters, and sort from URL-backed workspace state', async () => {
+    mockGetWorkflowsListWorkflows.mockResolvedValue({
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Decision-aware Workflow',
+          description: 'authoring',
+          workflow_type: 'complex',
+          category: 'custom',
+          is_valid: true,
+          is_active: true,
+          is_system_managed: false,
+          management_mode: 'user_authored',
+          visibility_surface: 'workflow_library',
+          read_only_reason: null,
+          version_number: 1,
+          parent_version: null,
+          created_by: null,
+          created_by_username: 'analyst',
+          node_count: 2,
+          execution_count: 0,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 1,
+      total: 1,
+      authoring_phase: null,
+    })
+
+    const params = new URLSearchParams()
+    params.set('q', 'Decision')
+    params.set('filters', JSON.stringify({ workflow_type: 'complex' }))
+    params.set('sort', JSON.stringify({ key: 'updated_at', order: 'desc' }))
+    params.set('workflow', 'workflow-1')
+    params.set('detail', '1')
+
+    renderPage(`/workflows?${params.toString()}`)
+
+    await waitFor(() => {
+      expect(mockGetWorkflowsListWorkflows).toHaveBeenCalledWith(expect.objectContaining({
+        search: 'Decision',
+        filters: JSON.stringify({
+          workflow_type: {
+            op: 'contains',
+            value: 'complex',
+          },
+        }),
+        sort: JSON.stringify({
+          key: 'updated_at',
+          order: 'desc',
+        }),
+      }))
+    })
+
+    const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
+    expect(link).toHaveAttribute(
+      'href',
+      `/workflows/workflow-1?returnTo=${encodeURIComponent(`/workflows?${params.toString()}`)}`
     )
   })
 

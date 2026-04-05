@@ -16,6 +16,13 @@ const mockListMasterDataContracts = vi.fn()
 const mockUpsertMasterDataContract = vi.fn()
 const mockListMasterDataTaxProfiles = vi.fn()
 const mockUpsertMasterDataTaxProfile = vi.fn()
+const mockListMasterDataGlAccounts = vi.fn()
+const mockGetMasterDataGlAccount = vi.fn()
+const mockUpsertMasterDataGlAccount = vi.fn()
+const mockListMasterDataGlAccountSets = vi.fn()
+const mockGetMasterDataGlAccountSet = vi.fn()
+const mockUpsertMasterDataGlAccountSet = vi.fn()
+const mockPublishMasterDataGlAccountSet = vi.fn()
 const mockListMasterDataBindings = vi.fn()
 const mockUpsertMasterDataBinding = vi.fn()
 const mockGetPoolMasterDataRegistry = vi.fn()
@@ -86,6 +93,13 @@ vi.mock('../../../api/intercompanyPools', () => ({
   upsertMasterDataContract: (...args: unknown[]) => mockUpsertMasterDataContract(...args),
   listMasterDataTaxProfiles: (...args: unknown[]) => mockListMasterDataTaxProfiles(...args),
   upsertMasterDataTaxProfile: (...args: unknown[]) => mockUpsertMasterDataTaxProfile(...args),
+  listMasterDataGlAccounts: (...args: unknown[]) => mockListMasterDataGlAccounts(...args),
+  getMasterDataGlAccount: (...args: unknown[]) => mockGetMasterDataGlAccount(...args),
+  upsertMasterDataGlAccount: (...args: unknown[]) => mockUpsertMasterDataGlAccount(...args),
+  listMasterDataGlAccountSets: (...args: unknown[]) => mockListMasterDataGlAccountSets(...args),
+  getMasterDataGlAccountSet: (...args: unknown[]) => mockGetMasterDataGlAccountSet(...args),
+  upsertMasterDataGlAccountSet: (...args: unknown[]) => mockUpsertMasterDataGlAccountSet(...args),
+  publishMasterDataGlAccountSet: (...args: unknown[]) => mockPublishMasterDataGlAccountSet(...args),
   listMasterDataBindings: (...args: unknown[]) => mockListMasterDataBindings(...args),
   upsertMasterDataBinding: (...args: unknown[]) => mockUpsertMasterDataBinding(...args),
   getPoolMasterDataRegistry: (...args: unknown[]) => mockGetPoolMasterDataRegistry(...args),
@@ -140,6 +154,13 @@ describe('PoolMasterDataPage', () => {
     mockUpsertMasterDataContract.mockReset()
     mockListMasterDataTaxProfiles.mockReset()
     mockUpsertMasterDataTaxProfile.mockReset()
+    mockListMasterDataGlAccounts.mockReset()
+    mockGetMasterDataGlAccount.mockReset()
+    mockUpsertMasterDataGlAccount.mockReset()
+    mockListMasterDataGlAccountSets.mockReset()
+    mockGetMasterDataGlAccountSet.mockReset()
+    mockUpsertMasterDataGlAccountSet.mockReset()
+    mockPublishMasterDataGlAccountSet.mockReset()
     mockListMasterDataBindings.mockReset()
     mockUpsertMasterDataBinding.mockReset()
     mockGetPoolMasterDataRegistry.mockReset()
@@ -187,13 +208,152 @@ describe('PoolMasterDataPage', () => {
       tax_profiles: [],
       meta: { limit: 100, offset: 0, total: 0 },
     })
+    mockListMasterDataGlAccounts.mockResolvedValue({
+      gl_accounts: [
+        {
+          id: 'gl-account-1',
+          tenant_id: 'tenant-1',
+          canonical_id: 'gl-account-001',
+          code: '10.01',
+          name: 'Main Account',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 100, offset: 0, total: 1 },
+    })
+    mockGetMasterDataGlAccount.mockResolvedValue({
+      gl_account: {
+        id: 'gl-account-1',
+        tenant_id: 'tenant-1',
+        canonical_id: 'gl-account-001',
+        code: '10.01',
+        name: 'Main Account',
+        chart_identity: 'ChartOfAccounts_Main',
+        config_name: 'Accounting Enterprise',
+        config_version: '3.0.1',
+        metadata: {},
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    })
+    mockListMasterDataGlAccountSets.mockResolvedValue({
+      gl_account_sets: [
+        {
+          gl_account_set_id: 'gl-set-1',
+          canonical_id: 'gl-set-001',
+          name: 'Quarter Scope',
+          description: 'Draft for Q1',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          draft_members_count: 1,
+          published_revision_number: 1,
+          published_revision_id: 'gl-set-rev-1',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 100, offset: 0, total: 1 },
+    })
+    mockGetMasterDataGlAccountSet.mockResolvedValue({
+      gl_account_set: {
+        gl_account_set_id: 'gl-set-1',
+        canonical_id: 'gl-set-001',
+        name: 'Quarter Scope',
+        description: 'Draft for Q1',
+        chart_identity: 'ChartOfAccounts_Main',
+        config_name: 'Accounting Enterprise',
+        config_version: '3.0.1',
+        draft_members_count: 1,
+        published_revision_number: 1,
+        published_revision_id: 'gl-set-rev-1',
+        metadata: {},
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        draft_members: [
+          {
+            gl_account_id: 'gl-account-1',
+            canonical_id: 'gl-account-001',
+            code: '10.01',
+            name: 'Main Account',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            sort_order: 0,
+            metadata: {},
+          },
+        ],
+        revisions: [
+          {
+            gl_account_set_revision_id: 'gl-set-rev-1',
+            gl_account_set_id: 'gl-set-1',
+            contract_version: 'pool_master_gl_account_set.v1',
+            revision_number: 1,
+            name: 'Quarter Scope',
+            description: 'Draft for Q1',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            members: [
+              {
+                gl_account_id: 'gl-account-1',
+                canonical_id: 'gl-account-001',
+                code: '10.01',
+                name: 'Main Account',
+                chart_identity: 'ChartOfAccounts_Main',
+                config_name: 'Accounting Enterprise',
+                config_version: '3.0.1',
+                sort_order: 0,
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_by: 'user-1',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+        published_revision: {
+          gl_account_set_revision_id: 'gl-set-rev-1',
+          gl_account_set_id: 'gl-set-1',
+          contract_version: 'pool_master_gl_account_set.v1',
+          revision_number: 1,
+          name: 'Quarter Scope',
+          description: 'Draft for Q1',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          members: [
+            {
+              gl_account_id: 'gl-account-1',
+              canonical_id: 'gl-account-001',
+              code: '10.01',
+              name: 'Main Account',
+              chart_identity: 'ChartOfAccounts_Main',
+              config_name: 'Accounting Enterprise',
+              config_version: '3.0.1',
+              sort_order: 0,
+              metadata: {},
+            },
+          ],
+          metadata: {},
+          created_by: 'user-1',
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      },
+    })
     mockListMasterDataBindings.mockResolvedValue({
       bindings: [],
       meta: { limit: 200, offset: 0, total: 0 },
     })
     mockGetPoolMasterDataRegistry.mockResolvedValue({
       contract_version: 'pool_master_data_registry.v1',
-      count: 5,
+      count: 7,
       entries: [
         {
           entity_type: 'party',
@@ -292,6 +452,54 @@ describe('PoolMasterDataPage', () => {
           runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
         },
         {
+          entity_type: 'gl_account',
+          label: 'GL Account',
+          kind: 'canonical',
+          display_order: 45,
+          binding_scope_fields: ['canonical_id', 'database_id', 'chart_identity'],
+          capabilities: {
+            direct_binding: true,
+            token_exposure: true,
+            bootstrap_import: true,
+            outbox_fanout: false,
+            sync_outbound: false,
+            sync_inbound: false,
+            sync_reconcile: false,
+          },
+          token_contract: {
+            enabled: true,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: true, dependency_order: 35 },
+          runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+        },
+        {
+          entity_type: 'gl_account_set',
+          label: 'GL Account Set',
+          kind: 'profile',
+          display_order: 50,
+          binding_scope_fields: [],
+          capabilities: {
+            direct_binding: false,
+            token_exposure: false,
+            bootstrap_import: false,
+            outbox_fanout: false,
+            sync_outbound: false,
+            sync_inbound: false,
+            sync_reconcile: false,
+          },
+          token_contract: {
+            enabled: false,
+            qualifier_kind: 'none',
+            qualifier_required: false,
+            qualifier_options: [],
+          },
+          bootstrap_contract: { enabled: false, dependency_order: null },
+          runtime_consumers: ['profiles'],
+        },
+        {
           entity_type: 'binding',
           label: 'Binding',
           kind: 'bootstrap_helper',
@@ -385,6 +593,36 @@ describe('PoolMasterDataPage', () => {
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('renders reusable account zones and loads GL Account / GL Account Set surfaces inside the same shell', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('Pool Master Data')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open GL Account zone' }))
+
+    await waitFor(() => expect(mockListMasterDataGlAccounts).toHaveBeenCalledWith({
+      query: undefined,
+      code: undefined,
+      chart_identity: undefined,
+      limit: 100,
+      offset: 0,
+    }))
+    expect(await screen.findByTestId('pool-master-data-gl-account-selected-id')).toHaveTextContent('gl-account-1')
+    expect(screen.getAllByText('ChartOfAccounts_Main').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: 'Open GL Account Set zone' }))
+
+    await waitFor(() => expect(mockListMasterDataGlAccountSets).toHaveBeenCalledWith({
+      query: undefined,
+      chart_identity: undefined,
+      limit: 100,
+      offset: 0,
+    }))
+    expect(screen.getAllByText('Quarter Scope').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Published r1').length).toBeGreaterThan(0)
+    expect(await screen.findByTestId('pool-master-data-gl-account-set-selected-id')).toHaveTextContent('gl-set-1')
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('opens remediation target tab from query params and shows remediation context', async () => {
     renderPage('/pools/master-data?tab=bindings&entityType=organization&canonicalId=party-1&databaseId=db-1&role=organization')
 
@@ -413,6 +651,57 @@ describe('PoolMasterDataPage', () => {
       await screen.findByText('Party должен иметь минимум одну роль: organization или counterparty.')
     ).toBeInTheDocument()
     expect(mockUpsertMasterDataParty).not.toHaveBeenCalled()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('shows chart_identity in GLAccount binding scope and submits chart-scoped payload', async () => {
+    const user = userEvent.setup()
+    mockListMasterDataBindings.mockResolvedValueOnce({
+      bindings: [
+        {
+          id: 'binding-gl-account-1',
+          tenant_id: 'tenant-1',
+          entity_type: 'gl_account',
+          canonical_id: 'gl-account-001',
+          database_id: 'db-1',
+          ib_ref_key: 'ref-gl-1',
+          chart_identity: 'ChartOfAccounts_Main',
+          sync_status: 'resolved',
+          fingerprint: 'fp-1',
+          metadata: {},
+          last_synced_at: '2026-01-01T00:00:00Z',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 200, offset: 0, total: 1 },
+    })
+    mockUpsertMasterDataBinding.mockResolvedValue({
+      binding: {},
+      created: false,
+    })
+
+    renderPage('/pools/master-data?tab=bindings')
+
+    expect(await screen.findByText('Chart Identity: ChartOfAccounts_Main')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+
+    const chartIdentityField = await screen.findByLabelText('Chart Identity')
+    await user.clear(chartIdentityField)
+    await user.type(chartIdentityField, 'ChartOfAccounts_Secondary')
+    await user.click(screen.getByRole('button', { name: 'OK' }))
+
+    await waitFor(() => expect(mockUpsertMasterDataBinding).toHaveBeenCalledWith({
+      binding_id: 'binding-gl-account-1',
+      entity_type: 'gl_account',
+      canonical_id: 'gl-account-001',
+      database_id: 'db-1',
+      ib_ref_key: 'ref-gl-1',
+      ib_catalog_kind: '',
+      owner_counterparty_canonical_id: '',
+      chart_identity: 'ChartOfAccounts_Secondary',
+      sync_status: 'resolved',
+      fingerprint: 'fp-1',
+    }))
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders Sync tab and runs conflict actions', async () => {
@@ -632,6 +921,130 @@ describe('PoolMasterDataPage', () => {
     })
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('publishes immutable GL Account Set revision from the reusable profile surface', async () => {
+    const user = userEvent.setup()
+    mockPublishMasterDataGlAccountSet.mockResolvedValue({
+      gl_account_set: {
+        gl_account_set_id: 'gl-set-1',
+        canonical_id: 'gl-set-001',
+        name: 'Quarter Scope',
+        description: 'Draft for Q1',
+        chart_identity: 'ChartOfAccounts_Main',
+        config_name: 'Accounting Enterprise',
+        config_version: '3.0.1',
+        draft_members_count: 1,
+        published_revision_number: 2,
+        published_revision_id: 'gl-set-rev-2',
+        metadata: {},
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+        draft_members: [
+          {
+            gl_account_id: 'gl-account-1',
+            canonical_id: 'gl-account-001',
+            code: '10.01',
+            name: 'Main Account',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            sort_order: 0,
+            metadata: {},
+          },
+        ],
+        revisions: [
+          {
+            gl_account_set_revision_id: 'gl-set-rev-1',
+            gl_account_set_id: 'gl-set-1',
+            contract_version: 'pool_master_gl_account_set.v1',
+            revision_number: 1,
+            name: 'Quarter Scope',
+            description: 'Draft for Q1',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            members: [
+              {
+                gl_account_id: 'gl-account-1',
+                canonical_id: 'gl-account-001',
+                code: '10.01',
+                name: 'Main Account',
+                chart_identity: 'ChartOfAccounts_Main',
+                config_name: 'Accounting Enterprise',
+                config_version: '3.0.1',
+                sort_order: 0,
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_by: 'user-1',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            gl_account_set_revision_id: 'gl-set-rev-2',
+            gl_account_set_id: 'gl-set-1',
+            contract_version: 'pool_master_gl_account_set.v1',
+            revision_number: 2,
+            name: 'Quarter Scope',
+            description: 'Draft for Q1',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            members: [
+              {
+                gl_account_id: 'gl-account-1',
+                canonical_id: 'gl-account-001',
+                code: '10.01',
+                name: 'Main Account',
+                chart_identity: 'ChartOfAccounts_Main',
+                config_name: 'Accounting Enterprise',
+                config_version: '3.0.1',
+                sort_order: 0,
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_by: 'user-1',
+            created_at: '2026-01-02T00:00:00Z',
+          },
+        ],
+        published_revision: {
+          gl_account_set_revision_id: 'gl-set-rev-2',
+          gl_account_set_id: 'gl-set-1',
+          contract_version: 'pool_master_gl_account_set.v1',
+          revision_number: 2,
+          name: 'Quarter Scope',
+          description: 'Draft for Q1',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          members: [
+            {
+              gl_account_id: 'gl-account-1',
+              canonical_id: 'gl-account-001',
+              code: '10.01',
+              name: 'Main Account',
+              chart_identity: 'ChartOfAccounts_Main',
+              config_name: 'Accounting Enterprise',
+              config_version: '3.0.1',
+              sort_order: 0,
+              metadata: {},
+            },
+          ],
+          metadata: {},
+          created_by: 'user-1',
+          created_at: '2026-01-02T00:00:00Z',
+        },
+      },
+    })
+
+    renderPage('/pools/master-data?tab=gl-account-set')
+
+    expect(await screen.findByText('Quarter Scope')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Publish revision' }))
+
+    await waitFor(() => expect(mockPublishMasterDataGlAccountSet).toHaveBeenCalledWith('gl-set-1'))
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
     const user = userEvent.setup()
     const dryRunJob = buildBootstrapJob({
@@ -756,7 +1169,34 @@ describe('PoolMasterDataPage', () => {
 
     expect((await screen.findAllByText('Preflight failed in source adapter.')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('bootstrap-import-database-select')).toHaveTextContent('Main DB')
-    expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('party')
+    expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('Party')
+    expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('Item')
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('allows GL Account in bootstrap scope without adding it to generic sync actions', async () => {
+    const user = userEvent.setup()
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+
+    openSelectByTestId('bootstrap-import-entity-scope-select')
+    await selectDropdownOption(/^GL Account$/)
+    expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('GL Account')
+
+    openSelectByTestId('bootstrap-import-database-select')
+    await selectDropdownOption(/^Main DB$/)
+    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+
+    await waitFor(() =>
+      expect(mockRunPoolMasterDataBootstrapImportPreflight).toHaveBeenCalledWith({
+        database_id: 'db-1',
+        entity_scope: ['party', 'item', 'gl_account'],
+      })
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+    await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+    expect(screen.queryByText('gl_account')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs retry failed chunks action for bootstrap job', async () => {

@@ -53,6 +53,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { normalizeInternalReturnTo } from './routeState'
 import './WorkflowMonitor.css'
 
 const JAEGER_UI_URL = import.meta.env.VITE_JAEGER_UI_URL || 'http://localhost:16686'
@@ -156,6 +157,8 @@ const WorkflowMonitor = () => {
   const authz = useAuthz()
   const isStaff = authz.isStaff
   const selectedNodeId = normalizeRouteParam(searchParams.get('node'))
+  const returnToFromUrl = normalizeInternalReturnTo(searchParams.get('returnTo'))
+  const backTarget = returnToFromUrl ?? '/workflows/executions'
 
   const [execution, setExecution] = useState<WorkflowExecution | null>(null)
   const [dagStructure, setDagStructure] = useState<DAGStructure | null>(null)
@@ -252,6 +255,7 @@ const WorkflowMonitor = () => {
   const displayProgress = isConnected ? liveProgress : (execution?.progress_percent || 0) / 100
   const displayCurrentNodeId = isConnected ? currentNodeId : execution?.current_node_id
   const displayError = isConnected ? liveError : execution?.error_message
+  const displayResult = liveResult !== undefined ? liveResult : execution?.final_result
 
   const selectedNode = useMemo<NodeDetails | null>(() => {
     if (!selectedNodeId || !dagStructure) {
@@ -403,7 +407,7 @@ const WorkflowMonitor = () => {
         title="Failed to Load Execution"
         subTitle={error}
         extra={(
-          <Button type="primary" onClick={() => navigate('/workflows/executions')}>
+          <Button type="primary" onClick={() => navigate(backTarget)}>
             Back to Executions
           </Button>
         )}
@@ -429,7 +433,7 @@ const WorkflowMonitor = () => {
               <Space className="monitor-header" wrap size={[8, 8]}>
                 <Button
                   icon={<ArrowLeftOutlined />}
-                  onClick={() => navigate('/workflows/executions')}
+                  onClick={() => navigate(backTarget)}
                 >
                   Back
                 </Button>
@@ -524,7 +528,7 @@ const WorkflowMonitor = () => {
               />
             ) : null}
 
-            {displayStatus === 'completed' && liveResult ? (
+            {displayStatus === 'completed' && displayResult !== undefined && displayResult !== null ? (
               <Collapse
                 size="small"
                 defaultActiveKey={[]}
@@ -541,7 +545,7 @@ const WorkflowMonitor = () => {
                     children: (
                       <JsonBlock
                         title="Final result"
-                        value={liveResult}
+                        value={displayResult}
                         height={260}
                         dataTestId="workflow-monitor-final-result"
                       />

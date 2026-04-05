@@ -32,6 +32,13 @@ import {
 } from '../../api/queries/templates'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import {
+  areRouteTableFiltersEqual,
+  parseRouteTableFilters,
+  parseRouteTableSort,
+  serializeRouteTableFilters,
+  serializeRouteTableSort,
+} from '../../components/table/routeState'
 import { useAuthz } from '../../authz/useAuthz'
 import { isPlainObject } from '../Settings/actionCatalogUtils'
 import type { ActionFormValues } from '../Settings/actionCatalogTypes'
@@ -290,6 +297,8 @@ function OperationTemplateListShell({
   const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const tableRouteHydratedRef = useRef(false)
+  const tableRouteSyncRef = useRef(false)
   const searchFromUrl = searchParams.get('q') ?? ''
   const selectedTemplateFromUrl = normalizeRouteParam(searchParams.get('template'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
@@ -552,6 +561,7 @@ function OperationTemplateListShell({
     initialPageSize: 50,
     disableServerMetadata: true,
   })
+  const { setFilters: setTableFilters, setSearch: setTableSearch, setSort: setTableSort } = table
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
   const searchValue = table.search.trim()
@@ -561,11 +571,59 @@ function OperationTemplateListShell({
   const sortParam = useMemo(() => (
     table.sortPayload ? JSON.stringify(table.sortPayload) : undefined
   ), [table.sortPayload])
+  const latestTableRouteStateRef = useRef({
+    search: table.search,
+    filters: table.filters,
+    sort: table.sort,
+  })
+  const routeFiltersFromUrl = useMemo(
+    () => parseRouteTableFilters(searchParams.get('filters'), table.filterConfigs),
+    [searchParams, table.filterConfigs]
+  )
+  const routeSortFromUrl = useMemo(
+    () => parseRouteTableSort(searchParams.get('sort'), table.sortableColumns),
+    [searchParams, table.sortableColumns]
+  )
 
   useEffect(() => {
-    if (table.search === searchFromUrl) return
-    table.setSearch(searchFromUrl)
-  }, [searchFromUrl, table])
+    latestTableRouteStateRef.current = {
+      search: table.search,
+      filters: table.filters,
+      sort: table.sort,
+    }
+  }, [table.filters, table.search, table.sort])
+
+  useEffect(() => {
+    const current = latestTableRouteStateRef.current
+    const nextSearch = searchFromUrl
+    const searchChanged = current.search !== nextSearch
+    const filtersChanged = !areRouteTableFiltersEqual(current.filters, routeFiltersFromUrl)
+    const sortChanged = current.sort.key !== routeSortFromUrl.key || current.sort.order !== routeSortFromUrl.order
+
+    if (searchChanged || filtersChanged || sortChanged) {
+      tableRouteSyncRef.current = true
+      if (searchChanged) {
+        setTableSearch(nextSearch)
+      }
+      if (filtersChanged) {
+        setTableFilters(routeFiltersFromUrl)
+      }
+      if (sortChanged) {
+        setTableSort(routeSortFromUrl.key, routeSortFromUrl.order)
+      }
+      return
+    }
+
+    tableRouteHydratedRef.current = true
+  }, [
+    routeFiltersFromUrl,
+    routeSortFromUrl.key,
+    routeSortFromUrl.order,
+    searchFromUrl,
+    setTableFilters,
+    setTableSearch,
+    setTableSort,
+  ])
 
   useEffect(() => {
     setSelectedTemplateId((current) => {
@@ -675,13 +733,35 @@ function OperationTemplateListShell({
   ])
 
   useEffect(() => {
+    if (tableRouteSyncRef.current) {
+      tableRouteSyncRef.current = false
+      return
+    }
+    if (!tableRouteHydratedRef.current) {
+      return
+    }
+
     const next = new URLSearchParams(searchParams)
     const normalizedSearch = table.search.trim()
+    const serializedFilters = serializeRouteTableFilters(table.filters)
+    const serializedSort = serializeRouteTableSort(table.sort)
 
     if (normalizedSearch) {
       next.set('q', normalizedSearch)
     } else {
       next.delete('q')
+    }
+
+    if (serializedFilters) {
+      next.set('filters', serializedFilters)
+    } else {
+      next.delete('filters')
+    }
+
+    if (serializedSort) {
+      next.set('sort', serializedSort)
+    } else {
+      next.delete('sort')
     }
 
     if (selectedTemplateId !== undefined) {
@@ -715,7 +795,16 @@ function OperationTemplateListShell({
       )
     }
     routeUpdateModeRef.current = 'replace'
-  }, [composeMode, isDetailDrawerOpen, searchParams, selectedTemplateId, setSearchParams, table.search])
+  }, [
+    composeMode,
+    isDetailDrawerOpen,
+    searchParams,
+    selectedTemplateId,
+    setSearchParams,
+    table.filters,
+    table.search,
+    table.sort,
+  ])
 
   const activeError = exposuresQuery.error
   const activeErrorStatus = (activeError as { response?: { status?: number } } | null)?.response?.status

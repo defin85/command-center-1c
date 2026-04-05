@@ -21,7 +21,7 @@ Workspace ДОЛЖЕН (SHALL) быть доступен из основного
 - **THEN** система отображает рабочие зоны `GLAccount` и `GLAccountSet` вместе с существующими зонами master-data
 - **AND** все операции выполняются в tenant scope без cross-tenant данных
 
-### Requirement: Workspace MUST поддерживать role-specific, owner-scoped и chart-scoped bindings
+### Requirement: Workspace MUST поддерживать role-specific и owner-scoped bindings
 Система ДОЛЖНА (SHALL) предоставлять в зоне `Bindings` явное управление scope-ключами binding:
 - для `Party`: `(canonical_id, entity_type, database_id, ib_catalog_kind)`;
 - для `Contract`: `(canonical_id, entity_type, database_id, owner_counterparty_id)`;

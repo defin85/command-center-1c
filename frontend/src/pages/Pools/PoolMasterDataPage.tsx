@@ -13,6 +13,8 @@ import {
 import { BindingsTab } from './masterData/BindingsTab'
 import { BootstrapImportTab } from './masterData/BootstrapImportTab'
 import { ContractsTab } from './masterData/ContractsTab'
+import { GLAccountsTab } from './masterData/GLAccountsTab'
+import { GLAccountSetsTab } from './masterData/GLAccountSetsTab'
 import { ItemsTab } from './masterData/ItemsTab'
 import { PartiesTab } from './masterData/PartiesTab'
 import { SyncStatusTab } from './masterData/SyncStatusTab'
@@ -26,6 +28,8 @@ const MASTER_DATA_TAB_KEYS = [
   'item',
   'contract',
   'tax-profile',
+  'gl-account',
+  'gl-account-set',
   'bindings',
   'sync',
   'bootstrap-import',
@@ -64,6 +68,18 @@ const MASTER_DATA_ZONES: MasterDataZoneDefinition[] = [
     label: 'Tax Profile',
     description: 'Tax profile references for reusable pool execution.',
     render: () => <TaxProfilesTab />,
+  },
+  {
+    key: 'gl-account',
+    label: 'GL Account',
+    description: 'Chart-scoped reusable accounts with explicit compatibility class.',
+    render: (registryEntries) => <GLAccountsTab registryEntries={registryEntries} />,
+  },
+  {
+    key: 'gl-account-set',
+    label: 'GL Account Set',
+    description: 'Draft, publish and immutable revision lifecycle for reusable account profiles.',
+    render: (registryEntries) => <GLAccountSetsTab registryEntries={registryEntries} />,
   },
   {
     key: 'bindings',
@@ -207,7 +223,7 @@ export function PoolMasterDataPage() {
           <Space direction="vertical" size={4}>
             <Text>
               Select a workspace zone from the catalog and keep the active zone addressable through the route.
-              Reusable account expansion remains a separate post-platform follow-up.
+              Reusable account zones now live inside the same canonical platform shell.
             </Text>
             <Text type="secondary">
               Current zone: {selectedZone.label}

@@ -1,5 +1,6 @@
 import {
   listMasterDataContracts,
+  listMasterDataGlAccounts,
   listMasterDataItems,
   listMasterDataParties,
   listMasterDataTaxProfiles,
@@ -108,11 +109,26 @@ const loadTaxProfilesTokenCatalog: PoolMasterDataTokenCatalogLoader = async () =
   }
 }
 
+const loadGlAccountsTokenCatalog: PoolMasterDataTokenCatalogLoader = async () => {
+  const response = await listMasterDataGlAccounts({ limit: 200, offset: 0 })
+  const glAccounts = Array.isArray(response.gl_accounts) ? response.gl_accounts : []
+  return {
+    entity_type: 'gl_account',
+    options: sortCatalogOptions(
+      glAccounts.map((item) => ({
+        value: item.canonical_id,
+        label: `${item.canonical_id} - ${item.name} (${item.code} · ${item.chart_identity})`,
+      }))
+    ),
+  }
+}
+
 const TOKEN_CATALOG_COMPATIBILITY_LOADERS: Record<string, PoolMasterDataTokenCatalogLoader> = {
   party: loadPartiesTokenCatalog,
   item: loadItemsTokenCatalog,
   contract: loadContractsTokenCatalog,
   tax_profile: loadTaxProfilesTokenCatalog,
+  gl_account: loadGlAccountsTokenCatalog,
 }
 
 export async function loadPoolMasterDataTokenCatalog(

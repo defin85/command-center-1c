@@ -50,6 +50,14 @@ async function setupAuth(page: Page) {
   }, TENANT_ID)
 }
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const hasOverflow = await page.evaluate(() => {
+    const root = document.documentElement
+    return root.scrollWidth - root.clientWidth > 1
+  })
+  expect(hasOverflow).toBe(false)
+}
+
 function buildListMeta(limit: number, offset: number, total: number) {
   return {
     count: total,
@@ -113,7 +121,7 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     if (method === 'GET' && path === '/api/v2/pools/master-data/registry/') {
       return fulfillJson(route, {
         contract_version: 'pool_master_data_registry.v1',
-        count: 1,
+        count: 3,
         entries: [
           {
             entity_type: 'item',
@@ -139,6 +147,54 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
             bootstrap_contract: { enabled: true, dependency_order: 20 },
             runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
           },
+          {
+            entity_type: 'gl_account',
+            label: 'GL Account',
+            kind: 'canonical',
+            display_order: 45,
+            binding_scope_fields: ['canonical_id', 'database_id', 'chart_identity'],
+            capabilities: {
+              direct_binding: true,
+              token_exposure: true,
+              bootstrap_import: true,
+              outbox_fanout: false,
+              sync_outbound: false,
+              sync_inbound: false,
+              sync_reconcile: false,
+            },
+            token_contract: {
+              enabled: true,
+              qualifier_kind: 'none',
+              qualifier_required: false,
+              qualifier_options: [],
+            },
+            bootstrap_contract: { enabled: true, dependency_order: 35 },
+            runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+          },
+          {
+            entity_type: 'gl_account_set',
+            label: 'GL Account Set',
+            kind: 'profile',
+            display_order: 50,
+            binding_scope_fields: [],
+            capabilities: {
+              direct_binding: false,
+              token_exposure: false,
+              bootstrap_import: false,
+              outbox_fanout: false,
+              sync_outbound: false,
+              sync_inbound: false,
+              sync_reconcile: false,
+            },
+            token_contract: {
+              enabled: false,
+              qualifier_kind: 'none',
+              qualifier_required: false,
+              qualifier_options: [],
+            },
+            bootstrap_contract: { enabled: false, dependency_order: null },
+            runtime_consumers: ['profiles'],
+          },
         ],
       })
     }
@@ -154,6 +210,153 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/tax-profiles/') {
       return fulfillJson(route, { tax_profiles: [], ...buildListMeta(100, 0, 0) })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/gl-accounts/') {
+      return fulfillJson(route, {
+        gl_accounts: [
+          {
+            id: 'gl-account-1',
+            tenant_id: TENANT_ID,
+            canonical_id: 'gl-account-001',
+            code: '10.01',
+            name: 'Main Account',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            metadata: {},
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+        ...buildListMeta(100, 0, 1),
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/gl-accounts/gl-account-1/') {
+      return fulfillJson(route, {
+        gl_account: {
+          id: 'gl-account-1',
+          tenant_id: TENANT_ID,
+          canonical_id: 'gl-account-001',
+          code: '10.01',
+          name: 'Main Account',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          metadata: {},
+          created_at: NOW,
+          updated_at: NOW,
+        },
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/gl-account-sets/') {
+      return fulfillJson(route, {
+        gl_account_sets: [
+          {
+            gl_account_set_id: 'gl-set-1',
+            canonical_id: 'gl-set-001',
+            name: 'Quarter Scope',
+            description: 'Draft for Q1',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            draft_members_count: 1,
+            published_revision_number: 1,
+            published_revision_id: 'gl-set-rev-1',
+            metadata: {},
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+        ...buildListMeta(100, 0, 1),
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/gl-account-sets/gl-set-1/') {
+      return fulfillJson(route, {
+        gl_account_set: {
+          gl_account_set_id: 'gl-set-1',
+          canonical_id: 'gl-set-001',
+          name: 'Quarter Scope',
+          description: 'Draft for Q1',
+          chart_identity: 'ChartOfAccounts_Main',
+          config_name: 'Accounting Enterprise',
+          config_version: '3.0.1',
+          draft_members_count: 1,
+          published_revision_number: 1,
+          published_revision_id: 'gl-set-rev-1',
+          metadata: {},
+          created_at: NOW,
+          updated_at: NOW,
+          draft_members: [
+            {
+              gl_account_id: 'gl-account-1',
+              canonical_id: 'gl-account-001',
+              code: '10.01',
+              name: 'Main Account',
+              chart_identity: 'ChartOfAccounts_Main',
+              config_name: 'Accounting Enterprise',
+              config_version: '3.0.1',
+              sort_order: 0,
+              metadata: {},
+            },
+          ],
+          revisions: [
+            {
+              gl_account_set_revision_id: 'gl-set-rev-1',
+              gl_account_set_id: 'gl-set-1',
+              contract_version: 'pool_master_gl_account_set.v1',
+              revision_number: 1,
+              name: 'Quarter Scope',
+              description: 'Draft for Q1',
+              chart_identity: 'ChartOfAccounts_Main',
+              config_name: 'Accounting Enterprise',
+              config_version: '3.0.1',
+              members: [
+                {
+                  gl_account_id: 'gl-account-1',
+                  canonical_id: 'gl-account-001',
+                  code: '10.01',
+                  name: 'Main Account',
+                  chart_identity: 'ChartOfAccounts_Main',
+                  config_name: 'Accounting Enterprise',
+                  config_version: '3.0.1',
+                  sort_order: 0,
+                  metadata: {},
+                },
+              ],
+              metadata: {},
+              created_by: 'sync-user',
+              created_at: NOW,
+            },
+          ],
+          published_revision: {
+            gl_account_set_revision_id: 'gl-set-rev-1',
+            gl_account_set_id: 'gl-set-1',
+            contract_version: 'pool_master_gl_account_set.v1',
+            revision_number: 1,
+            name: 'Quarter Scope',
+            description: 'Draft for Q1',
+            chart_identity: 'ChartOfAccounts_Main',
+            config_name: 'Accounting Enterprise',
+            config_version: '3.0.1',
+            members: [
+              {
+                gl_account_id: 'gl-account-1',
+                canonical_id: 'gl-account-001',
+                code: '10.01',
+                name: 'Main Account',
+                chart_identity: 'ChartOfAccounts_Main',
+                config_name: 'Accounting Enterprise',
+                config_version: '3.0.1',
+                sort_order: 0,
+                metadata: {},
+              },
+            ],
+            metadata: {},
+            created_by: 'sync-user',
+            created_at: NOW,
+          },
+        },
+      })
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/bindings/') {
       return fulfillJson(route, { bindings: [], ...buildListMeta(200, 0, 0) })
@@ -352,4 +555,36 @@ test('Pool Master Data Sync: shows forbidden/not-found/error messages for confli
 
   await page.getByRole('button', { name: 'Resolve' }).first().click()
   await expect(page.getByText('Conflict is already resolved.', { exact: true })).toBeVisible()
+})
+
+test('Pool Master Data Accounts: restores GL Account Set zone from deep-link route state', async ({ page }) => {
+  const state = buildDefaultState()
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/master-data?tab=gl-account-set&detail=1', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await expect(page.getByText('Current zone: GL Account Set')).toBeVisible()
+  await expect(page.getByTestId('pool-master-data-gl-account-set-selected-id')).toHaveText('gl-set-1')
+  await expect(page.getByText('Published r1').first()).toBeVisible()
+})
+
+test('Pool Master Data Accounts: mobile shell opens GL Account zone without horizontal overflow', async ({ page }) => {
+  const state = buildDefaultState()
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/pools/master-data', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: 'Open GL Account zone' }).click()
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('pool-master-data-gl-account-selected-id')).toHaveText('gl-account-1')
+  await expect(detailDrawer.getByText('Compatible class').first()).toBeVisible()
+  await expectNoHorizontalOverflow(page)
 })

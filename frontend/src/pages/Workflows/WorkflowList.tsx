@@ -34,6 +34,15 @@ import {
 } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import type { TableFilters, TableSortState } from '../../components/table/types'
+import {
+  areRouteTableFiltersEqual,
+  parseRouteTableFilters,
+  parseRouteTableSort,
+  serializeRouteTableFilters,
+  serializeRouteTableSort,
+} from '../../components/table/routeState'
+import { buildRelativeHref } from './routeState'
 
 const api = getV2()
 const { Text } = Typography
@@ -63,10 +72,12 @@ const buildWorkflowHref = (
     isSystemManaged,
     databaseId,
     execute,
+    returnTo,
   }: {
     isSystemManaged?: boolean
     databaseId?: string
     execute?: boolean
+    returnTo?: string | null
   } = {}
 ) => {
   const params = new URLSearchParams()
@@ -78,6 +89,9 @@ const buildWorkflowHref = (
   }
   if (execute) {
     params.set('execute', 'true')
+  }
+  if (returnTo) {
+    params.set('returnTo', returnTo)
   }
   const query = params.toString()
   return query ? `/workflows/${id}?${query}` : `/workflows/${id}`
@@ -117,6 +131,8 @@ const WorkflowList = () => {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const tableRouteHydratedRef = useRef(false)
+  const tableRouteSyncRef = useRef(false)
   const surface = searchParams.get('surface') === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
     ? WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
     : WORKFLOW_LIBRARY_SURFACE
@@ -129,6 +145,15 @@ const WorkflowList = () => {
     () => selectedWorkflowFromUrl ?? undefined
   )
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(detailOpenFromUrl)
+  const latestTableRouteStateRef = useRef<{
+    search: string
+    filters: TableFilters
+    sort: TableSortState
+  }>({
+    search: searchFromUrl,
+    filters: {},
+    sort: { key: null, order: null },
+  })
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -154,6 +179,47 @@ const WorkflowList = () => {
     }
   }, [message, queryClient, selectedWorkflowId])
 
+  const buildWorkflowLibraryHref = useCallback(({
+    detailOpen,
+    workflowId,
+  }: {
+    detailOpen?: boolean
+    workflowId?: string | null
+  } = {}) => {
+    const next = new URLSearchParams()
+    if (surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE) {
+      next.set('surface', surface)
+    }
+    if (decisionDatabaseId) {
+      next.set('database_id', decisionDatabaseId)
+    }
+
+    const currentTableState = latestTableRouteStateRef.current
+    const normalizedSearch = currentTableState.search.trim()
+    const serializedFilters = serializeRouteTableFilters(currentTableState.filters)
+    const serializedSort = serializeRouteTableSort(currentTableState.sort)
+    const nextWorkflowId = workflowId === undefined ? selectedWorkflowId ?? null : workflowId
+    const nextDetailOpen = detailOpen ?? isDetailDrawerOpen
+
+    if (normalizedSearch) {
+      next.set('q', normalizedSearch)
+    }
+    if (serializedFilters) {
+      next.set('filters', serializedFilters)
+    }
+    if (serializedSort) {
+      next.set('sort', serializedSort)
+    }
+    if (nextWorkflowId) {
+      next.set('workflow', nextWorkflowId)
+    }
+    if (nextWorkflowId && nextDetailOpen) {
+      next.set('detail', '1')
+    }
+
+    return buildRelativeHref('/workflows', next)
+  }, [decisionDatabaseId, isDetailDrawerOpen, selectedWorkflowId, surface])
+
   const handleClone = useCallback(async (id: string, name: string) => {
     try {
       const cloned = await api.postWorkflowsCloneWorkflow({
@@ -161,15 +227,22 @@ const WorkflowList = () => {
         new_name: `${name} (Copy)`,
       })
       message.success('Workflow cloned')
-      navigate(buildWorkflowHref(cloned.workflow.id, { databaseId: decisionDatabaseId }))
+      navigate(buildWorkflowHref(cloned.workflow.id, {
+        databaseId: decisionDatabaseId,
+        returnTo: buildWorkflowLibraryHref({ workflowId: cloned.workflow.id, detailOpen: true }),
+      }))
     } catch (_error) {
       message.error('Failed to clone workflow')
     }
-  }, [decisionDatabaseId, message, navigate])
+  }, [buildWorkflowLibraryHref, decisionDatabaseId, message, navigate])
 
   const openWorkflow = useCallback((id: string, isSystemManaged?: boolean) => {
-    navigate(buildWorkflowHref(id, { isSystemManaged, databaseId: decisionDatabaseId }))
-  }, [decisionDatabaseId, navigate])
+    navigate(buildWorkflowHref(id, {
+      isSystemManaged,
+      databaseId: decisionDatabaseId,
+      returnTo: buildWorkflowLibraryHref({ workflowId: id, detailOpen: true }),
+    }))
+  }, [buildWorkflowLibraryHref, decisionDatabaseId, navigate])
 
   const columns: ColumnsType<WorkflowTemplateList> = useMemo(() => ([
     {
@@ -178,7 +251,11 @@ const WorkflowList = () => {
       key: 'name',
       render: (name, record) => (
         <Space wrap size={8}>
-          <Link to={buildWorkflowHref(record.id, { isSystemManaged: record.is_system_managed, databaseId: decisionDatabaseId })}>
+          <Link to={buildWorkflowHref(record.id, {
+            isSystemManaged: record.is_system_managed,
+            databaseId: decisionDatabaseId,
+            returnTo: buildWorkflowLibraryHref({ workflowId: record.id, detailOpen: true }),
+          })}>
             {name}
           </Link>
           {record.is_system_managed ? <Tag color="gold">System managed</Tag> : null}
@@ -246,7 +323,11 @@ const WorkflowList = () => {
                   disabled={!record.is_valid}
                   onClick={(event) => {
                     event.stopPropagation()
-                    navigate(buildWorkflowHref(record.id, { databaseId: decisionDatabaseId, execute: true }))
+                    navigate(buildWorkflowHref(record.id, {
+                      databaseId: decisionDatabaseId,
+                      execute: true,
+                      returnTo: buildWorkflowLibraryHref({ workflowId: record.id, detailOpen: true }),
+                    }))
                   }}
                 />
               </Tooltip>
@@ -274,7 +355,7 @@ const WorkflowList = () => {
         </Space>
       ),
     },
-  ]), [decisionDatabaseId, handleClone, handleDelete, navigate, openWorkflow])
+  ]), [buildWorkflowLibraryHref, decisionDatabaseId, handleClone, handleDelete, navigate, openWorkflow])
 
   const table = useTableToolkit({
     tableId: 'workflows',
@@ -282,15 +363,59 @@ const WorkflowList = () => {
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
   })
+  const { setFilters: setTableFilters, setSearch: setTableSearch, setSort: setTableSort } = table
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
   const filtersParam = table.filtersPayload ? JSON.stringify(table.filtersPayload) : undefined
   const sortParam = table.sortPayload ? JSON.stringify(table.sortPayload) : undefined
+  const routeFiltersFromUrl = useMemo(
+    () => parseRouteTableFilters(searchParams.get('filters'), table.filterConfigs),
+    [searchParams, table.filterConfigs]
+  )
+  const routeSortFromUrl = useMemo(
+    () => parseRouteTableSort(searchParams.get('sort'), table.sortableColumns),
+    [searchParams, table.sortableColumns]
+  )
 
   useEffect(() => {
-    if (table.search === searchFromUrl) return
-    table.setSearch(searchFromUrl)
-  }, [searchFromUrl, table])
+    latestTableRouteStateRef.current = {
+      search: table.search,
+      filters: table.filters,
+      sort: table.sort,
+    }
+  }, [table.filters, table.search, table.sort])
+
+  useEffect(() => {
+    const current = latestTableRouteStateRef.current
+    const nextSearch = searchFromUrl
+    const searchChanged = current.search !== nextSearch
+    const filtersChanged = !areRouteTableFiltersEqual(current.filters, routeFiltersFromUrl)
+    const sortChanged = current.sort.key !== routeSortFromUrl.key || current.sort.order !== routeSortFromUrl.order
+
+    if (searchChanged || filtersChanged || sortChanged) {
+      tableRouteSyncRef.current = true
+      if (searchChanged) {
+        setTableSearch(nextSearch)
+      }
+      if (filtersChanged) {
+        setTableFilters(routeFiltersFromUrl)
+      }
+      if (sortChanged) {
+        setTableSort(routeSortFromUrl.key, routeSortFromUrl.order)
+      }
+      return
+    }
+
+    tableRouteHydratedRef.current = true
+  }, [
+    routeFiltersFromUrl,
+    routeSortFromUrl.key,
+    routeSortFromUrl.order,
+    searchFromUrl,
+    setTableFilters,
+    setTableSearch,
+    setTableSort,
+  ])
 
   useEffect(() => {
     setSelectedWorkflowId((current) => {
@@ -381,13 +506,35 @@ const WorkflowList = () => {
   ])
 
   useEffect(() => {
+    if (tableRouteSyncRef.current) {
+      tableRouteSyncRef.current = false
+      return
+    }
+    if (!tableRouteHydratedRef.current) {
+      return
+    }
+
     const next = new URLSearchParams(searchParams)
     const normalizedSearch = table.search.trim()
+    const serializedFilters = serializeRouteTableFilters(table.filters)
+    const serializedSort = serializeRouteTableSort(table.sort)
 
     if (normalizedSearch) {
       next.set('q', normalizedSearch)
     } else {
       next.delete('q')
+    }
+
+    if (serializedFilters) {
+      next.set('filters', serializedFilters)
+    } else {
+      next.delete('filters')
+    }
+
+    if (serializedSort) {
+      next.set('sort', serializedSort)
+    } else {
+      next.delete('sort')
     }
 
     if (selectedWorkflowId !== undefined) {
@@ -415,7 +562,15 @@ const WorkflowList = () => {
       )
     }
     routeUpdateModeRef.current = 'replace'
-  }, [isDetailDrawerOpen, searchParams, selectedWorkflowId, setSearchParams, table.search])
+  }, [
+    isDetailDrawerOpen,
+    searchParams,
+    selectedWorkflowId,
+    setSearchParams,
+    table.filters,
+    table.search,
+    table.sort,
+  ])
 
   const detailLoading = Boolean(selectedWorkflowId) && !selectedWorkflow && (workflowsQuery.isLoading || selectedWorkflowDetailQuery.isLoading)
   const detailError = selectedWorkflowId && !selectedWorkflow && selectedWorkflowDetailQuery.isError
@@ -458,7 +613,10 @@ const WorkflowList = () => {
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
-                  onClick={() => navigate(buildWorkflowHref('new', { databaseId: decisionDatabaseId }))}
+                  onClick={() => navigate(buildWorkflowHref('new', {
+                    databaseId: decisionDatabaseId,
+                    returnTo: buildWorkflowLibraryHref(),
+                  }))}
                 >
                   New Scheme
                 </Button>
@@ -572,7 +730,11 @@ const WorkflowList = () => {
                       type="primary"
                       data-testid="workflow-list-detail-execute"
                       disabled={!selectedWorkflow.is_valid}
-                      onClick={() => navigate(buildWorkflowHref(selectedWorkflow.id, { databaseId: decisionDatabaseId, execute: true }))}
+                      onClick={() => navigate(buildWorkflowHref(selectedWorkflow.id, {
+                        databaseId: decisionDatabaseId,
+                        execute: true,
+                        returnTo: buildWorkflowLibraryHref({ workflowId: selectedWorkflow.id, detailOpen: true }),
+                      }))}
                     >
                       Execute
                     </Button>

@@ -3750,7 +3750,7 @@ export function PoolCatalogPage() {
                           <Text type="secondary">Выберите организацию из каталога.</Text>
                         )}
                         {organizationDetail && (
-                          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                          <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0, overflowX: 'hidden' }}>
                             <Descriptions size="small" column={1}>
                               <Descriptions.Item label="Name">{organizationDetail.organization.name}</Descriptions.Item>
                               <Descriptions.Item label="INN">{organizationDetail.organization.inn}</Descriptions.Item>

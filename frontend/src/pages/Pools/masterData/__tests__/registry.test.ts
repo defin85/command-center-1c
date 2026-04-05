@@ -4,6 +4,7 @@ import type { PoolMasterDataRegistryEntry } from '../../../../api/intercompanyPo
 import {
   buildMasterDataToken,
   getBootstrapEntityOptions,
+  getDefaultBootstrapScope,
   getDirectBindingEntityOptions,
   getSyncEntityOptions,
   getTokenEntityOptions,
@@ -113,11 +114,18 @@ const registryEntries: PoolMasterDataRegistryEntry[] = [
 describe('pool master-data registry helpers', () => {
   it('derives UI options from registry capabilities and ordering', () => {
     expect(getDirectBindingEntityOptions(registryEntries).map((item) => item.value)).toEqual(['contract', 'party'])
+    expect(getDirectBindingEntityOptions(registryEntries).map((item) => item.label)).toEqual(['Contract', 'Party'])
     expect(getBootstrapEntityOptions(registryEntries).map((item) => item.value)).toEqual([
       'party',
       'item',
       'contract',
       'binding',
+    ])
+    expect(getBootstrapEntityOptions(registryEntries).map((item) => item.label)).toEqual([
+      'Party',
+      'Item',
+      'Contract',
+      'Binding',
     ])
     expect(getSyncEntityOptions(registryEntries).map((item) => item.value)).toEqual(['contract', 'party'])
     expect(getTokenEntityOptions(registryEntries).map((item) => item.value)).toEqual([
@@ -125,6 +133,7 @@ describe('pool master-data registry helpers', () => {
       'party',
       'item',
     ])
+    expect(getDefaultBootstrapScope(registryEntries)).toEqual(['party', 'item'])
     expect(getTokenQualifierOptions(registryEntries, 'party').map((item) => item.value)).toEqual([
       'organization',
       'counterparty',
@@ -139,7 +148,7 @@ describe('pool master-data registry helpers', () => {
         label: 'GL Account',
         kind: 'canonical',
         display_order: 25,
-        binding_scope_fields: ['canonical_id', 'database_id'],
+        binding_scope_fields: ['canonical_id', 'database_id', 'chart_identity'],
         capabilities: {
           direct_binding: true,
           token_exposure: true,
@@ -185,6 +194,8 @@ describe('pool master-data registry helpers', () => {
     ]
 
     expect(getDirectBindingEntityOptions(extendedEntries).map((item) => item.value)).toContain('gl_account')
+    expect(getBootstrapEntityOptions(extendedEntries).map((item) => item.value)).toContain('gl_account')
+    expect(getSyncEntityOptions(extendedEntries).map((item) => item.value)).not.toContain('gl_account')
     expect(getTokenEntityOptions(extendedEntries).map((item) => item.value)).toContain('gl_account')
     expect(getTokenQualifierOptions(extendedEntries, 'cost_center').map((item) => item.value)).toEqual(['vendor'])
     expect(buildMasterDataToken({
@@ -196,6 +207,45 @@ describe('pool master-data registry helpers', () => {
       canonical_id: '10.01',
       qualifier_kind: 'none',
     })
+  })
+
+  it('prefers canonical bootstrap defaults without string-specific helper exclusions', () => {
+    const entries: PoolMasterDataRegistryEntry[] = [
+      {
+        entity_type: 'bootstrap-import-helper',
+        label: 'Bootstrap Helper',
+        kind: 'bootstrap_helper',
+        display_order: 1,
+        binding_scope_fields: [],
+        capabilities: {
+          direct_binding: false,
+          token_exposure: false,
+          bootstrap_import: true,
+          outbox_fanout: false,
+          sync_outbound: false,
+          sync_inbound: false,
+          sync_reconcile: false,
+        },
+        token_contract: {
+          enabled: false,
+          qualifier_kind: 'none',
+          qualifier_required: false,
+          qualifier_options: [],
+        },
+        bootstrap_contract: { enabled: true, dependency_order: 1 },
+        runtime_consumers: ['bootstrap_import'],
+      },
+      ...registryEntries,
+    ]
+
+    expect(getBootstrapEntityOptions(entries).map((item) => item.value)).toEqual([
+      'bootstrap-import-helper',
+      'party',
+      'item',
+      'contract',
+      'binding',
+    ])
+    expect(getDefaultBootstrapScope(entries)).toEqual(['party', 'item'])
   })
 
   it('parses and builds tokens using registry token contract', () => {

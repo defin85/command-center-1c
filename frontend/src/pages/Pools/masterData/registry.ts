@@ -23,6 +23,8 @@ type MasterDataTokenSourceShape = {
   token_owner_counterparty_canonical_id?: string
 }
 
+const NON_PRESENTATION_SCOPE_FIELDS = new Set(['canonical_id', 'database_id'])
+
 const sortByDisplayOrder = (entries: PoolMasterDataRegistryEntry[]): PoolMasterDataRegistryEntry[] => (
   [...entries].sort((left, right) => left.display_order - right.display_order)
 )
@@ -40,6 +42,14 @@ const normalizeRegistryEntityType = (value: string | undefined): string | null =
   return normalized ? normalized : null
 }
 
+export function getRegistryEntryLabel(entry: PoolMasterDataRegistryEntry | null | undefined): string {
+  const label = String(entry?.label ?? '').trim()
+  if (label) {
+    return label
+  }
+  return String(entry?.entity_type ?? '').trim()
+}
+
 export function findRegistryEntryByEntityType(
   entries: PoolMasterDataRegistryEntry[],
   entityType: string | undefined
@@ -51,13 +61,21 @@ export function findRegistryEntryByEntityType(
   return entries.find((entry) => entry.entity_type === normalizedEntityType) ?? null
 }
 
+export function getRegistryEntityLabel(
+  entries: PoolMasterDataRegistryEntry[],
+  entityType: string | undefined
+): string {
+  const entry = findRegistryEntryByEntityType(entries, entityType)
+  return getRegistryEntryLabel(entry) || String(entityType ?? '').trim()
+}
+
 export function getDirectBindingEntityOptions(
   entries: PoolMasterDataRegistryEntry[]
 ): Array<PoolMasterDataRegistryOption<string>> {
   return sortByDisplayOrder(
     entries.filter((entry) => entry.capabilities.direct_binding)
   )
-    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
+    .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))
 }
 
 export function getBootstrapEntityOptions(
@@ -67,7 +85,7 @@ export function getBootstrapEntityOptions(
     entries.filter((entry) => entry.capabilities.bootstrap_import)
   ).map((entry) => ({
     value: entry.entity_type,
-    label: entry.entity_type,
+    label: getRegistryEntryLabel(entry),
   }))
 }
 
@@ -79,7 +97,7 @@ export function getSyncEntityOptions(
       (entry) => entry.capabilities.sync_outbound || entry.capabilities.sync_inbound || entry.capabilities.sync_reconcile
     )
   )
-    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
+    .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))
 }
 
 export function getTokenEntityOptions(
@@ -88,7 +106,7 @@ export function getTokenEntityOptions(
   return sortByDisplayOrder(
     entries.filter((entry) => entry.capabilities.token_exposure && entry.token_contract.enabled)
   )
-    .map((entry) => ({ value: entry.entity_type, label: entry.entity_type }))
+    .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))
 }
 
 export function getTokenQualifierOptions(
@@ -114,10 +132,23 @@ export function getDefaultDirectBindingEntityType(
 export function getDefaultBootstrapScope(
   entries: PoolMasterDataRegistryEntry[]
 ): string[] {
-  return getBootstrapEntityOptions(entries)
-    .filter((entry) => entry.value !== 'binding')
-    .slice(0, 2)
-    .map((entry) => entry.value)
+  const bootstrapCandidates = sortByBootstrapOrder(
+    entries.filter((entry) => entry.capabilities.bootstrap_import)
+  )
+  const preferredCandidates = bootstrapCandidates.filter((entry) => entry.kind === 'canonical')
+  const defaults = preferredCandidates.length > 0 ? preferredCandidates : bootstrapCandidates
+  return defaults.slice(0, 2).map((entry) => entry.entity_type)
+}
+
+export function getBindingScopePresentationFields(
+  entries: PoolMasterDataRegistryEntry[],
+  entityType: string | undefined
+): string[] {
+  const entry = findRegistryEntryByEntityType(entries, entityType)
+  if (!entry) {
+    return []
+  }
+  return entry.binding_scope_fields.filter((field) => !NON_PRESENTATION_SCOPE_FIELDS.has(field))
 }
 
 export function isMasterDataTokenLike(value: string): boolean {

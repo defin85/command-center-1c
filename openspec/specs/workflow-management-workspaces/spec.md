@@ -1,7 +1,7 @@
 # workflow-management-workspaces Specification
 
 ## Purpose
-TBD - created by archiving change 04-refactor-ui-platform-workflow-template-workspaces. Update Purpose after archive.
+Определяет canonical platform-owned workspace contract для workflow library, workflow authoring, execution diagnostics и monitor surfaces с URL-addressable state, shell-safe handoff и responsive secondary surfaces.
 ## Requirements
 ### Requirement: `/workflows` MUST использовать canonical workflow library workspace
 Система ДОЛЖНА (SHALL) представлять `/workflows` как workflow library workspace с URL-addressable selected surface/filter/workflow context и shell-safe handoff в workflow authoring и execution paths.
@@ -38,4 +38,3 @@ TBD - created by archiving change 04-refactor-ui-platform-workflow-template-work
 - **WHEN** выбирает node или trace details
 - **THEN** diagnostics flow остаётся доступным через canonical secondary surface
 - **AND** страница не зависит от page-wide horizontal overflow как основного inspect режима
-

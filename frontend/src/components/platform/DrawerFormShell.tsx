@@ -1,5 +1,6 @@
 import { Drawer, Grid, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
+import { useEffect } from 'react'
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
@@ -35,6 +36,25 @@ export function DrawerFormShell({
         ? window.innerWidth < DESKTOP_BREAKPOINT_PX
         : false
     )
+
+  useEffect(() => {
+    if (!open || typeof document === 'undefined') {
+      return
+    }
+
+    const root = document.documentElement
+    const body = document.body
+    const previousRootOverflowX = root.style.overflowX
+    const previousBodyOverflowX = body.style.overflowX
+
+    root.style.overflowX = 'hidden'
+    body.style.overflowX = 'hidden'
+
+    return () => {
+      root.style.overflowX = previousRootOverflowX
+      body.style.overflowX = previousBodyOverflowX
+    }
+  }, [open])
 
   const drawerTitle = title || subtitle
     ? (

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, Form, Input, Row, Select, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Col, Form, Grid, Input, Row, Select, Space, Tag, Typography } from 'antd'
 
 import type { BindingProfileDetail, BindingProfileSummary } from '../../api/poolBindingProfiles'
 import type {
@@ -29,6 +29,7 @@ import {
 import { describeExecutionPackTopologyCompatibility } from './executionPackTopologyCompatibility'
 
 const { Text } = Typography
+const { useBreakpoint } = Grid
 
 type PoolWorkflowBindingsEditorProps = {
   availableBindingProfiles?: BindingProfileSummary[]
@@ -165,8 +166,16 @@ export function PoolWorkflowBindingsEditor({
   topologyEdgeSelectors = [],
   disabled = false,
 }: PoolWorkflowBindingsEditorProps) {
+  const screens = useBreakpoint()
+  const isNarrow = !screens.md
+  const wrappingTextStyle = {
+    display: 'block',
+    overflowWrap: 'anywhere',
+    whiteSpace: 'normal',
+  } as const
+
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0, overflowX: 'hidden' }}>
       <Alert
         type="info"
         showIcon
@@ -183,7 +192,7 @@ export function PoolWorkflowBindingsEditor({
       ) : null}
       <Form.List name="workflow_bindings">
         {(fields, { add, remove }) => (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0 }}>
             {fields.length === 0 ? (
               <Text type="secondary">No workflow attachments configured for this pool yet.</Text>
             ) : null}
@@ -241,8 +250,32 @@ export function PoolWorkflowBindingsEditor({
                   return (
                     <Card
                       size="small"
-                      title={getWorkflowBindingCardTitle(binding, field.name + 1)}
-                      extra={(
+                      title={(
+                        <Space direction="vertical" size={4} style={{ width: '100%', minWidth: 0 }}>
+                          <Text strong style={wrappingTextStyle}>
+                            {getWorkflowBindingCardTitle(binding, field.name + 1)}
+                          </Text>
+                          <Text
+                            type="secondary"
+                            data-testid={`pool-catalog-workflow-binding-summary-${field.name}`}
+                            style={wrappingTextStyle}
+                          >
+                            {getWorkflowBindingCardSummary(binding)}
+                          </Text>
+                          {isNarrow ? (
+                            <Button
+                              danger
+                              size="small"
+                              onClick={() => remove(field.name)}
+                              disabled={disabled}
+                              data-testid={`pool-catalog-workflow-binding-remove-${field.name}`}
+                            >
+                              Remove
+                            </Button>
+                          ) : null}
+                        </Space>
+                      )}
+                      extra={isNarrow ? null : (
                         <Button
                           danger
                           size="small"
@@ -255,14 +288,7 @@ export function PoolWorkflowBindingsEditor({
                       )}
                       data-testid={`pool-catalog-workflow-binding-card-${field.name}`}
                     >
-                      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                        <Text
-                          type="secondary"
-                          data-testid={`pool-catalog-workflow-binding-summary-${field.name}`}
-                        >
-                          {getWorkflowBindingCardSummary(binding)}
-                        </Text>
-
+                      <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0 }}>
                         {lifecycleWarning ? (
                           <Alert
                             type="warning"
@@ -326,8 +352,8 @@ export function PoolWorkflowBindingsEditor({
                           )}
                         </Card>
 
-                        <Row gutter={12}>
-                          <Col span={12}>
+                        <Row gutter={[12, 12]}>
+                          <Col xs={24} md={12}>
                             <Form.Item name={[field.name, 'binding_id']} label="pool_workflow_binding_id">
                               <Input
                                 allowClear
@@ -337,7 +363,7 @@ export function PoolWorkflowBindingsEditor({
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} md={12}>
                             <Form.Item name={[field.name, 'status']} label="status">
                               <Select
                                 options={STATUS_OPTIONS}
@@ -348,8 +374,8 @@ export function PoolWorkflowBindingsEditor({
                           </Col>
                         </Row>
 
-                        <Row gutter={12}>
-                          <Col span={18}>
+                        <Row gutter={[12, 12]}>
+                          <Col xs={24} md={18}>
                             <Form.Item
                               name={[field.name, 'binding_profile_revision_id']}
                               label="binding_profile_revision_id"
@@ -383,11 +409,11 @@ export function PoolWorkflowBindingsEditor({
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={6}>
+                          <Col xs={24} md={6}>
                             <RouteButton
                               block
                               to={POOL_EXECUTION_PACKS_ROUTE}
-                              style={{ marginTop: 30 }}
+                              style={{ marginTop: isNarrow ? 0 : 30, whiteSpace: 'normal', height: 'auto' }}
                               data-testid={`pool-catalog-workflow-binding-handoff-${field.name}`}
                             >
                               Edit in execution-pack catalog
@@ -401,22 +427,40 @@ export function PoolWorkflowBindingsEditor({
                           data-testid={`pool-catalog-workflow-binding-profile-summary-${field.name}`}
                         >
                           <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                            <Text data-testid={`pool-catalog-workflow-binding-profile-label-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-profile-label-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {resolvePoolWorkflowBindingProfileLabel(syntheticBinding)}
                             </Text>
-                            <Text data-testid={`pool-catalog-workflow-binding-profile-status-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-profile-status-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {resolvePoolWorkflowBindingProfileStatus(syntheticBinding) ?? 'not resolved'}
                             </Text>
-                            <Text data-testid={`pool-catalog-workflow-binding-workflow-name-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-workflow-name-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {workflow?.workflow_name ?? '-'}
                             </Text>
-                            <Text data-testid={`pool-catalog-workflow-binding-workflow-key-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-workflow-key-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {workflow?.workflow_definition_key ?? '-'}
                             </Text>
-                            <Text data-testid={`pool-catalog-workflow-binding-workflow-revision-id-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-workflow-revision-id-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {workflow?.workflow_revision_id ?? '-'}
                             </Text>
-                            <Text data-testid={`pool-catalog-workflow-binding-workflow-revision-${field.name}`}>
+                            <Text
+                              data-testid={`pool-catalog-workflow-binding-workflow-revision-${field.name}`}
+                              style={wrappingTextStyle}
+                            >
                               {workflow ? String(workflow.workflow_revision) : '-'}
                             </Text>
                           </Space>
@@ -452,8 +496,8 @@ export function PoolWorkflowBindingsEditor({
                           />
                         ) : null}
 
-                        <Row gutter={12}>
-                          <Col span={12}>
+                        <Row gutter={[12, 12]}>
+                          <Col xs={24} md={12}>
                             <Form.Item name={[field.name, 'effective_from']} label="effective_from">
                               <Input
                                 type="date"
@@ -462,7 +506,7 @@ export function PoolWorkflowBindingsEditor({
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={12}>
+                          <Col xs={24} md={12}>
                             <Form.Item name={[field.name, 'effective_to']} label="effective_to">
                               <Input
                                 type="date"
@@ -473,8 +517,8 @@ export function PoolWorkflowBindingsEditor({
                           </Col>
                         </Row>
 
-                        <Row gutter={12}>
-                          <Col span={8}>
+                        <Row gutter={[12, 12]}>
+                          <Col xs={24} md={8}>
                             <Form.Item name={[field.name, 'selector', 'direction']} label="selector.direction">
                               <Input
                                 allowClear
@@ -484,7 +528,7 @@ export function PoolWorkflowBindingsEditor({
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={8}>
+                          <Col xs={24} md={8}>
                             <Form.Item name={[field.name, 'selector', 'mode']} label="selector.mode">
                               <Input
                                 allowClear
@@ -494,7 +538,7 @@ export function PoolWorkflowBindingsEditor({
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={8}>
+                          <Col xs={24} md={8}>
                             <Form.Item name={[field.name, 'selector', 'tags_csv']} label="selector.tags">
                               <Input
                                 allowClear

@@ -138,6 +138,32 @@ describe('TemplatesPage', () => {
     expect(await screen.findByTestId('templates-selected-template-data')).toHaveTextContent('workflow-template-v3')
   })
 
+  it('hydrates search, filters, and sort from URL-backed workspace state', async () => {
+    const params = new URLSearchParams()
+    params.set('q', 'compat')
+    params.set('filters', JSON.stringify({ executor_kind: 'workflow' }))
+    params.set('sort', JSON.stringify({ key: 'updated_at', order: 'desc' }))
+
+    renderPage([`/templates?${params.toString()}`])
+
+    await waitFor(() => {
+      expect(mockListOperationCatalogExposures).toHaveBeenCalledWith(expect.objectContaining({
+        surface: 'template',
+        search: 'compat',
+        filters: JSON.stringify({
+          executor_kind: {
+            op: 'contains',
+            value: 'workflow',
+          },
+        }),
+        sort: JSON.stringify({
+          key: 'updated_at',
+          order: 'desc',
+        }),
+      }))
+    })
+  })
+
   it('does not open compose=edit from the URL without manage permissions', async () => {
     renderPage(['/templates?template=workflow-template-compat&compose=edit'])
 

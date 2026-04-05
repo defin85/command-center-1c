@@ -659,6 +659,211 @@ const TOPOLOGY_TEMPLATE = {
   updated_at: NOW,
 }
 
+const MASTER_DATA_REGISTRY_RESPONSE = {
+  contract_version: 'pool_master_data_registry.v1',
+  count: 5,
+  entries: [
+    {
+      entity_type: 'party',
+      label: 'Party',
+      kind: 'canonical',
+      display_order: 10,
+      binding_scope_fields: ['canonical_id', 'database_id', 'ib_catalog_kind'],
+      capabilities: {
+        direct_binding: true,
+        token_exposure: true,
+        bootstrap_import: true,
+        outbox_fanout: true,
+        sync_outbound: true,
+        sync_inbound: true,
+        sync_reconcile: true,
+      },
+      token_contract: {
+        enabled: true,
+        qualifier_kind: 'ib_catalog_kind',
+        qualifier_required: true,
+        qualifier_options: ['organization', 'counterparty'],
+      },
+      bootstrap_contract: { enabled: true, dependency_order: 10 },
+      runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+    },
+    {
+      entity_type: 'item',
+      label: 'Item',
+      kind: 'canonical',
+      display_order: 20,
+      binding_scope_fields: ['canonical_id', 'database_id'],
+      capabilities: {
+        direct_binding: true,
+        token_exposure: true,
+        bootstrap_import: true,
+        outbox_fanout: true,
+        sync_outbound: true,
+        sync_inbound: true,
+        sync_reconcile: true,
+      },
+      token_contract: {
+        enabled: true,
+        qualifier_kind: 'none',
+        qualifier_required: false,
+        qualifier_options: [],
+      },
+      bootstrap_contract: { enabled: true, dependency_order: 20 },
+      runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+    },
+    {
+      entity_type: 'contract',
+      label: 'Contract',
+      kind: 'canonical',
+      display_order: 30,
+      binding_scope_fields: ['canonical_id', 'database_id', 'owner_counterparty_canonical_id'],
+      capabilities: {
+        direct_binding: true,
+        token_exposure: true,
+        bootstrap_import: true,
+        outbox_fanout: true,
+        sync_outbound: true,
+        sync_inbound: true,
+        sync_reconcile: true,
+      },
+      token_contract: {
+        enabled: true,
+        qualifier_kind: 'owner_counterparty_canonical_id',
+        qualifier_required: true,
+        qualifier_options: [],
+      },
+      bootstrap_contract: { enabled: true, dependency_order: 30 },
+      runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+    },
+    {
+      entity_type: 'gl_account',
+      label: 'GL Account',
+      kind: 'canonical',
+      display_order: 35,
+      binding_scope_fields: ['canonical_id', 'database_id', 'chart_identity'],
+      capabilities: {
+        direct_binding: true,
+        token_exposure: true,
+        bootstrap_import: true,
+        outbox_fanout: false,
+        sync_outbound: false,
+        sync_inbound: false,
+        sync_reconcile: false,
+      },
+      token_contract: {
+        enabled: true,
+        qualifier_kind: 'none',
+        qualifier_required: false,
+        qualifier_options: [],
+      },
+      bootstrap_contract: { enabled: true, dependency_order: 35 },
+      runtime_consumers: ['bindings', 'bootstrap_import', 'token_catalog', 'token_parser'],
+    },
+    {
+      entity_type: 'tax_profile',
+      label: 'Tax Profile',
+      kind: 'canonical',
+      display_order: 40,
+      binding_scope_fields: ['canonical_id', 'database_id'],
+      capabilities: {
+        direct_binding: true,
+        token_exposure: true,
+        bootstrap_import: true,
+        outbox_fanout: true,
+        sync_outbound: true,
+        sync_inbound: true,
+        sync_reconcile: true,
+      },
+      token_contract: {
+        enabled: true,
+        qualifier_kind: 'none',
+        qualifier_required: false,
+        qualifier_options: [],
+      },
+      bootstrap_contract: { enabled: true, dependency_order: 40 },
+      runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+    },
+  ],
+}
+
+const MASTER_DATA_PARTIES = [
+  {
+    id: 'party-1',
+    tenant_id: TENANT_ID,
+    canonical_id: 'party-org',
+    name: 'Org One',
+    full_name: 'Org One LLC',
+    inn: '730000000001',
+    kpp: '123456789',
+    is_our_organization: true,
+    is_counterparty: true,
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  },
+]
+
+const MASTER_DATA_ITEMS = [
+  {
+    id: 'item-1',
+    tenant_id: TENANT_ID,
+    canonical_id: 'item-1',
+    name: 'Service package',
+    sku: 'svc-1',
+    unit: 'pcs',
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  },
+]
+
+const MASTER_DATA_CONTRACTS = [
+  {
+    id: 'contract-1',
+    tenant_id: TENANT_ID,
+    canonical_id: 'contract-1',
+    name: 'Main service contract',
+    owner_counterparty_id: 'party-1',
+    owner_counterparty_canonical_id: 'party-org',
+    number: 'C-001',
+    date: '2026-01-01',
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  },
+]
+
+const MASTER_DATA_TAX_PROFILES = [
+  {
+    id: 'tax-profile-1',
+    tenant_id: TENANT_ID,
+    canonical_id: 'tax-profile-1',
+    vat_rate: 20,
+    vat_included: true,
+    vat_code: 'VAT20',
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  },
+]
+
+const MASTER_DATA_GL_ACCOUNTS = [
+  {
+    id: 'gl-account-1',
+    tenant_id: TENANT_ID,
+    canonical_id: 'gl-account-001',
+    code: '10.01',
+    name: 'Main Account',
+    chart_identity: 'ChartOfAccounts_Main',
+    config_name: 'Accounting Enterprise',
+    config_version: '3.0.1',
+    compatibility_class: 'current',
+    metadata: {},
+    created_at: NOW,
+    updated_at: NOW,
+  },
+]
+
 const POOL_WITH_ATTACHMENT = {
   id: 'pool-1',
   code: 'pool-main',
@@ -1536,6 +1741,20 @@ async function setupUiPlatformMocks(
     JSON.parse(JSON.stringify(TOPOLOGY_TEMPLATE)) as typeof TOPOLOGY_TEMPLATE,
   ]
   const factualWorkspace = JSON.parse(JSON.stringify(POOL_FACTUAL_WORKSPACE)) as typeof POOL_FACTUAL_WORKSPACE
+  const masterDataRegistry = JSON.parse(JSON.stringify(MASTER_DATA_REGISTRY_RESPONSE)) as typeof MASTER_DATA_REGISTRY_RESPONSE
+  const masterDataParties = JSON.parse(JSON.stringify(MASTER_DATA_PARTIES)) as typeof MASTER_DATA_PARTIES
+  const masterDataItems = JSON.parse(JSON.stringify(MASTER_DATA_ITEMS)) as typeof MASTER_DATA_ITEMS
+  const masterDataContracts = JSON.parse(JSON.stringify(MASTER_DATA_CONTRACTS)) as typeof MASTER_DATA_CONTRACTS
+  const masterDataTaxProfiles = JSON.parse(JSON.stringify(MASTER_DATA_TAX_PROFILES)) as typeof MASTER_DATA_TAX_PROFILES
+  const masterDataGlAccounts = JSON.parse(JSON.stringify(MASTER_DATA_GL_ACCOUNTS)) as typeof MASTER_DATA_GL_ACCOUNTS
+  const workflowBindings = JSON.parse(JSON.stringify(POOL_WITH_ATTACHMENT.workflow_bindings))
+
+  const buildPagedResponse = <T,>(items: T[], key: string, url: URL) => ({
+    [key]: items,
+    count: items.length,
+    limit: Number(url.searchParams.get('limit') || 50),
+    offset: Number(url.searchParams.get('offset') || 0),
+  })
 
   await page.route('**/api/v2/**', async (route) => {
     const request = route.request()
@@ -1810,6 +2029,39 @@ async function setupUiPlatformMocks(
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/pools/master-data/registry/') {
+      return fulfillJson(route, masterDataRegistry)
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/parties/') {
+      return fulfillJson(route, buildPagedResponse(masterDataParties, 'parties', url))
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/items/') {
+      return fulfillJson(route, buildPagedResponse(masterDataItems, 'items', url))
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/contracts/') {
+      return fulfillJson(route, buildPagedResponse(masterDataContracts, 'contracts', url))
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/tax-profiles/') {
+      return fulfillJson(route, buildPagedResponse(masterDataTaxProfiles, 'tax_profiles', url))
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/gl-accounts/') {
+      return fulfillJson(route, buildPagedResponse(masterDataGlAccounts, 'gl_accounts', url))
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/workflow-bindings/') {
+      return fulfillJson(route, {
+        pool_id: String(url.searchParams.get('pool_id') || POOL_WITH_ATTACHMENT.id),
+        workflow_bindings: workflowBindings,
+        collection_etag: 'bindings-etag-v1',
+        blocking_remediation: null,
+      })
+    }
+
     const bindingProfileMatch = path.match(/^\/api\/v2\/pools\/binding-profiles\/([^/]+)\/$/)
     if (method === 'GET' && bindingProfileMatch) {
       const bindingProfileId = bindingProfileMatch[1] ?? BINDING_PROFILE_DETAIL.binding_profile_id
@@ -2058,10 +2310,37 @@ async function setupUiPlatformMocks(
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
-  const hasOverflow = await page.evaluate(() => (
-    document.documentElement.scrollWidth - window.innerWidth > 1
-  ))
-  expect(hasOverflow).toBe(false)
+  const overflowDetails = await page.evaluate(() => {
+    const overflow = document.documentElement.scrollWidth - window.innerWidth
+    if (overflow <= 1) {
+      return null
+    }
+
+    const offenders = Array.from(document.querySelectorAll<HTMLElement>('body *'))
+      .map((element) => {
+        const rect = element.getBoundingClientRect()
+        const overflowRight = rect.right - window.innerWidth
+        return {
+          tag: element.tagName.toLowerCase(),
+          testId: element.dataset.testid || '',
+          text: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+          overflowRight,
+          width: rect.width,
+        }
+      })
+      .filter((item) => item.overflowRight > 1)
+      .sort((left, right) => right.overflowRight - left.overflowRight)
+      .slice(0, 5)
+
+    return {
+      overflow,
+      offenders,
+    }
+  })
+
+  if (overflowDetails) {
+    throw new Error(`Page has horizontal overflow: ${JSON.stringify(overflowDetails)}`)
+  }
 }
 
 async function fillTopologyTemplateCreateForm(page: Page) {
@@ -2387,6 +2666,45 @@ test('UI platform: /workflows keeps mobile catalog readable and opens detail in 
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /workflows returns from designer to the same URL-backed workspace context', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  const workflowParams = new URLSearchParams()
+  workflowParams.set('q', 'Services')
+  workflowParams.set('filters', JSON.stringify({ workflow_type: 'complex' }))
+  workflowParams.set('sort', JSON.stringify({ key: 'updated_at', order: 'desc' }))
+  workflowParams.set('workflow', WORKFLOW.id)
+  workflowParams.set('detail', '1')
+
+  await page.goto(`/workflows?${workflowParams.toString()}`, { waitUntil: 'domcontentloaded' })
+
+  await page.getByTestId('workflow-list-detail-open').click()
+  await expect(page).toHaveURL(new RegExp(`/workflows/${WORKFLOW.id}`))
+  await page.getByRole('button', { name: 'Back' }).click()
+
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return JSON.stringify({
+      pathname: url.pathname,
+      q: url.searchParams.get('q'),
+      filters: url.searchParams.get('filters'),
+      sort: url.searchParams.get('sort'),
+      workflow: url.searchParams.get('workflow'),
+      detail: url.searchParams.get('detail'),
+    })
+  }).toBe(JSON.stringify({
+    pathname: '/workflows',
+    q: 'Services',
+    filters: JSON.stringify({ workflow_type: 'complex' }),
+    sort: JSON.stringify({ key: 'updated_at', order: 'desc' }),
+    workflow: WORKFLOW.id,
+    detail: '1',
+  }))
+  await expect(page.getByTestId('workflow-list-selected-id')).toHaveText(WORKFLOW.id)
+})
+
 test('UI platform: /workflows/executions restores selected execution detail from URL-backed workspace state', async ({ page }) => {
   const counts = createRequestCounts()
 
@@ -2425,6 +2743,44 @@ test('UI platform: /workflows/executions keeps mobile catalog readable and opens
   await expect(detailDrawer.getByTestId('workflow-executions-selected-id')).toHaveText(WORKFLOW_EXECUTION_DETAIL.id)
   await expect(detailDrawer.getByTestId('workflow-executions-detail-open')).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/executions returns from monitor to the same URL-backed diagnostics context', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  const executionParams = new URLSearchParams()
+  executionParams.set('status', 'pending')
+  executionParams.set('workflow_id', WORKFLOW.id)
+  executionParams.set('execution', WORKFLOW_EXECUTION_DETAIL.id)
+  executionParams.set('detail', '1')
+
+  await page.goto(`/workflows/executions?${executionParams.toString()}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await page.getByTestId('workflow-executions-detail-open').click()
+  await expect(page).toHaveURL(new RegExp(`/workflows/executions/${WORKFLOW_EXECUTION_DETAIL.id}`))
+  await page.getByRole('button', { name: 'Back' }).click()
+
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return JSON.stringify({
+      pathname: url.pathname,
+      status: url.searchParams.get('status'),
+      workflow_id: url.searchParams.get('workflow_id'),
+      execution: url.searchParams.get('execution'),
+      detail: url.searchParams.get('detail'),
+    })
+  }).toBe(JSON.stringify({
+    pathname: '/workflows/executions',
+    status: 'pending',
+    workflow_id: WORKFLOW.id,
+    execution: WORKFLOW_EXECUTION_DETAIL.id,
+    detail: '1',
+  }))
+  await expect(page.getByTestId('workflow-executions-selected-id')).toHaveText(WORKFLOW_EXECUTION_DETAIL.id)
 })
 
 test('UI platform: /workflows/:id restores selected node context from URL-backed authoring state', async ({ page }) => {

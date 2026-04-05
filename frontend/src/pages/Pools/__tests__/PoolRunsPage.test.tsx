@@ -11,6 +11,7 @@ import type {
   PoolRunReadinessBlocker,
   PoolRunReadinessChecklist,
   PoolRunReport,
+  PoolWorkflowBinding,
 } from '../../../api/intercompanyPools'
 import { resetQueryClient } from '../../../lib/queryClient'
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
@@ -244,7 +245,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
+function buildWorkflowBinding(overrides: Record<string, unknown> = {}): PoolWorkflowBinding {
   const workflow = {
     workflow_definition_key: 'services-publication',
     workflow_revision_id: '77777777-7777-7777-7777-777777777777',
@@ -265,7 +266,9 @@ function buildWorkflowBinding(overrides: Record<string, unknown> = {}) {
     ? overrides.parameters
     : { publication_variant: 'full' }
   const roleMapping = isRecord(overrides.role_mapping)
-    ? overrides.role_mapping
+    ? Object.fromEntries(
+      Object.entries(overrides.role_mapping).map(([key, value]) => [key, String(value)])
+    )
     : { initiator: 'finance' }
   const bindingProfileId = typeof overrides.binding_profile_id === 'string'
     ? overrides.binding_profile_id
@@ -887,6 +890,32 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('stage=safe')
       expect(location).toContain('detail=1')
     })
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('renders inspect lineage before the delayed run report snapshot resolves', async () => {
+    const run = buildRun({
+      workflow_binding: buildWorkflowBinding({
+        binding_id: 'binding-top-down',
+        attachment_revision: 5,
+      }),
+    })
+    const pendingReport = deferred<PoolRunReport>()
+
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockReturnValue(pendingReport.promise)
+
+    renderPage(`/pools/runs?pool=${run.pool_id}&run=${run.id}&stage=inspect&detail=1`)
+
+    expect(await screen.findByText('Run Lineage')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-lineage-binding-id')).toHaveTextContent('binding-top-down')
+    expect(
+      screen.getByText('Run lineage, readiness, and runtime context are already available. Publication attempts and diagnostics JSON will appear when report loading finishes.')
+    ).toBeInTheDocument()
+
+    pendingReport.resolve(buildReport(run))
+
+    expect(await screen.findByText('Publication Attempts')).toBeInTheDocument()
+    expect(screen.getByText('attempts: 1')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps selected run and active stage in the URL when the operator switches lifecycle stages', async () => {

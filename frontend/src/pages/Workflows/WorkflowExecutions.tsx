@@ -32,6 +32,7 @@ import {
   WorkspacePage,
 } from '../../components/platform'
 import { formatDuration } from '../../utils/timelineTransforms'
+import { buildRelativeHref } from './routeState'
 
 const api = getV2()
 const { Text } = Typography
@@ -122,6 +123,46 @@ const WorkflowExecutions = () => {
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(detailOpenFromUrl)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+
+  const buildExecutionsWorkspaceHref = useCallback(({
+    detailOpen,
+    executionId,
+  }: {
+    detailOpen?: boolean
+    executionId?: string | null
+  } = {}) => {
+    const next = new URLSearchParams()
+    if (statusFilter !== 'all') {
+      next.set('status', statusFilter)
+    }
+    if (workflowIdFilter) {
+      next.set('workflow_id', workflowIdFilter)
+    }
+
+    const nextExecutionId = executionId === undefined ? selectedExecutionId ?? null : executionId
+    const nextDetailOpen = detailOpen ?? isDetailDrawerOpen
+
+    if (nextExecutionId) {
+      next.set('execution', nextExecutionId)
+    }
+    if (nextExecutionId && nextDetailOpen) {
+      next.set('detail', '1')
+    }
+
+    return buildRelativeHref('/workflows/executions', next)
+  }, [isDetailDrawerOpen, selectedExecutionId, statusFilter, workflowIdFilter])
+
+  const openExecutionMonitor = useCallback((executionId: string) => {
+    const params = new URLSearchParams()
+    params.set('returnTo', buildExecutionsWorkspaceHref({ executionId, detailOpen: true }))
+    navigate(buildRelativeHref(`/workflows/executions/${executionId}`, params))
+  }, [buildExecutionsWorkspaceHref, navigate])
+
+  const openWorkflowFromExecution = useCallback((workflowId: string, executionId: string) => {
+    const params = new URLSearchParams()
+    params.set('returnTo', buildExecutionsWorkspaceHref({ executionId, detailOpen: true }))
+    navigate(buildRelativeHref(`/workflows/${workflowId}`, params))
+  }, [buildExecutionsWorkspaceHref, navigate])
 
   useEffect(() => {
     setWorkflowIdInput(workflowIdFilter)
@@ -378,7 +419,7 @@ const WorkflowExecutions = () => {
                 icon={<EyeOutlined />}
                 onClick={(event) => {
                   event.stopPropagation()
-                  navigate(`/workflows/executions/${record.id}`)
+                  openExecutionMonitor(record.id)
                 }}
                 aria-label="Open execution"
               />
@@ -389,7 +430,7 @@ const WorkflowExecutions = () => {
                 icon={<ApartmentOutlined />}
                 onClick={(event) => {
                   event.stopPropagation()
-                  navigate(`/workflows/${record.workflow_template}`)
+                  openWorkflowFromExecution(record.workflow_template, record.id)
                 }}
                 aria-label="Open workflow"
               />
@@ -411,7 +452,7 @@ const WorkflowExecutions = () => {
         )
       },
     },
-  ]), [handleCancel, navigate])
+  ]), [handleCancel, openExecutionMonitor, openWorkflowFromExecution])
 
   const detailLoading = Boolean(selectedExecutionId) && !selectedExecution && (executionsQuery.isLoading || selectedExecutionDetailQuery.isLoading)
   const detailError = selectedExecutionId && !selectedExecution && selectedExecutionDetailQuery.isError
@@ -537,13 +578,13 @@ const WorkflowExecutions = () => {
               <Space wrap>
                 <Button
                   data-testid="workflow-executions-detail-open"
-                  onClick={() => navigate(`/workflows/executions/${selectedExecution.id}`)}
+                  onClick={() => openExecutionMonitor(selectedExecution.id)}
                 >
                   Open execution
                 </Button>
                 <Button
                   data-testid="workflow-executions-detail-open-workflow"
-                  onClick={() => navigate(`/workflows/${selectedExecution.workflow_template}`)}
+                  onClick={() => openWorkflowFromExecution(selectedExecution.workflow_template, selectedExecution.id)}
                 >
                   Open workflow
                 </Button>
