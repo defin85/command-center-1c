@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import WorkflowList from '../WorkflowList'
 
 const mockGetWorkflowsListWorkflows = vi.fn()
+const mockGetWorkflowsGetWorkflow = vi.fn()
 const ROUTER_FUTURE = {
   v7_startTransition: true,
   v7_relativeSplatPath: true,
@@ -18,6 +19,7 @@ vi.mock('../../../api/generated', async (importOriginal) => {
     ...actual,
     getV2: () => ({
       getWorkflowsListWorkflows: (...args: unknown[]) => mockGetWorkflowsListWorkflows(...args),
+      getWorkflowsGetWorkflow: (...args: unknown[]) => mockGetWorkflowsGetWorkflow(...args),
       postWorkflowsDeleteWorkflow: vi.fn(),
       postWorkflowsCloneWorkflow: vi.fn(),
     }),
@@ -46,6 +48,7 @@ function renderPage(initialEntry = '/workflows') {
 describe('WorkflowList', () => {
   beforeEach(() => {
     mockGetWorkflowsListWorkflows.mockReset()
+    mockGetWorkflowsGetWorkflow.mockReset()
     mockGetWorkflowsListWorkflows.mockResolvedValue({
       workflows: [],
       count: 0,
@@ -67,6 +70,37 @@ describe('WorkflowList', () => {
         },
         source: 'default',
       },
+    })
+    mockGetWorkflowsGetWorkflow.mockResolvedValue({
+      workflow: {
+        id: 'workflow-1',
+        name: 'Decision-aware Workflow',
+        description: 'authoring',
+        workflow_type: 'complex',
+        category: 'custom',
+        dag_structure: { nodes: [], edges: [] },
+        config: {},
+        is_valid: true,
+        is_active: true,
+        is_system_managed: false,
+        management_mode: 'user_authored',
+        visibility_surface: 'workflow_library',
+        read_only_reason: null,
+        version_number: 1,
+        parent_version: null,
+        parent_version_name: null,
+        created_by: null,
+        created_by_username: 'analyst',
+        execution_count: 0,
+        created_at: '2026-03-08T12:00:00Z',
+        updated_at: '2026-03-08T12:00:00Z',
+      },
+      statistics: {
+        total_executions: 0,
+        success_rate: 0,
+        avg_duration: 0,
+      },
+      executions: [],
     })
   })
 
@@ -133,5 +167,41 @@ describe('WorkflowList', () => {
       'href',
       '/workflows/workflow-1?database_id=22222222-2222-2222-2222-222222222222'
     )
+  })
+
+  it('restores selected workflow detail from the route state', async () => {
+    mockGetWorkflowsListWorkflows.mockResolvedValueOnce({
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Decision-aware Workflow',
+          description: 'authoring',
+          workflow_type: 'complex',
+          category: 'custom',
+          is_valid: true,
+          is_active: true,
+          is_system_managed: false,
+          management_mode: 'user_authored',
+          visibility_surface: 'workflow_library',
+          read_only_reason: null,
+          version_number: 1,
+          parent_version: null,
+          created_by: null,
+          created_by_username: 'analyst',
+          node_count: 2,
+          execution_count: 0,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 1,
+      total: 1,
+      authoring_phase: null,
+    })
+
+    renderPage('/workflows?workflow=workflow-1&detail=1')
+
+    expect(await screen.findByTestId('workflow-list-selected-id')).toHaveTextContent('workflow-1')
+    expect(await screen.findByTestId('workflow-list-selected-dag')).toHaveTextContent('"nodes"')
   })
 })

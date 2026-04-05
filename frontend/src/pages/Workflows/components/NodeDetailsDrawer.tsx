@@ -107,8 +107,13 @@ export function NodeDetailsDrawer({
               <Button
                 type="link"
                 icon={<ExportOutlined />}
-                href={`${jaegerUiUrl}/trace/${traceId}?uiFind=${selectedNode.status.spanId}`}
-                target="_blank"
+                onClick={() => {
+                  window.open(
+                    `${jaegerUiUrl}/trace/${traceId}?uiFind=${selectedNode.status.spanId}`,
+                    '_blank',
+                    'noopener,noreferrer'
+                  )
+                }}
                 className="trace-link"
               >
                 Open in Jaeger

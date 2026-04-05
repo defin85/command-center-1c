@@ -28,6 +28,33 @@ async function setupAuth(page: Page, isStaff: boolean) {
   }, isStaff)
 }
 
+function createBootstrapPayload(isStaff: boolean) {
+  return {
+    me: { id: 1, username: 'admin', is_staff: isStaff },
+    tenant_context: {
+      active_tenant_id: 'tenant-default',
+      tenants: [
+        {
+          id: 'tenant-default',
+          slug: 'default',
+          name: 'Default',
+          role: 'owner',
+        },
+      ],
+    },
+    access: {
+      user: { id: 1, username: 'admin' },
+      clusters: [],
+      databases: [],
+      operation_templates: [],
+    },
+    capabilities: {
+      can_manage_rbac: isStaff,
+      can_manage_driver_catalogs: false,
+    },
+  }
+}
+
 test('Workflow designer: operation io mode persists explicit_strict on save', async ({ page }) => {
   await setupAuth(page, true)
 
@@ -79,6 +106,9 @@ test('Workflow designer: operation io mode persists explicit_strict on save', as
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, createBootstrapPayload(true))
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
     }
@@ -126,7 +156,7 @@ test('Workflow designer: operation io mode persists explicit_strict on save', as
   await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByText('wf-io-test', { exact: true })).toBeVisible()
-  await page.getByText('Step 1', { exact: true }).first().click()
+  await page.getByTestId('rf__node-step1').evaluate((element: HTMLElement) => element.click())
   await expect(page.locator('#workflow-step1-operation-io-mode')).toBeVisible()
 
   await page
@@ -196,6 +226,9 @@ test('Workflow designer: template switch persists pinned operation_ref on save',
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, createBootstrapPayload(true))
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
     }
@@ -256,7 +289,7 @@ test('Workflow designer: template switch persists pinned operation_ref on save',
   await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByText('wf-operation-ref', { exact: true })).toBeVisible()
 
-  await page.getByText('Step 1', { exact: true }).first().click()
+  await page.getByTestId('rf__node-step1').evaluate((element: HTMLElement) => element.click())
   await expect(page.locator('#workflow-step1-operation-template')).toBeVisible()
 
   await page
@@ -339,6 +372,9 @@ test('Workflow designer: explicit template contract is shown and validates requi
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, createBootstrapPayload(true))
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
     }
@@ -412,7 +448,7 @@ test('Workflow designer: explicit template contract is shown and validates requi
   await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByText('wf-template-contract', { exact: true })).toBeVisible()
-  await page.getByText('Step 1', { exact: true }).first().click()
+  await page.getByTestId('rf__node-step1').evaluate((element: HTMLElement) => element.click())
   await expect(page.getByText('Execution contract', { exact: true })).toBeVisible()
   await expect(page.getByText('extensions.sync', { exact: true })).toBeVisible()
   await expect(page.getByText('designer_cli -> infobase', { exact: true })).toBeVisible()
@@ -469,6 +505,9 @@ test('Workflow designer: subworkflow selector persists pinned subworkflow revisi
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, createBootstrapPayload(true))
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'admin', is_staff: true })
     }
@@ -520,7 +559,7 @@ test('Workflow designer: subworkflow selector persists pinned subworkflow revisi
   await page.goto(`/workflows/${workflowId}`, { waitUntil: 'domcontentloaded' })
 
   await expect(page.getByText('wf-subworkflow-pin', { exact: true })).toBeVisible()
-  await page.getByText('Step 1', { exact: true }).first().click()
+  await page.getByTestId('rf__node-step1').evaluate((element: HTMLElement) => element.click())
   await expect(page.getByText('Analyst-facing subworkflow calls pin an explicit workflow revision by default.')).toBeVisible()
 
   await page

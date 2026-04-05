@@ -9,101 +9,165 @@
  * - Trace viewer integration
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import {
-  Layout,
-  Typography,
+  App,
+  Alert,
+  Badge,
   Button,
-  Space,
-  Card,
+  Collapse,
   Descriptions,
   Progress,
-  Tag,
-  Timeline,
-  Table,
-  Spin,
-  Alert,
-  Collapse,
   Result,
-  Badge,
+  Space,
+  Spin,
+  Timeline,
   Tooltip,
-  Statistic,
-  Row,
-  Col
+  Typography,
 } from 'antd'
 import {
   ArrowLeftOutlined,
-  ReloadOutlined,
-  StopOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined,
   ClockCircleOutlined,
+  CloseCircleOutlined,
+  ExportOutlined,
   LoadingOutlined,
   MinusCircleOutlined,
-  ExportOutlined
+  ReloadOutlined,
+  StopOutlined,
 } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
+
 import { WorkflowCanvas } from '../../components/workflow'
 import { TraceViewerModal } from '../../components/workflow/TraceViewerModal'
-import { useWorkflowExecution, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
-// Generated API + transforms (migrated from adapter)
+import { useWorkflowExecution, type NodeStatus, type WorkflowStatusType } from '../../hooks/useWorkflowExecution'
 import { getV2 } from '../../api/generated'
 import { convertExecutionToLegacy, convertDAGToLegacy } from '../../utils/workflowTransforms'
 import type { DAGStructure, WorkflowExecution } from '../../types/workflow'
 import { useAuthz } from '../../authz/useAuthz'
 import { NodeDetailsDrawer, type NodeDetails } from './components/NodeDetailsDrawer'
+import {
+  EntityDetails,
+  JsonBlock,
+  PageHeader,
+  StatusBadge,
+  WorkspacePage,
+} from '../../components/platform'
 import './WorkflowMonitor.css'
 
-// v2 migration: использовать env variable для Jaeger UI
 const JAEGER_UI_URL = import.meta.env.VITE_JAEGER_UI_URL || 'http://localhost:16686'
-
-// Initialize v2 API
 const api = getV2()
+const { Text } = Typography
 
-const { Header, Content, Sider } = Layout
-const { Title, Text } = Typography
-
-const statusColors: Record<WorkflowStatusType, string> = {
-  pending: 'default',
-  running: 'processing',
-  completed: 'success',
-  failed: 'error',
-  cancelled: 'warning'
-}
-
-const statusIcons: Record<WorkflowStatusType, React.ReactNode> = {
+const statusIcons: Record<WorkflowStatusType, ReactNode> = {
   pending: <ClockCircleOutlined />,
   running: <LoadingOutlined spin />,
   completed: <CheckCircleOutlined />,
   failed: <CloseCircleOutlined />,
-  cancelled: <MinusCircleOutlined />
+  cancelled: <MinusCircleOutlined />,
+}
+
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+type RawNodeStatus = {
+  status?: unknown
+  output?: unknown
+  error?: unknown
+  duration_ms?: unknown
+  durationMs?: unknown
+  span_id?: unknown
+  spanId?: unknown
+  started_at?: unknown
+  startedAt?: unknown
+  completed_at?: unknown
+  completedAt?: unknown
+}
+
+const normalizeNodeStatuses = (value: unknown): Record<string, NodeStatus> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  const normalized: Record<string, NodeStatus> = {}
+
+  Object.entries(value as Record<string, unknown>).forEach(([nodeId, rawStatus]) => {
+    if (!rawStatus || typeof rawStatus !== 'object' || Array.isArray(rawStatus)) {
+      return
+    }
+
+    const candidate = rawStatus as RawNodeStatus
+    const status = typeof candidate.status === 'string'
+      ? candidate.status
+      : 'pending'
+
+    normalized[nodeId] = {
+      nodeId,
+      status: status as NodeStatus['status'],
+      output: candidate.output && typeof candidate.output === 'object'
+        ? candidate.output as Record<string, unknown>
+        : undefined,
+      error: typeof candidate.error === 'string' && candidate.error.trim()
+        ? candidate.error
+        : undefined,
+      durationMs: (() => {
+        const parsed = Number(candidate.durationMs ?? candidate.duration_ms)
+        return Number.isFinite(parsed) ? parsed : undefined
+      })(),
+      spanId: typeof candidate.spanId === 'string'
+        ? candidate.spanId
+        : typeof candidate.span_id === 'string'
+          ? candidate.span_id
+          : undefined,
+      startedAt: typeof candidate.startedAt === 'string'
+        ? candidate.startedAt
+        : typeof candidate.started_at === 'string'
+          ? candidate.started_at
+          : undefined,
+      completedAt: typeof candidate.completedAt === 'string'
+        ? candidate.completedAt
+        : typeof candidate.completed_at === 'string'
+          ? candidate.completed_at
+          : undefined,
+    }
+  })
+
+  return normalized
+}
+
+const formatDateTime = (value: string | null | undefined) => (
+  value ? new Date(value).toLocaleString() : 'Not available'
+)
+
+const formatDuration = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—'
+  }
+  return `${value.toFixed(1)}s`
 }
 
 const WorkflowMonitor = () => {
   const { executionId } = useParams<{ executionId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { message } = App.useApp()
   const authz = useAuthz()
   const isStaff = authz.isStaff
+  const selectedNodeId = normalizeRouteParam(searchParams.get('node'))
 
-  // Execution data from API (initial load)
   const [execution, setExecution] = useState<WorkflowExecution | null>(null)
   const [dagStructure, setDagStructure] = useState<DAGStructure | null>(null)
   const [executionPlan, setExecutionPlan] = useState<unknown | null>(null)
   const [executionBindings, setExecutionBindings] = useState<unknown | null>(null)
+  const [initialNodeStatuses, setInitialNodeStatuses] = useState<Record<string, NodeStatus>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isCancelling, setIsCancelling] = useState(false)
-
-  // Selected node for details drawer
-  const [selectedNode, setSelectedNode] = useState<NodeDetails | null>(null)
-  const [drawerVisible, setDrawerVisible] = useState(false)
-
-  // Trace viewer modal state
   const [traceModalVisible, setTraceModalVisible] = useState(false)
   const [traceNodeId, setTraceNodeId] = useState<string | undefined>()
 
-  // Real-time updates from WebSocket
   const {
     status: liveStatus,
     progress: liveProgress,
@@ -114,183 +178,170 @@ const WorkflowMonitor = () => {
     nodeStatuses,
     isConnected,
     connectionError,
-    reconnectAttempts
+    reconnectAttempts,
   } = useWorkflowExecution(executionId || null)
 
-  // Load execution and template data
-  useEffect(() => {
-    const loadData = async () => {
-      if (!executionId) {
-        setError('Execution ID not provided')
-        setIsLoading(false)
-        return
+  const updateParams = useCallback((
+    updates: Record<string, string | null>,
+    mode: 'push' | 'replace' = 'push',
+  ) => {
+    const next = new URLSearchParams(searchParams)
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value) {
+        next.delete(key)
+      } else {
+        next.set(key, value)
       }
-
-      try {
-        setIsLoading(true)
-        // Use generated API directly with transforms
-        const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
-        const execData = convertExecutionToLegacy(execResponse.execution)
-        setExecution(execData)
-        setExecutionPlan((execResponse as unknown as { execution_plan?: unknown }).execution_plan ?? null)
-        setExecutionBindings((execResponse as unknown as { bindings?: unknown }).bindings ?? null)
-
-        // Load template for DAG structure
-        const templateResponse = await api.getWorkflowsGetWorkflow({ workflow_id: execData.workflow_template })
-        setDagStructure(convertDAGToLegacy(templateResponse.workflow.dag_structure))
-
-        setError(null)
-      } catch (err: unknown) {
-        const message = (err as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
-        setError(message || 'Failed to load execution data')
-      } finally {
-        setIsLoading(false)
-      }
+    })
+    if (next.toString() === searchParams.toString()) {
+      return
     }
+    setSearchParams(
+      next,
+      mode === 'replace'
+        ? { replace: true }
+        : undefined
+    )
+  }, [searchParams, setSearchParams])
 
-    loadData()
-  }, [executionId])
-
-  type UIBinding = {
-    target_ref?: string
-    source_ref?: string
-    resolve_at?: string
-    sensitive?: boolean
-    status?: string
-    reason?: string | null
-  }
-
-  const bindings = useMemo(() => {
-    if (!isStaff) return [] as UIBinding[]
-    return Array.isArray(executionBindings) ? (executionBindings as UIBinding[]) : []
-  }, [executionBindings, isStaff])
-
-  const executionPlanText = useMemo(() => {
-    if (!isStaff) return null
-    const plan = executionPlan as Record<string, unknown> | undefined
-    if (!plan || typeof plan !== 'object') return null
-
-    const kind = String(plan.kind ?? '')
-    const workflowId = typeof plan.workflow_id === 'string' ? plan.workflow_id : null
-    const inputContextMasked = plan.input_context_masked as unknown
-    const targets = plan.targets as unknown
-
-    const lines: string[] = []
-    if (kind) lines.push(`kind: ${kind}`)
-    if (workflowId) lines.push(`workflow_id: ${workflowId}`)
-    if (targets && typeof targets === 'object') {
-      lines.push('targets:')
-      lines.push(JSON.stringify(targets, null, 2))
-    }
-    if (inputContextMasked && typeof inputContextMasked === 'object') {
-      lines.push('input_context_masked:')
-      lines.push(JSON.stringify(inputContextMasked, null, 2))
-    }
-    return lines.length > 0 ? lines.join('\n') : null
-  }, [executionPlan, isStaff])
-
-  const bindingColumns: ColumnsType<UIBinding> = [
-    { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
-    { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
-    { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
-    {
-      title: 'Sensitive',
-      dataIndex: 'sensitive',
-      key: 'sensitive',
-      width: 90,
-      render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
-    },
-    { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
-    { title: 'Reason', dataIndex: 'reason', key: 'reason' },
-  ]
-
-  // Handle node selection
-  const handleNodeSelect = useCallback((nodeId: string | null) => {
-    if (!nodeId || !dagStructure) {
-      setSelectedNode(null)
-      setDrawerVisible(false)
+  const loadData = useCallback(async () => {
+    if (!executionId) {
+      setError('Execution ID not provided')
+      setIsLoading(false)
       return
     }
 
-    const node = dagStructure.nodes.find(n => n.id === nodeId)
-    const nodeStatus = nodeStatuses[nodeId]
+    try {
+      setIsLoading(true)
+      const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
+      const execData = convertExecutionToLegacy(execResponse.execution)
+      setExecution(execData)
+      setExecutionPlan((execResponse as unknown as { execution_plan?: unknown }).execution_plan ?? null)
+      setExecutionBindings((execResponse as unknown as { bindings?: unknown }).bindings ?? null)
+      setInitialNodeStatuses(normalizeNodeStatuses(execResponse.execution.node_statuses))
 
-    if (node) {
-      setSelectedNode({
-        nodeId,
-        nodeName: node.name,
-        status: nodeStatus || {
-          nodeId,
-          status: 'pending'
-        }
-      })
-      setDrawerVisible(true)
+      const templateResponse = await api.getWorkflowsGetWorkflow({ workflow_id: execData.workflow_template })
+      setDagStructure(convertDAGToLegacy(templateResponse.workflow.dag_structure))
+
+      setError(null)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
+      setError(detail || 'Failed to load execution data')
+    } finally {
+      setIsLoading(false)
     }
-  }, [dagStructure, nodeStatuses])
+  }, [executionId])
 
-  // Cancel execution
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const bindings = useMemo(() => {
+    if (!isStaff) {
+      return [] as Array<Record<string, unknown>>
+    }
+    return Array.isArray(executionBindings) ? executionBindings as Array<Record<string, unknown>> : []
+  }, [executionBindings, isStaff])
+
+  const effectiveNodeStatuses = useMemo(
+    () => ({ ...initialNodeStatuses, ...nodeStatuses }),
+    [initialNodeStatuses, nodeStatuses]
+  )
+
+  const displayStatus = isConnected ? liveStatus : (execution?.status || 'pending')
+  const displayProgress = isConnected ? liveProgress : (execution?.progress_percent || 0) / 100
+  const displayCurrentNodeId = isConnected ? currentNodeId : execution?.current_node_id
+  const displayError = isConnected ? liveError : execution?.error_message
+
+  const selectedNode = useMemo<NodeDetails | null>(() => {
+    if (!selectedNodeId || !dagStructure) {
+      return null
+    }
+
+    const node = dagStructure.nodes.find((entry) => entry.id === selectedNodeId)
+    if (!node) {
+      return null
+    }
+
+    return {
+      nodeId: selectedNodeId,
+      nodeName: node.name,
+      status: effectiveNodeStatuses[selectedNodeId] || {
+        nodeId: selectedNodeId,
+        status: 'pending',
+      },
+    }
+  }, [dagStructure, effectiveNodeStatuses, selectedNodeId])
+
+  useEffect(() => {
+    if (!selectedNodeId || !dagStructure) {
+      return
+    }
+    if (dagStructure.nodes.some((node) => node.id === selectedNodeId)) {
+      return
+    }
+    updateParams({ node: null }, 'replace')
+  }, [dagStructure, selectedNodeId, updateParams])
+
+  const handleNodeSelect = useCallback((nodeId: string | null) => {
+    updateParams({ node: nodeId }, 'push')
+  }, [updateParams])
+
   const handleCancel = async () => {
-    if (!executionId) return
+    if (!executionId) {
+      return
+    }
 
     try {
       setIsCancelling(true)
-      // Use generated API directly
       await api.postWorkflowsCancelExecution({ execution_id: executionId })
-    } catch (err: unknown) {
+      message.success('Execution cancellation requested')
+      await loadData()
+    } catch (err) {
       console.error('Failed to cancel execution:', err)
+      message.error('Failed to cancel execution')
     } finally {
       setIsCancelling(false)
     }
   }
 
-  // Refresh execution data
   const handleRefresh = async () => {
-    if (!executionId) return
-
     try {
-      // Use generated API directly with transforms
-      const execResponse = await api.getWorkflowsGetExecution({ execution_id: executionId })
-      setExecution(convertExecutionToLegacy(execResponse.execution))
-    } catch (err: unknown) {
-      console.error('Failed to refresh:', err)
+      await loadData()
+      message.success('Execution refreshed')
+    } catch (err) {
+      console.error('Failed to refresh execution:', err)
     }
   }
 
-  // Convert nodeStatuses to format expected by WorkflowCanvas
-  const canvasNodeStatuses = Object.fromEntries(
-    Object.entries(nodeStatuses).map(([id, status]) => [
+  const canvasNodeStatuses = useMemo(() => Object.fromEntries(
+    Object.entries(effectiveNodeStatuses).map(([id, status]) => [
       id,
       {
         status: status.status,
         output: status.output,
         error: status.error,
-        durationMs: status.durationMs
-      }
+        durationMs: status.durationMs,
+      },
     ])
-  )
+  ), [effectiveNodeStatuses])
 
-  // Use live status if connected, otherwise use from execution
-  const displayStatus = isConnected ? liveStatus : (execution?.status || 'pending')
-  const displayProgress = isConnected ? liveProgress : (execution?.progress_percent || 0) / 100
-  const displayError = isConnected ? liveError : execution?.error_message
-
-  // Build timeline items from node statuses
-  const timelineItems = Object.values(nodeStatuses)
-    .filter(ns => ns.status !== 'pending')
-    .sort((a, b) => {
-      if (a.startedAt && b.startedAt) {
-        return new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime()
+  const timelineItems = Object.values(effectiveNodeStatuses)
+    .filter((status) => status.status !== 'pending')
+    .sort((left, right) => {
+      if (left.startedAt && right.startedAt) {
+        return new Date(left.startedAt).getTime() - new Date(right.startedAt).getTime()
       }
       return 0
     })
-    .map(ns => {
-      const node = dagStructure?.nodes.find(n => n.id === ns.nodeId)
-      const nodeName = node?.name || ns.nodeId
+    .map((status) => {
+      const node = dagStructure?.nodes.find((entry) => entry.id === status.nodeId)
+      const nodeName = node?.name || status.nodeId
 
       let color = 'gray'
       let dot = <ClockCircleOutlined />
 
-      switch (ns.status) {
+      switch (status.status) {
         case 'running':
           color = 'blue'
           dot = <LoadingOutlined spin />
@@ -307,32 +358,38 @@ const WorkflowMonitor = () => {
           color = 'orange'
           dot = <MinusCircleOutlined />
           break
+        default:
+          break
       }
 
       return {
-        key: ns.nodeId,
+        key: status.nodeId,
         color,
         dot,
         children: (
-          <button type="button" className="timeline-item" onClick={() => handleNodeSelect(ns.nodeId)}>
+          <button
+            type="button"
+            className="timeline-item"
+            onClick={() => handleNodeSelect(status.nodeId)}
+          >
             <Text strong>{nodeName}</Text>
             <Text type="secondary" style={{ marginLeft: 8 }}>
-              {ns.status}
+              {status.status}
             </Text>
-            {ns.durationMs !== undefined && (
+            {status.durationMs !== undefined ? (
               <Text type="secondary" style={{ marginLeft: 8 }}>
-                ({(ns.durationMs / 1000).toFixed(2)}s)
+                ({(status.durationMs / 1000).toFixed(2)}s)
               </Text>
-            )}
+            ) : null}
           </button>
-        )
+        ),
       }
     })
 
   if (isLoading) {
     return (
       <div className="workflow-monitor-loading">
-        <Spin size="large" tip="Loading execution\u2026">
+        <Spin size="large" tip="Loading execution…">
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>
@@ -345,271 +402,304 @@ const WorkflowMonitor = () => {
         status="error"
         title="Failed to Load Execution"
         subTitle={error}
-        extra={
+        extra={(
           <Button type="primary" onClick={() => navigate('/workflows/executions')}>
             Back to Executions
           </Button>
-        }
+        )}
       />
     )
   }
 
   const isTerminal = ['completed', 'failed', 'cancelled'].includes(displayStatus)
+  const completedCount = Object.values(effectiveNodeStatuses).filter((status) => status.status === 'completed').length
+  const failedCount = Object.values(effectiveNodeStatuses).filter((status) => status.status === 'failed').length
+  const runningCount = Object.values(effectiveNodeStatuses).filter((status) => status.status === 'running').length
 
   return (
-    <Layout className="workflow-monitor">
-      {/* Header */}
-      <Header className="monitor-header">
-        <div className="header-left">
-          <Button
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/workflows/executions')}
-          >
-            Back
-          </Button>
-          <Title level={4} className="header-title">
-            Workflow Execution
-            <Tag color={statusColors[displayStatus]} style={{ marginLeft: 12 }}>
-              {statusIcons[displayStatus]} {displayStatus.toUpperCase()}
-            </Tag>
-          </Title>
-        </div>
-        <Space className="header-actions">
-          <Badge
-            status={isConnected ? 'success' : 'error'}
-            text={isConnected ? 'Connected' : 'Disconnected'}
-          />
-          {connectionError && (
-            <Tooltip title={connectionError}>
-              <Text type="danger">
-                (Retry: {reconnectAttempts})
-              </Text>
-            </Tooltip>
-          )}
-          <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
-            Refresh
-          </Button>
-          {!isTerminal && (
-            <Button
-              danger
-              icon={<StopOutlined />}
-              onClick={handleCancel}
-              loading={isCancelling}
-            >
-              Cancel
-            </Button>
-          )}
-          {traceId && (
-            <Tooltip title="View trace in Jaeger">
-              <Button
-                icon={<ExportOutlined />}
-                href={`${JAEGER_UI_URL}/trace/${traceId}`}
-                target="_blank"
-              >
-                View Trace
-              </Button>
-            </Tooltip>
-          )}
-        </Space>
-      </Header>
-
-      <Layout className="monitor-body">
-        {/* Main Content - Canvas */}
-        <Content className="monitor-content">
-          {/* Progress bar */}
-          <div className="progress-section">
-            <Progress
-              percent={Math.round(displayProgress * 100)}
-              status={
-                displayStatus === 'failed' ? 'exception' :
-                displayStatus === 'completed' ? 'success' :
-                'active'
-              }
-              strokeColor={{
-                '0%': '#108ee9',
-                '100%': '#87d068'
-              }}
-            />
-          </div>
-
-          {/* Error alert */}
-          {displayError && (
-            <Alert
-              type="error"
-              message="Execution Error"
-              description={displayError}
-              showIcon
-              className="error-alert"
-            />
-          )}
-
-          {/* Result alert */}
-          {displayStatus === 'completed' && liveResult && (
-            <Collapse
-              size="small"
-              defaultActiveKey={[]}
-              className="result-collapse"
-              items={[
-                {
-                  key: 'result',
-                  label: (
-                    <Space size={8}>
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      Execution Completed
-                    </Space>
-                  ),
-                  children: (
-                    <pre className="result-json">
-                      {JSON.stringify(liveResult, null, 2)}
-                    </pre>
-                  )
-                }
-              ]}
-            />
-          )}
-
-          {/* Canvas */}
-          {dagStructure && (
-            <WorkflowCanvas
-              dagStructure={dagStructure}
-              mode="monitor"
-              onNodeSelect={handleNodeSelect}
-              nodeStatuses={canvasNodeStatuses}
-              currentNodeId={currentNodeId}
-            />
-          )}
-        </Content>
-
-	        {/* Right Sider - Info & Timeline */}
-	        <Sider width={320} className="monitor-sider">
-	          <Card title="Execution Info" size="small" className="info-card">
-	            <Descriptions column={1} size="small">
-              <Descriptions.Item label="ID">
-                <Text
-                  copyable={executionId ? { text: executionId } : false}
-                  className="mono-text"
+    <div className="workflow-monitor">
+      <WorkspacePage
+        header={(
+          <PageHeader
+            title="Workflow Execution"
+            subtitle={execution?.workflow_template_name
+              ? `${execution.workflow_template_name} · ${executionId}`
+              : executionId || 'Execution diagnostics'}
+            actions={(
+              <Space className="monitor-header" wrap size={[8, 8]}>
+                <Button
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() => navigate('/workflows/executions')}
                 >
-                  {executionId ? `${executionId.slice(0, 8)}\u2026` : ''}
-                </Text>
-              </Descriptions.Item>
-              <Descriptions.Item label="Template">
-                <Link to={`/workflows/${execution?.workflow_template}`}>
-                  {execution?.workflow_template_name || 'Unknown'}
-                </Link>
-              </Descriptions.Item>
-              <Descriptions.Item label="Started">
-                {execution?.started_at
-                  ? new Date(execution.started_at).toLocaleString()
-                  : 'Not started'}
-              </Descriptions.Item>
-              {execution?.completed_at && (
-                <Descriptions.Item label="Completed">
-                  {new Date(execution.completed_at).toLocaleString()}
-                </Descriptions.Item>
-              )}
-              {traceId && (
-                <Descriptions.Item label="Trace ID">
+                  Back
+                </Button>
+                <Badge
+                  status={isConnected ? 'success' : 'error'}
+                  text={isConnected ? 'Connected' : 'Disconnected'}
+                />
+                {connectionError ? (
+                  <Tooltip title={connectionError}>
+                    <Text type="danger">
+                      {`Retry: ${reconnectAttempts}`}
+                    </Text>
+                  </Tooltip>
+                ) : null}
+                <Button icon={<ReloadOutlined />} onClick={() => void handleRefresh()}>
+                  Refresh
+                </Button>
+                {!isTerminal ? (
+                  <Button
+                    danger
+                    icon={<StopOutlined />}
+                    onClick={() => void handleCancel()}
+                    loading={isCancelling}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+                {traceId ? (
+                  <Button
+                    icon={<ExportOutlined />}
+                    onClick={() => window.open(`${JAEGER_UI_URL}/trace/${traceId}`, '_blank', 'noopener,noreferrer')}
+                  >
+                    View Trace
+                  </Button>
+                ) : null}
+              </Space>
+            )}
+          />
+        )}
+      >
+        <div className="workflow-monitor-status">
+          <StatusBadge
+            status={
+              displayStatus === 'completed'
+                ? 'active'
+                : displayStatus === 'failed'
+                  ? 'error'
+                  : displayStatus === 'cancelled'
+                    ? 'warning'
+                    : 'unknown'
+            }
+            label={(
+              <Space size={6}>
+                {statusIcons[displayStatus]}
+                <span>{displayStatus.toUpperCase()}</span>
+              </Space>
+            )}
+          />
+          {selectedNode ? (
+            <Text data-testid="workflow-monitor-selected-node" type="secondary">
+              {`Selected node: ${selectedNode.nodeName}`}
+            </Text>
+          ) : null}
+        </div>
+
+        <div className="workflow-monitor-shell">
+          <section className="monitor-content">
+            <div className="progress-section">
+              <Progress
+                percent={Math.round(displayProgress * 100)}
+                status={
+                  displayStatus === 'failed'
+                    ? 'exception'
+                    : displayStatus === 'completed'
+                      ? 'success'
+                      : 'active'
+                }
+                strokeColor={{
+                  '0%': '#108ee9',
+                  '100%': '#87d068',
+                }}
+              />
+            </div>
+
+            {displayError ? (
+              <Alert
+                type="error"
+                message="Execution Error"
+                description={displayError}
+                showIcon
+                className="error-alert"
+              />
+            ) : null}
+
+            {displayStatus === 'completed' && liveResult ? (
+              <Collapse
+                size="small"
+                defaultActiveKey={[]}
+                className="result-collapse"
+                items={[
+                  {
+                    key: 'result',
+                    label: (
+                      <Space size={8}>
+                        <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                        Execution Completed
+                      </Space>
+                    ),
+                    children: (
+                      <JsonBlock
+                        title="Final result"
+                        value={liveResult}
+                        height={260}
+                        dataTestId="workflow-monitor-final-result"
+                      />
+                    ),
+                  },
+                ]}
+              />
+            ) : null}
+
+            {dagStructure ? (
+              <WorkflowCanvas
+                dagStructure={dagStructure}
+                mode="monitor"
+                onNodeSelect={handleNodeSelect}
+                nodeStatuses={canvasNodeStatuses}
+                currentNodeId={displayCurrentNodeId}
+              />
+            ) : null}
+          </section>
+
+          <aside className="monitor-sidebar">
+            <EntityDetails title="Execution Info">
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="ID">
                   <Text
-                    copyable={{ text: traceId }}
+                    copyable={executionId ? { text: executionId } : false}
                     className="mono-text"
                   >
-                    {traceId.slice(0, 8)}{'\u2026'}
+                    {executionId || '—'}
                   </Text>
                 </Descriptions.Item>
+                <Descriptions.Item label="Workflow">
+                  <Link to={`/workflows/${execution?.workflow_template}`}>
+                    {execution?.workflow_template_name || 'Unknown'}
+                  </Link>
+                </Descriptions.Item>
+                <Descriptions.Item label="Started">
+                  {formatDateTime(execution?.started_at)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Completed">
+                  {formatDateTime(execution?.completed_at)}
+                </Descriptions.Item>
+                <Descriptions.Item label="Duration">
+                  {formatDuration(execution?.duration_seconds)}
+                </Descriptions.Item>
+                {traceId ? (
+                  <Descriptions.Item label="Trace ID">
+                    <Text copyable={{ text: traceId }} className="mono-text">
+                      {traceId}
+                    </Text>
+                  </Descriptions.Item>
+                ) : null}
+              </Descriptions>
+            </EntityDetails>
+
+            {isStaff ? (
+              <EntityDetails title="Execution Plan (staff)">
+                {executionPlan ? (
+                  <JsonBlock
+                    title="Execution plan"
+                    value={executionPlan}
+                    height={220}
+                    dataTestId="workflow-monitor-execution-plan"
+                  />
+                ) : (
+                  <Text type="secondary">Not available</Text>
+                )}
+                <div className="workflow-monitor-bindings-header">
+                  Binding Provenance (staff):
+                </div>
+                {bindings.length > 0 ? (
+                  <div className="workflow-monitor-bindings-scroll">
+                    <table className="workflow-monitor-bindings-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Target</th>
+                          <th scope="col">Source</th>
+                          <th scope="col">Resolve</th>
+                          <th scope="col">Sensitive</th>
+                          <th scope="col">Status</th>
+                          <th scope="col">Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bindings.map((binding, index) => (
+                          <tr key={`${String(binding.target_ref ?? 'binding')}-${index}`}>
+                            <td>{String(binding.target_ref ?? '')}</td>
+                            <td>{String(binding.source_ref ?? '')}</td>
+                            <td>{String(binding.resolve_at ?? '')}</td>
+                            <td>{binding.sensitive ? 'yes' : 'no'}</td>
+                            <td>{String(binding.status ?? '')}</td>
+                            <td>{String(binding.reason ?? '')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Text type="secondary">No bindings</Text>
+                )}
+              </EntityDetails>
+            ) : null}
+
+            <EntityDetails title="Statistics">
+              <div className="workflow-monitor-stats-grid">
+                <div className="workflow-monitor-stat">
+                  <Text type="secondary">Completed</Text>
+                  <strong>{completedCount}</strong>
+                </div>
+                <div className="workflow-monitor-stat">
+                  <Text type="secondary">Failed</Text>
+                  <strong>{failedCount}</strong>
+                </div>
+                <div className="workflow-monitor-stat">
+                  <Text type="secondary">Running</Text>
+                  <strong>{runningCount}</strong>
+                </div>
+                <div className="workflow-monitor-stat">
+                  <Text type="secondary">Total nodes</Text>
+                  <strong>{dagStructure?.nodes.length || 0}</strong>
+                </div>
+              </div>
+            </EntityDetails>
+
+            <EntityDetails title="Timeline">
+              {timelineItems.length > 0 ? (
+                <Timeline items={timelineItems} />
+              ) : (
+                <Text type="secondary">No activity yet</Text>
               )}
-	            </Descriptions>
-	          </Card>
+            </EntityDetails>
+          </aside>
+        </div>
 
-	          {isStaff && (
-	            <Card title="Execution Plan (staff)" size="small" className="stats-card">
-	              {executionPlanText ? (
-	                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
-	              ) : (
-	                <Text type="secondary">Not available</Text>
-	              )}
-	              <div style={{ marginTop: 12, fontWeight: 600 }}>Binding Provenance (staff):</div>
-	              {bindings.length > 0 ? (
-	                <Table
-	                  style={{ marginTop: 8 }}
-	                  size="small"
-	                  rowKey={(_, idx) => String(idx)}
-	                  pagination={false}
-	                  dataSource={bindings}
-	                  columns={bindingColumns}
-	                  scroll={{ x: 900 }}
-	                />
-	              ) : (
-	                <Text type="secondary">No bindings</Text>
-	              )}
-	            </Card>
-	          )}
+        <NodeDetailsDrawer
+          open={Boolean(selectedNode)}
+          selectedNode={selectedNode}
+          traceId={traceId || null}
+          jaegerUiUrl={JAEGER_UI_URL}
+          onClose={() => updateParams({ node: null }, 'push')}
+          onOpenTraceDetails={(nodeId) => {
+            setTraceNodeId(nodeId)
+            setTraceModalVisible(true)
+          }}
+        />
 
-	          <Card title="Statistics" size="small" className="stats-card">
-	            <Row gutter={[16, 16]}>
-	              <Col span={12}>
-	                <Statistic
-                  title="Completed"
-                  value={Object.values(nodeStatuses).filter(n => n.status === 'completed').length}
-                  valueStyle={{ color: '#52c41a' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Statistic
-                  title="Failed"
-                  value={Object.values(nodeStatuses).filter(n => n.status === 'failed').length}
-                  valueStyle={{ color: '#ff4d4f' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Statistic
-                  title="Running"
-                  value={Object.values(nodeStatuses).filter(n => n.status === 'running').length}
-                  valueStyle={{ color: '#1890ff' }}
-                />
-              </Col>
-              <Col span={12}>
-                <Statistic
-                  title="Total"
-                  value={dagStructure?.nodes.length || 0}
-                />
-              </Col>
-            </Row>
-          </Card>
-
-          <Card title="Timeline" size="small" className="timeline-card">
-            {timelineItems.length > 0 ? (
-              <Timeline items={timelineItems} />
-            ) : (
-              <Text type="secondary">No activity yet</Text>
-            )}
-          </Card>
-        </Sider>
-      </Layout>
-
-      <NodeDetailsDrawer
-        open={drawerVisible}
-        selectedNode={selectedNode}
-        traceId={traceId || null}
-        jaegerUiUrl={JAEGER_UI_URL}
-        onClose={() => setDrawerVisible(false)}
-        onOpenTraceDetails={(nodeId) => {
-          setTraceNodeId(nodeId)
-          setTraceModalVisible(true)
-        }}
-      />
-
-      {/* Trace Viewer Modal */}
-      <TraceViewerModal
-        visible={traceModalVisible}
-        onClose={() => {
-          setTraceModalVisible(false)
-          setTraceNodeId(undefined)
-        }}
-        traceId={traceId || null}
-        nodeId={traceNodeId}
-        spanId={traceNodeId ? nodeStatuses[traceNodeId]?.spanId : undefined}
-      />
-    </Layout>
+        <TraceViewerModal
+          visible={traceModalVisible}
+          onClose={() => {
+            setTraceModalVisible(false)
+            setTraceNodeId(undefined)
+          }}
+          traceId={traceId || null}
+          nodeId={traceNodeId}
+          spanId={traceNodeId ? effectiveNodeStatuses[traceNodeId]?.spanId : undefined}
+        />
+      </WorkspacePage>
+    </div>
   )
 }
 

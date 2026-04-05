@@ -410,6 +410,17 @@ describe('WorkflowDesigner', () => {
     }))
   })
 
+  it('restores selected node context from node query parameter', async () => {
+    renderPage('/workflows/analyst-1?node=start')
+
+    await waitFor(() => {
+      const lastCall = mockPropertyEditor.mock.calls[mockPropertyEditor.mock.calls.length - 1]?.[0]
+      expect(lastCall?.nodeId).toBe('start')
+    })
+
+    expect(screen.getByTestId('workflow-designer-selected-node')).toHaveTextContent('Selected node: Start')
+  })
+
   it('filters incompatible decision revisions from default selector options while keeping drift-compatible ones', async () => {
     mockGetDecisionsCollection.mockResolvedValueOnce({
       decisions: [

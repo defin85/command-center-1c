@@ -65,6 +65,25 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     const path = url.pathname
     const method = request.method()
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: { id: 1, username: 'sync-user', is_staff: true },
+        tenant_context: {
+          active_tenant_id: TENANT_ID,
+          tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+        },
+        access: {
+          user: { id: 1, username: 'sync-user' },
+          clusters: [],
+          databases: [],
+          operation_templates: [],
+        },
+        capabilities: {
+          can_manage_rbac: false,
+          can_manage_driver_catalogs: false,
+        },
+      })
+    }
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, { id: 1, username: 'sync-user', is_staff: true })
     }
@@ -88,6 +107,39 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
         databases: [{ id: DATABASE_ID, name: 'Main DB' }],
         count: 1,
         total: 1,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/pools/master-data/registry/') {
+      return fulfillJson(route, {
+        contract_version: 'pool_master_data_registry.v1',
+        count: 1,
+        entries: [
+          {
+            entity_type: 'item',
+            label: 'Item',
+            kind: 'canonical',
+            display_order: 20,
+            binding_scope_fields: ['canonical_id', 'database_id'],
+            capabilities: {
+              direct_binding: true,
+              token_exposure: true,
+              bootstrap_import: true,
+              outbox_fanout: true,
+              sync_outbound: true,
+              sync_inbound: true,
+              sync_reconcile: true,
+            },
+            token_contract: {
+              enabled: true,
+              qualifier_kind: 'none',
+              qualifier_required: false,
+              qualifier_options: [],
+            },
+            bootstrap_contract: { enabled: true, dependency_order: 20 },
+            runtime_consumers: ['bindings', 'bootstrap_import', 'sync', 'token_catalog', 'token_parser'],
+          },
+        ],
       })
     }
 
@@ -233,7 +285,7 @@ test('Pool Master Data Sync: list status/conflicts and execute conflict actions'
 
   await page.goto('/pools/master-data', { waitUntil: 'domcontentloaded' })
   await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
-  await page.getByRole('tab', { name: 'Sync' }).click()
+  await page.getByRole('button', { name: 'Open Sync zone' }).click()
 
   await expect(page.getByText('Sync Status', { exact: true })).toBeVisible()
   await expect(page.getByText('Conflict Queue', { exact: true })).toBeVisible()
@@ -289,7 +341,7 @@ test('Pool Master Data Sync: shows forbidden/not-found/error messages for confli
   await setupApiMocks(page, state)
 
   await page.goto('/pools/master-data', { waitUntil: 'domcontentloaded' })
-  await page.getByRole('tab', { name: 'Sync' }).click()
+  await page.getByRole('button', { name: 'Open Sync zone' }).click()
   await expect(page.getByText('POLICY_VIOLATION', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Retry' }).first().click()

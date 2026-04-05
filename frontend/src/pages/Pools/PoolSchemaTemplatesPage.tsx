@@ -1,20 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
   Button,
-  Card,
+  Descriptions,
   Form,
   Input,
-  Modal,
   Select,
   Space,
   Switch,
-  Table,
-  Tag,
   Typography,
 } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   createPoolSchemaTemplate,
@@ -23,8 +20,17 @@ import {
   type PoolSchemaTemplate,
   type PoolSchemaTemplateFormat,
 } from '../../api/intercompanyPools'
+import {
+  EntityDetails,
+  EntityList,
+  JsonBlock,
+  MasterDetailShell,
+  ModalFormShell,
+  PageHeader,
+  WorkspacePage,
+} from '../../components/platform'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 const { TextArea } = Input
 
 type FormValues = {
@@ -38,7 +44,8 @@ type FormValues = {
   metadata_json: string
 }
 
-type TemplateModalMode = 'create' | 'edit'
+type SchemaTemplateComposeMode = 'create' | 'edit' | null
+type SchemaTemplateFilter = 'all' | PoolSchemaTemplateFormat
 
 const DEFAULT_SCHEMA_JSON = JSON.stringify(
   {
@@ -97,20 +104,120 @@ const resolveWorkflowBindingHint = (metadata: Record<string, unknown>): string |
   return JSON.stringify(binding)
 }
 
+const normalizeRouteParam = (value: string | null): string | null => {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+const parseComposeMode = (value: string | null): SchemaTemplateComposeMode => {
+  if (value === 'create' || value === 'edit') {
+    return value
+  }
+  return null
+}
+
+const parseFormatFilter = (value: string | null): SchemaTemplateFilter => (
+  value === 'xlsx' || value === 'json' ? value : 'all'
+)
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return '-'
+  return new Date(value).toLocaleString()
+}
+
+const filterTemplates = (templates: PoolSchemaTemplate[], searchTerm: string) => {
+  const normalizedSearch = searchTerm.trim().toLowerCase()
+  if (!normalizedSearch) {
+    return templates
+  }
+
+  return templates.filter((template) => {
+    const bindingHint = resolveWorkflowBindingHint(template.metadata ?? {}) ?? ''
+    return [
+      template.code,
+      template.name,
+      template.workflow_template_id ?? '',
+      bindingHint,
+      template.format,
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(normalizedSearch)
+  })
+}
+
+const buildListButtonStyle = (selected: boolean) => ({
+  width: '100%',
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  borderRadius: 8,
+  padding: '12px',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+  textAlign: 'left' as const,
+  cursor: 'pointer',
+})
+
 export function PoolSchemaTemplatesPage() {
   const { message } = AntApp.useApp()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const searchFromUrl = searchParams.get('q') ?? ''
+  const formatFilterFromUrl = parseFormatFilter(searchParams.get('format'))
+  const selectedTemplateFromUrl = normalizeRouteParam(searchParams.get('template'))
+  const detailOpenFromUrl = searchParams.get('detail') === '1'
+  const composeModeFromUrl = parseComposeMode(searchParams.get('compose'))
+  const includePrivateFromUrl = searchParams.get('private') === '1'
+  const includeInactiveFromUrl = searchParams.get('inactive') === '1'
+
   const [templates, setTemplates] = useState<PoolSchemaTemplate[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState<TemplateModalMode>('create')
-  const [editingTemplate, setEditingTemplate] = useState<PoolSchemaTemplate | null>(null)
+  const [search, setSearch] = useState(searchFromUrl)
+  const [formatFilter, setFormatFilter] = useState<SchemaTemplateFilter>(formatFilterFromUrl)
+  const [includePrivate, setIncludePrivate] = useState(includePrivateFromUrl)
+  const [includeInactive, setIncludeInactive] = useState(includeInactiveFromUrl)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null | undefined>(
+    () => selectedTemplateFromUrl ?? undefined
+  )
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(detailOpenFromUrl)
+  const [composeMode, setComposeMode] = useState<SchemaTemplateComposeMode>(composeModeFromUrl)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [formatFilter, setFormatFilter] = useState<'all' | PoolSchemaTemplateFormat>('all')
-  const [includePrivate, setIncludePrivate] = useState(false)
-  const [includeInactive, setIncludeInactive] = useState(false)
   const [form] = Form.useForm<FormValues>()
+
+  useEffect(() => {
+    setSearch((current) => (current === searchFromUrl ? current : searchFromUrl))
+  }, [searchFromUrl])
+
+  useEffect(() => {
+    setFormatFilter((current) => (current === formatFilterFromUrl ? current : formatFilterFromUrl))
+  }, [formatFilterFromUrl])
+
+  useEffect(() => {
+    setIncludePrivate((current) => (current === includePrivateFromUrl ? current : includePrivateFromUrl))
+  }, [includePrivateFromUrl])
+
+  useEffect(() => {
+    setIncludeInactive((current) => (current === includeInactiveFromUrl ? current : includeInactiveFromUrl))
+  }, [includeInactiveFromUrl])
+
+  useEffect(() => {
+    setSelectedTemplateId((current) => {
+      if (selectedTemplateFromUrl) {
+        return current === selectedTemplateFromUrl ? current : selectedTemplateFromUrl
+      }
+      return current === null ? current : null
+    })
+  }, [selectedTemplateFromUrl])
+
+  useEffect(() => {
+    setIsDetailDrawerOpen((current) => (current === detailOpenFromUrl ? current : detailOpenFromUrl))
+  }, [detailOpenFromUrl])
+
+  useEffect(() => {
+    setComposeMode((current) => (current === composeModeFromUrl ? current : composeModeFromUrl))
+  }, [composeModeFromUrl])
 
   const loadTemplates = useCallback(async () => {
     setLoading(true)
@@ -122,6 +229,12 @@ export function PoolSchemaTemplatesPage() {
         isActive: includeInactive ? undefined : true,
       })
       setTemplates(data)
+      setSelectedTemplateId((current) => {
+        if (current && data.some((template) => template.id === current)) {
+          return current
+        }
+        return data[0]?.id ?? null
+      })
     } catch {
       setError('Не удалось загрузить шаблоны.')
     } finally {
@@ -133,47 +246,157 @@ export function PoolSchemaTemplatesPage() {
     void loadTemplates()
   }, [loadTemplates])
 
-  const openCreateModal = useCallback(() => {
-    setModalMode('create')
-    setEditingTemplate(null)
-    setSubmitError(null)
-    form.setFieldsValue({
-      code: '',
-      name: '',
-      format: 'xlsx',
-      is_public: true,
-      is_active: true,
-      workflow_template_id: '',
-      schema_json: DEFAULT_SCHEMA_JSON,
-      metadata_json: DEFAULT_METADATA_JSON,
-    })
-    setIsModalOpen(true)
-  }, [form])
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    const normalizedSearch = search.trim()
 
-  const openEditModal = useCallback((template: PoolSchemaTemplate) => {
-    setModalMode('edit')
-    setEditingTemplate(template)
-    setSubmitError(null)
-    form.setFieldsValue({
-      code: template.code,
-      name: template.name,
-      format: template.format,
-      is_public: template.is_public,
-      is_active: template.is_active,
-      workflow_template_id: template.workflow_template_id ?? '',
-      schema_json: stringifyJsonObject(template.schema),
-      metadata_json: stringifyJsonObject(template.metadata),
-    })
-    setIsModalOpen(true)
-  }, [form])
+    if (normalizedSearch) {
+      next.set('q', normalizedSearch)
+    } else {
+      next.delete('q')
+    }
 
-  const closeModal = useCallback(() => {
-    if (isSubmitting) {
+    if (formatFilter !== 'all') {
+      next.set('format', formatFilter)
+    } else {
+      next.delete('format')
+    }
+
+    if (includePrivate) {
+      next.set('private', '1')
+    } else {
+      next.delete('private')
+    }
+
+    if (includeInactive) {
+      next.set('inactive', '1')
+    } else {
+      next.delete('inactive')
+    }
+
+    if (selectedTemplateId !== undefined) {
+      if (selectedTemplateId) {
+        next.set('template', selectedTemplateId)
+      } else {
+        next.delete('template')
+      }
+    }
+
+    if (selectedTemplateId !== undefined) {
+      if (isDetailDrawerOpen && selectedTemplateId) {
+        next.set('detail', '1')
+      } else {
+        next.delete('detail')
+      }
+    }
+
+    if (composeMode) {
+      next.set('compose', composeMode)
+    } else {
+      next.delete('compose')
+    }
+
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(
+        next,
+        routeUpdateModeRef.current === 'replace'
+          ? { replace: true }
+          : undefined
+      )
+    }
+    routeUpdateModeRef.current = 'replace'
+  }, [
+    composeMode,
+    formatFilter,
+    includeInactive,
+    includePrivate,
+    isDetailDrawerOpen,
+    search,
+    searchParams,
+    selectedTemplateId,
+    setSearchParams,
+  ])
+
+  const filteredTemplates = useMemo(
+    () => filterTemplates(templates, search),
+    [search, templates]
+  )
+
+  useEffect(() => {
+    if (loading) {
       return
     }
-    setIsModalOpen(false)
+    if (!filteredTemplates.length) {
+      routeUpdateModeRef.current = 'replace'
+      setSelectedTemplateId(null)
+      setIsDetailDrawerOpen(false)
+      return
+    }
+    if (selectedTemplateId && filteredTemplates.some((item) => item.id === selectedTemplateId)) {
+      return
+    }
+    routeUpdateModeRef.current = 'replace'
+    setSelectedTemplateId(filteredTemplates[0].id)
+  }, [filteredTemplates, loading, selectedTemplateId])
+
+  const selectedTemplate = useMemo(
+    () => filteredTemplates.find((item) => item.id === selectedTemplateId)
+      ?? templates.find((item) => item.id === selectedTemplateId)
+      ?? null,
+    [filteredTemplates, selectedTemplateId, templates]
+  )
+
+  useEffect(() => {
+    if (composeMode === null) {
+      return
+    }
+
+    if (composeMode === 'create') {
+      form.setFieldsValue({
+        code: '',
+        name: '',
+        format: 'xlsx',
+        is_public: true,
+        is_active: true,
+        workflow_template_id: '',
+        schema_json: DEFAULT_SCHEMA_JSON,
+        metadata_json: DEFAULT_METADATA_JSON,
+      })
+      setSubmitError(null)
+      return
+    }
+
+    if (!selectedTemplate) {
+      return
+    }
+
+    form.setFieldsValue({
+      code: selectedTemplate.code,
+      name: selectedTemplate.name,
+      format: selectedTemplate.format,
+      is_public: selectedTemplate.is_public,
+      is_active: selectedTemplate.is_active,
+      workflow_template_id: selectedTemplate.workflow_template_id ?? '',
+      schema_json: stringifyJsonObject(selectedTemplate.schema),
+      metadata_json: stringifyJsonObject(selectedTemplate.metadata),
+    })
     setSubmitError(null)
-  }, [isSubmitting])
+  }, [composeMode, form, selectedTemplate])
+
+  const handleSearchChange = (nextSearch: string) => {
+    const nextFilteredTemplates = filterTemplates(templates, nextSearch)
+    const nextSelectedTemplateId = selectedTemplateId && nextFilteredTemplates.some(
+      (template) => template.id === selectedTemplateId
+    )
+      ? selectedTemplateId
+      : (nextFilteredTemplates[0]?.id ?? null)
+    const nextDetailOpen = Boolean(nextSelectedTemplateId) && isDetailDrawerOpen
+
+    routeUpdateModeRef.current = 'push'
+    setSearch(nextSearch)
+    setSelectedTemplateId(nextSelectedTemplateId)
+    setIsDetailDrawerOpen(nextDetailOpen)
+  }
 
   const handleSubmitTemplate = useCallback(async () => {
     setSubmitError(null)
@@ -206,190 +429,227 @@ export function PoolSchemaTemplatesPage() {
         metadata,
         workflow_template_id: values.workflow_template_id?.trim() || null,
       }
-      if (modalMode === 'edit') {
-        if (!editingTemplate) {
+      if (composeMode === 'edit') {
+        if (!selectedTemplate) {
           setSubmitError('Шаблон для редактирования не выбран.')
           return
         }
-        await updatePoolSchemaTemplate(editingTemplate.id, payload)
+        await updatePoolSchemaTemplate(selectedTemplate.id, payload)
         message.success('Шаблон обновлён')
       } else {
         await createPoolSchemaTemplate(payload)
         message.success('Шаблон создан')
       }
-      closeModal()
+      routeUpdateModeRef.current = 'push'
+      setComposeMode(null)
       await loadTemplates()
     } catch {
-      setSubmitError(modalMode === 'edit' ? 'Не удалось обновить шаблон.' : 'Не удалось создать шаблон.')
+      setSubmitError(composeMode === 'edit' ? 'Не удалось обновить шаблон.' : 'Не удалось создать шаблон.')
     } finally {
       setIsSubmitting(false)
     }
-  }, [closeModal, editingTemplate, form, loadTemplates, message, modalMode])
+  }, [composeMode, form, loadTemplates, message, selectedTemplate])
 
-  const columns: ColumnsType<PoolSchemaTemplate> = useMemo(
-    () => [
-      {
-        title: 'Code',
-        dataIndex: 'code',
-        key: 'code',
-        width: 220,
-        render: (value: string) => <Text code>{value}</Text>,
-      },
-      {
-        title: 'Name',
-        dataIndex: 'name',
-        key: 'name',
-      },
-      {
-        title: 'Format',
-        dataIndex: 'format',
-        key: 'format',
-        width: 120,
-        render: (value: string) => <Tag color={value === 'xlsx' ? 'blue' : 'green'}>{value.toUpperCase()}</Tag>,
-      },
-      {
-        title: 'Visibility',
-        key: 'visibility',
-        width: 180,
-        render: (_value, record) => (
-          <Space size={4}>
-            <Tag color={record.is_public ? 'cyan' : 'default'}>
-              {record.is_public ? 'public' : 'private'}
-            </Tag>
-            <Tag color={record.is_active ? 'success' : 'default'}>
-              {record.is_active ? 'active' : 'inactive'}
-            </Tag>
-          </Space>
-        ),
-      },
-      {
-        title: 'Unified Workflow',
-        dataIndex: 'workflow_template_id',
-        key: 'workflow_template_id',
-        width: 280,
-        render: (value: string | null) => (
-          value
-            ? (
-              <Space size={4}>
-                <Tag color="blue">template</Tag>
-                <Text code>{value}</Text>
-              </Space>
-            )
-            : <Text type="secondary">not linked</Text>
-        ),
-      },
-      {
-        title: 'workflow_binding hint',
-        key: 'workflow_binding_hint',
-        width: 320,
-        render: (_value, record) => {
-          const hint = resolveWorkflowBindingHint(record.metadata ?? {})
-          if (!hint) {
-            return <Text type="secondary">absent</Text>
-          }
-          return (
-            <Space size={4} data-testid="pool-template-workflow-binding-hint">
-              <Tag color="gold">compat</Tag>
-              <Text code>{hint}</Text>
-            </Space>
-          )
-        },
-      },
-      {
-        title: 'Updated',
-        dataIndex: 'updated_at',
-        key: 'updated_at',
-        width: 200,
-        render: (value: string) => new Date(value).toLocaleString(),
-      },
-      {
-        title: 'Actions',
-        key: 'actions',
-        width: 120,
-        render: (_value, record) => (
-          <Button
-            size="small"
-            onClick={() => openEditModal(record)}
-            data-testid={`pool-template-edit-${record.id}`}
-          >
-            Edit
-          </Button>
-        ),
-      },
-    ],
-    [openEditModal]
-  )
+  const selectedWorkflowBindingHint = resolveWorkflowBindingHint(selectedTemplate?.metadata ?? {})
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div>
-        <Title level={3} style={{ marginBottom: 0 }}>
-          Pool Schema Templates
-        </Title>
-        <Text type="secondary">
-          Публичные XLSX/JSON шаблоны для bottom-up импорта. `workflow_binding` в metadata поддерживается как
-          compatibility hint компилятора и не является отдельным runtime.
-        </Text>
-      </div>
-
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Pool Schema Templates"
+          subtitle="Canonical schema template workspace for bottom-up import surfaces and compatibility hints."
+          actions={(
+            <Button
+              type="primary"
+              onClick={() => {
+                routeUpdateModeRef.current = 'push'
+                setComposeMode('create')
+              }}
+            >
+              Create Template
+            </Button>
+          )}
+        />
+      )}
+    >
       <Alert
         type="info"
         showIcon
-        message="Unified execution source-of-truth: workflow execution provenance в /pools/runs. Поле workflow_binding на template используется только как optional compiler hint."
+        message="Unified execution source-of-truth"
+        description="workflow execution provenance lives in /pools/runs. metadata.workflow_binding stays available here only as a compatibility compiler hint."
       />
 
-      <Card>
-        <Space size="middle" wrap>
-          <Select
-            value={formatFilter}
-            style={{ width: 180 }}
-            options={[
-              { value: 'all', label: 'All formats' },
-              { value: 'xlsx', label: 'XLSX' },
-              { value: 'json', label: 'JSON' },
-            ]}
-            onChange={(value) => setFormatFilter(value)}
+      <MasterDetailShell
+        detailOpen={Boolean(selectedTemplateId) && isDetailDrawerOpen}
+        onCloseDetail={() => {
+          routeUpdateModeRef.current = 'push'
+          setIsDetailDrawerOpen(false)
+        }}
+        detailDrawerTitle={selectedTemplate ? `${selectedTemplate.code} · schema template` : 'Schema template'}
+        list={(
+          <EntityList
+            title="Schema Templates"
+            loading={loading}
+            error={error}
+            emptyDescription="Шаблоны schema import пока не созданы."
+            toolbar={(
+              <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 16 }}>
+                <Input
+                  allowClear
+                  placeholder="Search templates"
+                  value={search}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                />
+                <Space size="middle" wrap>
+                  <Select
+                    value={formatFilter}
+                    style={{ width: 180 }}
+                    options={[
+                      { value: 'all', label: 'All formats' },
+                      { value: 'xlsx', label: 'XLSX' },
+                      { value: 'json', label: 'JSON' },
+                    ]}
+                    onChange={(value) => {
+                      routeUpdateModeRef.current = 'push'
+                      setFormatFilter(value)
+                    }}
+                  />
+                  <Space size={6}>
+                    <Switch
+                      checked={includePrivate}
+                      onChange={(value) => {
+                        routeUpdateModeRef.current = 'push'
+                        setIncludePrivate(value)
+                      }}
+                    />
+                    <Text>Include private</Text>
+                  </Space>
+                  <Space size={6}>
+                    <Switch
+                      checked={includeInactive}
+                      onChange={(value) => {
+                        routeUpdateModeRef.current = 'push'
+                        setIncludeInactive(value)
+                      }}
+                    />
+                    <Text>Include inactive</Text>
+                  </Space>
+                  <Button onClick={() => void loadTemplates()} loading={loading}>
+                    Refresh
+                  </Button>
+                </Space>
+              </Space>
+            )}
+            dataSource={filteredTemplates}
+            renderItem={(template) => {
+              const selected = template.id === selectedTemplateId
+              const workflowBindingHint = resolveWorkflowBindingHint(template.metadata ?? {})
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => {
+                    routeUpdateModeRef.current = 'push'
+                    setSelectedTemplateId(template.id)
+                    setIsDetailDrawerOpen(true)
+                  }}
+                  aria-label={`Open schema template ${template.name}`}
+                  aria-pressed={selected}
+                  style={buildListButtonStyle(selected)}
+                >
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                      <Text strong>{template.name}</Text>
+                      <Text type="secondary" code>{template.code}</Text>
+                    </Space>
+                    <Text type="secondary">
+                      {`${template.format.toUpperCase()} · ${template.is_public ? 'public' : 'private'} · ${template.is_active ? 'active' : 'inactive'}`}
+                    </Text>
+                    {workflowBindingHint ? (
+                      <Text type="secondary">{`workflow_binding: ${workflowBindingHint}`}</Text>
+                    ) : null}
+                  </Space>
+                </button>
+              )
+            }}
           />
-          <Space size={6}>
-            <Switch checked={includePrivate} onChange={setIncludePrivate} />
-            <Text>Include private</Text>
-          </Space>
-          <Space size={6}>
-            <Switch checked={includeInactive} onChange={setIncludeInactive} />
-            <Text>Include inactive</Text>
-          </Space>
-          <Button onClick={() => void loadTemplates()} loading={loading}>
-            Refresh
-          </Button>
-          <Button type="primary" onClick={openCreateModal}>
-            Create Template
-          </Button>
-        </Space>
-      </Card>
+        )}
+        detail={(
+          <EntityDetails
+            title={selectedTemplate ? selectedTemplate.name : 'Schema template'}
+            empty={!selectedTemplate}
+            emptyDescription="Select a schema template to inspect its compiler hints, metadata, and authoring actions."
+            extra={selectedTemplate ? (
+              <Button
+                onClick={() => {
+                  routeUpdateModeRef.current = 'push'
+                  setComposeMode('edit')
+                  setIsDetailDrawerOpen(true)
+                }}
+              >
+                Edit
+              </Button>
+            ) : null}
+          >
+            {selectedTemplate ? (
+              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="Code">
+                    <Text strong>{selectedTemplate.code}</Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Format">
+                    {selectedTemplate.format.toUpperCase()}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Visibility">
+                    {selectedTemplate.is_public ? 'public' : 'private'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Status">
+                    {selectedTemplate.is_active ? 'active' : 'inactive'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Workflow template">
+                    {selectedTemplate.workflow_template_id || 'not linked'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="workflow_binding hint">
+                    {selectedWorkflowBindingHint ? (
+                      <Space size={8} data-testid="pool-template-workflow-binding-hint">
+                        <Text strong>compat</Text>
+                        <Text code>{selectedWorkflowBindingHint}</Text>
+                      </Space>
+                    ) : (
+                      'absent'
+                    )}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Updated">
+                    {formatDateTime(selectedTemplate.updated_at)}
+                  </Descriptions.Item>
+                </Descriptions>
 
-      {error && <Alert type="error" message={error} />}
+                <JsonBlock title="Schema JSON" value={selectedTemplate.schema} dataTestId="pool-schema-template-schema-json" />
+                <JsonBlock title="Metadata JSON" value={selectedTemplate.metadata} dataTestId="pool-schema-template-metadata-json" />
+              </Space>
+            ) : null}
+          </EntityDetails>
+        )}
+      />
 
-      <Card>
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={templates}
-          loading={loading}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
-        />
-      </Card>
-
-      <Modal
-        title={modalMode === 'edit' ? 'Edit Pool Schema Template' : 'Create Pool Schema Template'}
-        open={isModalOpen}
-        onCancel={closeModal}
-        onOk={() => void handleSubmitTemplate()}
+      <ModalFormShell
+        open={composeMode === 'create' || (composeMode === 'edit' && Boolean(selectedTemplate))}
+        onClose={() => {
+          if (isSubmitting) {
+            return
+          }
+          routeUpdateModeRef.current = 'push'
+          setComposeMode(null)
+          setSubmitError(null)
+        }}
+        onSubmit={() => { void handleSubmitTemplate() }}
+        title={composeMode === 'edit' ? 'Edit Pool Schema Template' : 'Create Pool Schema Template'}
+        submitText={composeMode === 'edit' ? 'Save' : 'Create'}
         confirmLoading={isSubmitting}
-        okText={modalMode === 'edit' ? 'Save' : 'Create'}
         width={760}
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          {submitError && <Alert type="error" message={submitError} />}
+          {submitError ? <Alert type="error" message={submitError} /> : null}
           <Form form={form} layout="vertical" requiredMark={false}>
             <Form.Item
               name="code"
@@ -442,7 +702,7 @@ export function PoolSchemaTemplatesPage() {
             </Form.Item>
           </Form>
         </Space>
-      </Modal>
-    </Space>
+      </ModalFormShell>
+    </WorkspacePage>
   )
 }

@@ -364,8 +364,13 @@ export const TraceViewerModal = ({
               </Button>
               <Button
                 icon={<ExportOutlined />}
-                href={getJaegerTraceUrl(trace.traceId)}
-                target="_blank"
+                onClick={() => {
+                  window.open(
+                    getJaegerTraceUrl(trace.traceId),
+                    '_blank',
+                    'noopener,noreferrer'
+                  )
+                }}
               >
                 Open in Jaeger
               </Button>

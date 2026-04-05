@@ -1659,6 +1659,30 @@ async function setupUiPlatformMocks(
       })
     }
 
+    if (method === 'GET' && path === '/api/v2/workflows/list-executions/') {
+      return fulfillJson(route, {
+        executions: [
+          {
+            id: WORKFLOW_EXECUTION_DETAIL.id,
+            workflow_template: WORKFLOW_EXECUTION_DETAIL.workflow_template,
+            template_name: WORKFLOW_EXECUTION_DETAIL.template_name,
+            template_version: WORKFLOW_EXECUTION_DETAIL.template_version,
+            status: WORKFLOW_EXECUTION_DETAIL.status,
+            progress_percent: WORKFLOW_EXECUTION_DETAIL.progress_percent,
+            current_node_id: WORKFLOW_EXECUTION_DETAIL.current_node_id,
+            error_message: WORKFLOW_EXECUTION_DETAIL.error_message,
+            error_node_id: WORKFLOW_EXECUTION_DETAIL.error_node_id,
+            trace_id: WORKFLOW_EXECUTION_DETAIL.trace_id,
+            started_at: WORKFLOW_EXECUTION_DETAIL.started_at,
+            completed_at: WORKFLOW_EXECUTION_DETAIL.completed_at,
+            duration: WORKFLOW_EXECUTION_DETAIL.duration,
+          },
+        ],
+        count: 1,
+        total: 1,
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/workflows/get-execution/') {
       const executionId = String(url.searchParams.get('execution_id') || '')
       if (executionId !== POOL_RUN.workflow_execution_id) {
@@ -1702,6 +1726,28 @@ async function setupUiPlatformMocks(
           average_duration: null,
         },
         executions: [],
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/operation-catalog/exposures/') {
+      return fulfillJson(route, {
+        exposures: [
+          {
+            id: 'template-exposure-1',
+            definition_id: 'definition-1',
+            surface: 'template',
+            alias: 'tpl-sync-extension',
+            name: 'Sync Extension',
+            description: 'Syncs extension state',
+            is_active: true,
+            capability: 'extensions.sync',
+            status: 'published',
+            operation_type: 'designer_cli',
+            template_exposure_revision: 4,
+          },
+        ],
+        count: 1,
+        total: 1,
       })
     }
 
@@ -2300,6 +2346,164 @@ test('UI platform: /pools/topology-templates opens revise-template authoring in 
   await expect(reviseDrawer).toBeVisible()
   await expect(reviseDrawer.getByTestId('pool-topology-templates-revise-node-label-0')).toBeVisible()
   await expect(reviseDrawer.getByRole('button', { name: 'Publish revision' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows restores selected workflow detail from URL-backed workspace state', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/workflows?workflow=${WORKFLOW.id}&detail=1`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Scheme Library', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('workflow-list-selected-id')).toHaveText(WORKFLOW.id)
+  await expect(page.getByTestId('workflow-list-selected-dag')).toContainText('"start"')
+  await expect(page.getByTestId('workflow-list-detail-open')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expect.poll(() => counts.bootstrap).toBe(1)
+})
+
+test('UI platform: /workflows keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/workflows', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Scheme Library', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+
+  await page.locator('tbody tr').filter({ hasText: WORKFLOW.name }).first().click()
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('workflow-list-selected-id')).toHaveText(WORKFLOW.id)
+  await expect(detailDrawer.getByTestId('workflow-list-detail-open')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/executions restores selected execution detail from URL-backed workspace state', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/workflows/executions?status=pending&execution=${WORKFLOW_EXECUTION_DETAIL.id}&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Executions', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('workflow-executions-selected-id')).toHaveText(WORKFLOW_EXECUTION_DETAIL.id)
+  await expect(page.getByTestId('workflow-executions-selected-input-context')).toContainText(`"${POOL_RUN.pool_id}"`)
+  await expect(page.getByTestId('workflow-executions-detail-open')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expect.poll(() => counts.bootstrap).toBe(1)
+})
+
+test('UI platform: /workflows/executions keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/workflows/executions', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Executions', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+
+  await page.locator('tbody tr').filter({ hasText: WORKFLOW.name }).first().click()
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('workflow-executions-selected-id')).toHaveText(WORKFLOW_EXECUTION_DETAIL.id)
+  await expect(detailDrawer.getByTestId('workflow-executions-detail-open')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/:id restores selected node context from URL-backed authoring state', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/workflows/${WORKFLOW.id}?node=start`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: WORKFLOW.name, level: 2 })).toBeVisible()
+  await expect(page.getByTestId('workflow-designer-selected-node')).toHaveText('Selected node: Start')
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/:id keeps mobile authoring readable and opens platform-owned drawers', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/workflows/${WORKFLOW.id}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: WORKFLOW.name, level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Node palette' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByRole('button', { name: 'Node palette' }).click()
+  await expect(page.getByTestId('workflow-designer-palette-drawer')).toBeVisible()
+  await expect(page.getByText('Scheme Building Blocks')).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('workflow-designer-palette-drawer')).toBeHidden()
+
+  await page.getByTestId('rf__node-start').evaluate((element: HTMLElement) => element.click())
+
+  const nodeDrawer = page.getByTestId('workflow-designer-node-drawer')
+  await expect(nodeDrawer).toBeVisible()
+  await expect(page.getByTestId('workflow-designer-selected-node')).toHaveText('Selected node: Start')
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/executions/:executionId restores selected node diagnostics from URL-backed workspace state', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/workflows/executions/${WORKFLOW_EXECUTION_DETAIL.id}?node=start`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Execution', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('workflow-monitor-selected-node')).toHaveText('Selected node: Start')
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('dialog').getByText('start', { exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /workflows/executions/:executionId keeps diagnostics readable on mobile and opens node details in a drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/workflows/executions/${WORKFLOW_EXECUTION_DETAIL.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Workflow Execution', level: 2 })).toBeVisible()
+  await expect(page.getByText('Execution Info')).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByTestId('rf__node-start').evaluate((element: HTMLElement) => element.click())
+
+  const nodeDrawer = page.getByRole('dialog')
+  await expect(nodeDrawer).toBeVisible()
+  await expect(page.getByTestId('workflow-monitor-selected-node')).toHaveText('Selected node: Start')
+  await expect(nodeDrawer.getByText('start', { exact: true })).toBeVisible()
   await expectNoHorizontalOverflow(page)
 })
 

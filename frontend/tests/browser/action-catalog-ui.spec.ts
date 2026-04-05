@@ -123,6 +123,7 @@ async function setupApiMocks(page: Page, state: MockState) {
   const upsertPayloads: AnyRecord[] = state.upsertPayloads ?? []
   state.upsertPayloads = upsertPayloads
   const templateAccessById = state.templateAccessById ?? {}
+  const currentUser = state.me ?? { id: 1, username: 'admin', is_staff: true }
 
   const definitions: AnyRecord[] = []
   const exposures: AnyRecord[] = []
@@ -302,6 +303,29 @@ async function setupApiMocks(page: Page, state: MockState) {
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+    const defaultTemplateLevel: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' = currentUser.is_staff ? 'ADMIN' : 'VIEW'
+    const operationTemplates = exposures
+      .filter((row) => row.surface === 'template')
+      .map((row) => {
+        const templateId = String(row.alias || '').trim()
+        if (!templateId) return null
+        const level = templateAccessById[templateId] ?? defaultTemplateLevel
+        return {
+          template: {
+            id: templateId,
+            name: String(row.name || templateId),
+          },
+          level,
+          source: 'direct',
+          sources: [{ source: 'direct', level }],
+        }
+      })
+      .filter((row): row is {
+        template: { id: string; name: string }
+        level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
+        source: 'direct'
+        sources: Array<{ source: 'direct'; level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' }>
+      } => row !== null)
 
     if (
       path === '/api/v2/templates/list-templates/'
@@ -322,34 +346,31 @@ async function setupApiMocks(page: Page, state: MockState) {
       return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND', message: 'Not found' } }, 404)
     }
 
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: currentUser,
+        tenant_context: {
+          active_tenant_id: null,
+          tenants: [{ id: 'tenant-1', slug: 'tenant-1', name: 'Tenant 1', role: 'owner' }],
+        },
+        access: {
+          user: { id: currentUser.id, username: currentUser.username },
+          clusters: [],
+          databases: [],
+          operation_templates: operationTemplates,
+        },
+        capabilities: {
+          can_manage_rbac: currentUser.is_staff,
+          can_manage_driver_catalogs: false,
+        },
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/system/me/') {
-      return fulfillJson(route, state.me ?? { id: 1, username: 'admin', is_staff: true })
+      return fulfillJson(route, currentUser)
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
-      const defaultTemplateLevel: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' = state.me?.is_staff ? 'ADMIN' : 'VIEW'
-      const operationTemplates = exposures
-        .filter((row) => row.surface === 'template')
-        .map((row) => {
-          const templateId = String(row.alias || '').trim()
-          if (!templateId) return null
-          const level = templateAccessById[templateId] ?? defaultTemplateLevel
-          return {
-            template: {
-              id: templateId,
-              name: String(row.name || templateId),
-            },
-            level,
-            source: 'direct',
-            sources: [{ source: 'direct', level }],
-          }
-        })
-        .filter((row): row is {
-          template: { id: string; name: string }
-          level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
-          source: 'direct'
-          sources: Array<{ source: 'direct'; level: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' }>
-        } => row !== null)
       return fulfillJson(route, {
         clusters: [],
         databases: [],
@@ -888,6 +909,25 @@ test('Templates: staff deep-link на template остаётся в templates-onl
   expect(callCounters.operationCatalogDefinitionsGets ?? 0).toBe(0)
 })
 
+test('Templates: mobile detail deep-link открывает выбранный template в drawer-safe shell', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 12, username: 'admin', is_staff: true },
+    templates: [{ id: 'tpl-mobile', name: 'Mobile Template', command_id: 'infobase.extension.list' }],
+    callCounters,
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/templates?template=tpl-mobile&detail=1', { waitUntil: 'domcontentloaded' })
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('templates-selected-id')).toHaveText('tpl-mobile')
+  await expect(detailDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expect.poll(() => new URL(page.url()).searchParams.get('detail')).toBe('1')
+})
+
 test('Templates: non-staff deep-link на template открывает templates-only view', async ({ page }) => {
   await setupAuth(page)
   const callCounters: MockCounters = {}
@@ -914,6 +954,22 @@ test('Templates: non-staff deep-link на template открывает templates-
   expect(callCounters.operationExposureHintsGets ?? 0).toBe(0)
   expect(callCounters.legacyTemplateCalls ?? 0).toBe(0)
   expect(callCounters.legacyActionHintsCalls ?? 0).toBe(0)
+})
+
+test('Templates: non-staff deep-link compose=edit не открывает editor без manage permissions', async ({ page }) => {
+  await setupAuth(page)
+  const callCounters: MockCounters = {}
+  await setupApiMocks(page, {
+    me: { id: 22, username: 'viewer', is_staff: false },
+    templates: [{ id: 'tpl-view', name: 'Viewer Template' }],
+    callCounters,
+  })
+
+  await page.goto('/templates?template=tpl-view&compose=edit', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByTestId('templates-selected-id')).toHaveText('tpl-view')
+  await expect(page.getByTestId('operation-exposure-editor-name')).toHaveCount(0)
+  await expect.poll(() => new URL(page.url()).searchParams.get('compose')).toBeNull()
 })
 
 test('Templates: non-staff с MANAGE по templates получает template controls без action controls', async ({ page }) => {
@@ -1006,6 +1062,7 @@ test('Templates: единый editor shell работает только для 
   await page.keyboard.press('Enter')
   await page.getByTestId('action-catalog-editor-open-preview-tab').click()
   await expect(page.getByTestId('operation-exposure-editor-execution-preview-json')).toContainText('infobase.extension.info')
+  await page.getByText(/^Field origins \(/).click()
   await expect(page.getByTestId('operation-exposure-editor-field-origins')).toContainText('OperationDefinition.executor_payload.operation_type')
   await page.getByTestId('action-catalog-editor-apply').click()
 

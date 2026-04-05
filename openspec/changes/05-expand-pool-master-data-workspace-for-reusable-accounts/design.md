@@ -31,13 +31,13 @@
 ## Decisions
 
 ### Decision: Change стартует только после platform prerequisite
-Реализация `04` не начинается, пока `/pools/master-data` не будет migrated на canonical multi-zone shell в `refactor-ui-platform-workflow-template-workspaces`. Если prerequisite не landed, работа должна идти туда, а не в этот change.
+Реализация `05` не начинается, пока `/pools/master-data` не будет migrated на canonical multi-zone shell в `04-refactor-ui-platform-workflow-template-workspaces`. Если prerequisite не landed, работа должна идти туда, а не в этот change.
 
 ### Decision: UI change расширяет только canonical shell
-Все новые workspace zones, forms и remediation states должны встраиваться в shell из `refactor-ui-platform-workflow-template-workspaces`. Второй parallel page foundation запрещён.
+Все новые workspace zones, forms и remediation states должны встраиваться в shell из `04-refactor-ui-platform-workflow-template-workspaces`. Второй parallel page foundation запрещён.
 
 ### Decision: Backend/API/contracts переиспользуются как shipped baseline
-`04` по умолчанию не владеет расширением backend schema. Frontend должен строиться поверх уже shipped endpoints, registry inspect contract и generated models. Contract changes допустимы только если обнаружится конкретный UI-blocking gap, а не "на всякий случай".
+`05` по умолчанию не владеет расширением backend schema. Frontend должен строиться поверх уже shipped endpoints, registry inspect contract и generated models. Contract changes допустимы только если обнаружится конкретный UI-blocking gap, а не "на всякий случай".
 
 ### Decision: Account authoring должен показывать binding scope и compatibility явно
 Оператор должен видеть `chart_identity`, compatibility markers, binding coverage и immutable revision semantics `GLAccountSet`, а не редактировать их как opaque JSON.

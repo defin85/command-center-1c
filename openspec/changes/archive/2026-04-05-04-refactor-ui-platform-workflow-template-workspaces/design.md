@@ -49,7 +49,7 @@
 
 Для `/pools/master-data` это означает узкий foundation scope:
 - canonical shell и route helpers принадлежат этому change;
-- reusable-account zones, helper-layer account adapters и domain-specific authoring flows принадлежат follow-up change `04-expand-pool-master-data-workspace-for-reusable-accounts`.
+- reusable-account zones, helper-layer account adapters и domain-specific authoring flows принадлежат follow-up change `05-expand-pool-master-data-workspace-for-reusable-accounts`.
 
 ### 3. Workflow authoring/monitor routes считаются частью platform-governed shell даже если сейчас обходят `MainLayout`
 Сейчас `/workflows/new`, `/workflows/:id` и `/workflows/executions/:executionId` живут отдельно от `MainLayout`, но это не должно оставаться оправданием для bespoke full-page assembly.

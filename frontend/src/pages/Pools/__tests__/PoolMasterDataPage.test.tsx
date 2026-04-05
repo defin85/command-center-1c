@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
+import { MemoryRouter } from 'react-router-dom'
 
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolMasterDataPage } from '../PoolMasterDataPage'
@@ -104,11 +105,12 @@ vi.mock('../../../api/intercompanyPools', () => ({
 }))
 
 function renderPage(path = '/pools/master-data') {
-  window.history.pushState({}, '', path)
   return render(
-    <AntApp>
-      <PoolMasterDataPage />
-    </AntApp>
+    <MemoryRouter initialEntries={[path]}>
+      <AntApp>
+        <PoolMasterDataPage />
+      </AntApp>
+    </MemoryRouter>
   )
 }
 
@@ -362,7 +364,7 @@ describe('PoolMasterDataPage', () => {
     })
   })
 
-  it('renders workspace tabs and loads default Party tab list', async () => {
+  it('renders workspace zones and loads default Party zone list', async () => {
     const user = userEvent.setup()
     renderPage()
 
@@ -375,10 +377,10 @@ describe('PoolMasterDataPage', () => {
       offset: 0,
     })
 
-    await user.click(screen.getByRole('tab', { name: 'Item' }))
+    await user.click(screen.getByRole('button', { name: 'Open Item zone' }))
     await waitFor(() => expect(mockListMasterDataItems).toHaveBeenCalled())
 
-    await user.click(screen.getByRole('tab', { name: 'Sync' }))
+    await user.click(screen.getByRole('button', { name: 'Open Sync zone' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
@@ -604,7 +606,7 @@ describe('PoolMasterDataPage', () => {
   it('applies scheduling filters for sync status operator view', async () => {
     const user = userEvent.setup()
     renderPage()
-    await user.click(await screen.findByRole('tab', { name: 'Sync' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Sync zone' }))
 
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     mockListMasterDataSyncStatus.mockClear()
@@ -695,7 +697,7 @@ describe('PoolMasterDataPage', () => {
     })
 
     renderPage()
-    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
@@ -745,7 +747,7 @@ describe('PoolMasterDataPage', () => {
     })
 
     renderPage()
-    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
@@ -788,7 +790,7 @@ describe('PoolMasterDataPage', () => {
     })
 
     renderPage()
-    await user.click(await screen.findByRole('tab', { name: 'Bootstrap Import' }))
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
     expect(await screen.findByText('Current Job')).toBeInTheDocument()
 
     await user.click(screen.getByTestId('bootstrap-import-retry-failed'))

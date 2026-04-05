@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
+import { MemoryRouter } from 'react-router-dom'
 
 import { PoolSchemaTemplatesPage } from '../PoolSchemaTemplatesPage'
 
@@ -17,9 +18,11 @@ vi.mock('../../../api/intercompanyPools', () => ({
 
 function renderPage() {
   return render(
-    <AntApp>
-      <PoolSchemaTemplatesPage />
-    </AntApp>
+    <MemoryRouter initialEntries={['/pools/templates']}>
+      <AntApp>
+        <PoolSchemaTemplatesPage />
+      </AntApp>
+    </MemoryRouter>
   )
 }
 

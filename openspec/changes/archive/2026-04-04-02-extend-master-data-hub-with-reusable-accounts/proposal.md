@@ -30,7 +30,7 @@
 - Related changes:
   - depends on `01-add-reusable-data-registry-and-capability-gates`
   - prerequisite for `03-bridge-pool-factual-scope-to-gl-account-set`
-  - prerequisite for `04-expand-pool-master-data-workspace-for-reusable-accounts`
+  - prerequisite for `05-expand-pool-master-data-workspace-for-reusable-accounts`
 
 ## Non-Goals
 - Cutover factual scope на `GLAccountSet`.

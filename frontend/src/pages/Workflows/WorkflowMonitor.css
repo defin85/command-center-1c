@@ -3,97 +3,116 @@
  */
 
 .workflow-monitor {
-  height: 100vh;
+  min-height: 100vh;
+  background: #f5f7fb;
 }
 
 .workflow-monitor-loading {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
 }
 
-/* Header */
 .monitor-header {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
-  height: 64px;
+  justify-content: flex-end;
 }
 
-.monitor-header .header-left {
+.workflow-monitor-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
-.monitor-header .header-title {
-  margin: 0;
-  display: flex;
-  align-items: center;
+.workflow-monitor-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 420px);
+  gap: 24px;
+  align-items: start;
 }
 
-.monitor-header .header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Body */
-.monitor-body {
-  height: calc(100vh - 64px);
-}
-
-/* Content */
 .monitor-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
   padding: 16px;
-  overflow-y: auto;
-  background: #f5f5f5;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+}
+
+.monitor-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .progress-section {
-  background: #fff;
   padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
 }
 
 .error-alert,
-.result-alert,
 .result-collapse {
-  margin-bottom: 16px;
+  margin-bottom: 0;
 }
 
-.result-json {
-  margin: 0;
-  max-height: 200px;
-  overflow: auto;
+.monitor-content .workflow-canvas-wrapper {
+  min-height: 560px;
+  border-radius: 16px;
+}
+
+.workflow-monitor-bindings-header {
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.workflow-monitor-bindings-scroll {
+  overflow-x: auto;
+}
+
+.workflow-monitor-bindings-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.workflow-monitor-bindings-table th,
+.workflow-monitor-bindings-table td {
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
   font-size: 12px;
-  background: #fafafa;
-  padding: 8px;
-  border-radius: 4px;
 }
 
-/* Sider */
-.monitor-sider {
-  background: #fff !important;
-  border-left: 1px solid #f0f0f0;
-  overflow-y: auto;
-  padding: 16px;
+.workflow-monitor-bindings-table th {
+  background: #f8fafc;
+  font-weight: 600;
 }
 
-.monitor-sider .info-card,
-.monitor-sider .stats-card,
-.monitor-sider .timeline-card {
-  margin-bottom: 16px;
+.workflow-monitor-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.monitor-sider .timeline-card {
-  max-height: 400px;
-  overflow-y: auto;
+.workflow-monitor-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
 }
 
 .timeline-item {
@@ -117,7 +136,6 @@
   outline-offset: 2px;
 }
 
-/* Node details */
 .node-details {
   display: flex;
   flex-direction: column;
@@ -151,16 +169,6 @@
   font-size: 12px;
 }
 
-/* Canvas wrapper in monitor mode */
-.monitor-content .workflow-canvas-wrapper {
-  height: calc(100vh - 64px - 32px - 60px - 16px);
-  min-height: 400px;
-  background: #fff;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-/* Connection status badge */
 .ant-badge-status-success {
   color: #52c41a;
 }
@@ -169,13 +177,16 @@
   color: #ff4d4f;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-  .monitor-sider {
-    display: none;
+@media (max-width: 992px) {
+  .workflow-monitor-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitor-content {
+    padding: 12px;
   }
 
   .monitor-content .workflow-canvas-wrapper {
-    height: calc(100vh - 64px - 32px - 60px);
+    min-height: 480px;
   }
 }

@@ -1,5 +1,5 @@
 ## 0. Prerequisite Gate
-- [ ] 0.1 Подтвердить, что `/pools/master-data` уже migrated на canonical multi-zone shell в `refactor-ui-platform-workflow-template-workspaces`, включая route-addressable active tab/remediation context и responsive fallback. Если prerequisite не landed, остановить реализацию `04` и продолжить работу в prerequisite change.
+- [ ] 0.1 Подтвердить, что `/pools/master-data` уже migrated на canonical multi-zone shell в `04-refactor-ui-platform-workflow-template-workspaces`, включая route-addressable active tab/remediation context и responsive fallback. Если prerequisite не landed, остановить реализацию `05` и продолжить работу в prerequisite change.
 
 ## 1. Shared Registry Helper Layer
 - [ ] 1.1 Перевести operator-facing entity options и captions на registry `label` вместо raw `entity_type`.
@@ -21,4 +21,4 @@
 - [ ] 4.1 Добавить frontend unit tests на helper layer, новые workspace zones, binding scope fields, token picker и revision lifecycle.
 - [ ] 4.2 Добавить browser tests на canonical shell integration, reload/deep-link restore и mobile-safe fallback без raw horizontal overflow.
 - [ ] 4.3 Прогнать `npm --prefix frontend run lint`, `npm --prefix frontend run test:run`, `npm --prefix frontend run test:browser:ui-platform`, `npm --prefix frontend run build`.
-- [ ] 4.4 Прогнать `openspec validate 04-expand-pool-master-data-workspace-for-reusable-accounts --strict --no-interactive`.
+- [ ] 4.4 Прогнать `openspec validate 05-expand-pool-master-data-workspace-for-reusable-accounts --strict --no-interactive`.

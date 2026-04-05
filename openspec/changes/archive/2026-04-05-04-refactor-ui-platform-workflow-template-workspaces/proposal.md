@@ -1,4 +1,4 @@
-# Change: Следующая волна UI platform migration для workflow и template workspaces
+# Change: 04. Приземлить prerequisite UI platform wave для workflow, template и master-data workspaces
 
 ## Why
 После operational и admin/support волн в authenticated frontend остаётся отдельный слой крупных authoring/catalog surfaces, которые по-прежнему живут на legacy page composition:
@@ -14,6 +14,7 @@
 Эти route особенно чувствительны к page-level UI debt, потому что смешивают authoring, inspect, diagnostics и execute flows в одном canvas, а часть из них вообще обходит `MainLayout` и canonical workspace shell. На практике это выражается в том, что route files остаются крупными и bespoke (`WorkflowDesigner.tsx` и `TemplatesPage.tsx` по `786` строк, `WorkflowMonitor.tsx` — `616` строк), а на route-level composition по-прежнему нет `WorkspacePage`, `PageHeader`, `MasterDetailShell`, `DrawerFormShell`, `ModalFormShell` и других platform primitives.
 
 Нужен отдельный change, который зафиксирует следующую волну migration для workflow/template surfaces, не смешивая её с уже запланированными infra/observability routes.
+Этот change является OpenSpec track для уже открытого product epic `command-center-1c-i8l5`.
 
 ## What Changes
 - Расширить `ui-web-interface-guidelines`, чтобы platform governance perimeter включал `/workflows`, `/workflows/executions`, `/workflows/new`, `/workflows/:id`, `/workflows/executions/:executionId`, `/templates`, `/pools/templates`, `/pools/master-data`.
@@ -25,10 +26,12 @@
   - canonical shell;
   - URL-addressable zone/remediation state;
   - responsive fallback для inspect/edit flows;
-  - без включения reusable-account domain expansion, token adapters и account-specific authoring surfaces, которые выносятся в `04-expand-pool-master-data-workspace-for-reusable-accounts`.
+  - без включения reusable-account domain expansion, token adapters и account-specific authoring surfaces, которые выносятся в `05-expand-pool-master-data-workspace-for-reusable-accounts`.
 - Зафиксировать blocking frontend validation gate для этой волны: lint, unit/runtime tests, browser `ui-platform` regressions и production build.
 
 ## Impact
+- Related epic:
+  - `command-center-1c-i8l5`
 - Affected specs:
   - `ui-web-interface-guidelines`
   - `workflow-management-workspaces` (new)

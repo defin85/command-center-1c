@@ -48,7 +48,7 @@ const authzValue: AuthzContextValue = {
   getTemplateLevel: () => null,
 }
 
-function renderPage() {
+function renderPage(initialEntries: string[] = ['/templates']) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -58,7 +58,7 @@ function renderPage() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter future={ROUTER_FUTURE}>
+      <MemoryRouter future={ROUTER_FUTURE} initialEntries={initialEntries}>
         <AuthzContext.Provider value={authzValue}>
           <AntApp>
             <TemplatesPage />
@@ -128,5 +128,22 @@ describe('TemplatesPage', () => {
     ).toBeInTheDocument()
     expect(await screen.findByText('Workflow Compatibility Template')).toBeInTheDocument()
     expect(await screen.findByTestId('templates-executor-kind-compatibility-tag')).toHaveTextContent('compatibility')
+  })
+
+  it('restores selected template detail from the route state', async () => {
+    renderPage(['/templates?template=workflow-template-compat&detail=1'])
+
+    expect(await screen.findByTestId('templates-selected-id')).toHaveTextContent('workflow-template-compat')
+    expect(await screen.findByTestId('templates-selected-status')).toHaveTextContent('published')
+    expect(await screen.findByTestId('templates-selected-template-data')).toHaveTextContent('workflow-template-v3')
+  })
+
+  it('does not open compose=edit from the URL without manage permissions', async () => {
+    renderPage(['/templates?template=workflow-template-compat&compose=edit'])
+
+    expect(await screen.findByTestId('templates-selected-id')).toHaveTextContent('workflow-template-compat')
+    await waitFor(() => {
+      expect(screen.queryByTestId('operation-exposure-editor-name')).not.toBeInTheDocument()
+    })
   })
 })

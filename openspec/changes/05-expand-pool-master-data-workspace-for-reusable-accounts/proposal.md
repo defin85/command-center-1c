@@ -1,4 +1,4 @@
-# Change: 04. Довести post-platform pool master-data workspace до reusable accounts
+# Change: 05. Довести post-platform pool master-data workspace до reusable accounts
 
 ## Why
 Foundation для reusable accounts уже shipped на backend стороне: registry/capability contract из `01-add-reusable-data-registry-and-capability-gates` и storage/API для `GLAccount` / `GLAccountSet` из `02-extend-master-data-hub-with-reusable-accounts` уже существуют. Но frontend `/pools/master-data` всё ещё живёт на legacy page composition, а shared helper layer по-прежнему держит string-specific assumptions и не покрывает account family целиком.
@@ -8,7 +8,7 @@ Foundation для reusable accounts уже shipped на backend стороне: 
 Этот change фиксирует отдельную UI-фазу завершения reusable account surfaces внутри уже migrated master-data workspace.
 
 ## What Changes
-- Выполнять change только после landing canonical multi-zone shell для `/pools/master-data` из `refactor-ui-platform-workflow-template-workspaces`.
+- Выполнять change только после landing canonical multi-zone shell для `/pools/master-data` из `04-refactor-ui-platform-workflow-template-workspaces`.
 - Расширить `/pools/master-data` внутри canonical shell новыми рабочими зонами `GLAccount` и `GLAccountSet`.
 - Добавить operator-facing list/detail authoring UI для `GLAccount`, account bindings, `chart_identity`, compatibility markers и `GLAccountSet` draft/publish/revision lifecycle.
 - Обобщить shared reusable-data helper layer:
@@ -33,7 +33,7 @@ Foundation для reusable accounts уже shipped на backend стороне: 
   - `frontend/src/pages/Pools/__tests__/**`
   - `frontend/tests/browser/**`
 - Related changes:
-  - blocked by `refactor-ui-platform-workflow-template-workspaces` for `/pools/master-data`
+  - blocked by `04-refactor-ui-platform-workflow-template-workspaces` for `/pools/master-data`
   - builds on archived `2026-04-03-01-add-reusable-data-registry-and-capability-gates`
   - builds on archived `2026-04-04-02-extend-master-data-hub-with-reusable-accounts`
 

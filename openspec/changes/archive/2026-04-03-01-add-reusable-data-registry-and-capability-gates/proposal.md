@@ -33,7 +33,7 @@
   - `contracts/**`
 - Related changes:
   - prerequisite for `02-extend-master-data-hub-with-reusable-accounts`
-  - prerequisite for `04-expand-pool-master-data-workspace-for-reusable-accounts`
+  - prerequisite for `05-expand-pool-master-data-workspace-for-reusable-accounts`
 
 ## Non-Goals
 - Добавление `GLAccount` / `GLAccountSet` storage, API и UI.

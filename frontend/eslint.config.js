@@ -83,6 +83,62 @@ const poolRunsRouteModuleImports = [
   },
 ]
 
+const poolSchemaTemplatesRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs', 'Tag'],
+    message: 'Pool schema templates route must compose through `WorkspacePage`, `MasterDetailShell`, and `ModalFormShell` instead of raw Ant route containers.',
+  },
+]
+
+const poolMasterDataRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs', 'Tag'],
+    message: 'Pool master-data route must compose through `WorkspacePage`, `MasterDetailShell`, and platform-owned multi-zone surfaces instead of raw Ant route containers.',
+  },
+]
+
+const templatesRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Templates route must compose through `WorkspacePage`, `MasterDetailShell`, and canonical authoring surfaces instead of raw Ant route containers.',
+  },
+]
+
+const workflowListRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Workflow library route must compose through `WorkspacePage`, `MasterDetailShell`, and canonical catalog/detail shells instead of raw Ant route containers.',
+  },
+]
+
+const workflowExecutionsRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Workflow executions route must compose through `WorkspacePage`, `MasterDetailShell`, and canonical diagnostics shells instead of raw Ant route containers.',
+  },
+]
+
+const workflowDesignerRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Layout', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Workflow designer route must compose through `WorkspacePage`, `PageHeader`, and canonical platform-owned secondary shells instead of raw Ant route containers.',
+  },
+]
+
+const workflowMonitorRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Layout', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Workflow monitor route must compose through `WorkspacePage`, `PageHeader`, and responsive diagnostics surfaces instead of raw Ant route containers.',
+  },
+]
+
 const databasesSecondarySurfaceImports = [
   {
     name: 'antd',
@@ -400,6 +456,104 @@ export default tseslint.config(
         paths: [
           ...contextAwareAntdImports,
           ...poolRunsRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Pools/PoolSchemaTemplatesPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...poolSchemaTemplatesRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Pools/PoolMasterDataPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...poolMasterDataRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Templates/TemplatesPage.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...templatesRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Workflows/WorkflowList.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...workflowListRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Workflows/WorkflowExecutions.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...workflowExecutionsRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Workflows/WorkflowDesigner.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...workflowDesignerRouteModuleImports,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  },
+  {
+    files: [
+      'src/pages/Workflows/WorkflowMonitor.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...workflowMonitorRouteModuleImports,
         ],
         patterns: competingFoundationImportPatterns,
       }],

@@ -17,7 +17,7 @@
 - Affected code: `frontend/eslint.config.js`, `frontend/src/components/platform/__tests__/UiPlatformGovernanceLint.test.ts`, route inventory рядом с `frontend/src/App.tsx`, локальные UI governance docs
 - Related changes:
   - `refactor-ui-platform-admin-support-workspaces`
-  - `refactor-ui-platform-workflow-template-workspaces`
+  - `04-refactor-ui-platform-workflow-template-workspaces`
   - `refactor-ui-platform-infra-observability-workspaces`
 - Non-goals:
   - не мигрировать все legacy route на platform primitives в рамках этого change;
