@@ -31,7 +31,6 @@
 В первой итерации бухгалтерским эталоном ДОЛЖЕН (SHALL) считаться отчёт `Продажи`, построенный на bounded чтении `РегистрБухгалтерии.Хозрасчетный.Обороты(...)`, `РегистрСведений.ДанныеПервичныхДокументов` и связанных документов `РеализацияТоваровУслуг`, `ВозвратТоваровОтПокупателя`, `КорректировкаРеализации`.
 
 Projection ДОЛЖЕН (SHALL) хранить как минимум три денежные меры:
-
 - `amount_with_vat`
 - `amount_without_vat`
 - `vat_amount`
@@ -40,20 +39,23 @@ Projection ДОЛЖЕН (SHALL) учитывать как документы, с
 
 Primary sync path НЕ ДОЛЖЕН (SHALL NOT) выполнять unbounded full scan всего бухгалтерского регистра; worker sync ДОЛЖЕН (SHALL) ограничивать чтение организациями пула, кварталом и счетами/типами движений, используемыми отчётом `Продажи`.
 
+Bounded account subset ДОЛЖЕН (SHALL) резолвиться через first-class quarter-scoped factual scope selection, keyed by `pool + source_profile + quarter_start`, которая pin-ит одну published revision canonical `GLAccountSet` и её member `GLAccount` bindings, а не через hardcoded account codes в runtime defaults.
+
+Live lookup target chart-of-accounts ДОЛЖЕН (SHALL) использоваться только в readiness/preflight path для materialize или verify `resolved_bindings` snapshot выбранной pinned revision. Worker execution и replay artifact с `factual_scope_contract.v2` НЕ ДОЛЖНЫ (SHALL NOT) silently подменять этот snapshot latest live lookup.
+
 Primary production read path ДОЛЖЕН (SHALL) использовать только поддерживаемые published integration surfaces 1С: standard OData entities/functions/virtual tables или явный published HTTP service contract. Система НЕ ДОЛЖНА (SHALL NOT) использовать прямой доступ к таблицам БД ИБ как основной путь factual sync в production.
 
-#### Scenario: Ручная правка в 1С меняет factual projection
-- **GIVEN** после публикации run пользователь вручную создаёт или изменяет документ в 1С
-- **WHEN** worker sync повторно читает документы и регистры ИБ
-- **THEN** centralized projection отражает новое фактическое состояние
-- **AND** не сохраняет устаревшее "ожидаемое" значение только из distribution artifact
-
-#### Scenario: Worker sync читает bounded slice бухгалтерских данных
-- **GIVEN** для пула известны организации, квартал и счета отчёта `Продажи`
+#### Scenario: Worker sync читает bounded slice через canonical GLAccountSet
+- **GIVEN** для пула известны организации, квартал и pinned revision selected `GLAccountSet`, соответствующий отчёту `Продажи`
 - **WHEN** `read worker` обновляет factual projection
-- **THEN** он читает только bounded slice бухгалтерских источников, необходимых для этого пула/квартала
-- **AND** не требует отдельного extension/change-log в первой итерации
-- **AND** использует поддерживаемую published integration surface 1С, а не прямой доступ к таблицам БД ИБ
+- **THEN** он резолвит target account refs через member `GLAccount` bindings этого набора
+- **AND** не использует hardcoded runtime constants как source-of-truth для bounded account scope
+
+#### Scenario: Workspace, scheduler и preflight используют один selector для того же квартала
+- **GIVEN** workspace default sync, scheduler и preflight работают с одним `pool + source_profile + quarter_start`
+- **WHEN** каждый из них резолвит bounded factual account scope
+- **THEN** все они используют один и тот же quarter-scoped factual scope selection record
+- **AND** фиксируют одну и ту же published `GLAccountSet` revision до явного repin
 
 ### Requirement: Factual balance projection MUST материализовать баланс по пулу, ребру, организации, кварталу и batch
 Система ДОЛЖНА (SHALL) поддерживать materialized read model не менее чем по измерениям:
@@ -192,3 +194,101 @@ Projection ДОЛЖЕН (SHALL) хранить derived показатели:
 - **WHEN** `read worker` обнаруживает изменение
 - **THEN** projection помечает late correction как `attention_required`
 - **AND** historical quarter и следующий carry-forward не меняются автоматически
+
+### Requirement: Factual preflight MUST fail-closed на incomplete reusable account coverage до worker execution
+Система ДОЛЖНА (SHALL) до старта factual worker execution проверять coverage selected `GLAccountSet` по каждой target ИБ и возвращать machine-readable blocker, если хотя бы один required account не имеет валидного binding в target chart of accounts.
+
+Система НЕ ДОЛЖНА (SHALL NOT) откладывать такую несовместимость до глубокой OData ошибки внутри running worker, если её можно детерминированно обнаружить в preflight/readiness path.
+
+При наличии selected pinned revision readiness path ДОЛЖЕН (SHALL) materialize или verify target-specific `resolved_bindings` snapshot до enqueue. Execution artifact с `factual_scope_contract.v2` НЕ ДОЛЖЕН (SHALL NOT) полагаться на последующий implicit live lookup для тех же bindings.
+
+#### Scenario: Missing member binding блокирует factual sync до enqueue
+- **GIVEN** selected `GLAccountSet` содержит canonical account, отсутствующий в binding coverage для target ИБ
+- **WHEN** factual preflight или default workspace sync проверяет readiness
+- **THEN** система завершает проверку fail-closed с machine-readable blocker по `gl_account`
+- **AND** factual workflow execution не enqueue'ится
+
+#### Scenario: Preflight материализует pinned resolved_bindings snapshot до enqueue
+- **GIVEN** для выбранной pinned `GLAccountSet` revision target ИБ доступна и chart lookup проходит успешно
+- **WHEN** factual preflight завершает readiness path
+- **THEN** система сохраняет machine-readable `resolved_bindings` snapshot для target ИБ
+- **AND** downstream execution использует именно этот snapshot, а не повторный implicit live lookup
+
+### Requirement: Factual runtime artifacts MUST pin `GLAccountSet` revision
+Система ДОЛЖНА (SHALL) сохранять в factual preflight results, checkpoints и связанных runtime artifacts first-class machine-readable scope contract, включающий как минимум:
+- версию scope contract;
+- quarter-scoped selector key, uniquely identifying `pool + source_profile + quarter_start`;
+- идентификатор selected `GLAccountSet` profile;
+- идентификатор pinned `GLAccountSet` revision;
+- effective member snapshot;
+- target-specific `resolved_bindings` snapshot;
+- stable scope fingerprint, привязанный к selector key, pinned revision, effective members и quarter scope.
+
+Система НЕ ДОЛЖНА (SHALL NOT) silently пересчитывать historical readiness или replay на latest revision profile, если runtime context уже был создан под предыдущую revision.
+Система НЕ ДОЛЖНА (SHALL NOT) повторно резолвить latest target bindings для factual artifact, который уже содержит pinned `resolved_bindings`.
+Checkpoint metadata, workflow input context, inspect surfaces и enqueue idempotency ДОЛЖНЫ (SHALL) включать `scope_fingerprint`, чтобы `retry same scope` и `new scope for same quarter` были различимы машинно.
+
+#### Scenario: Поздняя правка account set не меняет historical factual checkpoint scope
+- **GIVEN** factual checkpoint уже создан с pinned `GLAccountSet` revision
+- **WHEN** оператор публикует новую revision того же account set
+- **THEN** существующий checkpoint сохраняет ранее pinned revision и effective members
+- **AND** historical quarter scope не меняется автоматически только из-за новой latest revision
+
+#### Scenario: Repin revision в том же квартале создаёт новый scope lineage
+- **GIVEN** для `pool + source_profile + quarter_start` уже существует factual checkpoint с `scope_fingerprint=A`
+- **AND** оператор или system-managed selector repin-ит другую published `GLAccountSet` revision для того же квартала
+- **WHEN** runtime запускает новый sync после такого repin
+- **THEN** новый readiness/execution path получает другой `scope_fingerprint`
+- **AND** система не маскирует этот запуск под retry существующего checkpoint lineage
+
+#### Scenario: Historical replay использует pinned target bindings, даже если current binding уже изменён
+- **GIVEN** factual artifact уже содержит `resolved_bindings` snapshot для target ИБ
+- **AND** после этого оператор изменил current `GLAccount` binding или target `Ref_Key`
+- **WHEN** выполняется historical replay этого artifact
+- **THEN** runtime использует pinned `resolved_bindings` snapshot из artifact
+- **AND** не пере-резолвит latest binding state для той же target ИБ
+
+#### Scenario: Missing pinned binding snapshot блокирует replay fail-closed
+- **GIVEN** factual artifact требует execution по target ИБ, но `resolved_bindings` snapshot отсутствует или неполон
+- **WHEN** runtime пытается выполнить replay
+- **THEN** выполнение завершается fail-closed с machine-readable blocker
+- **AND** система не подменяет отсутствующий snapshot latest binding lookup
+
+### Requirement: Factual scope rollout MUST быть versioned, dual-read и rollback-safe
+Система ДОЛЖНА (SHALL) публиковать versioned factual scope contract для bounded account subset, не меняя на bridge-периоде верхнеуровневые runtime envelopes `pool_factual_sync_workflow.v1` и `pool_factual_read_lane.v1`.
+
+Для этого change nested contract `factual_scope_contract.v2` ДОЛЖЕН (SHALL) включать как минимум:
+- `selector_key`;
+- `gl_account_set_id`;
+- `gl_account_set_revision_id`;
+- `effective_members`;
+- `resolved_bindings`;
+- `scope_fingerprint`.
+
+На миграционном мосте система ДОЛЖНА (SHALL) выполнять dual-write:
+- nested `factual_scope_contract.v2`;
+- legacy compatibility fields `account_codes`, достаточные для старого worker/runtime path.
+
+Worker и orchestrator runtime ДОЛЖНЫ (SHALL) поддерживать dual-read на период cutover: внутри текущих `v1` envelopes предпочитать nested `factual_scope_contract.v2` и его pinned `resolved_bindings`, если они доступны, и корректно обрабатывать legacy artifact, если он был выпущен до cutover или используется при rollback.
+
+Legacy fallback path по `account_codes` и live chart lookup ДОЛЖЕН (SHALL) применяться только к artifact, который не содержит `factual_scope_contract.v2`. Для artifact с nested scope contract система НЕ ДОЛЖНА (SHALL NOT) silently игнорировать `resolved_bindings` или подменять их поздним live lookup.
+
+Система НЕ ДОЛЖНА (SHALL NOT) требовать rebuild historical checkpoints или recompute latest effective members только для того, чтобы пережить rollout/rollback factual scope contract.
+
+#### Scenario: Worker предпочитает nested `factual_scope_contract.v2`, но legacy checkpoint остаётся исполнимым
+- **GIVEN** новый factual checkpoint уже содержит nested `factual_scope_contract.v2` и legacy `account_codes` внутри текущего `pool_factual_sync_workflow.v1`
+- **WHEN** worker читает runtime artifact после cutover
+- **THEN** он использует pinned nested `factual_scope_contract.v2` как source-of-truth
+- **AND** legacy fields остаются sufficient fallback для rollback-safe совместимости
+
+#### Scenario: V2 artifact без pinned snapshot не уходит в legacy live fallback
+- **GIVEN** factual artifact уже содержит `factual_scope_contract.v2`, но `resolved_bindings` snapshot отсутствует или неполон
+- **WHEN** worker или replay runtime пытается его исполнить
+- **THEN** выполнение завершается fail-closed
+- **AND** runtime не использует legacy `account_codes` path или поздний live chart lookup как silent fallback
+
+#### Scenario: Rollback не требует пересборки historical factual artifacts
+- **GIVEN** factual artifacts были выпущены до завершения cutover и содержат только legacy `account_codes` или transitional dual-write payload
+- **WHEN** команда выполняет rollback worker/orchestrator runtime
+- **THEN** historical replay и inspect остаются выполнимыми без пересборки artifacts
+- **AND** runtime не пересчитывает scope из latest `GLAccountSet` revision или runtime defaults
