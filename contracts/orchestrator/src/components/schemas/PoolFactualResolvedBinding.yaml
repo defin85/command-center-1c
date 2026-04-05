@@ -1,0 +1,21 @@
+type: object
+properties:
+  canonical_id:
+    type: string
+  code:
+    type: string
+  name:
+    type: string
+  chart_identity:
+    type: string
+  sort_order:
+    type: integer
+  target_ref_key:
+    type: string
+  binding_source:
+    type: string
+required:
+  - canonical_id
+  - code
+  - chart_identity
+  - target_ref_key

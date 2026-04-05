@@ -1,0 +1,16 @@
+type: object
+properties:
+  canonical_id:
+    type: string
+  code:
+    type: string
+  name:
+    type: string
+  chart_identity:
+    type: string
+  sort_order:
+    type: integer
+required:
+  - canonical_id
+  - code
+  - chart_identity

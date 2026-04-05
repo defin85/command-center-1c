@@ -14,6 +14,7 @@ import (
 	sharedodata "github.com/commandcenter1c/commandcenter/shared/odata"
 	workerodata "github.com/commandcenter1c/commandcenter/worker/internal/odata"
 	"github.com/commandcenter1c/commandcenter/worker/internal/workflow/handlers"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -58,14 +59,26 @@ type factualSyncInput struct {
 }
 
 type factualScopeContract struct {
-	ContractVersion string
-	ScopeFingerprint string
-	ResolvedBindings []factualResolvedBinding
+	ContractVersion        string
+	SelectorKey            string
+	GLAccountSetID         string
+	GLAccountSetRevisionID string
+	ScopeFingerprint       string
+	EffectiveMembers       []factualScopeMember
+	ResolvedBindings       []factualResolvedBinding
+}
+
+type factualScopeMember struct {
+	CanonicalID   string
+	Code          string
+	ChartIdentity string
 }
 
 type factualResolvedBinding struct {
-	Code         string
-	TargetRefKey string
+	CanonicalID   string
+	Code          string
+	ChartIdentity string
+	TargetRefKey  string
 }
 
 func NewODataFactualTransport(
@@ -253,8 +266,21 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 	if err != nil {
 		return factualSyncInput{}, err
 	}
+	topLevelScopeFingerprint := strings.TrimSpace(fmt.Sprintf("%v", payload["scope_fingerprint"]))
 	resolvedAccountRefs := make([]string, 0)
 	if scopeContract != nil {
+		if topLevelScopeFingerprint == "" {
+			return factualSyncInput{}, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				"scope_fingerprint is required when factual_scope_contract is present",
+			)
+		}
+		if topLevelScopeFingerprint != scopeContract.ScopeFingerprint {
+			return factualSyncInput{}, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				"scope_fingerprint must match factual_scope_contract.scope_fingerprint",
+			)
+		}
 		bindingsByCode := make(map[string]string, len(scopeContract.ResolvedBindings))
 		codes := make([]string, 0, len(scopeContract.ResolvedBindings))
 		for _, binding := range scopeContract.ResolvedBindings {
@@ -266,6 +292,16 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 			}
 			bindingsByCode[binding.Code] = binding.TargetRefKey
 			codes = append(codes, binding.Code)
+		}
+		effectiveMemberCodes := make([]string, 0, len(scopeContract.EffectiveMembers))
+		for _, member := range scopeContract.EffectiveMembers {
+			effectiveMemberCodes = append(effectiveMemberCodes, member.Code)
+		}
+		if strings.Join(accountCodes, ",") != strings.Join(normalizeScopeTokens(effectiveMemberCodes), ",") {
+			return factualSyncInput{}, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				"account_codes must match factual_scope_contract.effective_members codes",
+			)
 		}
 		contractCodes := normalizeScopeTokens(codes)
 		if strings.Join(accountCodes, ",") != strings.Join(contractCodes, ",") {
@@ -308,7 +344,7 @@ func parseFactualSyncInput(payload map[string]interface{}) (factualSyncInput, er
 		AccountingRegisterEntity: readRequiredString(payload, "accounting_register_entity"),
 		AccountingFunction:       readRequiredString(payload, "accounting_register_function"),
 		InformationRegister:      readRequiredString(payload, "information_register_entity"),
-		ScopeFingerprint:         strings.TrimSpace(fmt.Sprintf("%v", payload["scope_fingerprint"])),
+		ScopeFingerprint:         topLevelScopeFingerprint,
 		ResolvedAccountRefs:      resolvedAccountRefs,
 	}, nil
 }
@@ -331,11 +367,105 @@ func parseFactualScopeContract(raw interface{}) (*factualScopeContract, error) {
 			fmt.Sprintf("unsupported factual_scope_contract version '%s'", contractVersion),
 		)
 	}
-	rawBindings, ok := payload["resolved_bindings"].([]interface{})
+	selectorKey, err := readRequiredFactualScopeContractString(payload, "selector_key", "factual_scope_contract")
+	if err != nil {
+		return nil, err
+	}
+	glAccountSetID, err := readRequiredFactualScopeContractString(payload, "gl_account_set_id", "factual_scope_contract")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(glAccountSetID); err != nil {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			"factual_scope_contract.gl_account_set_id must be a valid UUID",
+		)
+	}
+	glAccountSetRevisionID, err := readRequiredFactualScopeContractString(
+		payload,
+		"gl_account_set_revision_id",
+		"factual_scope_contract",
+	)
+	if err != nil {
+		return nil, err
+	}
+	scopeFingerprint, err := readRequiredFactualScopeContractString(
+		payload,
+		"scope_fingerprint",
+		"factual_scope_contract",
+	)
+	if err != nil {
+		return nil, err
+	}
+	effectiveMembers, err := parseFactualScopeMembers(
+		payload["effective_members"],
+		fieldName("factual_scope_contract.effective_members"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := parseFactualResolvedBindings(
+		payload["resolved_bindings"],
+		fieldName("factual_scope_contract.resolved_bindings"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &factualScopeContract{
+		ContractVersion:        contractVersion,
+		SelectorKey:            selectorKey,
+		GLAccountSetID:         glAccountSetID,
+		GLAccountSetRevisionID: glAccountSetRevisionID,
+		ScopeFingerprint:       scopeFingerprint,
+		EffectiveMembers:       effectiveMembers,
+		ResolvedBindings:       bindings,
+	}, nil
+}
+
+func parseFactualScopeMembers(raw interface{}, field string) ([]factualScopeMember, error) {
+	rawMembers, ok := raw.([]interface{})
+	if !ok || len(rawMembers) == 0 {
+		return nil, handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			fmt.Sprintf("%s must be a non-empty array", field),
+		)
+	}
+	members := make([]factualScopeMember, 0, len(rawMembers))
+	for _, item := range rawMembers {
+		member, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, handlers.NewOperationExecutionError(
+				ErrorCodePoolFactualSyncPayloadInvalid,
+				fmt.Sprintf("%s must contain objects", field),
+			)
+		}
+		canonicalID, err := readRequiredFactualScopeContractString(member, "canonical_id", field)
+		if err != nil {
+			return nil, err
+		}
+		code, err := readRequiredFactualScopeContractString(member, "code", field)
+		if err != nil {
+			return nil, err
+		}
+		chartIdentity, err := readRequiredFactualScopeContractString(member, "chart_identity", field)
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, factualScopeMember{
+			CanonicalID:   canonicalID,
+			Code:          code,
+			ChartIdentity: chartIdentity,
+		})
+	}
+	return members, nil
+}
+
+func parseFactualResolvedBindings(raw interface{}, field string) ([]factualResolvedBinding, error) {
+	rawBindings, ok := raw.([]interface{})
 	if !ok || len(rawBindings) == 0 {
 		return nil, handlers.NewOperationExecutionError(
 			ErrorCodePoolFactualSyncPayloadInvalid,
-			"factual_scope_contract.resolved_bindings must be a non-empty array",
+			fmt.Sprintf("%s must be a non-empty array", field),
 		)
 	}
 	bindings := make([]factualResolvedBinding, 0, len(rawBindings))
@@ -344,19 +474,52 @@ func parseFactualScopeContract(raw interface{}) (*factualScopeContract, error) {
 		if !ok {
 			return nil, handlers.NewOperationExecutionError(
 				ErrorCodePoolFactualSyncPayloadInvalid,
-				"factual_scope_contract.resolved_bindings must contain objects",
+				fmt.Sprintf("%s must contain objects", field),
 			)
 		}
+		canonicalID, err := readRequiredFactualScopeContractString(binding, "canonical_id", field)
+		if err != nil {
+			return nil, err
+		}
+		code, err := readRequiredFactualScopeContractString(binding, "code", field)
+		if err != nil {
+			return nil, err
+		}
+		chartIdentity, err := readRequiredFactualScopeContractString(binding, "chart_identity", field)
+		if err != nil {
+			return nil, err
+		}
+		targetRefKey, err := readRequiredFactualScopeContractString(binding, "target_ref_key", field)
+		if err != nil {
+			return nil, err
+		}
 		bindings = append(bindings, factualResolvedBinding{
-			Code:         strings.TrimSpace(readRequiredString(binding, "code")),
-			TargetRefKey: strings.TrimSpace(readRequiredString(binding, "target_ref_key")),
+			CanonicalID:   canonicalID,
+			Code:          code,
+			ChartIdentity: chartIdentity,
+			TargetRefKey:  targetRefKey,
 		})
 	}
-	return &factualScopeContract{
-		ContractVersion: contractVersion,
-		ScopeFingerprint: strings.TrimSpace(readRequiredString(payload, "scope_fingerprint")),
-		ResolvedBindings: bindings,
-	}, nil
+	return bindings, nil
+}
+
+func fieldName(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func readRequiredFactualScopeContractString(
+	payload map[string]interface{},
+	field string,
+	parent string,
+) (string, error) {
+	value := strings.TrimSpace(readRequiredString(payload, field))
+	if value == "" {
+		return "", handlers.NewOperationExecutionError(
+			ErrorCodePoolFactualSyncPayloadInvalid,
+			fmt.Sprintf("%s.%s must be a non-empty string", parent, field),
+		)
+	}
+	return value, nil
 }
 
 func buildAccountingRegisterEntity(input factualSyncInput, accountRefs []string) string {

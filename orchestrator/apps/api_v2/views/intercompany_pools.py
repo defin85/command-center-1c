@@ -35,7 +35,6 @@ from apps.intercompany_pools.models import (
     PoolFactualBalanceSnapshot,
     PoolFactualLane,
     PoolFactualReviewItem,
-    PoolFactualReviewStatus,
     PoolFactualSyncCheckpoint,
     PoolMasterParty,
     PoolODataMetadataCatalogSnapshot,
@@ -2437,10 +2436,8 @@ def _build_pool_factual_workspace_summary(
         else latest_settlement_freshness_at
     )
     latest_metadata = _pool_factual_checkpoint_metadata(checkpoint=latest_checkpoint)
-    latest_factual_scope_contract = (
-        dict(latest_metadata.get("factual_scope_contract") or {})
-        if isinstance(latest_metadata.get("factual_scope_contract"), dict)
-        else {}
+    latest_factual_scope_contract = _normalize_pool_factual_scope_contract(
+        latest_metadata.get("factual_scope_contract")
     )
 
     return {
@@ -2472,8 +2469,13 @@ def _build_pool_factual_workspace_summary(
             or latest_metadata.get("scope_fingerprint")
             or ""
         ),
-        "scope_contract_version": str(latest_factual_scope_contract.get("contract_version") or ""),
-        "gl_account_set_revision_id": str(latest_factual_scope_contract.get("gl_account_set_revision_id") or ""),
+        "scope_contract_version": str(
+            latest_factual_scope_contract.get("contract_version") if latest_factual_scope_contract else ""
+        ),
+        "gl_account_set_revision_id": str(
+            latest_factual_scope_contract.get("gl_account_set_revision_id") if latest_factual_scope_contract else ""
+        ),
+        "scope_contract": latest_factual_scope_contract,
         "settlement_total": len(settlements),
         "checkpoint_total": len(checkpoints),
     }
@@ -2567,6 +2569,34 @@ def _pool_factual_checkpoint_metadata(
     if checkpoint is None or not isinstance(checkpoint.metadata, dict):
         return {}
     return checkpoint.metadata
+
+
+def _normalize_pool_factual_scope_contract(raw_value: Any) -> dict[str, Any] | None:
+    if not isinstance(raw_value, Mapping):
+        return None
+    payload = dict(raw_value)
+    contract_version = str(payload.get("contract_version") or "").strip()
+    if not contract_version:
+        return None
+    effective_members = [
+        dict(item)
+        for item in payload.get("effective_members", [])
+        if isinstance(item, Mapping)
+    ]
+    resolved_bindings = [
+        dict(item)
+        for item in payload.get("resolved_bindings", [])
+        if isinstance(item, Mapping)
+    ]
+    return {
+        "contract_version": contract_version,
+        "selector_key": str(payload.get("selector_key") or "").strip(),
+        "gl_account_set_id": str(payload.get("gl_account_set_id") or "").strip(),
+        "gl_account_set_revision_id": str(payload.get("gl_account_set_revision_id") or "").strip(),
+        "scope_fingerprint": str(payload.get("scope_fingerprint") or "").strip(),
+        "effective_members": effective_members,
+        "resolved_bindings": resolved_bindings,
+    }
 
 
 def _pool_factual_source_state_priority(value: Any) -> int:
@@ -3249,6 +3279,29 @@ class PoolFactualWorkspaceQuerySerializer(serializers.Serializer):
         return super().to_internal_value(data)
 
 
+class PoolFactualScopeMemberSerializer(serializers.Serializer):
+    canonical_id = serializers.CharField()
+    code = serializers.CharField()
+    name = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField()
+    sort_order = serializers.IntegerField(required=False)
+
+
+class PoolFactualResolvedBindingSerializer(PoolFactualScopeMemberSerializer):
+    target_ref_key = serializers.CharField()
+    binding_source = serializers.CharField(required=False, allow_blank=True)
+
+
+class PoolFactualScopeContractSerializer(serializers.Serializer):
+    contract_version = serializers.CharField()
+    selector_key = serializers.CharField()
+    gl_account_set_id = serializers.UUIDField()
+    gl_account_set_revision_id = serializers.CharField()
+    scope_fingerprint = serializers.CharField()
+    effective_members = PoolFactualScopeMemberSerializer(many=True)
+    resolved_bindings = PoolFactualResolvedBindingSerializer(many=True)
+
+
 class PoolFactualSummarySerializer(serializers.Serializer):
     quarter = serializers.CharField()
     quarter_start = serializers.DateField()
@@ -3266,6 +3319,10 @@ class PoolFactualSummarySerializer(serializers.Serializer):
     source_availability = serializers.CharField()
     source_availability_detail = serializers.CharField(required=False, allow_blank=True)
     last_synced_at = serializers.DateTimeField(required=False, allow_null=True)
+    scope_fingerprint = serializers.CharField()
+    scope_contract_version = serializers.CharField()
+    gl_account_set_revision_id = serializers.CharField()
+    scope_contract = PoolFactualScopeContractSerializer(required=False, allow_null=True)
     settlement_total = serializers.IntegerField(min_value=0)
     checkpoint_total = serializers.IntegerField(min_value=0)
 

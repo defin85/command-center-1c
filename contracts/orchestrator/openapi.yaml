@@ -21995,6 +21995,75 @@ components:
         - batch
         - created
         - settlement
+    PoolFactualScopeMember:
+      type: object
+      properties:
+        canonical_id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        chart_identity:
+          type: string
+        sort_order:
+          type: integer
+      required:
+        - canonical_id
+        - code
+        - chart_identity
+    PoolFactualResolvedBinding:
+      type: object
+      properties:
+        canonical_id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        chart_identity:
+          type: string
+        sort_order:
+          type: integer
+        target_ref_key:
+          type: string
+        binding_source:
+          type: string
+      required:
+        - canonical_id
+        - code
+        - chart_identity
+        - target_ref_key
+    PoolFactualScopeContract:
+      type: object
+      properties:
+        contract_version:
+          type: string
+        selector_key:
+          type: string
+        gl_account_set_id:
+          type: string
+          format: uuid
+        gl_account_set_revision_id:
+          type: string
+        scope_fingerprint:
+          type: string
+        effective_members:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolFactualScopeMember'
+        resolved_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolFactualResolvedBinding'
+      required:
+        - contract_version
+        - selector_key
+        - gl_account_set_id
+        - gl_account_set_revision_id
+        - scope_fingerprint
+        - effective_members
+        - resolved_bindings
     PoolFactualSummary:
       type: object
       properties:
@@ -22037,6 +22106,16 @@ components:
           type: string
           format: date-time
           nullable: true
+        scope_fingerprint:
+          type: string
+        scope_contract_version:
+          type: string
+        gl_account_set_revision_id:
+          type: string
+        scope_contract:
+          allOf:
+            - $ref: '#/components/schemas/PoolFactualScopeContract'
+          nullable: true
         settlement_total:
           type: integer
           minimum: 0
@@ -22050,6 +22129,7 @@ components:
         - freshness_state
         - amount_with_vat
         - amount_without_vat
+        - gl_account_set_revision_id
         - incoming_amount
         - open_balance
         - outgoing_amount
@@ -22059,6 +22139,8 @@ components:
         - quarter_start
         - settlement_total
         - source_availability
+        - scope_contract_version
+        - scope_fingerprint
         - vat_amount
     PoolFactualBalanceSnapshot:
       type: object

@@ -481,11 +481,18 @@ func TestODataFactualTransport_ExecuteFactualSyncSourceSlice_UsesPinnedResolvedB
 			"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
 			"scope_fingerprint":            "scope-fingerprint-v2",
 			"factual_scope_contract": map[string]interface{}{
-				"contract_version":  "factual_scope_contract.v2",
-				"scope_fingerprint": "scope-fingerprint-v2",
+				"contract_version":           "factual_scope_contract.v2",
+				"selector_key":               "pool:pool-1:sales_report_v1:2026-01-01",
+				"gl_account_set_id":          "11111111-1111-1111-1111-111111111111",
+				"gl_account_set_revision_id": "gl_account_set_rev_v1",
+				"scope_fingerprint":          "scope-fingerprint-v2",
+				"effective_members": []interface{}{
+					map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный"},
+					map[string]interface{}{"canonical_id": "factual_sales_report_90_01", "code": "90.01", "chart_identity": "ChartOfAccounts_Хозрасчетный"},
+				},
 				"resolved_bindings": []interface{}{
-					map[string]interface{}{"code": "62.01", "target_ref_key": "account-62"},
-					map[string]interface{}{"code": "90.01", "target_ref_key": "account-90"},
+					map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный", "target_ref_key": "account-62"},
+					map[string]interface{}{"canonical_id": "factual_sales_report_90_01", "code": "90.01", "chart_identity": "ChartOfAccounts_Хозрасчетный", "target_ref_key": "account-90"},
 				},
 			},
 		},
@@ -513,8 +520,14 @@ func TestParseFactualSyncInput_FailsClosedWhenNestedBindingsSnapshotMissing(t *t
 		"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
 		"scope_fingerprint":            "scope-fingerprint-v2",
 		"factual_scope_contract": map[string]interface{}{
-			"contract_version":  "factual_scope_contract.v2",
-			"scope_fingerprint": "scope-fingerprint-v2",
+			"contract_version":           "factual_scope_contract.v2",
+			"selector_key":               "pool:pool-1:sales_report_v1:2026-01-01",
+			"gl_account_set_id":          "11111111-1111-1111-1111-111111111111",
+			"gl_account_set_revision_id": "gl_account_set_rev_v1",
+			"scope_fingerprint":          "scope-fingerprint-v2",
+			"effective_members": []interface{}{
+				map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный"},
+			},
 			"resolved_bindings": []interface{}{},
 		},
 	})
@@ -524,4 +537,77 @@ func TestParseFactualSyncInput_FailsClosedWhenNestedBindingsSnapshotMissing(t *t
 	require.True(t, errors.As(err, &opErr))
 	assert.Equal(t, ErrorCodePoolFactualSyncPayloadInvalid, opErr.Code)
 	assert.Contains(t, opErr.Message, "resolved_bindings must be a non-empty array")
+}
+
+func TestParseFactualSyncInput_FailsClosedWhenNestedScopeFingerprintMismatchesTopLevel(t *testing.T) {
+	_, err := parseFactualSyncInput(map[string]interface{}{
+		"pool_id":                      "pool-1",
+		"database_id":                  "db-1",
+		"lane":                         "read",
+		"quarter_start":                "2026-01-01",
+		"quarter_end":                  "2026-03-31",
+		"organization_ids":             "org-1",
+		"account_codes":                "62.01",
+		"movement_kinds":               "credit",
+		"document_entities":            "Document_РеализацияТоваровУслуг",
+		"accounting_register_entity":   "AccountingRegister_Хозрасчетный",
+		"accounting_register_function": "Turnovers",
+		"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
+		"scope_fingerprint":            "scope-fingerprint-top-level",
+		"factual_scope_contract": map[string]interface{}{
+			"contract_version":           "factual_scope_contract.v2",
+			"selector_key":               "pool:pool-1:sales_report_v1:2026-01-01",
+			"gl_account_set_id":          "11111111-1111-1111-1111-111111111111",
+			"gl_account_set_revision_id": "gl_account_set_rev_v1",
+			"scope_fingerprint":          "scope-fingerprint-nested",
+			"effective_members": []interface{}{
+				map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный"},
+			},
+			"resolved_bindings": []interface{}{
+				map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный", "target_ref_key": "account-62"},
+			},
+		},
+	})
+
+	var opErr *handlers.OperationExecutionError
+	require.Error(t, err)
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodePoolFactualSyncPayloadInvalid, opErr.Code)
+	assert.Contains(t, opErr.Message, "scope_fingerprint must match factual_scope_contract.scope_fingerprint")
+}
+
+func TestParseFactualSyncInput_FailsClosedWhenNestedScopeContractMissesMandatoryFields(t *testing.T) {
+	_, err := parseFactualSyncInput(map[string]interface{}{
+		"pool_id":                      "pool-1",
+		"database_id":                  "db-1",
+		"lane":                         "read",
+		"quarter_start":                "2026-01-01",
+		"quarter_end":                  "2026-03-31",
+		"organization_ids":             "org-1",
+		"account_codes":                "62.01",
+		"movement_kinds":               "credit",
+		"document_entities":            "Document_РеализацияТоваровУслуг",
+		"accounting_register_entity":   "AccountingRegister_Хозрасчетный",
+		"accounting_register_function": "Turnovers",
+		"information_register_entity":  "InformationRegister_ДанныеПервичныхДокументов",
+		"scope_fingerprint":            "scope-fingerprint-v2",
+		"factual_scope_contract": map[string]interface{}{
+			"contract_version":           "factual_scope_contract.v2",
+			"gl_account_set_id":          "11111111-1111-1111-1111-111111111111",
+			"gl_account_set_revision_id": "gl_account_set_rev_v1",
+			"scope_fingerprint":          "scope-fingerprint-v2",
+			"effective_members": []interface{}{
+				map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный"},
+			},
+			"resolved_bindings": []interface{}{
+				map[string]interface{}{"canonical_id": "factual_sales_report_62_01", "code": "62.01", "chart_identity": "ChartOfAccounts_Хозрасчетный", "target_ref_key": "account-62"},
+			},
+		},
+	})
+
+	var opErr *handlers.OperationExecutionError
+	require.Error(t, err)
+	require.True(t, errors.As(err, &opErr))
+	assert.Equal(t, ErrorCodePoolFactualSyncPayloadInvalid, opErr.Code)
+	assert.Contains(t, opErr.Message, "selector_key")
 }

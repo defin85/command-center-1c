@@ -223,6 +223,7 @@ def test_build_pool_factual_workspace_summary_exposes_latest_scope_lineage() -> 
     from apps.api_v2.views.intercompany_pools import _build_pool_factual_workspace_summary
 
     synced_at = datetime.now(dt_timezone.utc)
+    gl_account_set_id = str(uuid4())
     checkpoint = PoolFactualSyncCheckpoint(
         quarter_start=date(2026, 1, 1),
         quarter_end=date(2026, 3, 31),
@@ -236,7 +237,29 @@ def test_build_pool_factual_workspace_summary_exposes_latest_scope_lineage() -> 
             "freshness_target_seconds": 120,
             "factual_scope_contract": {
                 "contract_version": "factual_scope_contract.v2",
+                "selector_key": "pool:pool-1:sales_report_v1:2026-01-01",
+                "gl_account_set_id": gl_account_set_id,
                 "gl_account_set_revision_id": "gl_account_set_rev_test",
+                "scope_fingerprint": "scope-fp-001",
+                "effective_members": [
+                    {
+                        "canonical_id": "factual_sales_report_62_01",
+                        "code": "62.01",
+                        "name": "62.01",
+                        "chart_identity": "ChartOfAccounts_Хозрасчетный",
+                        "sort_order": 0,
+                    }
+                ],
+                "resolved_bindings": [
+                    {
+                        "canonical_id": "factual_sales_report_62_01",
+                        "code": "62.01",
+                        "name": "62.01",
+                        "chart_identity": "ChartOfAccounts_Хозрасчетный",
+                        "target_ref_key": "account-62",
+                        "binding_source": "binding_table",
+                    }
+                ],
             },
         },
     )
@@ -252,6 +275,9 @@ def test_build_pool_factual_workspace_summary_exposes_latest_scope_lineage() -> 
     assert summary["scope_fingerprint"] == "scope-fp-001"
     assert summary["scope_contract_version"] == "factual_scope_contract.v2"
     assert summary["gl_account_set_revision_id"] == "gl_account_set_rev_test"
+    assert summary["scope_contract"]["selector_key"] == "pool:pool-1:sales_report_v1:2026-01-01"
+    assert summary["scope_contract"]["gl_account_set_id"] == gl_account_set_id
+    assert summary["scope_contract"]["resolved_bindings"][0]["target_ref_key"] == "account-62"
 
 
 @pytest.mark.django_db
@@ -329,6 +355,32 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
             "freshness_state": "fresh",
             "source_availability": "available",
             "source_availability_detail": "",
+            "factual_scope_contract": {
+                "contract_version": "factual_scope_contract.v2",
+                "selector_key": f"pool:{pool.id}:sales_report_v1:2026-01-01",
+                "gl_account_set_id": str(uuid4()),
+                "gl_account_set_revision_id": "gl_account_set_rev_workspace",
+                "scope_fingerprint": "scope-fp-workspace",
+                "effective_members": [
+                    {
+                        "canonical_id": "factual_sales_report_62_01",
+                        "code": "62.01",
+                        "name": "62.01",
+                        "chart_identity": "ChartOfAccounts_Хозрасчетный",
+                        "sort_order": 0,
+                    }
+                ],
+                "resolved_bindings": [
+                    {
+                        "canonical_id": "factual_sales_report_62_01",
+                        "code": "62.01",
+                        "name": "62.01",
+                        "chart_identity": "ChartOfAccounts_Хозрасчетный",
+                        "target_ref_key": "account-62",
+                        "binding_source": "binding_table",
+                    }
+                ],
+            },
         },
     )
     PoolFactualReviewItem.objects.create(
@@ -372,6 +424,8 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
     assert payload["summary"]["backlog_total"] == 0
     assert payload["summary"]["freshness_state"] == "fresh"
     assert payload["summary"]["source_availability"] == "available"
+    assert payload["summary"]["scope_contract"]["scope_fingerprint"] == "scope-fp-workspace"
+    assert payload["summary"]["scope_contract"]["resolved_bindings"][0]["target_ref_key"] == "account-62"
     assert len(payload["settlements"]) == 2
     assert len(payload["edge_balances"]) == 1
     assert payload["review_queue"]["summary"] == {

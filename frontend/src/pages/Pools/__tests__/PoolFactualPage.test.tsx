@@ -203,6 +203,52 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       source_availability: 'available',
       source_availability_detail: '',
       last_synced_at: '2026-03-27T10:00:00Z',
+      scope_fingerprint: 'scope-fp-q1',
+      scope_contract_version: 'factual_scope_contract.v2',
+      gl_account_set_revision_id: 'gl_account_set_rev_q1',
+      scope_contract: {
+        contract_version: 'factual_scope_contract.v2',
+        selector_key: `pool:${poolId}:sales_report_v1:2026-01-01`,
+        gl_account_set_id: '33333333-3333-3333-3333-333333333333',
+        gl_account_set_revision_id: 'gl_account_set_rev_q1',
+        scope_fingerprint: 'scope-fp-q1',
+        effective_members: [
+          {
+            canonical_id: 'factual_sales_report_62_01',
+            code: '62.01',
+            name: '62.01',
+            chart_identity: 'ChartOfAccounts_Хозрасчетный',
+            sort_order: 0,
+          },
+          {
+            canonical_id: 'factual_sales_report_90_01',
+            code: '90.01',
+            name: '90.01',
+            chart_identity: 'ChartOfAccounts_Хозрасчетный',
+            sort_order: 1,
+          },
+        ],
+        resolved_bindings: [
+          {
+            canonical_id: 'factual_sales_report_62_01',
+            code: '62.01',
+            name: '62.01',
+            chart_identity: 'ChartOfAccounts_Хозрасчетный',
+            sort_order: 0,
+            target_ref_key: 'account-62',
+            binding_source: 'binding_table',
+          },
+          {
+            canonical_id: 'factual_sales_report_90_01',
+            code: '90.01',
+            name: '90.01',
+            chart_identity: 'ChartOfAccounts_Хозрасчетный',
+            sort_order: 1,
+            target_ref_key: 'account-90',
+            binding_source: 'binding_table',
+          },
+        ],
+      },
       settlement_total: settlements.length,
       checkpoint_total: 1,
     },
@@ -309,6 +355,12 @@ describe('PoolFactualPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
     expect(screen.getByText('Read backlog is clear on the default sync lane.')).toBeInTheDocument()
+    expect(screen.getByText('Pinned scope lineage')).toBeInTheDocument()
+    expect(screen.getByText('Fingerprint scope-fp-q1; revision gl_account_set_rev_q1.')).toBeInTheDocument()
+    expect(
+      screen.getByText('Selector pool:11111111-1111-1111-1111-111111111111:sales_report_v1:2026-01-01.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('2 effective member(s), 2 pinned binding(s).')).toBeInTheDocument()
     expect(screen.getByText('sale-q1')).toBeInTheDocument()
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()

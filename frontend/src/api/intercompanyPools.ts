@@ -638,6 +638,29 @@ export type PoolFactualReviewReason = 'unattributed' | 'late_correction'
 export type PoolFactualReviewStatus = 'pending' | 'attributed' | 'reconciled' | 'resolved_without_change'
 export type PoolFactualReviewAction = 'attribute' | 'reconcile' | 'resolve_without_change'
 
+export type PoolFactualScopeMember = {
+  canonical_id: string
+  code: string
+  name?: string
+  chart_identity: string
+  sort_order?: number
+}
+
+export type PoolFactualResolvedBinding = PoolFactualScopeMember & {
+  target_ref_key: string
+  binding_source?: string
+}
+
+export type PoolFactualScopeContract = {
+  contract_version: string
+  selector_key: string
+  gl_account_set_id: string
+  gl_account_set_revision_id: string
+  scope_fingerprint: string
+  effective_members: PoolFactualScopeMember[]
+  resolved_bindings: PoolFactualResolvedBinding[]
+}
+
 export type PoolFactualSummary = {
   quarter: string
   quarter_start: string
@@ -655,6 +678,10 @@ export type PoolFactualSummary = {
   source_availability: string
   source_availability_detail: string
   last_synced_at: string | null
+  scope_fingerprint: string
+  scope_contract_version: string
+  gl_account_set_revision_id: string
+  scope_contract?: PoolFactualScopeContract | null
   settlement_total: number
   checkpoint_total: number
 }

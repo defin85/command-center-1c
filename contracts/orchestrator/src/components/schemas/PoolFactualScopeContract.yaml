@@ -1,0 +1,29 @@
+type: object
+properties:
+  contract_version:
+    type: string
+  selector_key:
+    type: string
+  gl_account_set_id:
+    type: string
+    format: uuid
+  gl_account_set_revision_id:
+    type: string
+  scope_fingerprint:
+    type: string
+  effective_members:
+    type: array
+    items:
+      $ref: ./PoolFactualScopeMember.yaml
+  resolved_bindings:
+    type: array
+    items:
+      $ref: ./PoolFactualResolvedBinding.yaml
+required:
+  - contract_version
+  - selector_key
+  - gl_account_set_id
+  - gl_account_set_revision_id
+  - scope_fingerprint
+  - effective_members
+  - resolved_bindings

@@ -109,6 +109,19 @@ const getBacklogCopy = (summary: PoolFactualSummary | null) => {
   return 'Read backlog is clear on the default sync lane.'
 }
 
+const getScopeLineageTone = (summary: PoolFactualSummary | null) => {
+  if (!summary) {
+    return 'unknown'
+  }
+  if (summary.scope_contract?.resolved_bindings?.length) {
+    return 'active'
+  }
+  if (summary.scope_fingerprint) {
+    return 'warning'
+  }
+  return 'unknown'
+}
+
 const countAttentionRequiredSettlements = (workspace: PoolFactualWorkspace | null | undefined) => (
   workspace?.settlements.filter((row) => row.settlement?.status === 'attention_required').length ?? 0
 )
@@ -470,6 +483,44 @@ export function PoolFactualWorkspaceDetail({
               ) : (
                 <Text type="secondary">
                   {getBacklogCopy(null)}
+                </Text>
+              )}
+            </Space>
+          </div>
+        </div>
+        <div
+          style={{
+            border: '1px solid #f0f0f0',
+            borderRadius: 12,
+            padding: 16,
+            background: '#fff',
+          }}
+        >
+          <Text strong>Pinned scope lineage</Text>
+          <div style={{ marginTop: 12 }}>
+            <Space direction="vertical" size={8}>
+              <StatusBadge
+                status={getScopeLineageTone(workspace?.summary ?? null)}
+                label={workspace?.summary.scope_contract_version || 'legacy scope only'}
+              />
+              {workspace?.summary.scope_contract ? (
+                <Space direction="vertical" size={4}>
+                  <Text type="secondary">
+                    Fingerprint {workspace.summary.scope_fingerprint}; revision {workspace.summary.gl_account_set_revision_id}.
+                  </Text>
+                  <Text type="secondary">
+                    Selector {workspace.summary.scope_contract.selector_key}.
+                  </Text>
+                  <Text type="secondary">
+                    {workspace.summary.scope_contract.effective_members.length} effective member(s),
+                    {' '}
+                    {workspace.summary.scope_contract.resolved_bindings.length} pinned binding(s).
+                  </Text>
+                </Space>
+              ) : (
+                <Text type="secondary">
+                  Pinned selector lineage and resolved bindings appear here once the workspace is backed by
+                  factual_scope_contract.v2 metadata.
                 </Text>
               )}
             </Space>
