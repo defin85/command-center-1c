@@ -25,6 +25,11 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Планы, спеки и описания change ведём на русском языке.
 - Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском.
 
+## Repo-Local Overrides
+
+- Ниже перечисленные repo-local правила уточняют более общие user/global instructions и имеют приоритет внутри этого репозитория.
+- Global ASCII-default не запрещает кириллицу в русскоязычных plans/specs/change descriptions и agent-facing docs; для code/config edits по-прежнему предпочитай ASCII, если файл уже не использует Unicode.
+
 ## Canonical Agent Surface
 
 - Первый checked-in onboarding path для агента: `docs/agent/INDEX.md`.
@@ -115,6 +120,8 @@ Open these docs for the first 10 minutes of a task:
 4. `rg --files`
 
 Rules:
+- Этот порядок является repo-local override для общего guidance "use `rg` first": в `command-center-1c` сначала используй semantic/indexed search, а `rg` оставляй как text-search fallback.
+- Если semantic tooling недоступен, не блокируй задачу: сразу переходи к `rg` / `rg --files` и зафиксируй это в ответе при необходимости.
 - Confirm implementation facts in at least two sources: code + tests/spec/docs.
 - Treat `rlm-tools` as exploratory only; confirm final facts via direct file evidence.
 - Use the canonical repo root `/home/egor/code/command-center-1c/` for semantic indexing tools.
