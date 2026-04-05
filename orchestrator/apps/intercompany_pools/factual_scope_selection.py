@@ -562,6 +562,7 @@ def _verify_binding_snapshots_live(
     for binding in resolved_bindings:
         target_ref_key = str(binding.get("target_ref_key") or "").strip()
         live_code = live_refs.get(target_ref_key, "")
+        expected_code = str(binding.get("code") or "").strip()
         if not live_code:
             blockers.append(
                 _build_gl_account_blocker(
@@ -570,6 +571,21 @@ def _verify_binding_snapshots_live(
                     kind="gl_account_binding_stale",
                     database=database,
                     effective_member=binding,
+                )
+            )
+            continue
+        if expected_code and live_code != expected_code:
+            blockers.append(
+                _build_gl_account_blocker(
+                    code=POOL_FACTUAL_SCOPE_BINDING_STALE,
+                    detail="Pinned GLAccount binding Ref_Key resolves to a different account code in the target chart of accounts.",
+                    kind="gl_account_binding_stale",
+                    database=database,
+                    effective_member=binding,
+                    diagnostic_extra={
+                        "expected_code": expected_code,
+                        "live_code": live_code,
+                    },
                 )
             )
             continue

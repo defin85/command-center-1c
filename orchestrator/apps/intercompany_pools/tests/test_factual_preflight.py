@@ -484,3 +484,65 @@ def test_run_pool_factual_sync_preflight_reports_no_go_when_source_is_blocked(
     assert checks["source_availability"]["ok"] is False
     assert checks["published_metadata_refresh"]["ok"] is False
     assert refresh_calls == []
+
+
+@pytest.mark.django_db
+def test_run_pool_factual_sync_preflight_fails_closed_when_live_ref_key_resolves_to_wrong_gl_account_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.intercompany_pools.factual_preflight import run_pool_factual_sync_preflight
+    from apps.intercompany_pools.factual_scope_selection import POOL_FACTUAL_SCOPE_LIVE_LOOKUP_FAILED
+
+    _, pool, database = _create_pool_with_single_database()
+    snapshot = _snapshot_for(database, _valid_metadata_payload())
+    account_refs = _seed_factual_scope_bindings(
+        pool=pool,
+        database=database,
+        quarter_start=date(2026, 1, 1),
+    )
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight.refresh_metadata_catalog_snapshot",
+        lambda **_: snapshot,
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight.describe_metadata_catalog_snapshot_resolution",
+        lambda **_: MetadataCatalogSnapshotResolution(
+            resolution_mode="database_scope",
+            is_shared_snapshot=False,
+            provenance_database_id=str(database.id),
+            provenance_confirmed_at=snapshot.fetched_at,
+        ),
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._query_all_rows",
+        lambda **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_preflight._probe_entity_rows",
+        lambda **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.factual_scope_selection._query_chart_ref_map",
+        lambda **kwargs: {
+            account_refs["62.01"]: "90.01",
+            account_refs["90.01"]: "90.01",
+        },
+    )
+
+    report = run_pool_factual_sync_preflight(
+        pool_id=str(pool.id),
+        quarter_start=date(2026, 1, 1),
+        requested_by_username="pilot-user",
+    )
+
+    assert report["decision"] == "no_go"
+    database_report = report["databases"][0]
+    checks = {item["key"]: item for item in database_report["checks"]}
+    assert checks["gl_account_bindings"]["ok"] is False
+    assert checks["gl_account_bindings"]["code"] == POOL_FACTUAL_SCOPE_LIVE_LOOKUP_FAILED
+    blockers = checks["gl_account_bindings"]["blockers"]
+    assert blockers[0]["kind"] == "gl_account_binding_stale"
+    assert blockers[0]["diagnostic"]["gl_account_code"] == "62.01"
+    assert blockers[0]["diagnostic"]["live_code"] == "90.01"
+    assert checks["live_probe"]["ok"] is False

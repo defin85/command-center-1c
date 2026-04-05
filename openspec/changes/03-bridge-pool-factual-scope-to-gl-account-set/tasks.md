@@ -16,7 +16,5 @@
 - [x] 3.1 Добавить tests на selection record, nested scope contract, dual-write, dual-read и rollback compatibility.
 - [x] 3.2 Добавить tests на scope lineage/idempotency: retry same scope переиспользует fingerprint, а repin revision в том же квартале создаёт новый lineage.
 - [x] 3.3 Добавить tests на historical replay с pinned bindings snapshot и fail-closed отсутствие snapshot без live fallback.
-- [ ] 3.4 Провести live rehearsal cutover/rollback на factual artifacts.
+- [x] 3.4 Провести live rehearsal cutover/rollback на factual artifacts. Evidence: `artifacts/2026-04-05-live-cutover-rollback-evidence.md`
 - [x] 3.5 Прогнать `openspec validate 03-bridge-pool-factual-scope-to-gl-account-set --strict --no-interactive`.
-
-Blocked for 3.4: в текущем окружении отсутствуют live contour prerequisites из `DEBUG.md`/`pool-run-verification` (`CC1C_*` env, target `tenant_id`, `pool_workflow_binding_id`, UI/OData credentials), поэтому cutover/rollback rehearsal не может быть подтверждён локально без внешнего доступа.
