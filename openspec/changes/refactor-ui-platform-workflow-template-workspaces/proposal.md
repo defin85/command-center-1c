@@ -20,7 +20,12 @@
 - Ввести новый capability `workflow-management-workspaces` для route-level UI truth workflow library, workflow designer, workflow executions и workflow monitor.
 - Доработать `operation-templates`, чтобы `/templates` был описан как canonical template management workspace, а не только как backend/template contract.
 - Доработать `organization-pool-catalog`, чтобы `/pools/templates` был описан как canonical schema template workspace с route-addressable selected template context и canonical authoring surfaces.
-- Доработать `pool-master-data-hub-ui`, чтобы `/pools/master-data` был описан как canonical multi-zone workspace с route-addressable active tab/remediation context и mobile-safe fallback.
+- Доработать `pool-master-data-hub-ui`, чтобы `/pools/master-data` был описан как canonical multi-zone workspace shell с route-addressable active tab/remediation context и mobile-safe fallback.
+- Ограничить ownership по `/pools/master-data` route-level foundation'ом:
+  - canonical shell;
+  - URL-addressable zone/remediation state;
+  - responsive fallback для inspect/edit flows;
+  - без включения reusable-account domain expansion, token adapters и account-specific authoring surfaces, которые выносятся в `04-expand-pool-master-data-workspace-for-reusable-accounts`.
 - Зафиксировать blocking frontend validation gate для этой волны: lint, unit/runtime tests, browser `ui-platform` regressions и production build.
 
 ## Impact
@@ -45,6 +50,7 @@
 - Миграция `/rbac`, `/users`, `/dlq`, `/artifacts`, `/extensions` и `/settings/*`.
 - Миграция `/clusters`, `/system-status`, `/service-mesh`.
 - Изменение backend runtime semantics workflow execution, templates persistence или master-data API.
+- Доставка reusable-account UI внутри `/pools/master-data` после landing shell foundation.
 - Полная замена всех внутренних workflow widgets, если route-level platform contract уже соблюдён.
 
 ## Assumptions

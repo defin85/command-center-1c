@@ -1,15 +1,24 @@
-## 1. Workspace Zones
-- [ ] 1.1 Расширить `/pools/master-data` внутри canonical shell зонами `GLAccount` и `GLAccountSet`.
-- [ ] 1.2 Добавить forms/list-detail surfaces для `GLAccount`, account bindings и `GLAccountSet` draft/publish/revisions.
-- [ ] 1.3 Сделать `chart_identity`, compatibility markers и revision status явными operator-facing полями.
+## 0. Prerequisite Gate
+- [ ] 0.1 Подтвердить, что `/pools/master-data` уже migrated на canonical multi-zone shell в `refactor-ui-platform-workflow-template-workspaces`, включая route-addressable active tab/remediation context и responsive fallback. Если prerequisite не landed, остановить реализацию `04` и продолжить работу в prerequisite change.
 
-## 2. Shared UI Contracts
-- [ ] 2.1 Подключить token picker к generated registry contract и добавить `master_data.gl_account.*.ref`.
-- [ ] 2.2 Подключить bindings UI, bootstrap import catalog и sync affordances к generated registry capability policy.
-- [ ] 2.3 Показать capability-gated states: bootstrap-only для `GLAccount`, non-actionable profile state для `GLAccountSet`.
-- [ ] 2.4 Дочистить shared registry UI helpers после `01`: использовать registry `label` в operator-facing options и убрать оставшиеся string-specific defaults, если они уже не нужны поверх registry contract.
+## 1. Shared Registry Helper Layer
+- [ ] 1.1 Перевести operator-facing entity options и captions на registry `label` вместо raw `entity_type`.
+- [ ] 1.2 Убрать string-specific bootstrap defaults и special-case exclusions; выражать page defaults через registry contract и page intent.
+- [ ] 1.3 Добавить `gl_account` compatibility loader в token catalog и fail-closed coverage для registry-published token entities.
+- [ ] 1.4 Обобщить bindings scope presentation/forms под registry fields, включая `chart_identity`.
 
-## 3. Verification
-- [ ] 3.1 Добавить frontend tests на новые workspace zones, token picker и revision lifecycle.
-- [ ] 3.2 Добавить browser tests на canonical shell integration и mobile-safe fallback.
-- [ ] 3.3 Прогнать `openspec validate 04-expand-pool-master-data-workspace-for-reusable-accounts --strict --no-interactive`.
+## 2. Workspace Account Surfaces
+- [ ] 2.1 Добавить в canonical `/pools/master-data` зоны `GLAccount` и `GLAccountSet`.
+- [ ] 2.2 Реализовать list/detail authoring surfaces для `GLAccount` и draft/publish/revision surfaces для `GLAccountSet` через platform primitives.
+- [ ] 2.3 Показать `chart_identity`, `config_name`, `config_version`, compatibility markers и revision status как явные operator-facing поля.
+- [ ] 2.4 Показать capability-gated states: bootstrap-capable `GLAccount`, non-actionable profile state для `GLAccountSet`.
+
+## 3. Catalog And Bootstrap Integration
+- [ ] 3.1 Подключить `/pools/catalog` token picker к `master_data.gl_account.*.ref` через registry-driven catalog.
+- [ ] 3.2 Расширить bootstrap import zone поддержкой `GLAccount` без появления generic mutating sync controls.
+
+## 4. Verification
+- [ ] 4.1 Добавить frontend unit tests на helper layer, новые workspace zones, binding scope fields, token picker и revision lifecycle.
+- [ ] 4.2 Добавить browser tests на canonical shell integration, reload/deep-link restore и mobile-safe fallback без raw horizontal overflow.
+- [ ] 4.3 Прогнать `npm --prefix frontend run lint`, `npm --prefix frontend run test:run`, `npm --prefix frontend run test:browser:ui-platform`, `npm --prefix frontend run build`.
+- [ ] 4.4 Прогнать `openspec validate 04-expand-pool-master-data-workspace-for-reusable-accounts --strict --no-interactive`.

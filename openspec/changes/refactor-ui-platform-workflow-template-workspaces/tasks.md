@@ -10,8 +10,8 @@
 ## 3. Template and master-data workspaces
 - [ ] 3.1 Мигрировать `/templates` на canonical template management workspace с route-addressable selected template context и canonical authoring surfaces. (после 1.1)
 - [ ] 3.2 Мигрировать `/pools/templates` на canonical schema template workspace с route-addressable selected template context и canonical secondary authoring surfaces. (после 1.1; можно выполнять параллельно с 3.1)
-- [ ] 3.3 Мигрировать `/pools/master-data` на canonical multi-zone workspace с route-addressable active tab/remediation context и responsive fallback вместо raw tab canvas как единственного page shell. (после 1.1; можно выполнять параллельно с 3.1 и 3.2)
-- [ ] 3.4 Добавить unit/browser regression tests для `/templates`, `/pools/templates` и `/pools/master-data`: deep-link restore, shell-safe handoff, a11y labels и responsive fallback. (после 3.1, 3.2 и 3.3)
+- [ ] 3.3 Мигрировать `/pools/master-data` на canonical multi-zone workspace shell с route-addressable active tab/remediation context и responsive fallback вместо raw tab canvas как единственного page shell, не включая reusable-account domain expansion и account-specific helper adapters. (после 1.1; можно выполнять параллельно с 3.1 и 3.2)
+- [ ] 3.4 Добавить unit/browser regression tests для `/templates`, `/pools/templates` и `/pools/master-data`: deep-link restore, shell-safe handoff, a11y labels и responsive fallback. Для `/pools/master-data` acceptance ограничить route shell/state contract и не включать post-platform reusable-account surfaces. (после 3.1, 3.2 и 3.3)
 
 ## 4. Validation
 - [ ] 4.1 Прогнать `npm --prefix frontend run lint`, `npm --prefix frontend run test:run`, `npm --prefix frontend run test:browser:ui-platform`, `npm --prefix frontend run build`.

@@ -25,6 +25,7 @@
   - Мигрировать admin/support routes.
   - Мигрировать infra/observability routes.
   - Менять backend semantics workflow runtime, templates persistence или master-data APIs.
+  - Брать ownership над reusable-account domain expansion внутри `/pools/master-data`.
   - Проводить большой visual redesign поверх уже принятого platform layer.
 
 ## Decisions
@@ -45,6 +46,10 @@
 - `pool-master-data-hub-ui`.
 
 Их route migration нужно описывать именно там, чтобы route-level UI truth оставался рядом с доменным контрактом, а не переезжал в абстрактный “wave-two UI” документ.
+
+Для `/pools/master-data` это означает узкий foundation scope:
+- canonical shell и route helpers принадлежат этому change;
+- reusable-account zones, helper-layer account adapters и domain-specific authoring flows принадлежат follow-up change `04-expand-pool-master-data-workspace-for-reusable-accounts`.
 
 ### 3. Workflow authoring/monitor routes считаются частью platform-governed shell даже если сейчас обходят `MainLayout`
 Сейчас `/workflows/new`, `/workflows/:id` и `/workflows/executions/:executionId` живут отдельно от `MainLayout`, но это не должно оставаться оправданием для bespoke full-page assembly.
@@ -92,7 +97,7 @@ Change фиксирует, что canonical workflow shell должен быть
 - Workflow monitor имеет тяжёлый realtime/diagnostics path, и mobile-safe fallback может потребовать неочевидных компромиссов.
   - Mitigation: spec требует responsive inspect fallback, но не диктует один конкретный internal widget layout.
 - Pool master-data route уже имеет доменный spec и рабочие tabs; слишком агрессивная миграция может смешать UI refactor с domain work.
-  - Mitigation: ограничить scope route-level shell, tab/remediation state и responsive fallback.
+  - Mitigation: ограничить scope route-level shell, tab/remediation state и responsive fallback, а account-specific expansion оставить отдельному post-platform change.
 
 ## Migration Plan
 1. Расширить governance perimeter на workflow/template routes.
