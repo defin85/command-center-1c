@@ -69,6 +69,7 @@ def test_generated_v2_has_pool_batch_and_factual_operations_from_openapi() -> No
     assert isinstance(paths, dict)
     assert "/api/v2/pools/batches/" in paths
     assert "/api/v2/pools/factual/workspace/" in paths
+    assert "/api/v2/pools/factual/refresh/" in paths
     assert "/api/v2/pools/factual/review-actions/" in paths
 
     generated_v2_path = _repo_root() / "frontend" / "src" / "api" / "generated" / "v2" / "v2.ts"
@@ -76,9 +77,11 @@ def test_generated_v2_has_pool_batch_and_factual_operations_from_openapi() -> No
 
     assert "postPoolsBatches" in content
     assert "getPoolsFactualWorkspace" in content
+    assert "postPoolsFactualRefresh" in content
     assert "postPoolsFactualReviewActions" in content
     assert "url: `/api/v2/pools/batches/`" in content
     assert "url: `/api/v2/pools/factual/workspace/`" in content
+    assert "url: `/api/v2/pools/factual/refresh/`" in content
     assert "url: `/api/v2/pools/factual/review-actions/`" in content
 
 
@@ -407,6 +410,9 @@ def test_generated_models_cover_pool_batch_and_factual_schemas() -> None:
         "PoolBatchCreateResponse": "poolBatchCreateResponse.ts",
         "PoolFactualSummary": "poolFactualSummary.ts",
         "PoolFactualBalanceSnapshot": "poolFactualBalanceSnapshot.ts",
+        "PoolFactualRefreshRequest": "poolFactualRefreshRequest.ts",
+        "PoolFactualRefreshCheckpoint": "poolFactualRefreshCheckpoint.ts",
+        "PoolFactualRefreshResponse": "poolFactualRefreshResponse.ts",
         "PoolFactualReviewQueueSummary": "poolFactualReviewQueueSummary.ts",
         "PoolFactualReviewQueueItem": "poolFactualReviewQueueItem.ts",
         "PoolFactualReviewQueue": "poolFactualReviewQueue.ts",
@@ -526,6 +532,7 @@ def test_frontend_contract_aliases_cover_pool_batch_and_factual_response_surface
     assert "export type PoolBatchListResponseContract = AssertAssignable<PoolBatchListResponse, GeneratedPoolBatchListResponseContractShape>" in content
     assert "export type PoolBatchCreateResponseContract = AssertAssignable<PoolBatchCreateResponse, GeneratedPoolBatchCreateResponseContractShape>" in content
     assert "export type PoolFactualEdgeBalanceContract = AssertAssignable<PoolFactualEdgeBalance, GeneratedPoolFactualBalanceSnapshot>" in content
+    assert "export type PoolFactualRefreshResponseContract = AssertAssignable<PoolFactualRefreshResponse, GeneratedPoolFactualRefreshResponse>" in content
     assert "export type PoolFactualReviewQueueItemContract = AssertAssignable<PoolFactualReviewQueueItem, GeneratedPoolFactualReviewQueueItem>" in content
     assert "export type PoolFactualReviewQueueContract = AssertAssignable<PoolFactualReviewQueue, GeneratedPoolFactualReviewQueue>" in content
     assert "export type PoolFactualWorkspaceContract = AssertAssignable<PoolFactualWorkspace, GeneratedPoolFactualWorkspaceResponseContractShape>" in content

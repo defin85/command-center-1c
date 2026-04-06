@@ -8,7 +8,16 @@ from uuid import uuid4
 import pytest
 
 from apps.databases.models import Database
-from apps.intercompany_pools.models import OrganizationPool, PoolFactualLane, PoolFactualSyncCheckpoint
+from apps.intercompany_pools.models import (
+    OrganizationPool,
+    PoolBatch,
+    PoolBatchKind,
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
+    PoolBatchSourceType,
+    PoolFactualLane,
+    PoolFactualSyncCheckpoint,
+)
 from apps.tenancy.models import Tenant
 
 
@@ -53,7 +62,69 @@ def test_trigger_pool_factual_active_sync_window_scans_only_active_pools_for_cur
         pool=active_pool,
         quarter_start=date(2026, 4, 1),
         now=fixed_now,
+        requested_activity="active",
     )
+
+
+@pytest.mark.django_db
+def test_trigger_pool_factual_active_sync_window_reuses_warm_activity_for_historical_open_context() -> None:
+    from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_active_sync_window
+
+    tenant = Tenant.objects.create(
+        slug=f"factual-scheduler-warm-{uuid4().hex[:6]}",
+        name="Factual Scheduler Warm",
+    )
+    pool = _create_pool(tenant=tenant, suffix="warm", is_active=True)
+    database = _create_database(tenant=tenant, suffix="warm")
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        metadata={"freshness_state": "fresh", "freshness_target_seconds": 120},
+    )
+    batch = PoolBatch.objects.create(
+        tenant=tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 3, 31),
+        source_reference="receipt-q1-open",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.CARRIED_FORWARD,
+        incoming_amount="120.00",
+        outgoing_amount="80.00",
+        open_balance="40.00",
+        summary={},
+    )
+    fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+
+    with patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.ensure_pool_factual_workspace_default_sync",
+        return_value=tuple(),
+    ) as ensure_sync:
+        trigger_pool_factual_active_sync_window(now=fixed_now)
+
+    assert ensure_sync.call_count == 2
+    active_call, warm_call = ensure_sync.call_args_list
+    assert active_call.kwargs == {
+        "pool": pool,
+        "quarter_start": date(2026, 4, 1),
+        "now": fixed_now,
+        "requested_activity": "active",
+    }
+    assert warm_call.kwargs == {
+        "pool": pool,
+        "quarter_start": date(2026, 1, 1),
+        "now": fixed_now,
+        "requested_activity": "warm",
+    }
 
 
 @pytest.mark.django_db

@@ -7,6 +7,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
   OrganizationPool,
+  PoolFactualRefreshResponse,
   PoolFactualReviewActionResponse,
   PoolFactualReviewQueue,
   PoolFactualReviewQueueItem,
@@ -19,6 +20,7 @@ import { buildPoolFactualRoute } from '../routes'
 
 const mockListOrganizationPools = vi.fn()
 const mockGetPoolFactualWorkspace = vi.fn()
+const mockRefreshPoolFactualWorkspace = vi.fn()
 const mockApplyPoolFactualReviewAction = vi.fn()
 
 vi.mock('../../../api/intercompanyPools', async () => {
@@ -29,6 +31,7 @@ vi.mock('../../../api/intercompanyPools', async () => {
     ...actual,
     listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
     getPoolFactualWorkspace: (...args: unknown[]) => mockGetPoolFactualWorkspace(...args),
+    refreshPoolFactualWorkspace: (...args: unknown[]) => mockRefreshPoolFactualWorkspace(...args),
     applyPoolFactualReviewAction: (...args: unknown[]) => mockApplyPoolFactualReviewAction(...args),
   }
 })
@@ -281,6 +284,44 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
   }
 }
 
+function buildRefreshResponse(
+  overrides: Partial<PoolFactualRefreshResponse> = {}
+): PoolFactualRefreshResponse {
+  return {
+    pool_id: '11111111-1111-1111-1111-111111111111',
+    quarter_start: '2026-01-01',
+    requested_at: '2026-03-27T10:01:00Z',
+    status: 'running',
+    activity: 'active',
+    polling_tier: 'active',
+    poll_interval_seconds: 120,
+    freshness_target_seconds: 120,
+    checkpoint_total: 1,
+    checkpoints_pending: 0,
+    checkpoints_running: 1,
+    checkpoints_failed: 0,
+    checkpoints_ready: 0,
+    checkpoints: [
+      {
+        checkpoint_id: 'checkpoint-1',
+        database_id: 'database-1',
+        workflow_status: 'running',
+        freshness_state: 'stale',
+        last_synced_at: '2026-03-27T10:00:00Z',
+        last_error_code: '',
+        last_error: '',
+        execution_id: 'execution-1',
+        operation_id: 'operation-1',
+        activity: 'active',
+        polling_tier: 'active',
+        poll_interval_seconds: 120,
+        freshness_target_seconds: 120,
+      },
+    ],
+    ...overrides,
+  }
+}
+
 function renderPage(initialEntry = '/pools/factual', options?: { strict?: boolean }) {
   const tree = (
     <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
@@ -320,10 +361,15 @@ describe('PoolFactualPage', () => {
     resetQueryClient()
     mockListOrganizationPools.mockReset()
     mockGetPoolFactualWorkspace.mockReset()
+    mockRefreshPoolFactualWorkspace.mockReset()
     mockApplyPoolFactualReviewAction.mockReset()
   })
 
   it('renders live factual summary, settlement, drill-down, and review sections for the selected pool', async () => {
+    const receiptSettlement = buildWorkspace().settlements[0].settlement
+    if (!receiptSettlement) {
+      throw new Error('Expected fixture settlement for batch-receipt-1')
+    }
     mockListOrganizationPools.mockResolvedValue([
       buildPool(),
       buildPool({
@@ -332,7 +378,37 @@ describe('PoolFactualPage', () => {
         name: 'Pool Beta',
       }),
     ])
-    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
+      settlements: [
+        ...buildWorkspace().settlements,
+        {
+          ...buildWorkspace().settlements[0],
+          id: 'batch-receipt-carry',
+          source_reference: 'receipt-carry-forward',
+          settlement: {
+            ...receiptSettlement,
+            id: 'settlement-carry-forward',
+            batch_id: 'batch-receipt-carry',
+            status: 'carried_forward',
+            incoming_amount: '120.00',
+            outgoing_amount: '80.00',
+            open_balance: '40.00',
+            summary: {
+              carry_forward: {
+                source_snapshot_id: '11111111-aaaa-bbbb-cccc-111111111111',
+                target_snapshot_id: '22222222-aaaa-bbbb-cccc-222222222222',
+                target_quarter_start: '2026-04-01',
+                target_quarter_end: '2026-06-30',
+                applied_at: '2026-04-01T00:05:00Z',
+              },
+            },
+            freshness_at: '2026-03-31T20:15:00Z',
+            created_at: '2026-03-27T09:00:00Z',
+            updated_at: '2026-03-27T09:30:00Z',
+          },
+        },
+      ],
+    }))
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&run=run-001&focus=settlement&detail=1&quarter_start=2026-01-01')
 
@@ -363,6 +439,9 @@ describe('PoolFactualPage', () => {
     expect(screen.getByText('2 effective member(s), 2 pinned binding(s).')).toBeInTheDocument()
     expect(screen.getByText('sale-q1')).toBeInTheDocument()
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
+    expect(screen.getAllByText('Outgoing 80.00').length).toBeGreaterThan(0)
+    expect(screen.getByText('Target quarter 2026-04-01 -> 2026-06-30')).toBeInTheDocument()
+    expect(screen.getByText('source 11111111 -> target 22222222')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()
     expect(screen.getByText("Document_КорректировкаРеализации(guid'pool-alpha-late')")).toBeInTheDocument()
   })
@@ -469,8 +548,30 @@ describe('PoolFactualPage', () => {
 
     expect(screen.getByText('Quarter summary')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Pool Runs' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh factual sync' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create / Upsert Run' })).not.toBeInTheDocument()
     expect(screen.queryByText('Create Run')).not.toBeInTheDocument()
+  })
+
+  it('lets the operator trigger a shipped factual refresh path from the workspace', async () => {
+    const user = userEvent.setup()
+    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
+    mockRefreshPoolFactualWorkspace.mockResolvedValue(buildRefreshResponse())
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1&quarter_start=2026-01-01')
+
+    await screen.findByText('Sync control')
+    await user.click(screen.getByRole('button', { name: 'Refresh factual sync' }))
+
+    await waitFor(() => {
+      expect(mockRefreshPoolFactualWorkspace).toHaveBeenCalledWith({
+        pool_id: '11111111-1111-1111-1111-111111111111',
+        quarter_start: '2026-01-01',
+      })
+    })
+    expect(screen.getByText('1 running, 0 pending, 0 failed, 0 ready checkpoint(s).')).toBeInTheDocument()
+    expect(screen.getByText('Requested 2026-03-27 10:01:00 UTC on active tier (120s).')).toBeInTheDocument()
   })
 
   it('opens an attribution modal and updates queue state after choosing explicit targets', async () => {

@@ -5,6 +5,7 @@ import type {
   PoolBatchListResponse,
   PoolBatchSettlement,
   PoolFactualEdgeBalance,
+  PoolFactualRefreshResponse,
   PoolFactualReviewActionResponse,
   PoolFactualReviewQueue,
   PoolFactualReviewQueueItem,
@@ -45,6 +46,7 @@ import type { PoolBatchListResponse as GeneratedPoolBatchListResponse } from './
 import type { PoolSaleClosingStartResponse as GeneratedPoolSaleClosingStartResponse } from './generated/model/poolSaleClosingStartResponse'
 import type { PoolBatchSettlement as GeneratedPoolBatchSettlement } from './generated/model/poolBatchSettlement'
 import type { PoolFactualBalanceSnapshot as GeneratedPoolFactualBalanceSnapshot } from './generated/model/poolFactualBalanceSnapshot'
+import type { PoolFactualRefreshResponse as GeneratedPoolFactualRefreshResponse } from './generated/model/poolFactualRefreshResponse'
 import type { PoolFactualReviewActionResponse as GeneratedPoolFactualReviewActionResponse } from './generated/model/poolFactualReviewActionResponse'
 import type { PoolFactualReviewQueue as GeneratedPoolFactualReviewQueue } from './generated/model/poolFactualReviewQueue'
 import type { PoolFactualReviewQueueItem as GeneratedPoolFactualReviewQueueItem } from './generated/model/poolFactualReviewQueueItem'
@@ -122,6 +124,7 @@ export type PoolBatchListResponseContract = AssertAssignable<PoolBatchListRespon
 export type PoolBatchCreateResponseContract = AssertAssignable<PoolBatchCreateResponse, GeneratedPoolBatchCreateResponseContractShape>
 export type PoolFactualSummaryContract = AssertAssignable<PoolFactualSummary, GeneratedPoolFactualSummary>
 export type PoolFactualEdgeBalanceContract = AssertAssignable<PoolFactualEdgeBalance, GeneratedPoolFactualBalanceSnapshot>
+export type PoolFactualRefreshResponseContract = AssertAssignable<PoolFactualRefreshResponse, GeneratedPoolFactualRefreshResponse>
 export type PoolFactualReviewQueueItemContract = AssertAssignable<PoolFactualReviewQueueItem, GeneratedPoolFactualReviewQueueItem>
 export type PoolFactualReviewQueueContract = AssertAssignable<PoolFactualReviewQueue, GeneratedPoolFactualReviewQueue>
 export type PoolFactualWorkspaceContract = AssertAssignable<PoolFactualWorkspace, GeneratedPoolFactualWorkspaceResponseContractShape>

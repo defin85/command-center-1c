@@ -433,6 +433,18 @@ def test_pool_factual_paths_and_schemas_are_in_contract_with_runtime_serializer_
         "#/components/schemas/PoolFactualWorkspaceResponse"
     )
 
+    refresh_path = "/api/v2/pools/factual/refresh/"
+    refresh_path_item = paths.get(refresh_path)
+    assert isinstance(refresh_path_item, dict), f"path missing: {refresh_path}"
+    refresh_post = refresh_path_item.get("post")
+    assert isinstance(refresh_post, dict)
+    assert refresh_post.get("operationId") == "v2_pools_factual_refresh"
+    refresh_responses = refresh_post.get("responses")
+    assert isinstance(refresh_responses, dict)
+    assert refresh_responses["200"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolFactualRefreshResponse"
+    )
+
     review_actions_path = "/api/v2/pools/factual/review-actions/"
     review_actions_path_item = paths.get(review_actions_path)
     assert isinstance(review_actions_path_item, dict), f"path missing: {review_actions_path}"
@@ -474,6 +486,18 @@ def test_pool_factual_paths_and_schemas_are_in_contract_with_runtime_serializer_
     assert isinstance(review_action_request_properties, dict)
     runtime_review_action_request_fields = set(pools_view.PoolFactualReviewActionRequestSerializer().fields.keys())
     assert runtime_review_action_request_fields.issubset(set(review_action_request_properties.keys()))
+
+    refresh_request_schema = _schema(contract, "PoolFactualRefreshRequest")
+    refresh_request_properties = refresh_request_schema.get("properties")
+    assert isinstance(refresh_request_properties, dict)
+    runtime_refresh_request_fields = set(pools_view.PoolFactualRefreshRequestSerializer().fields.keys())
+    assert runtime_refresh_request_fields.issubset(set(refresh_request_properties.keys()))
+
+    refresh_response_schema = _schema(contract, "PoolFactualRefreshResponse")
+    refresh_response_properties = refresh_response_schema.get("properties")
+    assert isinstance(refresh_response_properties, dict)
+    runtime_refresh_response_fields = set(pools_view.PoolFactualRefreshResponseSerializer().fields.keys())
+    assert runtime_refresh_response_fields.issubset(set(refresh_response_properties.keys()))
 
     review_action_response_schema = _schema(contract, "PoolFactualReviewActionResponse")
     review_action_response_properties = review_action_response_schema.get("properties")

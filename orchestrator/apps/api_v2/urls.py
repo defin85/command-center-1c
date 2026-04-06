@@ -389,6 +389,11 @@ urlpatterns = [
         name='pools-factual-workspace',
     ),
     path(
+        'pools/factual/refresh/',
+        intercompany_pools.refresh_pool_factual_workspace,
+        name='pools-factual-refresh',
+    ),
+    path(
         'pools/factual/review-actions/',
         intercompany_pools.apply_pool_factual_review_action_view,
         name='pools-factual-review-actions',

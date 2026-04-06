@@ -235,7 +235,7 @@ def build_factual_sales_report_sync_contract_from_scope(
         "accounting_register_entity": scope.accounting_register_entity,
         "accounting_register_function": scope.accounting_register_function,
         "information_register_entity": scope.information_register_entity,
-        "freshness_target_seconds": str(scope.freshness_target_seconds),
+        "freshness_target_seconds": str(contract["freshness_target_seconds"]),
         "scope_fingerprint": scope.scope_fingerprint,
     }
     factual_scope_contract = scope.as_factual_scope_contract()
@@ -330,12 +330,25 @@ def mark_factual_sync_checkpoint_success(
     source_state: FactualSyncSourceState,
     source_checkpoint_token: str,
     synced_at: datetime | None = None,
+    activity: str | None = None,
+    polling_tier: str | None = None,
+    poll_interval_seconds: int | None = None,
+    freshness_target_seconds: int | None = None,
 ) -> None:
     timestamp = _ensure_aware_datetime(synced_at or timezone.now())
     metadata = dict(checkpoint.metadata or {})
     metadata.update(_build_checkpoint_scope_metadata(scope=scope, source_state=source_state))
     metadata["source_checkpoint_token"] = str(source_checkpoint_token or checkpoint.source_checkpoint_token or "")
-    metadata["freshness_target_seconds"] = int(scope.freshness_target_seconds)
+    effective_freshness_target_seconds = int(
+        freshness_target_seconds or metadata.get("freshness_target_seconds") or scope.freshness_target_seconds
+    )
+    metadata["freshness_target_seconds"] = effective_freshness_target_seconds
+    if activity:
+        metadata["activity"] = str(activity).strip().lower()
+    if polling_tier:
+        metadata["polling_tier"] = str(polling_tier).strip().lower()
+    if poll_interval_seconds is not None:
+        metadata["poll_interval_seconds"] = int(poll_interval_seconds)
     metadata["freshness_state"] = "fresh"
     metadata["freshness_at"] = timestamp.isoformat()
     metadata["last_synced_at"] = timestamp.isoformat()
@@ -367,21 +380,36 @@ def mark_factual_sync_checkpoint_error(
     source_state: FactualSyncSourceState,
     error: Exception,
     failed_at: datetime | None = None,
+    activity: str | None = None,
+    polling_tier: str | None = None,
+    poll_interval_seconds: int | None = None,
+    freshness_target_seconds: int | None = None,
 ) -> None:
     timestamp = _ensure_aware_datetime(failed_at or timezone.now())
     error_code, error_detail = _resolve_factual_sync_error(error=error, source_state=source_state)
     metadata = dict(checkpoint.metadata or {})
     metadata.update(_build_checkpoint_scope_metadata(scope=scope, source_state=source_state))
-    metadata["freshness_target_seconds"] = int(scope.freshness_target_seconds)
+    effective_freshness_target_seconds = int(
+        freshness_target_seconds or metadata.get("freshness_target_seconds") or scope.freshness_target_seconds
+    )
+    metadata["freshness_target_seconds"] = effective_freshness_target_seconds
+    if activity:
+        metadata["activity"] = str(activity).strip().lower()
+    if polling_tier:
+        metadata["polling_tier"] = str(polling_tier).strip().lower()
+    if poll_interval_seconds is not None:
+        metadata["poll_interval_seconds"] = int(poll_interval_seconds)
     metadata["freshness_state"] = "stale"
     metadata["last_error_at"] = timestamp.isoformat()
     checkpoint.scope_fingerprint = scope.scope_fingerprint
+    checkpoint.workflow_status = "failed"
     checkpoint.last_error_code = error_code
     checkpoint.last_error = sanitize_master_data_sync_text(error_detail)
     checkpoint.metadata = metadata
     checkpoint.save(
         update_fields=[
             "scope_fingerprint",
+            "workflow_status",
             "last_error_code",
             "last_error",
             "metadata",

@@ -1,0 +1,12 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  quarter_start:
+    type: string
+    format: date
+    nullable: true
+required:
+  - pool_id
+additionalProperties: false

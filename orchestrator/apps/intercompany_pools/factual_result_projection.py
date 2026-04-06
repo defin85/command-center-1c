@@ -84,6 +84,15 @@ def _build_scope_kwargs_from_input_context(*, input_context: Mapping[str, Any]) 
     }
 
 
+def _build_activity_kwargs_from_input_context(*, input_context: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "activity": str(input_context.get("activity") or "").strip().lower() or None,
+        "polling_tier": str(input_context.get("polling_tier") or "").strip().lower() or None,
+        "poll_interval_seconds": int(str(input_context.get("poll_interval_seconds") or "0") or 0) or None,
+        "freshness_target_seconds": int(str(input_context.get("freshness_target_seconds") or "0") or 0) or None,
+    }
+
+
 def is_pool_factual_sync_execution(*, execution) -> bool:
     input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
     return str(input_context.get("contract_version") or "").strip() == POOL_FACTUAL_SYNC_WORKFLOW_CONTRACT
@@ -177,6 +186,7 @@ def project_pool_factual_result_from_execution(*, execution, result_payload: Map
     scope = build_factual_sales_report_sync_scope(
         **_build_scope_kwargs_from_input_context(input_context=input_context),
     )
+    activity_kwargs = _build_activity_kwargs_from_input_context(input_context=input_context)
     source_state = resolve_factual_sync_source_state(database=database)
     source_checkpoint_token = _resolve_source_checkpoint_token(step_payload=step_payload)
     if checkpoint.lane == PoolFactualLane.RECONCILE or _is_frozen_checkpoint(checkpoint=checkpoint):
@@ -191,6 +201,7 @@ def project_pool_factual_result_from_execution(*, execution, result_payload: Map
             source_state=source_state,
             source_checkpoint_token=source_checkpoint_token,
             synced_at=timezone.now(),
+            **activity_kwargs,
         )
         return True
 
@@ -205,6 +216,7 @@ def project_pool_factual_result_from_execution(*, execution, result_payload: Map
         source_state=source_state,
         source_checkpoint_token=source_checkpoint_token,
         synced_at=timezone.now(),
+        **activity_kwargs,
     )
 
     if bool(input_context.get("freeze_quarter")) and not _is_frozen_checkpoint(checkpoint=checkpoint):
@@ -266,6 +278,7 @@ def mark_pool_factual_execution_failed(*, execution) -> bool:
     scope = build_factual_sales_report_sync_scope(
         **_build_scope_kwargs_from_input_context(input_context=input_context),
     )
+    activity_kwargs = _build_activity_kwargs_from_input_context(input_context=input_context)
     source_state = resolve_factual_sync_source_state(database=database)
     mark_factual_sync_checkpoint_error(
         checkpoint=checkpoint,
@@ -273,6 +286,7 @@ def mark_pool_factual_execution_failed(*, execution) -> bool:
         source_state=source_state,
         error=f"{execution.error_code or 'POOL_FACTUAL_SYNC_FAILED'}: {execution.error_message or 'workflow failed'}",
         failed_at=timezone.now(),
+        **activity_kwargs,
     )
     return True
 

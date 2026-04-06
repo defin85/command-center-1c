@@ -1,0 +1,57 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  quarter_start:
+    type: string
+    format: date
+  requested_at:
+    type: string
+    format: date-time
+  status:
+    type: string
+  activity:
+    type: string
+  polling_tier:
+    type: string
+  poll_interval_seconds:
+    type: integer
+    minimum: 1
+  freshness_target_seconds:
+    type: integer
+    minimum: 1
+  checkpoint_total:
+    type: integer
+    minimum: 0
+  checkpoints_pending:
+    type: integer
+    minimum: 0
+  checkpoints_running:
+    type: integer
+    minimum: 0
+  checkpoints_failed:
+    type: integer
+    minimum: 0
+  checkpoints_ready:
+    type: integer
+    minimum: 0
+  checkpoints:
+    type: array
+    items:
+      $ref: ./PoolFactualRefreshCheckpoint.yaml
+required:
+  - activity
+  - checkpoint_total
+  - checkpoints
+  - checkpoints_failed
+  - checkpoints_pending
+  - checkpoints_ready
+  - checkpoints_running
+  - freshness_target_seconds
+  - poll_interval_seconds
+  - polling_tier
+  - pool_id
+  - quarter_start
+  - requested_at
+  - status

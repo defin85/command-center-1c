@@ -1,0 +1,46 @@
+type: object
+properties:
+  checkpoint_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+  workflow_status:
+    type: string
+  freshness_state:
+    type: string
+  last_synced_at:
+    type: string
+    format: date-time
+    nullable: true
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  operation_id:
+    type: string
+    format: uuid
+    nullable: true
+  activity:
+    type: string
+  polling_tier:
+    type: string
+  poll_interval_seconds:
+    type: integer
+    minimum: 1
+  freshness_target_seconds:
+    type: integer
+    minimum: 1
+required:
+  - activity
+  - checkpoint_id
+  - database_id
+  - freshness_target_seconds
+  - poll_interval_seconds
+  - polling_tier
+  - workflow_status

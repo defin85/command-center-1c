@@ -7,10 +7,12 @@ import {
   type OrganizationPool,
   type PoolBatch,
   type PoolFactualEdgeBalance,
+  type PoolFactualRefreshResponse,
   type PoolFactualReviewQueue,
   type PoolFactualReviewQueueItem,
   type PoolFactualSummary,
   type PoolFactualWorkspace,
+  refreshPoolFactualWorkspace,
 } from '../../api/intercompanyPools'
 import { EntityTable, RouteButton, StatusBadge } from '../../components/platform'
 import {
@@ -58,6 +60,50 @@ const formatTimestamp = (value: string | null | undefined) => {
     return '-'
   }
   return value.replace('T', ' ').replace('Z', ' UTC')
+}
+
+const formatQuarterWindow = (quarterStart: string | null | undefined, quarterEnd: string | null | undefined) => {
+  if (quarterStart && quarterEnd) {
+    return `${quarterStart} -> ${quarterEnd}`
+  }
+  return quarterStart ?? quarterEnd ?? '-'
+}
+
+const getRefreshTone = (refreshState: PoolFactualRefreshResponse | null) => {
+  switch (refreshState?.status) {
+    case 'running':
+      return 'warning'
+    case 'pending':
+      return 'warning'
+    case 'failed':
+      return 'error'
+    case 'success':
+      return 'active'
+    default:
+      return 'unknown'
+  }
+}
+
+const getRefreshCopy = (refreshState: PoolFactualRefreshResponse | null) => {
+  if (!refreshState) {
+    return 'Use the shipped refresh control when the operator needs an immediate bounded sync for this pool and quarter.'
+  }
+  return `${refreshState.checkpoints_running} running, ${refreshState.checkpoints_pending} pending, ${refreshState.checkpoints_failed} failed, ${refreshState.checkpoints_ready} ready checkpoint(s).`
+}
+
+const getCarryForwardSummary = (row: PoolBatch) => {
+  const carryForward = row.settlement?.summary?.carry_forward
+  if (!carryForward || typeof carryForward !== 'object') {
+    return null
+  }
+  const summary = carryForward as Record<string, unknown>
+  return {
+    sourceSnapshotId: typeof summary.source_snapshot_id === 'string' ? summary.source_snapshot_id : null,
+    targetSnapshotId: typeof summary.target_snapshot_id === 'string' ? summary.target_snapshot_id : null,
+    targetQuarterStart: typeof summary.target_quarter_start === 'string' ? summary.target_quarter_start : null,
+    targetQuarterEnd: typeof summary.target_quarter_end === 'string' ? summary.target_quarter_end : null,
+    appliedAt: typeof summary.applied_at === 'string' ? summary.applied_at : null,
+  }
 }
 
 const buildReviewSummary = (item: PoolFactualReviewQueueItem) => {
@@ -166,9 +212,17 @@ export function PoolFactualWorkspaceDetail({
   const [workspace, setWorkspace] = useState<PoolFactualWorkspace | null>(null)
   const [loadingWorkspace, setLoadingWorkspace] = useState(true)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [refreshingWorkspace, setRefreshingWorkspace] = useState(false)
+  const [refreshState, setRefreshState] = useState<PoolFactualRefreshResponse | null>(null)
+  const [refreshError, setRefreshError] = useState<string | null>(null)
   const [reviewActionError, setReviewActionError] = useState<string | null>(null)
   const [pendingReviewItemId, setPendingReviewItemId] = useState<string | null>(null)
   const [attributeReviewRow, setAttributeReviewRow] = useState<ReviewRowWithTargets | null>(null)
+
+  useEffect(() => {
+    setRefreshState(null)
+    setRefreshError(null)
+  }, [quarterStart, selectedPool.id])
 
   useEffect(() => {
     let cancelled = false
@@ -177,6 +231,9 @@ export function PoolFactualWorkspaceDetail({
       if (!background) {
         setLoadingWorkspace(true)
         setWorkspaceError(null)
+      }
+      if (!background) {
+        setRefreshError(null)
       }
       setReviewActionError(null)
 
@@ -215,6 +272,24 @@ export function PoolFactualWorkspaceDetail({
       window.clearInterval(pollId)
     }
   }, [quarterStart, selectedPool.id])
+
+  const handleRefreshWorkspace = async () => {
+    setRefreshingWorkspace(true)
+    setRefreshError(null)
+
+    try {
+      const response = await refreshPoolFactualWorkspace({
+        pool_id: selectedPool.id,
+        quarter_start: quarterStart ?? undefined,
+      })
+      setRefreshState(response)
+    } catch (error) {
+      const resolved = resolveApiError(error, 'Failed to refresh factual workspace sync.')
+      setRefreshError(resolved.message)
+    } finally {
+      setRefreshingWorkspace(false)
+    }
+  }
 
   const reviewRows = mapReviewRows(workspace?.review_queue)
   const linkedSettlement = runId
@@ -419,6 +494,15 @@ export function PoolFactualWorkspaceDetail({
         />
       ) : null}
 
+      {refreshError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Factual refresh request failed"
+          description={refreshError}
+        />
+      ) : null}
+
       <div
         style={{
           display: 'grid',
@@ -455,6 +539,42 @@ export function PoolFactualWorkspaceDetail({
                   Incoming, outgoing, and open-balance totals appear here after the factual workspace payload loads.
                 </Text>
               )}
+            </Space>
+          </div>
+        </div>
+        <div
+          style={{
+            border: '1px solid #f0f0f0',
+            borderRadius: 12,
+            padding: 16,
+            background: '#fff',
+          }}
+        >
+          <Text strong>Sync control</Text>
+          <div style={{ marginTop: 12 }}>
+            <Space direction="vertical" size={8}>
+              <Space wrap>
+                <StatusBadge
+                  status={getRefreshTone(refreshState)}
+                  label={refreshState?.status ?? 'idle'}
+                />
+                <Button
+                  type="primary"
+                  loading={refreshingWorkspace}
+                  aria-label="Refresh factual sync"
+                  onClick={() => {
+                    void handleRefreshWorkspace()
+                  }}
+                >
+                  Refresh factual sync
+                </Button>
+              </Space>
+              <Text type="secondary">{getRefreshCopy(refreshState)}</Text>
+              {refreshState ? (
+                <Text type="secondary">
+                  Requested {formatTimestamp(refreshState.requested_at)} on {refreshState.polling_tier} tier ({refreshState.poll_interval_seconds}s).
+                </Text>
+              ) : null}
             </Space>
           </div>
         </div>
@@ -612,10 +732,40 @@ export function PoolFactualWorkspaceDetail({
             ),
           },
           {
-            title: 'Open balance',
-            key: 'open_balance',
+            title: 'Amounts',
+            key: 'amounts',
             render: (_: unknown, row: PoolBatch) => (
-              <Text>{row.settlement?.open_balance ?? '-'}</Text>
+              <Space direction="vertical" size={4}>
+                <Text>Incoming {row.settlement?.incoming_amount ?? '-'}</Text>
+                <Text>Outgoing {row.settlement?.outgoing_amount ?? '-'}</Text>
+                <Text>Open balance {row.settlement?.open_balance ?? '-'}</Text>
+              </Space>
+            ),
+          },
+          {
+            title: 'Carry-forward',
+            key: 'carry_forward',
+            render: (_: unknown, row: PoolBatch) => {
+              const carryForward = getCarryForwardSummary(row)
+              if (!carryForward) {
+                return <Text type="secondary">-</Text>
+              }
+              return (
+                <Space direction="vertical" size={4}>
+                  <Text>{`Target quarter ${formatQuarterWindow(carryForward.targetQuarterStart, carryForward.targetQuarterEnd)}`}</Text>
+                  <Text type="secondary">
+                    {`source ${formatShortId(carryForward.sourceSnapshotId)} -> target ${formatShortId(carryForward.targetSnapshotId)}`}
+                  </Text>
+                  {carryForward.appliedAt ? <Text type="secondary">Applied {formatTimestamp(carryForward.appliedAt)}</Text> : null}
+                </Space>
+              )
+            },
+          },
+          {
+            title: 'Freshness',
+            key: 'freshness',
+            render: (_: unknown, row: PoolBatch) => (
+              <Text type="secondary">{formatTimestamp(row.settlement?.freshness_at)}</Text>
             ),
           },
         ]}
@@ -641,14 +791,15 @@ export function PoolFactualWorkspaceDetail({
             ),
           },
           {
-            title: 'Incoming',
-            key: 'incoming',
-            render: (_: unknown, row: PoolFactualEdgeBalance) => <Text>{row.incoming_amount}</Text>,
-          },
-          {
-            title: 'Open balance',
-            key: 'open_balance',
-            render: (_: unknown, row: PoolFactualEdgeBalance) => <Text>{row.open_balance}</Text>,
+            title: 'Amounts',
+            key: 'amounts',
+            render: (_: unknown, row: PoolFactualEdgeBalance) => (
+              <Space direction="vertical" size={4}>
+                <Text>Incoming {row.incoming_amount}</Text>
+                <Text>Outgoing {row.outgoing_amount}</Text>
+                <Text>Open balance {row.open_balance}</Text>
+              </Space>
+            ),
           },
         ]}
         rowKey="id"

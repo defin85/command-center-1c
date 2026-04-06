@@ -207,6 +207,10 @@ def test_mark_factual_sync_checkpoint_success_persists_freshness_metadata() -> N
         source_state=resolve_factual_sync_source_state(database=database, now=fixed_now),
         source_checkpoint_token="cp-002",
         synced_at=fixed_now,
+        activity="warm",
+        polling_tier="warm",
+        poll_interval_seconds=600,
+        freshness_target_seconds=600,
     )
 
     checkpoint.refresh_from_db()
@@ -214,9 +218,12 @@ def test_mark_factual_sync_checkpoint_success_persists_freshness_metadata() -> N
     assert checkpoint.last_synced_at == fixed_now
     assert checkpoint.last_error_code == ""
     assert checkpoint.last_error == ""
-    assert checkpoint.metadata["freshness_target_seconds"] == 120
+    assert checkpoint.metadata["freshness_target_seconds"] == 600
     assert checkpoint.metadata["freshness_state"] == "fresh"
     assert checkpoint.metadata["source_availability"] == "available"
+    assert checkpoint.metadata["activity"] == "warm"
+    assert checkpoint.metadata["polling_tier"] == "warm"
+    assert checkpoint.metadata["poll_interval_seconds"] == 600
     assert checkpoint.metadata["source_scope"]["organization_ids"] == ["org-a", "org-b"]
     assert checkpoint.metadata["source_scope"]["account_codes"] == ["62.01"]
 
@@ -263,12 +270,21 @@ def test_mark_factual_sync_checkpoint_error_marks_stale_and_sanitizes_detail() -
             detail="auth failed password=super-secret url=http://user:pwd@localhost/odata",
         ),
         failed_at=fixed_now,
+        activity="warm",
+        polling_tier="warm",
+        poll_interval_seconds=600,
+        freshness_target_seconds=600,
     )
 
     checkpoint.refresh_from_db()
+    assert checkpoint.workflow_status == "failed"
     assert checkpoint.last_error_code == ERROR_CODE_POOL_FACTUAL_SYNC_EXTERNAL_SESSIONS_BLOCKED
+    assert checkpoint.metadata["freshness_target_seconds"] == 600
     assert checkpoint.metadata["freshness_state"] == "stale"
     assert checkpoint.metadata["source_availability"] == "blocked_external_sessions"
+    assert checkpoint.metadata["activity"] == "warm"
+    assert checkpoint.metadata["polling_tier"] == "warm"
+    assert checkpoint.metadata["poll_interval_seconds"] == 600
     assert checkpoint.metadata["last_error_at"] == fixed_now.isoformat()
     assert "password=***" in checkpoint.last_error
     assert "http://***:***@localhost/odata" in checkpoint.last_error

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.contrib.auth.models import User
@@ -437,6 +437,77 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
 
 
 @pytest.mark.django_db
+def test_get_pool_factual_workspace_preserves_carry_forward_linkage_in_settlement_summary(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool, leaf, edge, _database = _create_pool_scope(tenant=default_tenant, suffix="workspace-carry-forward")
+    batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 3, 31),
+        source_reference="receipt-q1-carry-forward",
+    )
+    settlement = PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=batch,
+        status=PoolBatchSettlementStatus.CARRIED_FORWARD,
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("80.00"),
+        open_balance=Decimal("40.00"),
+        summary={
+            "carry_forward": {
+                "source_snapshot_id": str(uuid4()),
+                "target_snapshot_id": str(uuid4()),
+                "target_quarter_start": "2026-04-01",
+                "target_quarter_end": "2026-06-30",
+                "applied_at": "2026-04-01T00:05:00+00:00",
+            }
+        },
+        freshness_at=datetime(2026, 3, 31, 20, 15, tzinfo=dt_timezone.utc),
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        batch=batch,
+        organization=leaf,
+        edge=edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat=Decimal("120.00"),
+        amount_without_vat=Decimal("100.00"),
+        vat_amount=Decimal("20.00"),
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("80.00"),
+        open_balance=Decimal("40.00"),
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.ensure_pool_factual_workspace_default_sync",
+        return_value=tuple(),
+    ):
+        response = authenticated_client.get(
+            f"/api/v2/pools/factual/workspace/?pool_id={pool.id}&quarter_start=2026-01-01"
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["settlements"]) == 1
+    settlement_payload = payload["settlements"][0]["settlement"]
+    assert settlement_payload["status"] == PoolBatchSettlementStatus.CARRIED_FORWARD
+    assert settlement_payload["incoming_amount"] == "120.00"
+    assert settlement_payload["outgoing_amount"] == "80.00"
+    assert settlement_payload["open_balance"] == "40.00"
+    assert settlement_payload["summary"]["carry_forward"]["target_quarter_start"] == "2026-04-01"
+    assert settlement_payload["summary"]["carry_forward"]["target_quarter_end"] == "2026-06-30"
+    assert settlement_payload["summary"]["carry_forward"]["source_snapshot_id"] == settlement.summary["carry_forward"]["source_snapshot_id"]
+    assert settlement_payload["summary"]["carry_forward"]["target_snapshot_id"] == settlement.summary["carry_forward"]["target_snapshot_id"]
+
+
+@pytest.mark.django_db
 def test_apply_pool_factual_review_action_endpoint_updates_queue(
     authenticated_client: APIClient,
     default_tenant: Tenant,
@@ -846,6 +917,142 @@ def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_miss
     assert kwargs["movement_kinds"] == ("credit", "debit")
     payload = response.json()
     assert payload["summary"]["checkpoint_total"] == 1
+
+
+@pytest.mark.django_db
+def test_refresh_pool_factual_workspace_force_syncs_current_context_and_returns_running_state(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-refresh")
+    factual_scope = _build_resolved_factual_scope(
+        pool=pool,
+        organization_ids=(str(leaf.id),),
+        quarter_start=date(2026, 4, 1),
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        last_synced_at=datetime(2026, 4, 14, 9, 59, tzinfo=dt_timezone.utc),
+        workflow_status="completed",
+        metadata={
+            "freshness_state": "fresh",
+            "freshness_target_seconds": 600,
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow"
+    ) as start_workflow, patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ):
+        def _fake_start(**kwargs):
+            checkpoint = kwargs["checkpoint"]
+            checkpoint.workflow_status = "running"
+            checkpoint.workflow_execution_id = UUID("11111111-1111-1111-1111-111111111111")
+            checkpoint.operation_id = UUID("22222222-2222-2222-2222-222222222222")
+            checkpoint.save(
+                update_fields=[
+                    "workflow_status",
+                    "workflow_execution_id",
+                    "operation_id",
+                    "updated_at",
+                ]
+            )
+            return PoolFactualSyncWorkflowStartResult(
+                checkpoint=checkpoint,
+                execution_id="11111111-1111-1111-1111-111111111111",
+                operation_id="22222222-2222-2222-2222-222222222222",
+                enqueue_success=True,
+                enqueue_status="running",
+                enqueue_error=None,
+                created_execution=True,
+            )
+
+        start_workflow.side_effect = _fake_start
+
+        response = authenticated_client.post(
+            "/api/v2/pools/factual/refresh/",
+            {
+                "pool_id": str(pool.id),
+                "quarter_start": "2026-04-01",
+            },
+            format="json",
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["activity"] == "active"
+    assert payload["polling_tier"] == "active"
+    assert payload["poll_interval_seconds"] == 120
+    assert payload["freshness_target_seconds"] == 120
+    assert payload["checkpoint_total"] == 1
+    assert payload["checkpoints_running"] == 1
+    assert payload["checkpoints"][0]["workflow_status"] == "running"
+    assert payload["checkpoints"][0]["activity"] == "active"
+    assert payload["checkpoints"][0]["polling_tier"] == "active"
+    start_workflow.assert_called_once()
+    assert start_workflow.call_args.kwargs["activity"] == "active"
+
+
+@pytest.mark.django_db
+def test_refresh_pool_factual_workspace_does_not_duplicate_running_checkpoint(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-refresh-running")
+    factual_scope = _build_resolved_factual_scope(
+        pool=pool,
+        organization_ids=(str(leaf.id),),
+        quarter_start=date(2026, 4, 1),
+    )
+    checkpoint = PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        workflow_status="running",
+        workflow_execution_id=UUID("11111111-1111-1111-1111-111111111111"),
+        operation_id=UUID("22222222-2222-2222-2222-222222222222"),
+        metadata={
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+            "freshness_state": "stale",
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow"
+    ) as start_workflow, patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/factual/refresh/",
+            {
+                "pool_id": str(pool.id),
+                "quarter_start": "2026-04-01",
+            },
+            format="json",
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["checkpoint_total"] == 1
+    assert payload["checkpoints_running"] == 1
+    assert payload["checkpoints"][0]["checkpoint_id"] == str(checkpoint.id)
+    start_workflow.assert_not_called()
 
 
 @pytest.mark.django_db

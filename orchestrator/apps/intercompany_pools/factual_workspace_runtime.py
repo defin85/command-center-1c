@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from django.db.models import Q
 from django.utils import timezone
 
+from .factual_scheduling import resolve_factual_polling_tier
 from .factual_scope_selection import (
     DEFAULT_FACTUAL_ACCOUNT_CODES,
     DEFAULT_FACTUAL_MOVEMENT_KINDS,
@@ -19,7 +20,16 @@ from .factual_sync_runtime import (
     resolve_factual_sync_source_state,
 )
 from .factual_workflow_runtime import start_pool_factual_sync_workflow
-from .models import PoolFactualLane, PoolFactualSyncCheckpoint, PoolNodeVersion
+from .models import (
+    PoolBatchSettlement,
+    PoolBatchSettlementStatus,
+    PoolFactualBalanceSnapshot,
+    PoolFactualLane,
+    PoolFactualReviewItem,
+    PoolFactualReviewStatus,
+    PoolFactualSyncCheckpoint,
+    PoolNodeVersion,
+)
 
 
 FACTUAL_WORKSPACE_ORIGIN_SYSTEM = "pools_factual_workspace"
@@ -33,11 +43,22 @@ class PoolFactualScope:
     freeze_quarter: bool
 
 
+@dataclass(frozen=True)
+class PoolFactualActivityDecision:
+    activity: str
+    polling_tier: str
+    poll_interval_seconds: int
+    freshness_target_seconds: int
+    reason: str
+
+
 def ensure_pool_factual_workspace_default_sync(
     *,
     pool,
     quarter_start: date,
     now: datetime | None = None,
+    requested_activity: str | None = None,
+    force_sync: bool = False,
 ) -> tuple[PoolFactualSyncCheckpoint, ...]:
     timestamp = now or timezone.now()
     scope = resolve_pool_factual_scope(
@@ -47,6 +68,13 @@ def ensure_pool_factual_workspace_default_sync(
     )
     if not scope.organization_ids or not scope.databases:
         return tuple()
+    activity_decision = resolve_pool_factual_sync_activity(
+        pool=pool,
+        quarter_start=quarter_start,
+        quarter_end=scope.quarter_end,
+        now=timestamp,
+        requested_activity=requested_activity,
+    )
     checkpoints: list[PoolFactualSyncCheckpoint] = []
 
     for database in scope.databases:
@@ -75,7 +103,10 @@ def ensure_pool_factual_workspace_default_sync(
                 checkpoint=checkpoint,
                 scope=exc.scope,
                 default_entrypoint="pools_factual_workspace",
-                extra_metadata={"scope_resolution_blockers": list(exc.blockers)},
+                extra_metadata={
+                    **_build_activity_metadata(activity_decision=activity_decision),
+                    "scope_resolution_blockers": list(exc.blockers),
+                },
             )
             mark_factual_sync_checkpoint_error(
                 checkpoint=checkpoint,
@@ -83,6 +114,10 @@ def ensure_pool_factual_workspace_default_sync(
                 source_state=resolve_factual_sync_source_state(database=database, now=timestamp),
                 error=FactualSyncTransportError(code=exc.code, detail=exc.detail),
                 failed_at=timestamp,
+                activity=activity_decision.activity,
+                polling_tier=activity_decision.polling_tier,
+                poll_interval_seconds=activity_decision.poll_interval_seconds,
+                freshness_target_seconds=activity_decision.freshness_target_seconds,
             )
             checkpoints.append(PoolFactualSyncCheckpoint.objects.get(id=checkpoint.id))
             continue
@@ -101,9 +136,10 @@ def ensure_pool_factual_workspace_default_sync(
             checkpoint=checkpoint,
             scope=factual_scope,
             default_entrypoint="pools_factual_workspace",
+            extra_metadata=_build_activity_metadata(activity_decision=activity_decision),
         )
         checkpoints.append(checkpoint)
-        if not _checkpoint_requires_sync(checkpoint=checkpoint, now=timestamp):
+        if not _checkpoint_requires_sync(checkpoint=checkpoint, now=timestamp, force_sync=force_sync):
             continue
         result = start_pool_factual_sync_workflow(
             checkpoint=checkpoint,
@@ -114,7 +150,7 @@ def ensure_pool_factual_workspace_default_sync(
             correlation_id=f"workspace:{pool.id}:{quarter_start.isoformat()}",
             origin_system=FACTUAL_WORKSPACE_ORIGIN_SYSTEM,
             origin_event_id=f"pool:{pool.id}:quarter:{quarter_start.isoformat()}",
-            activity="active",
+            activity=activity_decision.activity,
             freeze_quarter=scope.freeze_quarter,
             scope=factual_scope,
         )
@@ -163,10 +199,67 @@ def resolve_pool_factual_scope(
     )
 
 
-def _checkpoint_requires_sync(*, checkpoint: PoolFactualSyncCheckpoint, now: datetime) -> bool:
+def resolve_pool_factual_sync_activity(
+    *,
+    pool,
+    quarter_start: date,
+    quarter_end: date | None = None,
+    now: datetime | None = None,
+    requested_activity: str | None = None,
+) -> PoolFactualActivityDecision:
+    if requested_activity:
+        tier = resolve_factual_polling_tier(activity=requested_activity)
+        return PoolFactualActivityDecision(
+            activity=tier.name,
+            polling_tier=tier.name,
+            poll_interval_seconds=tier.interval_seconds,
+            freshness_target_seconds=tier.interval_seconds,
+            reason="requested_override",
+        )
+
+    timestamp = now or timezone.now()
+    current_quarter_start = _current_quarter_start(timestamp.date())
+    if quarter_start >= current_quarter_start:
+        tier = resolve_factual_polling_tier(activity="active")
+        return PoolFactualActivityDecision(
+            activity=tier.name,
+            polling_tier=tier.name,
+            poll_interval_seconds=tier.interval_seconds,
+            freshness_target_seconds=tier.interval_seconds,
+            reason="current_quarter",
+        )
+
+    resolved_quarter_end = quarter_end or _resolve_quarter_end(quarter_start)
+    activity = (
+        "warm"
+        if _is_operationally_relevant_factual_context(
+            pool=pool,
+            quarter_start=quarter_start,
+            quarter_end=resolved_quarter_end,
+        )
+        else "cold"
+    )
+    tier = resolve_factual_polling_tier(activity=activity)
+    return PoolFactualActivityDecision(
+        activity=tier.name,
+        polling_tier=tier.name,
+        poll_interval_seconds=tier.interval_seconds,
+        freshness_target_seconds=tier.interval_seconds,
+        reason="open_context" if activity == "warm" else "low_activity",
+    )
+
+
+def _checkpoint_requires_sync(
+    *,
+    checkpoint: PoolFactualSyncCheckpoint,
+    now: datetime,
+    force_sync: bool = False,
+) -> bool:
     workflow_status = str(checkpoint.workflow_status or "").strip().lower()
     if workflow_status in {"pending", "running"}:
         return False
+    if force_sync:
+        return True
     if workflow_status == "failed":
         return True
     if checkpoint.last_synced_at is None:
@@ -180,6 +273,47 @@ def _checkpoint_requires_sync(*, checkpoint: PoolFactualSyncCheckpoint, now: dat
         freshness_target_seconds = FACTUAL_SYNC_FRESHNESS_TARGET_SECONDS
 
     return checkpoint.last_synced_at <= now - timedelta(seconds=max(freshness_target_seconds, 1))
+
+
+def _build_activity_metadata(*, activity_decision: PoolFactualActivityDecision) -> dict[str, object]:
+    return {
+        "activity": activity_decision.activity,
+        "polling_tier": activity_decision.polling_tier,
+        "poll_interval_seconds": int(activity_decision.poll_interval_seconds),
+        "freshness_target_seconds": int(activity_decision.freshness_target_seconds),
+        "activity_reason": activity_decision.reason,
+    }
+
+
+def _is_operationally_relevant_factual_context(
+    *,
+    pool,
+    quarter_start: date,
+    quarter_end: date,
+) -> bool:
+    if PoolFactualReviewItem.objects.filter(
+        tenant=pool.tenant,
+        pool=pool,
+        quarter_start=quarter_start,
+        quarter_end=quarter_end,
+        status=PoolFactualReviewStatus.PENDING,
+    ).exists():
+        return True
+
+    if PoolBatchSettlement.objects.filter(
+        tenant=pool.tenant,
+        batch__pool=pool,
+        batch__period_start__gte=quarter_start,
+        batch__period_start__lte=quarter_end,
+    ).exclude(status=PoolBatchSettlementStatus.CLOSED).exists():
+        return True
+
+    return PoolFactualBalanceSnapshot.objects.filter(
+        tenant=pool.tenant,
+        pool=pool,
+        quarter_start=quarter_start,
+        quarter_end=quarter_end,
+    ).exclude(open_balance=0).exists()
 
 
 def _get_or_create_checkpoint_for_scope(
@@ -308,8 +442,12 @@ __all__ = [
     "DEFAULT_FACTUAL_ACCOUNT_CODES",
     "DEFAULT_FACTUAL_MOVEMENT_KINDS",
     "FACTUAL_WORKSPACE_ORIGIN_SYSTEM",
+    "PoolFactualActivityDecision",
     "PoolFactualScope",
     "_get_or_create_checkpoint_for_scope",
+    "_checkpoint_requires_sync",
+    "_current_quarter_start",
     "ensure_pool_factual_workspace_default_sync",
+    "resolve_pool_factual_sync_activity",
     "resolve_pool_factual_scope",
 ]

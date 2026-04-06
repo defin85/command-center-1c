@@ -151,6 +151,7 @@ def test_build_factual_read_contract_adds_caps_and_polling_tier() -> None:
     assert contract["global_cap"] == "8"
     assert contract["polling_tier"] == "warm"
     assert contract["poll_interval_seconds"] == "600"
+    assert contract["freshness_target_seconds"] == "600"
 
 
 def test_build_factual_closed_quarter_reconcile_contract_marks_nightly_window() -> None:

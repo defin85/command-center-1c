@@ -2305,6 +2305,83 @@ def _serialize_pool_factual_balance_snapshot(snapshot: PoolFactualBalanceSnapsho
     }
 
 
+def _serialize_pool_factual_refresh_checkpoint(checkpoint: PoolFactualSyncCheckpoint) -> dict[str, Any]:
+    metadata = checkpoint.metadata if isinstance(checkpoint.metadata, dict) else {}
+
+    def _coerce_positive_int(raw_value: object, *, default: int) -> int:
+        try:
+            value = int(str(raw_value or "").strip() or default)
+        except (TypeError, ValueError):
+            value = default
+        return max(value, 1)
+
+    return {
+        "checkpoint_id": str(checkpoint.id),
+        "database_id": str(checkpoint.database_id),
+        "workflow_status": str(checkpoint.workflow_status or "").strip(),
+        "freshness_state": str(metadata.get("freshness_state") or "").strip(),
+        "last_synced_at": checkpoint.last_synced_at,
+        "last_error_code": str(checkpoint.last_error_code or "").strip(),
+        "last_error": str(checkpoint.last_error or "").strip(),
+        "execution_id": str(checkpoint.workflow_execution_id) if checkpoint.workflow_execution_id else None,
+        "operation_id": str(checkpoint.operation_id) if checkpoint.operation_id else None,
+        "activity": str(metadata.get("activity") or "").strip() or "active",
+        "polling_tier": str(metadata.get("polling_tier") or "").strip() or "active",
+        "poll_interval_seconds": _coerce_positive_int(
+            metadata.get("poll_interval_seconds"),
+            default=120,
+        ),
+        "freshness_target_seconds": _coerce_positive_int(
+            metadata.get("freshness_target_seconds"),
+            default=120,
+        ),
+    }
+
+
+def _build_pool_factual_refresh_response(
+    *,
+    pool: OrganizationPool,
+    quarter_start: date,
+    requested_at: datetime,
+    activity_decision,
+    checkpoints: list[PoolFactualSyncCheckpoint],
+) -> dict[str, Any]:
+    serialized_checkpoints = [
+        _serialize_pool_factual_refresh_checkpoint(checkpoint)
+        for checkpoint in checkpoints
+    ]
+    pending_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "pending")
+    running_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "running")
+    failed_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "failed")
+    ready_total = max(len(serialized_checkpoints) - pending_total - running_total - failed_total, 0)
+    if not serialized_checkpoints:
+        status = "idle"
+    elif running_total > 0:
+        status = "running"
+    elif pending_total > 0:
+        status = "pending"
+    elif failed_total > 0:
+        status = "failed"
+    else:
+        status = "success"
+    return {
+        "pool_id": str(pool.id),
+        "quarter_start": quarter_start,
+        "requested_at": requested_at,
+        "status": status,
+        "activity": activity_decision.activity,
+        "polling_tier": activity_decision.polling_tier,
+        "poll_interval_seconds": activity_decision.poll_interval_seconds,
+        "freshness_target_seconds": activity_decision.freshness_target_seconds,
+        "checkpoint_total": len(serialized_checkpoints),
+        "checkpoints_pending": pending_total,
+        "checkpoints_running": running_total,
+        "checkpoints_failed": failed_total,
+        "checkpoints_ready": ready_total,
+        "checkpoints": serialized_checkpoints,
+    }
+
+
 def _serialize_pool_factual_review_item(item: PoolFactualReviewItem) -> dict[str, Any]:
     return build_pool_factual_review_queue_snapshot(review_items=[item])["items"][0]
 
@@ -3377,6 +3454,52 @@ class PoolFactualWorkspaceResponseSerializer(serializers.Serializer):
     settlements = PoolBatchSerializer(many=True)
     edge_balances = PoolFactualBalanceSnapshotSerializer(many=True)
     review_queue = PoolFactualReviewQueueSerializer()
+
+
+class PoolFactualRefreshRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    quarter_start = serializers.DateField(required=False, allow_null=True)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid payload type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+
+class PoolFactualRefreshCheckpointSerializer(serializers.Serializer):
+    checkpoint_id = serializers.UUIDField()
+    database_id = serializers.UUIDField()
+    workflow_status = serializers.CharField()
+    freshness_state = serializers.CharField(required=False, allow_blank=True)
+    last_synced_at = serializers.DateTimeField(required=False, allow_null=True)
+    last_error_code = serializers.CharField(required=False, allow_blank=True)
+    last_error = serializers.CharField(required=False, allow_blank=True)
+    execution_id = serializers.UUIDField(required=False, allow_null=True)
+    operation_id = serializers.UUIDField(required=False, allow_null=True)
+    activity = serializers.CharField()
+    polling_tier = serializers.CharField()
+    poll_interval_seconds = serializers.IntegerField(min_value=1)
+    freshness_target_seconds = serializers.IntegerField(min_value=1)
+
+
+class PoolFactualRefreshResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    quarter_start = serializers.DateField()
+    requested_at = serializers.DateTimeField()
+    status = serializers.CharField()
+    activity = serializers.CharField()
+    polling_tier = serializers.CharField()
+    poll_interval_seconds = serializers.IntegerField(min_value=1)
+    freshness_target_seconds = serializers.IntegerField(min_value=1)
+    checkpoint_total = serializers.IntegerField(min_value=0)
+    checkpoints_pending = serializers.IntegerField(min_value=0)
+    checkpoints_running = serializers.IntegerField(min_value=0)
+    checkpoints_failed = serializers.IntegerField(min_value=0)
+    checkpoints_ready = serializers.IntegerField(min_value=0)
+    checkpoints = PoolFactualRefreshCheckpointSerializer(many=True)
 
 
 class PoolFactualReviewActionRequestSerializer(serializers.Serializer):
@@ -6028,6 +6151,7 @@ def get_pool_factual_workspace(request):
     ensure_pool_factual_workspace_default_sync(
         pool=pool,
         quarter_start=quarter_start,
+        requested_activity="active",
     )
 
     batches = list(
@@ -6086,6 +6210,86 @@ def get_pool_factual_workspace(request):
         "edge_balances": [_serialize_pool_factual_balance_snapshot(snapshot) for snapshot in edge_balances],
         "review_queue": review_queue,
     }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_factual_refresh",
+    summary="Refresh pool factual workspace sync state",
+    request=PoolFactualRefreshRequestSerializer,
+    responses={
+        200: PoolFactualRefreshResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def refresh_pool_factual_workspace(request):
+    from apps.intercompany_pools.factual_workspace_runtime import (
+        ensure_pool_factual_workspace_default_sync,
+        resolve_pool_factual_sync_activity,
+    )
+
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolFactualRefreshRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    quarter_start = _resolve_pool_factual_quarter_start(
+        tenant_id=tenant_id,
+        pool=pool,
+        requested_quarter_start=data.get("quarter_start"),
+    )
+    requested_at = timezone.now()
+    activity_decision = resolve_pool_factual_sync_activity(
+        pool=pool,
+        quarter_start=quarter_start,
+        quarter_end=_resolve_quarter_end(quarter_start),
+        now=requested_at,
+        requested_activity="active",
+    )
+    checkpoints = list(
+        ensure_pool_factual_workspace_default_sync(
+            pool=pool,
+            quarter_start=quarter_start,
+            now=requested_at,
+            requested_activity=activity_decision.activity,
+            force_sync=True,
+        )
+    )
+    payload = _build_pool_factual_refresh_response(
+        pool=pool,
+        quarter_start=quarter_start,
+        requested_at=requested_at,
+        activity_decision=activity_decision,
+        checkpoints=checkpoints,
+    )
     return Response(payload, status=http_status.HTTP_200_OK)
 
 

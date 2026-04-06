@@ -154,6 +154,7 @@ def build_factual_read_contract(
         "global_cap": str(envelope.global_read_cap),
         "polling_tier": tier.name,
         "poll_interval_seconds": str(tier.interval_seconds),
+        "freshness_target_seconds": str(tier.interval_seconds),
     }
 
 

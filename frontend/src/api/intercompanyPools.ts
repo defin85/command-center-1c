@@ -753,6 +753,46 @@ export type GetPoolFactualWorkspaceParams = {
   quarterStart?: string
 }
 
+export type PoolFactualRefreshStatus = 'idle' | 'pending' | 'running' | 'success' | 'failed'
+
+export type PoolFactualRefreshCheckpoint = {
+  checkpoint_id: string
+  database_id: string
+  workflow_status: string
+  freshness_state?: string
+  last_synced_at?: string | null
+  last_error_code?: string
+  last_error?: string
+  execution_id?: string | null
+  operation_id?: string | null
+  activity: string
+  polling_tier: string
+  poll_interval_seconds: number
+  freshness_target_seconds: number
+}
+
+export type RefreshPoolFactualWorkspacePayload = {
+  pool_id: string
+  quarter_start?: string
+}
+
+export type PoolFactualRefreshResponse = {
+  pool_id: string
+  quarter_start: string
+  requested_at: string
+  status: PoolFactualRefreshStatus
+  activity: string
+  polling_tier: string
+  poll_interval_seconds: number
+  freshness_target_seconds: number
+  checkpoint_total: number
+  checkpoints_pending: number
+  checkpoints_running: number
+  checkpoints_failed: number
+  checkpoints_ready: number
+  checkpoints: PoolFactualRefreshCheckpoint[]
+}
+
 export type ListPoolBatchesParams = {
   poolId?: string
   batchKind?: PoolBatchKind
@@ -1163,6 +1203,17 @@ export async function getPoolFactualWorkspace(
   const response = await apiClient.get<PoolFactualWorkspace>(
     '/api/v2/pools/factual/workspace/',
     { params: query, skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function refreshPoolFactualWorkspace(
+  payload: RefreshPoolFactualWorkspacePayload
+): Promise<PoolFactualRefreshResponse> {
+  const response = await apiClient.post<PoolFactualRefreshResponse>(
+    '/api/v2/pools/factual/refresh/',
+    payload,
+    { skipGlobalError: true }
   )
   return response.data
 }

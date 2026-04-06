@@ -16,6 +16,7 @@ from .factual_workspace_runtime import (
     _get_or_create_checkpoint_for_scope,
     _update_checkpoint_scope_contract,
     ensure_pool_factual_workspace_default_sync,
+    resolve_pool_factual_sync_activity,
     resolve_pool_factual_scope,
 )
 from .factual_sync_runtime import (
@@ -45,18 +46,61 @@ def trigger_pool_factual_active_sync_window(
     pools_scanned = 0
     checkpoints_touched = 0
     checkpoints_running = 0
+    seen_contexts: set[tuple[str, str, str]] = set()
     for pool in pools.order_by("tenant_id", "code", "id"):
         pools_scanned += 1
         checkpoints = ensure_pool_factual_workspace_default_sync(
             pool=pool,
             quarter_start=quarter_start,
             now=timestamp,
+            requested_activity="active",
         )
+        seen_contexts.add((str(pool.tenant_id), str(pool.id), quarter_start.isoformat()))
         checkpoints_touched += len(checkpoints)
         checkpoints_running += sum(
             1
             for checkpoint in checkpoints
             if str(checkpoint.workflow_status or "").strip().lower() in {"pending", "running"}
+        )
+
+    non_active_contexts = (
+        PoolFactualSyncCheckpoint.objects.select_related("pool")
+        .filter(
+            lane=PoolFactualLane.READ,
+            pool__is_active=True,
+        )
+        .exclude(quarter_start=quarter_start)
+        .order_by("tenant_id", "pool_id", "quarter_start", "id")
+    )
+    if tenant_id:
+        non_active_contexts = non_active_contexts.filter(tenant_id=tenant_id)
+
+    for checkpoint in non_active_contexts:
+        context_key = (
+            str(checkpoint.tenant_id),
+            str(checkpoint.pool_id),
+            checkpoint.quarter_start.isoformat(),
+        )
+        if context_key in seen_contexts:
+            continue
+        seen_contexts.add(context_key)
+        activity_decision = resolve_pool_factual_sync_activity(
+            pool=checkpoint.pool,
+            quarter_start=checkpoint.quarter_start,
+            quarter_end=checkpoint.quarter_end,
+            now=timestamp,
+        )
+        checkpoints = ensure_pool_factual_workspace_default_sync(
+            pool=checkpoint.pool,
+            quarter_start=checkpoint.quarter_start,
+            now=timestamp,
+            requested_activity=activity_decision.activity,
+        )
+        checkpoints_touched += len(checkpoints)
+        checkpoints_running += sum(
+            1
+            for current_checkpoint in checkpoints
+            if str(current_checkpoint.workflow_status or "").strip().lower() in {"pending", "running"}
         )
 
     return {

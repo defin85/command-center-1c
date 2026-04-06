@@ -212,6 +212,38 @@ def test_record_pool_factual_rollout_telemetry_aggregates_metrics_and_actionable
     set_alerts.assert_called_once_with(alerts=snapshot["alerts"])
 
 
+@pytest.mark.django_db
+def test_record_pool_factual_rollout_telemetry_respects_warm_freshness_targets() -> None:
+    tenant = Tenant.objects.create(slug=f"factual-telemetry-warm-{uuid4().hex[:6]}", name="Factual Telemetry Warm")
+    pool, _root, _leaf, database = _create_pool_scope(tenant=tenant, suffix="warm")
+    now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        last_synced_at=now - timedelta(minutes=5),
+        metadata={
+            "activity": "warm",
+            "polling_tier": "warm",
+            "poll_interval_seconds": 600,
+            "freshness_target_seconds": 600,
+            "freshness_state": "fresh",
+            "freshness_at": (now - timedelta(minutes=5)).isoformat(),
+            "source_availability": "available",
+        },
+    )
+
+    snapshot = record_pool_factual_rollout_telemetry(now=now)
+
+    assert snapshot["read_summary"]["checkpoint_total"] == 1
+    assert snapshot["read_summary"]["backlog_total"] == 0
+    assert snapshot["read_summary"]["max_freshness_target_seconds"] == 600
+
+
 def test_build_pool_factual_failure_isolation_snapshot_allows_only_explicit_operator_pause() -> None:
     snapshot = build_pool_factual_failure_isolation_snapshot(
         alerts=[
