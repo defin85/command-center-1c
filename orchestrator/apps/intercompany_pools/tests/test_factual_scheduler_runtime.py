@@ -128,6 +128,40 @@ def test_trigger_pool_factual_active_sync_window_reuses_warm_activity_for_histor
 
 
 @pytest.mark.django_db
+def test_trigger_pool_factual_active_sync_window_skips_inactive_pool_checkpoint_contexts() -> None:
+    from apps.intercompany_pools.factual_scheduler_runtime import trigger_pool_factual_active_sync_window
+
+    tenant = Tenant.objects.create(
+        slug=f"factual-scheduler-inactive-current-{uuid4().hex[:6]}",
+        name="Factual Scheduler Inactive Current",
+    )
+    pool = _create_pool(tenant=tenant, suffix="inactive-current", is_active=False)
+    database = _create_database(tenant=tenant, suffix="inactive-current")
+    fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        metadata={"freshness_state": "stale", "freshness_target_seconds": 120},
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.ensure_pool_factual_workspace_default_sync",
+        return_value=tuple(),
+    ) as ensure_sync:
+        summary = trigger_pool_factual_active_sync_window(now=fixed_now)
+
+    assert summary["quarter_start"] == "2026-04-01"
+    assert summary["pools_scanned"] == 0
+    assert summary["checkpoints_touched"] == 0
+    assert summary["checkpoints_running"] == 0
+    ensure_sync.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_trigger_pool_factual_closed_quarter_reconcile_window_creates_reconcile_checkpoint() -> None:
     from apps.intercompany_pools.factual_scheduler_runtime import (
         FACTUAL_RECONCILE_SYNC_ORIGIN_SYSTEM,
@@ -204,3 +238,70 @@ def test_trigger_pool_factual_closed_quarter_reconcile_window_creates_reconcile_
     assert kwargs["activity"] == "cold"
     assert kwargs["freeze_quarter"] is True
     assert str(read_checkpoint.id) != str(reconcile_checkpoint.id)
+
+
+@pytest.mark.django_db
+def test_trigger_pool_factual_closed_quarter_reconcile_window_skips_inactive_pool_contexts() -> None:
+    from apps.intercompany_pools.factual_scheduler_runtime import (
+        PoolFactualScope,
+        trigger_pool_factual_closed_quarter_reconcile_window,
+    )
+    from apps.intercompany_pools.factual_sync_runtime import build_factual_sales_report_sync_scope
+
+    tenant = Tenant.objects.create(
+        slug=f"factual-scheduler-inactive-reconcile-{uuid4().hex[:6]}",
+        name="Factual Scheduler Inactive Reconcile",
+    )
+    pool = _create_pool(tenant=tenant, suffix="inactive-reconcile", is_active=False)
+    database = _create_database(tenant=tenant, suffix="inactive-reconcile")
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        metadata={"frozen_at": "2026-03-31T23:59:59+00:00"},
+    )
+    fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+    factual_scope = build_factual_sales_report_sync_scope(
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        organization_ids=("org-1",),
+        account_codes=("62.01", "90.01"),
+        movement_kinds=("credit", "debit"),
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.resolve_pool_factual_scope",
+        return_value=PoolFactualScope(
+            organization_ids=("org-1",),
+            databases=(database,),
+            quarter_end=date(2026, 3, 31),
+            freeze_quarter=True,
+        ),
+    ), patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ), patch(
+        "apps.intercompany_pools.factual_scheduler_runtime.start_pool_factual_sync_workflow",
+        side_effect=lambda **kwargs: SimpleNamespace(
+            checkpoint=kwargs["checkpoint"],
+            enqueue_success=True,
+            enqueue_status="running",
+        ),
+    ) as start_workflow:
+        summary = trigger_pool_factual_closed_quarter_reconcile_window(now=fixed_now)
+
+    assert summary["read_checkpoints_scanned"] == 0
+    assert summary["reconcile_checkpoints_touched"] == 0
+    assert summary["reconcile_checkpoints_created"] == 0
+    assert summary["reconcile_checkpoints_running"] == 0
+    start_workflow.assert_not_called()
+    assert not PoolFactualSyncCheckpoint.objects.filter(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.RECONCILE,
+        quarter_start=date(2026, 1, 1),
+    ).exists()

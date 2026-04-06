@@ -63,19 +63,18 @@ def trigger_pool_factual_active_sync_window(
             if str(checkpoint.workflow_status or "").strip().lower() in {"pending", "running"}
         )
 
-    non_active_contexts = (
+    checkpoint_contexts = (
         PoolFactualSyncCheckpoint.objects.select_related("pool")
         .filter(
             lane=PoolFactualLane.READ,
             pool__is_active=True,
         )
-        .exclude(quarter_start=quarter_start)
         .order_by("tenant_id", "pool_id", "quarter_start", "id")
     )
     if tenant_id:
-        non_active_contexts = non_active_contexts.filter(tenant_id=tenant_id)
+        checkpoint_contexts = checkpoint_contexts.filter(tenant_id=tenant_id)
 
-    for checkpoint in non_active_contexts:
+    for checkpoint in checkpoint_contexts:
         context_key = (
             str(checkpoint.tenant_id),
             str(checkpoint.pool_id),
@@ -122,8 +121,8 @@ def trigger_pool_factual_closed_quarter_reconcile_window(
         PoolFactualSyncCheckpoint.objects.select_related("tenant", "pool", "database")
         .filter(
             lane=PoolFactualLane.READ,
-            quarter_end__lt=quarter_cutoff_start,
             pool__is_active=True,
+            quarter_end__lt=quarter_cutoff_start,
             metadata__has_key="frozen_at",
         )
         .order_by("tenant_id", "pool_id", "database_id", "quarter_start", "id")
