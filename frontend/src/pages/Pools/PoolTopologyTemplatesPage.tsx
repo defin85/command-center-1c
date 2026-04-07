@@ -41,6 +41,7 @@ import { resolveApiError } from './masterData/errorUtils'
 
 const { Text } = Typography
 const { useBreakpoint } = Grid
+const DESKTOP_BREAKPOINT_PX = 992
 
 type TopologyTemplatesComposeMode = 'create' | 'revise' | null
 
@@ -126,6 +127,14 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
 export function PoolTopologyTemplatesPage() {
   const { message } = AntApp.useApp()
   const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < DESKTOP_BREAKPOINT_PX
+        : false
+    )
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -252,6 +261,7 @@ export function PoolTopologyTemplatesPage() {
       ?? null,
     [filteredTemplates, selectedTemplateId, topologyTemplates]
   )
+  const detailDrawerOpen = isDetailDrawerOpen && composeMode === null
 
   const returnRoute = useMemo(
     () => buildPoolCatalogRoute({
@@ -362,7 +372,7 @@ export function PoolTopologyTemplatesPage() {
       ) : null}
 
       <MasterDetailShell
-        detailOpen={isDetailDrawerOpen}
+        detailOpen={detailDrawerOpen}
         onCloseDetail={() => {
           routeUpdateModeRef.current = 'push'
           setIsDetailDrawerOpen(false)
@@ -383,7 +393,7 @@ export function PoolTopologyTemplatesPage() {
                   routeUpdateModeRef.current = 'push'
                   setSearch(event.target.value)
                 }}
-                style={{ width: screens.sm ? 260 : '100%' }}
+                style={{ width: isNarrow ? '100%' : 260 }}
               />
             )}
             error={listError}
@@ -434,12 +444,12 @@ export function PoolTopologyTemplatesPage() {
             emptyDescription="Select a reusable topology template from the catalog."
           >
             {selectedTemplate ? (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Space direction="vertical" size={16} style={{ width: '100%' }} data-testid="pool-topology-templates-detail-surface">
                 <div
                   style={{
                     display: 'flex',
-                    flexDirection: screens.sm ? 'row' : 'column',
-                    flexWrap: screens.sm ? 'wrap' : 'nowrap',
+                    flexDirection: isNarrow ? 'column' : 'row',
+                    flexWrap: isNarrow ? 'nowrap' : 'wrap',
                     gap: 12,
                     width: '100%',
                   }}
@@ -449,7 +459,7 @@ export function PoolTopologyTemplatesPage() {
                       routeUpdateModeRef.current = 'push'
                       setComposeMode('revise')
                     }}
-                    style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
+                    style={{ width: isNarrow ? '100%' : 'auto', whiteSpace: 'normal', height: 'auto' }}
                     >
                       Publish new revision
                     </Button>
@@ -478,14 +488,37 @@ export function PoolTopologyTemplatesPage() {
                   </Descriptions.Item>
                 </Descriptions>
 
-                <Table
-                  size="small"
-                  pagination={false}
-                  columns={revisionColumns}
-                  dataSource={selectedTemplate.revisions}
-                  rowKey="topology_template_revision_id"
-                  scroll={{ x: 'max-content' }}
-                />
+                {!isNarrow ? (
+                  <div data-testid="pool-topology-templates-revisions">
+                    <Table
+                      size="small"
+                      pagination={false}
+                      columns={revisionColumns}
+                      dataSource={selectedTemplate.revisions}
+                      rowKey="topology_template_revision_id"
+                    />
+                  </div>
+                ) : (
+                  <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid="pool-topology-templates-revisions">
+                    {selectedTemplate.revisions.map((revision) => (
+                      <div
+                        key={revision.topology_template_revision_id}
+                        style={{
+                          border: '1px solid #f0f0f0',
+                          borderRadius: 8,
+                          padding: 12,
+                        }}
+                      >
+                        <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                          <Text strong>{`r${revision.revision_number}`}</Text>
+                          <Text type="secondary">{`Nodes: ${revision.nodes.length}`}</Text>
+                          <Text type="secondary">{`Edges: ${revision.edges.length}`}</Text>
+                          <Text type="secondary">{`Created at: ${formatDateTime(revision.created_at)}`}</Text>
+                        </Space>
+                      </div>
+                    ))}
+                  </Space>
+                )}
 
                 <Descriptions bordered size="small" column={1}>
                   <Descriptions.Item label="Latest revision nodes">

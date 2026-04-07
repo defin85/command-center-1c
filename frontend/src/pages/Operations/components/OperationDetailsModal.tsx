@@ -6,15 +6,14 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Grid, Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
-import { MonitorOutlined, BranchesOutlined, FilterOutlined, StopOutlined, ExportOutlined } from '@ant-design/icons'
+import { Grid, Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table, Pagination } from 'antd'
+import { MonitorOutlined, FilterOutlined, StopOutlined, ExportOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { OperationDetailsModalProps, UIBatchOperation, UITask } from '../types'
 import { getStatusColor, getOperationTypeLabel } from '../utils'
 import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
-import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { useAuthz } from '../../../authz/useAuthz'
 import { EntityDetails, RouteButton } from '../../../components/platform'
@@ -41,7 +40,6 @@ type OperationInspectBodyProps = OperationInspectPanelProps & {
   executionPlanText: string | null
   bindings: UIBinding[]
   taskColumns: ColumnsType<UITask>
-  bindingColumns: ColumnsType<UIBinding>
   taskTable: ReturnType<typeof useTableToolkit<UITask>>
 }
 
@@ -306,21 +304,6 @@ function useOperationInspectModel({
     return Array.isArray(operationState.bindings) ? (operationState.bindings as UIBinding[]) : []
   }, [isStaff, operationState])
 
-  const bindingColumns: ColumnsType<UIBinding> = useMemo(() => [
-    { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
-    { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
-    { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
-    {
-      title: 'Sensitive',
-      dataIndex: 'sensitive',
-      key: 'sensitive',
-      width: 90,
-      render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
-    },
-    { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
-    { title: 'Reason', dataIndex: 'reason', key: 'reason' },
-  ], [])
-
   return {
     operationState,
     tasksLoading,
@@ -328,7 +311,6 @@ function useOperationInspectModel({
     executionPlanText,
     bindings,
     taskColumns,
-    bindingColumns,
     taskTable,
   }
 }
@@ -347,7 +329,6 @@ function OperationInspectBody({
   executionPlanText,
   bindings,
   taskColumns,
-  bindingColumns,
   taskTable,
 }: OperationInspectBodyProps) {
   const screens = useBreakpoint()
@@ -368,7 +349,7 @@ function OperationInspectBody({
   const hasTaskTelemetry = operationState.total_tasks > 0 || operationState.tasks.length > 0
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+    <Space direction="vertical" size="middle" style={{ width: '100%' }} data-testid="operation-inspect-surface">
       <div
         style={{
           padding: '12px',
@@ -376,15 +357,22 @@ function OperationInspectBody({
           borderRadius: '8px',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
           gap: 12,
         }}
       >
-        <div>
+        <div style={{ flex: '1 1 260px', minWidth: 0 }}>
           <strong>Operation ID:</strong>
           <Paragraph
             copyable={{ text: operationState.id }}
-            style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
+            style={{
+              marginBottom: 0,
+              marginTop: 8,
+              display: 'block',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}
           >
             <code>{operationState.id}</code>
           </Paragraph>
@@ -410,56 +398,59 @@ function OperationInspectBody({
       </div>
 
       {operationState.workflow_execution_id ? (
-        <div>
-          <strong>Workflow Execution:</strong>{' '}
-          <Text code>{operationState.workflow_execution_id}</Text>
-          <RouteButton
-            size="small"
-            type="link"
-            icon={<ExportOutlined />}
-            to={`/workflows/executions/${operationState.workflow_execution_id}`}
-            style={{ marginLeft: 8 }}
-          >
-            Open workflow diagnostics
-          </RouteButton>
+        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+          <Space wrap size={[8, 8]}>
+            <strong>Workflow Execution:</strong>
+            <Text code style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+              {operationState.workflow_execution_id}
+            </Text>
+            <RouteButton
+              size="small"
+              type="link"
+              icon={<ExportOutlined />}
+              to={`/workflows/executions/${operationState.workflow_execution_id}`}
+            >
+              Open workflow diagnostics
+            </RouteButton>
+            {onFilterWorkflow ? (
+              <Button
+                size="small"
+                icon={<FilterOutlined />}
+                onClick={() => {
+                  if (operationState.workflow_execution_id) {
+                    onFilterWorkflow(operationState.workflow_execution_id)
+                  }
+                }}
+              >
+                Filter
+              </Button>
+            ) : null}
+          </Space>
           {operationState.node_id ? (
-            <Paragraph
-              copyable={{ text: operationState.node_id }}
-              style={{ marginBottom: 0, marginLeft: 8, display: 'inline' }}
-            >
-              <BranchesOutlined style={{ marginRight: 6 }} />
-              <code>{operationState.node_id}</code>
-            </Paragraph>
+            <Space wrap size={[8, 8]}>
+              <strong>Node:</strong>
+              <Paragraph
+                copyable={{ text: operationState.node_id }}
+                style={{ marginBottom: 0, display: 'block', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+              >
+                <code>{operationState.node_id}</code>
+              </Paragraph>
+              {onFilterNode ? (
+                <Button
+                  size="small"
+                  icon={<FilterOutlined />}
+                  onClick={() => {
+                    if (operationState.node_id) {
+                      onFilterNode(operationState.node_id)
+                    }
+                  }}
+                >
+                  Filter node
+                </Button>
+              ) : null}
+            </Space>
           ) : null}
-          {onFilterWorkflow ? (
-            <Button
-              size="small"
-              icon={<FilterOutlined />}
-              style={{ marginLeft: 8 }}
-              onClick={() => {
-                if (operationState.workflow_execution_id) {
-                  onFilterWorkflow(operationState.workflow_execution_id)
-                }
-              }}
-            >
-              Filter
-            </Button>
-          ) : null}
-          {operationState.node_id && onFilterNode ? (
-            <Button
-              size="small"
-              icon={<FilterOutlined />}
-              style={{ marginLeft: 8 }}
-              onClick={() => {
-                if (operationState.node_id) {
-                  onFilterNode(operationState.node_id)
-                }
-              }}
-            >
-              Node
-            </Button>
-          ) : null}
-        </div>
+        </Space>
       ) : null}
 
       {operationState.trace_id ? (
@@ -470,6 +461,7 @@ function OperationInspectBody({
               href={`/api/v2/tracing/traces/${operationState.trace_id}`}
               target="_blank"
               rel="noreferrer"
+              style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
             >
               {operationState.trace_id}
             </Link>
@@ -489,47 +481,47 @@ function OperationInspectBody({
       {executionPlanText ? (
         <div>
           <strong>Execution Plan (staff):</strong>
-          <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{executionPlanText}</pre>
+          <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+            {executionPlanText}
+          </pre>
         </div>
       ) : null}
       {bindings.length > 0 ? (
         <div>
           <strong>Binding Provenance (staff):</strong>
-          {isNarrow ? (
-            <Space direction="vertical" size="small" style={{ width: '100%', marginTop: 8 }}>
-              {bindings.map((binding, index) => (
-                <div
-                  key={`${binding.target_ref ?? 'binding'}-${index}`}
-                  style={{
-                    border: '1px solid #f0f0f0',
-                    borderRadius: 8,
-                    padding: 12,
-                  }}
-                >
-                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
-                    <Text strong>{binding.target_ref || 'Unnamed binding target'}</Text>
-                    <Text type="secondary">{`Source: ${binding.source_ref || '-'}`}</Text>
-                    <Text type="secondary">{`Resolve: ${binding.resolve_at || '-'}`}</Text>
-                    <Text type="secondary">{`Sensitive: ${binding.sensitive ? 'yes' : 'no'}`}</Text>
-                    <Text type="secondary">{`Status: ${binding.status || '-'}`}</Text>
-                    {binding.reason ? (
-                      <Text type="secondary">{`Reason: ${binding.reason}`}</Text>
-                    ) : null}
-                  </Space>
-                </div>
-              ))}
-            </Space>
-          ) : (
-            <Table
-              style={{ marginTop: 8 }}
-              size="small"
-              rowKey={(_, index) => String(index)}
-              pagination={false}
-              dataSource={bindings}
-              columns={bindingColumns}
-              scroll={{ x: 900 }}
-            />
-          )}
+          <div
+            data-testid="operation-inspect-bindings-surface"
+            style={{
+              display: 'grid',
+              gap: 12,
+              gridTemplateColumns: isNarrow ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(220px, 1fr))',
+              marginTop: 8,
+            }}
+          >
+            {bindings.map((binding, index) => (
+              <div
+                key={`${binding.target_ref ?? 'binding'}-${index}`}
+                style={{
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 8,
+                  padding: 12,
+                }}
+              >
+                <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                  <Text strong style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                    {binding.target_ref || 'Unnamed binding target'}
+                  </Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Source: ${binding.source_ref || '-'}`}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Resolve: ${binding.resolve_at || '-'}`}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Sensitive: ${binding.sensitive ? 'yes' : 'no'}`}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Status: ${binding.status || '-'}`}</Text>
+                  {binding.reason ? (
+                    <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Reason: ${binding.reason}`}</Text>
+                  ) : null}
+                </Space>
+              </div>
+            ))}
+          </div>
         </div>
       ) : null}
       {hasTaskTelemetry ? (
@@ -600,18 +592,34 @@ function OperationInspectBody({
             ))}
           </Space>
         ) : (
-          <TableToolkit
-            table={taskTable}
-            data={operationState.tasks}
-            total={operationState.total_tasks ?? operationState.tasks.length}
-            loading={tasksLoading}
-            rowKey="id"
-            columns={taskColumns}
-            size="small"
-            tableLayout="fixed"
-            scroll={{ x: taskTable.totalColumnsWidth }}
-            searchPlaceholder="Search tasks"
-          />
+          <div data-testid="operation-inspect-tasks-surface">
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Table
+                dataSource={operationState.tasks}
+                pagination={false}
+                rowKey="id"
+                columns={taskColumns}
+                size="small"
+                tableLayout="fixed"
+                loading={tasksLoading}
+              />
+              <Pagination
+                size="small"
+                current={taskTable.pagination.page}
+                pageSize={taskTable.pagination.pageSize}
+                total={operationState.total_tasks ?? operationState.tasks.length}
+                showSizeChanger
+                pageSizeOptions={[10, 25, 50]}
+                onChange={(page, pageSize) => {
+                  if (pageSize !== taskTable.pagination.pageSize) {
+                    taskTable.setPageSize(pageSize)
+                    return
+                  }
+                  taskTable.setPage(page)
+                }}
+              />
+            </Space>
+          </div>
         )
       ) : (
         <Text type="secondary">

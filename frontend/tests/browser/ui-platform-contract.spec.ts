@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 
 declare global {
   interface Window {
@@ -2464,6 +2464,41 @@ async function expectNoHorizontalOverflow(page: Page) {
   }
 }
 
+async function expectNoScopedHorizontalOverflow(locator: Locator, label: string) {
+  const overflowDetails = await locator.evaluate((root) => {
+    const ignoredTags = new Set(['svg', 'g', 'path', 'ellipse', 'circle'])
+    const isVisible = (element: HTMLElement) => {
+      const style = window.getComputedStyle(element)
+      if (style.display === 'none' || style.visibility === 'hidden') {
+        return false
+      }
+      const rect = element.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    }
+
+    const offenders = [root as HTMLElement, ...Array.from(root.querySelectorAll<HTMLElement>('*'))]
+      .filter((element) => !ignoredTags.has(element.tagName.toLowerCase()))
+      .filter(isVisible)
+      .map((element) => ({
+        tag: element.tagName.toLowerCase(),
+        testId: element.dataset.testid || '',
+        text: (element.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+        overflow: element.scrollWidth - element.clientWidth,
+        clientWidth: element.clientWidth,
+      }))
+      .filter((item) => item.clientWidth > 120 && item.overflow > 4)
+      .filter((item) => item.text.length > 0 || item.testId.length > 0)
+      .sort((left, right) => right.overflow - left.overflow)
+      .slice(0, 5)
+
+    return offenders.length > 0 ? offenders : null
+  })
+
+  if (overflowDetails) {
+    throw new Error(`${label} has horizontal overflow: ${JSON.stringify(overflowDetails)}`)
+  }
+}
+
 async function fillTopologyTemplateCreateForm(page: Page) {
   await page.getByTestId('pool-topology-templates-create-code').fill('new-template')
   await page.getByTestId('pool-topology-templates-create-name').fill('New Template')
@@ -2710,6 +2745,7 @@ test('UI platform: /pools/topology-templates keeps mobile catalog readable and o
   await expect(detailDrawer.getByRole('button', { name: 'Publish new revision' })).toBeVisible()
   await expect(detailDrawer.getByText('Root · root')).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(detailDrawer, 'Topology template detail drawer')
 })
 
 test('UI platform: /pools/topology-templates opens create-template authoring in a mobile-safe drawer shell', async ({ page }) => {
@@ -2728,6 +2764,7 @@ test('UI platform: /pools/topology-templates opens create-template authoring in 
   await expect(authoringDrawer.getByLabel('Template name')).toBeVisible()
   await expect(authoringDrawer.getByRole('button', { name: 'Create template' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(authoringDrawer, 'Topology template create drawer')
 })
 
 test('UI platform: /pools/topology-templates opens revise-template authoring in a mobile-safe drawer shell', async ({ page }) => {
@@ -2744,9 +2781,11 @@ test('UI platform: /pools/topology-templates opens revise-template authoring in 
 
   const reviseDrawer = page.getByTestId('pool-topology-templates-revise-drawer')
   await expect(reviseDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
   await expect(reviseDrawer.getByTestId('pool-topology-templates-revise-node-label-0')).toBeVisible()
   await expect(reviseDrawer.getByRole('button', { name: 'Publish revision' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(reviseDrawer, 'Topology template revise drawer')
 })
 
 test('UI platform: /workflows restores selected workflow detail from URL-backed workspace state', async ({ page }) => {
@@ -3043,6 +3082,7 @@ test('UI platform: /pools/topology-templates submits revise-template authoring a
     page.locator('table:has(th:has-text("Created at")) tbody tr:not(.ant-table-measure-row)').first()
   ).toContainText('r4')
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(page.getByTestId('pool-topology-templates-detail-surface'), 'Topology template detail surface')
 })
 
 test('UI platform: /pools/catalog restores attachment workspace in a mobile-safe drawer', async ({ page }) => {
@@ -3111,6 +3151,25 @@ test('UI platform: /databases keeps selected management context on browser back 
   await page.goForward()
   await expect(page).toHaveURL(new RegExp(`\\/databases\\?database=${DATABASE_ID}&context=credentials$`))
   await expect(page.getByText(`Credentials: ${DATABASE_RECORD.name}`)).toBeVisible()
+})
+
+test('UI platform: /databases opens mobile management context without stacked overlays', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/databases?database=${DATABASE_ID}&context=metadata`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const metadataDrawer = page.getByTestId('database-metadata-management-drawer')
+  await expect(metadataDrawer).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(metadataDrawer, 'Database metadata management drawer')
 })
 
 test('UI platform: /pools/runs restores selected run and stage from a deep-link', async ({ page }) => {
@@ -3254,6 +3313,7 @@ test('UI platform: /operations restores selected operation and inspect context f
   await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open workflow diagnostics' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(page.getByTestId('operation-inspect-surface'), 'Operation inspect surface')
 })
 
 test('UI platform: /operations keeps selected operation view on browser back and forward', async ({ page }) => {

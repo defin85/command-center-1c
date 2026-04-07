@@ -1,4 +1,4 @@
-import { Alert, App, Button, Space, Spin, Typography } from 'antd'
+import { Alert, App, Button, Grid, Space, Spin, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 
@@ -43,6 +43,9 @@ type MetadataSummaryItem = {
   label: string
   value: string
 }
+
+const { useBreakpoint } = Grid
+const DESKTOP_BREAKPOINT_PX = 992
 
 const formatDateTime = (value?: string | null): string => {
   if (!value) return 'n/a'
@@ -208,12 +211,12 @@ const renderMetadataSummarySection = (
             gap: 4,
             padding: '12px 14px',
           }}
-        >
-          <Typography.Text type="secondary">{item.label}</Typography.Text>
-          <Typography.Text>{item.value}</Typography.Text>
-        </div>
-      ))}
-    </div>
+          >
+            <Typography.Text type="secondary">{item.label}</Typography.Text>
+            <Typography.Text style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{item.value}</Typography.Text>
+          </div>
+        ))}
+      </div>
   </div>
 )
 
@@ -226,6 +229,15 @@ export const DatabaseMetadataManagementDrawer = ({
   onOperationQueued,
   onOpenIbcmdProfile,
 }: DatabaseMetadataManagementDrawerProps) => {
+  const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < DESKTOP_BREAKPOINT_PX
+        : false
+    )
   const { message } = App.useApp()
   const metadataQuery = useDatabaseMetadataManagement({
     id: databaseId ?? '',
@@ -316,7 +328,7 @@ export const DatabaseMetadataManagementDrawer = ({
             type={profileDescriptor?.tone}
             showIcon
             message={
-              <Space size="small">
+              <Space size="small" wrap>
                 <span>{profileDescriptor?.message}</span>
                 {profileDescriptor ? renderStatusTag(profileDescriptor) : null}
               </Space>
@@ -330,7 +342,7 @@ export const DatabaseMetadataManagementDrawer = ({
                   disabled={mutatingDisabled}
                   data-testid="database-metadata-management-open-ibcmd-profile"
                 >
-                  Открыть IBCMD profile
+                  {isNarrow ? 'Открыть IBCMD' : 'Открыть IBCMD profile'}
                 </Button>
               ) : (
                 <Button
@@ -340,7 +352,7 @@ export const DatabaseMetadataManagementDrawer = ({
                   disabled={mutatingDisabled || profile?.reverify_available === false}
                   data-testid="database-metadata-management-reverify"
                 >
-                  Перепроверить configuration identity
+                  {isNarrow ? 'Перепроверить' : 'Перепроверить configuration identity'}
                 </Button>
               )
             }
@@ -373,7 +385,7 @@ export const DatabaseMetadataManagementDrawer = ({
             type={snapshotDescriptor?.tone}
             showIcon
             message={
-              <Space size="small">
+              <Space size="small" wrap>
                 <span>{snapshotDescriptor?.message}</span>
                 {snapshotDescriptor ? renderStatusTag(snapshotDescriptor) : null}
               </Space>
@@ -387,7 +399,7 @@ export const DatabaseMetadataManagementDrawer = ({
                 disabled={mutatingDisabled || refreshBlockedByMissingProfile}
                 data-testid="database-metadata-management-refresh"
               >
-                Обновить metadata snapshot
+                {isNarrow ? 'Обновить snapshot' : 'Обновить metadata snapshot'}
               </Button>
             }
           />

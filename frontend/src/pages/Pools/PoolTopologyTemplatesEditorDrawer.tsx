@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Form, Input, Space, Switch, Typography } from 'antd'
+import { Alert, Button, Form, Grid, Input, Space, Switch, Typography } from 'antd'
 
 import type {
   CreatePoolTopologyTemplatePayload,
@@ -20,6 +20,8 @@ import {
 
 const { Text } = Typography
 const { TextArea } = Input
+const { useBreakpoint } = Grid
+const DESKTOP_BREAKPOINT_PX = 992
 
 type PoolTopologyTemplatesEditorDrawerProps = {
   open: boolean
@@ -47,6 +49,15 @@ export function PoolTopologyTemplatesEditorDrawer({
   onCancel,
   onSubmit,
 }: PoolTopologyTemplatesEditorDrawerProps) {
+  const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < DESKTOP_BREAKPOINT_PX
+        : false
+    )
   const [form] = Form.useForm<TopologyTemplateEditorFormValues>()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -192,7 +203,9 @@ export function PoolTopologyTemplatesEditorDrawer({
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto auto',
+                          gridTemplateColumns: isNarrow
+                            ? 'minmax(0, 1fr)'
+                            : 'minmax(0, 1fr) minmax(0, 1fr) auto auto',
                           gap: 12,
                           alignItems: 'end',
                         }}
@@ -271,7 +284,9 @@ export function PoolTopologyTemplatesEditorDrawer({
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1fr) auto',
+                          gridTemplateColumns: isNarrow
+                            ? 'minmax(0, 1fr)'
+                            : 'minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1fr) auto',
                           gap: 12,
                           alignItems: 'end',
                         }}
@@ -314,7 +329,9 @@ export function PoolTopologyTemplatesEditorDrawer({
                       <div
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+                          gridTemplateColumns: isNarrow
+                            ? 'minmax(0, 1fr)'
+                            : 'minmax(0, 1fr) minmax(0, 1fr)',
                           gap: 12,
                         }}
                       >

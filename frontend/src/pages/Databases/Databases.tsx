@@ -701,6 +701,7 @@ export const Databases = () => {
   const ibcmdProfileModalVisible = activeContext === 'ibcmd' && Boolean(selectedDatabaseIdFromUrl)
   const metadataManagementDrawerVisible = activeContext === 'metadata' && Boolean(selectedDatabaseIdFromUrl)
   const extensionsDrawerVisible = activeContext === 'extensions' && Boolean(selectedDatabaseIdFromUrl)
+  const inspectDetailOpen = Boolean(selectedDatabaseIdFromUrl) && activeContext === DEFAULT_DATABASE_CONTEXT
   const extensionsSnapshotQuery = useDatabaseExtensionsSnapshot({
     id: selectedDatabase?.id ?? '',
     enabled: extensionsDrawerVisible && Boolean(selectedDatabase?.id),
@@ -996,7 +997,7 @@ export const Databases = () => {
             }
           />
         )}
-        detailOpen={Boolean(selectedDatabaseIdFromUrl)}
+        detailOpen={inspectDetailOpen}
         onCloseDetail={handleCloseDatabaseWorkspace}
         detailDrawerTitle={selectedDatabase ? `Database Workspace: ${selectedDatabase.name}` : 'Database Workspace'}
         listMinWidth={420}
