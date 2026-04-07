@@ -23,6 +23,7 @@
 2. `EntityTable` легально даёт `overflowX: auto` и `scroll.x = max-content`, поэтому его легко использовать как primary master pane, хотя это противоречит роли master column.
 3. Текущие lint-правила ловят raw `antd` containers, но не misuse platform primitives.
 4. Browser tests уже проверяют narrow viewport fallback, но мало проверяют desktop master-pane discipline и misleading inspect states.
+5. Без shared route semantics inventory следующий шаг почти наверняка вернётся к очередному hardcoded списку targeted routes.
 
 ## Решение
 ### 1. Явный contract для master pane
@@ -64,6 +65,11 @@ Master pane в governed `MasterDetail` routes должен оставаться 
 - detail pane: revision lineage, nodes/edges summary, authoring entry points;
 - instructional copy остаётся, но не должна доминировать над catalog/detail workspace.
 
+### 4. Targeting governance rules должен опираться на shared inventory
+Route-specific lint/browser invariants для `MasterDetail` не должны жить как параллельный список file globs только внутри этого change.
+
+Они должны использовать shared governance inventory из `01-expand-ui-frontend-governance-coverage`. Если текущей metadata schema inventory не хватает, этот change расширяет её минимально необходимыми полями для `MasterDetail` targeting, но не создаёт второй registry.
+
 ## Альтернативы
 ### Оставить это только на визуальный review
 Отклонено: structural regressions типа table-first master pane воспроизводимы и должны ловиться автоматически.
@@ -75,7 +81,7 @@ Master pane в governed `MasterDetail` routes должен оставаться 
 Не рекомендуется. Это расширяет scope и не нужно для закрытия текущей проблемы. Лучше усилить текущий `MasterDetailShell` contract и route-specific governance.
 
 ## Rollout
-1. Зафиксировать spec-level contract для master pane и governance.
+1. Зафиксировать spec-level contract для master pane и governance, при необходимости расширив shared inventory metadata.
 2. Ввести lint rules и unit tests для lint plugin.
 3. Перевести три route на compact master pane.
 4. Добить browser regression coverage и validation gate.

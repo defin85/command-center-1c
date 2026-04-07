@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
+import { Grid, Modal, Space, Tag, Progress, Alert, Typography, Button, Tooltip, Table } from 'antd'
 import { MonitorOutlined, BranchesOutlined, FilterOutlined, StopOutlined, ExportOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -20,6 +20,8 @@ import { useAuthz } from '../../../authz/useAuthz'
 import { EntityDetails, RouteButton } from '../../../components/platform'
 
 const { Paragraph, Link, Text } = Typography
+const { useBreakpoint } = Grid
+const DESKTOP_BREAKPOINT_PX = 992
 
 type OperationInspectPanelProps = {
   operationId: string | null
@@ -250,6 +252,7 @@ function useOperationInspectModel({
     columns: taskColumns,
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 25,
+    disableServerMetadata: true,
   })
 
   const taskPageStart = (taskTable.pagination.page - 1) * taskTable.pagination.pageSize
@@ -347,11 +350,22 @@ function OperationInspectBody({
   bindingColumns,
   taskTable,
 }: OperationInspectBodyProps) {
+  const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < DESKTOP_BREAKPOINT_PX
+        : false
+    )
+
   if (!operationId || !operationState) {
     return <Text type="secondary">Select an operation to inspect status, tasks, and execution context.</Text>
   }
 
   const showCancel = canCancel && typeof onCancel === 'function' && CANCELLABLE_OPERATION_STATUSES.has(operationState.status)
+  const hasTaskTelemetry = operationState.total_tasks > 0 || operationState.tasks.length > 0
 
   return (
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -481,24 +495,62 @@ function OperationInspectBody({
       {bindings.length > 0 ? (
         <div>
           <strong>Binding Provenance (staff):</strong>
-          <Table
-            style={{ marginTop: 8 }}
-            size="small"
-            rowKey={(_, index) => String(index)}
-            pagination={false}
-            dataSource={bindings}
-            columns={bindingColumns}
-            scroll={{ x: 900 }}
-          />
+          {isNarrow ? (
+            <Space direction="vertical" size="small" style={{ width: '100%', marginTop: 8 }}>
+              {bindings.map((binding, index) => (
+                <div
+                  key={`${binding.target_ref ?? 'binding'}-${index}`}
+                  style={{
+                    border: '1px solid #f0f0f0',
+                    borderRadius: 8,
+                    padding: 12,
+                  }}
+                >
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Text strong>{binding.target_ref || 'Unnamed binding target'}</Text>
+                    <Text type="secondary">{`Source: ${binding.source_ref || '-'}`}</Text>
+                    <Text type="secondary">{`Resolve: ${binding.resolve_at || '-'}`}</Text>
+                    <Text type="secondary">{`Sensitive: ${binding.sensitive ? 'yes' : 'no'}`}</Text>
+                    <Text type="secondary">{`Status: ${binding.status || '-'}`}</Text>
+                    {binding.reason ? (
+                      <Text type="secondary">{`Reason: ${binding.reason}`}</Text>
+                    ) : null}
+                  </Space>
+                </div>
+              ))}
+            </Space>
+          ) : (
+            <Table
+              style={{ marginTop: 8 }}
+              size="small"
+              rowKey={(_, index) => String(index)}
+              pagination={false}
+              dataSource={bindings}
+              columns={bindingColumns}
+              scroll={{ x: 900 }}
+            />
+          )}
         </div>
       ) : null}
-      <div>
-        <strong>Progress:</strong> <Progress percent={operationState.progress} />
-      </div>
-      <div>
-        <strong>Statistics:</strong>{' '}
-        {`${operationState.completed_tasks} completed, ${operationState.failed_tasks} failed, ${queuedTasks} queued, ${operationState.total_tasks} total`}
-      </div>
+      {hasTaskTelemetry ? (
+        <>
+          <div>
+            <strong>Progress:</strong> <Progress percent={operationState.progress} />
+          </div>
+          <div>
+            <strong>Statistics:</strong>{' '}
+            {`${operationState.completed_tasks} completed, ${operationState.failed_tasks} failed, ${queuedTasks} queued, ${operationState.total_tasks} total`}
+          </div>
+        </>
+      ) : (
+        <Alert
+          type="info"
+          showIcon
+          message="No task telemetry yet"
+          description="This execution currently exposes no task workset telemetry. Inspect the execution plan, bindings, or timeline context instead."
+          data-testid="operation-inspect-no-task-telemetry"
+        />
+      )}
 
       {operationState.status === 'failed' &&
       operationState.metadata &&
@@ -514,18 +566,58 @@ function OperationInspectBody({
       ) : null}
 
       <h3 style={{ marginBottom: 0 }}>Tasks</h3>
-      <TableToolkit
-        table={taskTable}
-        data={operationState.tasks}
-        total={operationState.total_tasks ?? operationState.tasks.length}
-        loading={tasksLoading}
-        rowKey="id"
-        columns={taskColumns}
-        size="small"
-        tableLayout="fixed"
-        scroll={{ x: taskTable.totalColumnsWidth }}
-        searchPlaceholder="Search tasks"
-      />
+      {hasTaskTelemetry ? (
+        isNarrow ? (
+          <Space direction="vertical" size="small" style={{ width: '100%' }}>
+            {tasksLoading && operationState.tasks.length === 0 ? (
+              <Text type="secondary">Loading task telemetry...</Text>
+            ) : null}
+            {operationState.tasks.map((task) => (
+              <div
+                key={task.id}
+                style={{
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 8,
+                  padding: 12,
+                }}
+              >
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  <Space wrap size={[8, 8]}>
+                    <Text strong>{task.database_name}</Text>
+                    <Tag color={getStatusColor(task.status)}>{task.status}</Tag>
+                  </Space>
+                  <Text type="secondary">
+                    {`Duration: ${task.duration_seconds ? `${task.duration_seconds.toFixed(2)}s` : '-'}`}
+                  </Text>
+                  <Text type="secondary">
+                    {`Retries: ${task.retry_count}/${task.max_retries}`}
+                  </Text>
+                  {task.error_message ? (
+                    <Text type="danger">{task.error_message}</Text>
+                  ) : null}
+                </Space>
+              </div>
+            ))}
+          </Space>
+        ) : (
+          <TableToolkit
+            table={taskTable}
+            data={operationState.tasks}
+            total={operationState.total_tasks ?? operationState.tasks.length}
+            loading={tasksLoading}
+            rowKey="id"
+            columns={taskColumns}
+            size="small"
+            tableLayout="fixed"
+            scroll={{ x: taskTable.totalColumnsWidth }}
+            searchPlaceholder="Search tasks"
+          />
+        )
+      ) : (
+        <Text type="secondary">
+          Task list will appear when runtime reports a task workset for this operation.
+        </Text>
+      )}
     </Space>
   )
 }

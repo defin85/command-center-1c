@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { App, Button, Space, Select, Form, Typography, Dropdown } from 'antd'
-import type { TableRowSelection } from 'antd/es/table/interface'
+import { App, Button, Checkbox, Dropdown, Form, Input, Pagination, Select, Space, Tag, Typography } from 'antd'
 import { PlusOutlined, HeartOutlined, EditOutlined, DownOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { Database } from '../../api/generated/model/database'
@@ -25,7 +24,6 @@ import {
 import { useClusters } from '../../api/queries/clusters'
 import { useAuthz } from '../../authz/useAuthz'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
-import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { DatabaseCredentialsModal } from './components/DatabaseCredentialsModal'
 import { DatabaseDbmsMetadataModal } from './components/DatabaseDbmsMetadataModal'
@@ -38,7 +36,8 @@ import {
   type DatabaseManagementContext,
 } from './components/DatabaseWorkspaceDetailPanel'
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
-import { EntityDetails, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
+import { EntityDetails, EntityList, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
 
 const EMPTY_CLUSTERS: Cluster[] = []
 const EMPTY_DATABASES: Database[] = []
@@ -76,6 +75,18 @@ const buildIbcmdOfflineEntries = (database: Database): Array<{ key: string; valu
   entries.sort((left, right) => left.key.localeCompare(right.key))
   return entries
 }
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
 
 export const Databases = () => {
   const navigate = useNavigate()
@@ -489,20 +500,6 @@ export const Databases = () => {
     })
   }, [selectedDatabaseIdFromUrl, updateSearchParams])
 
-  // Row selection configuration
-  const rowSelection: TableRowSelection<Database> | undefined = canSelectRows
-    ? {
-      selectedRowKeys,
-      onChange: (keys, rows) => {
-        setSelectedRowKeys(keys)
-        setSelectedDatabases(rows)
-      },
-      getCheckboxProps: (record) => ({
-        disabled: record.status === 'maintenance' || !canOperateDatabase(record.id),
-      }),
-    }
-    : undefined
-
   const runBulkHealthCheck = useCallback(async (ids: string[]) => {
     const chunks: string[][] = []
     for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50))
@@ -622,6 +619,15 @@ export const Databases = () => {
     setSelectedDatabases([])
   }, [])
 
+  const handleToggleBulkSelection = useCallback((database: Database, checked: boolean) => {
+    setSelectedRowKeys((current) => {
+      if (checked) {
+        return current.includes(database.id) ? current : [...current, database.id]
+      }
+      return current.filter((key) => key !== database.id)
+    })
+  }, [])
+
   const columns = useDatabasesColumns({
     canViewDatabase,
     canOperateDatabase,
@@ -648,6 +654,7 @@ export const Databases = () => {
     columns,
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
+    disableServerMetadata: true,
   })
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
@@ -664,6 +671,15 @@ export const Databases = () => {
     refetchInterval: fallbackPollIntervalMs,
   })
   const databases = databasesResponse?.databases ?? EMPTY_DATABASES
+
+  useEffect(() => {
+    setSelectedRowKeys((current) => current.filter((key) => databases.some((database) => database.id === key)))
+  }, [databases])
+
+  useEffect(() => {
+    setSelectedDatabases(databases.filter((database) => selectedRowKeys.includes(database.id)))
+  }, [databases, selectedRowKeys])
+
   const totalDatabases = typeof databasesResponse?.total === 'number'
     ? databasesResponse.total
     : databases.length
@@ -760,10 +776,84 @@ export const Databases = () => {
     })
   }, [updateSearchParams])
 
-  const totalColumnsWidth = table.totalColumnsWidth
   const databasesSubtitle = selectedCluster
     ? `Manage database metadata, DBMS context, credentials, and extensions for ${selectedCluster.name}.`
     : 'Manage database metadata, DBMS context, credentials, and extensions from one operational workspace.'
+
+  const databasesToolbar = (
+    <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 16 }}>
+      {selectedCluster ? (
+        <Typography.Text type="secondary">
+          Cluster: {selectedCluster.name}
+        </Typography.Text>
+      ) : null}
+
+      {canOperateAny ? (
+        <BulkActionsToolbar
+          selectedCount={selectedRowKeys.length}
+          onAction={handleBulkAction}
+          onClearSelection={handleClearSelection}
+          loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
+          disabled={!canOperateSelected}
+        />
+      ) : null}
+
+      {canOperateAny && selectedRowKeys.length > 0 ? (
+        <Space wrap>
+          <Typography.Text type="secondary">Ops:</Typography.Text>
+          <Button
+            icon={<HeartOutlined />}
+            onClick={async () => {
+              if (!canOperateSelected) {
+                message.error('Недостаточно прав для массовой проверки')
+                return
+              }
+              try {
+                await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
+              } catch (e: unknown) {
+                message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
+              }
+            }}
+            loading={bulkHealthCheck.isPending}
+            disabled={!canOperateSelected}
+          >
+            Health check
+          </Button>
+          <Dropdown
+            trigger={['click']}
+            disabled={!canManageSelected}
+            menu={{
+              items: [
+                { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
+                { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
+                { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
+              ],
+              onClick: async ({ key }) => {
+                if (!canManageSelected) {
+                  message.error('Недостаточно прав для смены статуса')
+                  return
+                }
+                try {
+                  await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
+                } catch (e: unknown) {
+                  const status = getErrorStatus(e)
+                  if (status === 403) {
+                    message.error('Set status requires manage access')
+                    return
+                  }
+                  message.error(`Set status failed: ${getErrorMessage(e)}`)
+                }
+              },
+            }}
+          >
+            <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
+              Set status <DownOutlined />
+            </Button>
+          </Dropdown>
+        </Space>
+      ) : null}
+    </Space>
+  )
 
   return (
     <WorkspacePage
@@ -798,90 +888,91 @@ export const Databases = () => {
     >
       <MasterDetailShell
         list={(
-          <EntityDetails
-            title="Database Catalog"
-            extra={selectedCluster ? <Typography.Text type="secondary">Cluster: {selectedCluster.name}</Typography.Text> : null}
-          >
-            <Space direction="vertical" size="large" style={{ width: '100%' }}>
-              {canOperateAny ? (
-                <BulkActionsToolbar
-                  selectedCount={selectedRowKeys.length}
-                  onAction={handleBulkAction}
-                  onClearSelection={handleClearSelection}
-                  loading={executeRasOperation.isPending || bulkHealthCheck.isPending || setDatabaseStatus.isPending}
-                  disabled={!canOperateSelected}
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <EntityList
+              title="Database Catalog"
+              extra={(
+                <Input.Search
+                  aria-label="Search databases"
+                  allowClear
+                  placeholder="Search databases"
+                  value={table.search}
+                  onChange={(event) => table.setSearch(event.target.value)}
+                  style={{ width: '100%', maxWidth: 260 }}
                 />
-              ) : null}
+              )}
+              toolbar={databasesToolbar}
+              loading={databasesLoading}
+              emptyDescription={selectedCluster ? 'No databases found for the selected cluster.' : 'No databases found.'}
+              dataSource={databases}
+              renderItem={(database) => {
+                const statusTag = getStatusTag(database.status)
+                const healthTag = getHealthTag(database.last_check_status)
+                const selected = database.id === selectedDatabaseIdFromUrl
+                const bulkSelected = selectedRowKeys.includes(database.id)
+                const bulkSelectionDisabled = database.status === 'maintenance' || !canOperateDatabase(database.id)
 
-              {canOperateAny && selectedRowKeys.length > 0 ? (
-                <Space wrap>
-                  <Typography.Text type="secondary">Ops:</Typography.Text>
-                  <Button
-                    icon={<HeartOutlined />}
-                    onClick={async () => {
-                      if (!canOperateSelected) {
-                        message.error('Недостаточно прав для массовой проверки')
-                        return
-                      }
-                      try {
-                        await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
-                      } catch (e: unknown) {
-                        message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
-                      }
-                    }}
-                    loading={bulkHealthCheck.isPending}
-                    disabled={!canOperateSelected}
+                return (
+                  <div
+                    key={database.id}
+                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', width: '100%' }}
                   >
-                    Health check
-                  </Button>
-                  <Dropdown
-                    trigger={['click']}
-                    disabled={!canManageSelected}
-                    menu={{
-                      items: [
-                        { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
-                        { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
-                        { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
-                      ],
-                      onClick: async ({ key }) => {
-                        if (!canManageSelected) {
-                          message.error('Недостаточно прав для смены статуса')
-                          return
-                        }
-                        try {
-                          await runSetStatus(selectedDatabases.map((d) => d.id), key as SetDatabaseStatusValue)
-                        } catch (e: unknown) {
-                          const status = getErrorStatus(e)
-                          if (status === 403) {
-                            message.error('Set status requires manage access')
-                            return
-                          }
-                          message.error(`Set status failed: ${getErrorMessage(e)}`)
-                        }
-                      },
-                    }}
-                  >
-                    <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
-                      Set status <DownOutlined />
+                    {canSelectRows ? (
+                      <Checkbox
+                        aria-label={`Select database ${database.name} for bulk operations`}
+                        checked={bulkSelected}
+                        disabled={bulkSelectionDisabled}
+                        onChange={(event) => handleToggleBulkSelection(database, event.target.checked)}
+                        onClick={(event) => event.stopPropagation()}
+                        style={{ marginTop: 14 }}
+                      />
+                    ) : null}
+                    <Button
+                      type="text"
+                      block
+                      aria-label={`Open database ${database.name}`}
+                      aria-pressed={selected}
+                      onClick={() => handleSelectDatabase(database)}
+                      disabled={!canViewDatabase(database.id)}
+                      style={buildCatalogButtonStyle(selected)}
+                    >
+                      <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                        <Space wrap size={[8, 8]}>
+                          <Typography.Text strong>{database.name}</Typography.Text>
+                          <Tag color={statusTag.color}>{statusTag.label}</Tag>
+                          <Tag color={healthTag.color}>{`Health ${healthTag.label}`}</Tag>
+                          <Tag color={database.password_configured ? 'green' : 'default'}>
+                            {database.password_configured ? 'Credentials ready' : 'Credentials missing'}
+                          </Tag>
+                        </Space>
+                        <Typography.Text type="secondary">
+                          {`${database.host}:${database.port} · ${database.infobase_name || database.base_name || 'n/a'}`}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          {`${database.server_address || 'n/a'}:${database.server_port || 'n/a'} · ${database.last_check ? `Last check ${new Date(database.last_check).toLocaleString()}` : 'Never checked'}`}
+                        </Typography.Text>
+                      </Space>
                     </Button>
-                  </Dropdown>
-                </Space>
-              ) : null}
-
-              <TableToolkit
-                table={table}
-                data={databases}
-                total={totalDatabases}
-                loading={databasesLoading}
-                rowKey="id"
-                columns={columns}
-                rowSelection={rowSelection}
-                tableLayout="fixed"
-                scroll={{ x: totalColumnsWidth }}
-                searchPlaceholder="Search databases"
-              />
-            </Space>
-          </EntityDetails>
+                  </div>
+                )
+              }}
+            />
+            <Pagination
+              size="small"
+              current={table.pagination.page}
+              pageSize={table.pagination.pageSize}
+              total={totalDatabases}
+              showSizeChanger
+              pageSizeOptions={[20, 50, 100]}
+              onChange={(page, pageSize) => {
+                if (pageSize !== table.pagination.pageSize) {
+                  table.setPageSize(pageSize)
+                  return
+                }
+                table.setPage(page)
+              }}
+            />
+          </Space>
         )}
         detail={selectedDatabase ? (
           <DatabaseWorkspaceDetailPanel
@@ -908,8 +999,8 @@ export const Databases = () => {
         detailOpen={Boolean(selectedDatabaseIdFromUrl)}
         onCloseDetail={handleCloseDatabaseWorkspace}
         detailDrawerTitle={selectedDatabase ? `Database Workspace: ${selectedDatabase.name}` : 'Database Workspace'}
-        listMinWidth={560}
-        listMaxWidth={860}
+        listMinWidth={420}
+        listMaxWidth={560}
       />
 
       <DatabaseCredentialsModal

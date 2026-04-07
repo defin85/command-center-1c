@@ -11,6 +11,7 @@
   - запрет table-first catalog как primary master pane path на governed routes;
   - запрет master-pane horizontal overflow как штатного desktop behaviour;
   - browser-level coverage для layout regressions и misleading empty progress states, которые нельзя надёжно проверить линтером.
+- Зафиксировать, что targeting этих route-specific governance rules читается из shared governance inventory change `01-expand-ui-frontend-governance-coverage`, а не из нового hand-maintained route списка.
 - Уточнить route-specific contracts для:
   - `/operations`
   - `/databases`
@@ -27,6 +28,7 @@
 - Affected code:
   - `frontend/src/components/platform/*`
   - `frontend/eslint.config.js`
+  - route inventory рядом с `frontend/src/App.tsx`
   - `frontend/src/pages/Operations/*`
   - `frontend/src/pages/Databases/*`
   - `frontend/src/pages/Pools/PoolTopologyTemplatesPage.tsx`

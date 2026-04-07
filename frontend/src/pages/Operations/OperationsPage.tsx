@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { Button, Space, Alert, Tag, Typography } from 'antd'
+import { Button, Space, Alert, Input, Pagination, Tag, Typography } from 'antd'
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 import { useOperations, useCancelOperation } from '../../api/queries/operations'
@@ -17,7 +17,6 @@ import { getRuntimeSettings } from '../../api/runtimeSettings'
 import { useAuthz } from '../../authz/useAuthz'
 import type { TimelineStreamEvent } from '../../hooks/useOperationTimelineStream'
 import { useOperationsMuxStream } from '../../hooks/useOperationsMuxStream'
-import { OperationsTable } from './components/OperationsTable'
 import { buildOperationsColumns } from './components/OperationsTableColumns'
 import { OperationInspectPanel } from './components/OperationDetailsModal'
 import { NewOperationWizard } from './components/NewOperationWizard'
@@ -25,7 +24,8 @@ import OperationTimelineDrawer from '../../components/service-mesh/OperationTime
 import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
-import { EntityDetails, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { EntityDetails, EntityList, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { getOperationTypeLabel, getStatusColor } from './utils'
 
 const api = getV2()
 
@@ -55,6 +55,29 @@ const parseOperationsView = (value: string | null): 'inspect' | 'timeline' => (
     ? 'timeline'
     : DEFAULT_OPERATIONS_VIEW
 )
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
+
+const formatShortRef = (value: string | undefined) => (value ? `${value.slice(0, 8)}...` : null)
+
+const formatOperationTaskSummary = (operation: UIBatchOperation) => {
+  if (operation.total_tasks <= 0) {
+    return 'No task telemetry yet'
+  }
+
+  const failedSuffix = operation.failed_tasks > 0 ? `, ${operation.failed_tasks} failed` : ''
+  return `${operation.completed_tasks}/${operation.total_tasks} tasks${failedSuffix}`
+}
 
 /**
  * OperationsPage - Main page with tabs for operations list and live monitor
@@ -236,6 +259,7 @@ export const OperationsPage = () => {
     columns: operationsColumns,
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
+    disableServerMetadata: true,
   })
 
   const setFilter = table.setFilter
@@ -269,14 +293,15 @@ export const OperationsPage = () => {
   })
 
   const operations = operationsResponse?.operations ?? EMPTY_OPERATIONS
+  const catalogOperations = operationsState.length > 0 ? operationsState : operations
   const totalOperations = typeof operationsResponse?.total === 'number'
     ? operationsResponse.total
     : operations.length
   const selectedOperation = useMemo(
-    () => operationsState.find((item) => item.id === selectedOperationIdFromUrl)
+    () => catalogOperations.find((item) => item.id === selectedOperationIdFromUrl)
       ?? operations.find((item) => item.id === selectedOperationIdFromUrl)
       ?? null,
-    [operations, operationsState, selectedOperationIdFromUrl]
+    [catalogOperations, operations, selectedOperationIdFromUrl]
   )
   const inspectVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'inspect'
   const timelineVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'timeline'
@@ -342,6 +367,58 @@ export const OperationsPage = () => {
       })
     })
   }, [operations])
+
+  const activeFilterChips = (
+    <>
+      {workflowExecutionId ? (
+        <Tag closable onClose={() => updateSearchParams({ workflow_execution_id: null })}>
+          Workflow: {workflowExecutionId}
+        </Tag>
+      ) : null}
+      {operationIdFilter ? (
+        <Tag closable onClose={() => updateSearchParams({ operation_id: null })}>
+          Operation: {operationIdFilter}
+        </Tag>
+      ) : null}
+      {nodeId ? (
+        <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
+          Node: {nodeId}
+        </Tag>
+      ) : null}
+      {rootOperationId ? (
+        <Tag closable onClose={() => updateSearchParams({ root_operation_id: null })}>
+          Root: {rootOperationId}
+        </Tag>
+      ) : null}
+      {executionConsumer ? (
+        <Tag closable onClose={() => updateSearchParams({ execution_consumer: null })}>
+          Consumer: {executionConsumer}
+        </Tag>
+      ) : null}
+      {lane ? (
+        <Tag closable onClose={() => updateSearchParams({ lane: null })}>
+          Lane: {lane}
+        </Tag>
+      ) : null}
+    </>
+  )
+
+  const operationsToolbar = (
+    <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 16 }}>
+      {error ? (
+        <Alert
+          message={error}
+          type="error"
+          closable
+        />
+      ) : null}
+      {workflowExecutionId || operationIdFilter || nodeId || rootOperationId || executionConsumer || lane ? (
+        <Space size={[8, 8]} wrap>
+          {activeFilterChips}
+        </Space>
+      ) : null}
+    </Space>
+  )
 
   // Handle new operation wizard submit
   const handleWizardSubmit = useCallback(
@@ -569,41 +646,6 @@ export const OperationsPage = () => {
     }))
   }, [muxEvent, applyTimelineUpdate])
 
-  const activeFilterChips = (
-    <>
-      {workflowExecutionId ? (
-        <Tag closable onClose={() => updateSearchParams({ workflow_execution_id: null })}>
-          Workflow: {workflowExecutionId}
-        </Tag>
-      ) : null}
-      {operationIdFilter ? (
-        <Tag closable onClose={() => updateSearchParams({ operation_id: null })}>
-          Operation: {operationIdFilter}
-        </Tag>
-      ) : null}
-      {nodeId ? (
-        <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
-          Node: {nodeId}
-        </Tag>
-      ) : null}
-      {rootOperationId ? (
-        <Tag closable onClose={() => updateSearchParams({ root_operation_id: null })}>
-          Root: {rootOperationId}
-        </Tag>
-      ) : null}
-      {executionConsumer ? (
-        <Tag closable onClose={() => updateSearchParams({ execution_consumer: null })}>
-          Consumer: {executionConsumer}
-        </Tag>
-      ) : null}
-      {lane ? (
-        <Tag closable onClose={() => updateSearchParams({ lane: null })}>
-          Lane: {lane}
-        </Tag>
-      ) : null}
-    </>
-  )
-
   return (
     <WorkspacePage
       header={(
@@ -634,33 +676,74 @@ export const OperationsPage = () => {
     >
       <MasterDetailShell
         list={(
-          <EntityDetails title="Operations Catalog">
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {error ? (
-                <Alert
-                  message={error}
-                  type="error"
-                  closable
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <EntityList
+              title="Operations Catalog"
+              extra={(
+                <Input.Search
+                  aria-label="Search operations"
+                  allowClear
+                  placeholder="Search operations"
+                  value={table.search}
+                  onChange={(event) => table.setSearch(event.target.value)}
+                  style={{ width: '100%', maxWidth: 260 }}
                 />
-              ) : null}
-              {workflowExecutionId || operationIdFilter || nodeId || rootOperationId || executionConsumer || lane ? (
-                <Space size={[8, 8]} wrap>
-                  {activeFilterChips}
-                </Space>
-              ) : null}
-              <OperationsTable
-                table={table}
-                operations={operationsState}
-                total={totalOperations}
-                loading={loading}
-                columns={operationsColumns}
-                onViewDetails={handleViewDetails}
-                onCancel={handleCancel}
-                onFilterWorkflow={handleFilterWorkflow}
-                onFilterNode={handleFilterNode}
-              />
-            </Space>
-          </EntityDetails>
+              )}
+              toolbar={operationsToolbar}
+              loading={loading}
+              emptyDescription="No operations match the current filters."
+              dataSource={catalogOperations}
+              renderItem={(operation) => {
+                const selected = operation.id === selectedOperationIdFromUrl
+                return (
+                  <Button
+                    key={operation.id}
+                    type="text"
+                    block
+                    aria-label={`Open operation ${operation.name}`}
+                    aria-pressed={selected}
+                    onClick={() => handleViewDetails(operation)}
+                    style={buildCatalogButtonStyle(selected)}
+                  >
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Space wrap size={[8, 8]}>
+                        <Typography.Text strong>{operation.name}</Typography.Text>
+                        <Tag color={getStatusColor(operation.status)}>{operation.status.toUpperCase()}</Tag>
+                        {operation.workflow_execution_id ? (
+                          <Typography.Text code>{`workflow ${formatShortRef(operation.workflow_execution_id)}`}</Typography.Text>
+                        ) : null}
+                      </Space>
+                      <Typography.Text type="secondary">
+                        {`${getOperationTypeLabel(operation.operation_type)} · ${operation.target_entity || 'No target entity'}`}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {`${formatOperationTaskSummary(operation)} · ${operation.database_names.length} db(s)`}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        {`Created ${new Date(operation.created_at).toLocaleString()}`}
+                      </Typography.Text>
+                    </Space>
+                  </Button>
+                )
+              }}
+            />
+            <Pagination
+              size="small"
+              align="end"
+              current={table.pagination.page}
+              pageSize={table.pagination.pageSize}
+              total={totalOperations}
+              showSizeChanger
+              pageSizeOptions={[20, 50, 100]}
+              onChange={(page, pageSize) => {
+                if (pageSize !== table.pagination.pageSize) {
+                  table.setPageSize(pageSize)
+                  return
+                }
+                table.setPage(page)
+              }}
+            />
+          </Space>
         )}
         detail={inspectVisible ? (
           <OperationInspectPanel

@@ -15,7 +15,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   EntityDetails,
-  EntityTable,
+  EntityList,
   JsonBlock,
   MasterDetailShell,
   PageHeader,
@@ -43,10 +43,6 @@ const { Text } = Typography
 const { useBreakpoint } = Grid
 
 type TopologyTemplatesComposeMode = 'create' | 'revise' | null
-
-type TopologyTemplateListRow = PoolTopologyTemplate & {
-  key: string
-}
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-'
@@ -114,6 +110,18 @@ const renderEdgeSummary = (edges: PoolTopologyTemplateEdge[]) => (
     ))}
   </div>
 )
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
 
 export function PoolTopologyTemplatesPage() {
   const { message } = AntApp.useApp()
@@ -254,63 +262,6 @@ export function PoolTopologyTemplatesPage() {
     [returnDate, returnPoolId, returnTab]
   )
 
-  const listRows = useMemo<TopologyTemplateListRow[]>(
-    () => filteredTemplates.map((template) => ({
-      ...template,
-      key: template.topology_template_id,
-    })),
-    [filteredTemplates]
-  )
-
-  const listColumns: ColumnsType<TopologyTemplateListRow> = [
-    {
-      title: 'Code',
-      dataIndex: 'code',
-      key: 'code',
-      render: (value: string, record) => (
-        <Button
-          type="text"
-          aria-label={`Open topology template ${record.code}`}
-          aria-pressed={record.topology_template_id === selectedTemplateId}
-          onClick={() => {
-            routeUpdateModeRef.current = 'push'
-            setSelectedTemplateId(record.topology_template_id)
-            setIsDetailDrawerOpen(true)
-          }}
-          style={{
-            width: '100%',
-            minHeight: 36,
-            paddingInline: 8,
-            paddingBlock: 6,
-            height: 'auto',
-            fontWeight: 600,
-            justifyContent: 'flex-start',
-            textAlign: 'left',
-            whiteSpace: 'normal',
-          }}
-        >
-          {value}
-        </Button>
-      ),
-    },
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (value: string) => <StatusBadge status={value} />,
-    },
-    {
-      title: 'Latest revision',
-      key: 'latest_revision_number',
-      render: (_value, record) => <Text>{`r${record.latest_revision_number}`}</Text>,
-    },
-  ]
-
   const revisionColumns: ColumnsType<PoolTopologyTemplateRevision> = [
     {
       title: 'Revision',
@@ -406,21 +357,6 @@ export function PoolTopologyTemplatesPage() {
         />
       )}
     >
-      <Alert
-        type="info"
-        showIcon
-        message="Operator workflow"
-        description={(
-          <Space direction="vertical" size={8}>
-            <Text>
-              Start here when reusable topology shape must be created or revised. Return to `/pools/catalog`
-              {' '}
-              to select a published revision and instantiate it in a concrete pool.
-            </Text>
-          </Space>
-        )}
-      />
-
       {actionError ? (
         <Alert type="error" showIcon message={actionError} />
       ) : null}
@@ -433,7 +369,7 @@ export function PoolTopologyTemplatesPage() {
         }}
         detailDrawerTitle={selectedTemplate?.name || 'Topology template detail'}
         list={(
-          <EntityTable
+          <EntityList
             title="Catalog"
             extra={(
               <Input
@@ -453,20 +389,40 @@ export function PoolTopologyTemplatesPage() {
             error={listError}
             loading={topologyTemplatesQuery.isLoading}
             emptyDescription="No topology templates found."
-            dataSource={listRows}
-            columns={listColumns}
-            rowKey="topology_template_id"
-            onRow={(record) => ({
-              onClick: () => {
-                routeUpdateModeRef.current = 'push'
-                setSelectedTemplateId(record.topology_template_id)
-                setIsDetailDrawerOpen(true)
-              },
-              style: { cursor: 'pointer' },
-            })}
-            rowClassName={(record) => (
-              record.topology_template_id === selectedTemplateId ? 'ant-table-row-selected' : ''
-            )}
+            dataSource={filteredTemplates}
+            renderItem={(template) => {
+              const selected = template.topology_template_id === selectedTemplateId
+
+              return (
+                <Button
+                  key={template.topology_template_id}
+                  type="text"
+                  block
+                  aria-label={`Open topology template ${template.code}`}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    routeUpdateModeRef.current = 'push'
+                    setSelectedTemplateId(template.topology_template_id)
+                    setIsDetailDrawerOpen(true)
+                  }}
+                  style={buildCatalogButtonStyle(selected)}
+                >
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space wrap size={[8, 8]}>
+                      <Text strong>{template.name}</Text>
+                      <StatusBadge status={template.status} />
+                      <Text code>{template.code}</Text>
+                    </Space>
+                    <Text type="secondary">
+                      {`Latest revision r${template.latest_revision_number}`}
+                    </Text>
+                    <Text type="secondary">
+                      {template.description || 'Reusable topology template without description'}
+                    </Text>
+                  </Space>
+                </Button>
+              )
+            }}
           />
         )}
         detail={(

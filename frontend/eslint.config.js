@@ -4,6 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import {
+  getCompactMasterPaneGovernance,
   getRouteModulesByLintProfile,
   routeGovernancePathSet,
   shellSurfaceFilePathSet,
@@ -144,6 +145,14 @@ const workflowMonitorRouteModuleImports = [
   },
 ]
 
+const topologyTemplatesRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Tabs'],
+    message: 'Topology templates route must compose through `WorkspacePage`, `MasterDetailShell`, and canonical authoring surfaces instead of raw Ant route containers.',
+  },
+]
+
 const databasesSecondarySurfaceImports = [
   {
     name: 'antd',
@@ -187,6 +196,9 @@ const platformShellRestrictedAntdImports = new Map([
 ])
 
 const normalizeInventoryPath = (value) => value.replace(/\\/g, '/')
+const resolveFrontendRelativePath = (filename) => (
+  normalizeInventoryPath(filename).split('/frontend/').pop() ?? normalizeInventoryPath(filename)
+)
 const filePathMatchesInventory = (filename, relativePath) => {
   const normalizedFilename = normalizeInventoryPath(filename)
   return normalizedFilename === relativePath || normalizedFilename.endsWith(`/${relativePath}`)
@@ -252,6 +264,78 @@ const getStaticJsxAttributeValue = (attributes, attributeName) => {
   }
 
   return { found: false, value: null }
+}
+
+const getJsxAttributeExpression = (attributes, attributeName) => {
+  const attributeList = Array.isArray(attributes) ? attributes : attributes?.attributes
+  if (!Array.isArray(attributeList)) {
+    return null
+  }
+
+  for (const attribute of attributeList) {
+    if (attribute.type !== 'JSXAttribute') {
+      continue
+    }
+
+    if (getJsxIdentifierName(attribute.name) !== attributeName || !attribute.value) {
+      continue
+    }
+
+    if (attribute.value.type === 'JSXExpressionContainer') {
+      return attribute.value.expression ?? null
+    }
+  }
+
+  return null
+}
+
+const getObjectExpressionPropertyValue = (expression, propertyName) => {
+  if (!expression || expression.type !== 'ObjectExpression') {
+    return null
+  }
+
+  for (const property of expression.properties) {
+    if (property.type !== 'Property' || property.computed) {
+      continue
+    }
+
+    const keyName = property.key.type === 'Identifier'
+      ? property.key.name
+      : property.key.type === 'Literal' && typeof property.key.value === 'string'
+        ? property.key.value
+        : null
+
+    if (keyName === propertyName) {
+      return property.value
+    }
+  }
+
+  return null
+}
+
+const expressionIsHorizontalOverflowDependency = (expression) => {
+  if (!expression) {
+    return false
+  }
+
+  if (expression.type === 'Literal') {
+    return expression.value === 'auto' || expression.value === 'scroll'
+  }
+
+  if (
+    expression.type === 'TemplateLiteral'
+    && expression.expressions.length === 0
+    && expression.quasis.length === 1
+  ) {
+    const cooked = expression.quasis[0].value.cooked
+    return cooked === 'auto' || cooked === 'scroll'
+  }
+
+  if (expression.type === 'ObjectExpression') {
+    return getObjectExpressionPropertyValue(expression, 'x') !== null
+  }
+
+  return false
 }
 
 const uiPlatformLocalPlugin = {
@@ -420,6 +504,181 @@ const uiPlatformLocalPlugin = {
         }
       },
     },
+    'compact-master-pane-must-use-entity-list': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        if (/\.test\.[jt]sx?$/.test(filename)) {
+          return {}
+        }
+
+        const relativePath = resolveFrontendRelativePath(filename)
+        const compactMasterPaneGovernance = getCompactMasterPaneGovernance(relativePath)
+        if (!compactMasterPaneGovernance) {
+          return {}
+        }
+
+        const masterDetailShellLocalNames = new Set()
+        const entityListLocalNames = new Set()
+        const forbiddenMasterPaneLocalNames = new Map()
+        const routeReason = compactMasterPaneGovernance.reason
+        let hasCompactEntityList = false
+
+        const inspectListExpression = (expression) => {
+          const violations = []
+
+          const visit = (current) => {
+            if (!current) {
+              return
+            }
+
+            if (current.type === 'JSXElement') {
+              visit(current.openingElement)
+              current.children.forEach(visit)
+              return
+            }
+
+            if (current.type === 'JSXFragment') {
+              current.children.forEach(visit)
+              return
+            }
+
+            if (current.type === 'JSXOpeningElement' || current.type === 'JSXSelfClosingElement') {
+              const tagRootName = getJsxTagRootName(current.name)
+              if (entityListLocalNames.has(tagRootName)) {
+                hasCompactEntityList = true
+              }
+
+              const forbiddenComponentLabel = forbiddenMasterPaneLocalNames.get(tagRootName)
+              if (forbiddenComponentLabel) {
+                violations.push({
+                  node: current,
+                  message: `${routeReason} MasterDetail list must not use ${forbiddenComponentLabel} as the primary selection surface.`,
+                })
+              }
+
+              const styleExpression = getJsxAttributeExpression(current.attributes, 'style')
+              if (
+                expressionIsHorizontalOverflowDependency(
+                  getObjectExpressionPropertyValue(styleExpression, 'overflowX')
+                )
+              ) {
+                violations.push({
+                  node: current,
+                  message: `${routeReason} MasterDetail list must not depend on horizontal overflow inside the master pane.`,
+                })
+              }
+
+              const scrollExpression = getJsxAttributeExpression(current.attributes, 'scroll')
+              if (expressionIsHorizontalOverflowDependency(scrollExpression)) {
+                violations.push({
+                  node: current,
+                  message: `${routeReason} MasterDetail list must not depend on horizontal overflow inside the master pane.`,
+                })
+              }
+              return
+            }
+
+            if (current.type === 'JSXExpressionContainer') {
+              visit(current.expression)
+              return
+            }
+
+            if (current.type === 'ConditionalExpression') {
+              visit(current.consequent)
+              visit(current.alternate)
+              return
+            }
+
+            if (current.type === 'LogicalExpression') {
+              visit(current.left)
+              visit(current.right)
+              return
+            }
+
+            if (current.type === 'SequenceExpression') {
+              current.expressions.forEach(visit)
+              return
+            }
+
+            if (current.type === 'ArrayExpression') {
+              current.elements.forEach(visit)
+              return
+            }
+          }
+
+          visit(expression)
+          return violations
+        }
+
+        const inspectMasterDetailShell = (node) => {
+          if (!masterDetailShellLocalNames.has(getJsxTagRootName(node.name))) {
+            return
+          }
+
+          const listExpression = getJsxAttributeExpression(node.attributes, 'list')
+          const violations = inspectListExpression(listExpression)
+          for (const violation of violations) {
+            context.report(violation)
+          }
+        }
+
+        return {
+          ImportDeclaration(node) {
+            const source = typeof node.source.value === 'string' ? node.source.value : ''
+            if (source.includes('components/platform')) {
+              for (const specifier of node.specifiers) {
+                if (specifier.type !== 'ImportSpecifier') {
+                  continue
+                }
+                if (specifier.imported.name === 'MasterDetailShell') {
+                  masterDetailShellLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'EntityList') {
+                  entityListLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'EntityTable') {
+                  forbiddenMasterPaneLocalNames.set(specifier.local.name, '`EntityTable`')
+                }
+              }
+            }
+
+            if (source.includes('components/table/TableToolkit')) {
+              for (const specifier of node.specifiers) {
+                if (specifier.type === 'ImportSpecifier' && specifier.imported.name === 'TableToolkit') {
+                  forbiddenMasterPaneLocalNames.set(specifier.local.name, '`TableToolkit`')
+                }
+              }
+            }
+
+            if (source !== 'antd') {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (specifier.type === 'ImportSpecifier' && specifier.imported.name === 'Table') {
+                forbiddenMasterPaneLocalNames.set(specifier.local.name, 'raw `Table`')
+              }
+            }
+          },
+          JSXOpeningElement: inspectMasterDetailShell,
+          JSXSelfClosingElement: inspectMasterDetailShell,
+          'Program:exit'(node) {
+            if (hasCompactEntityList) {
+              return
+            }
+
+            context.report({
+              node,
+              message: `${routeReason} MasterDetail list must compose through \`EntityList\` as the compact primary selection surface.`,
+            })
+          },
+        }
+      },
+    },
   },
 }
 
@@ -452,6 +711,7 @@ const inventoryDrivenRouteOverrides = [
   buildRouteRestrictedImportsOverride('pool-runs-route', poolRunsRouteModuleImports),
   buildRouteRestrictedImportsOverride('pool-schema-templates-route', poolSchemaTemplatesRouteModuleImports),
   buildRouteRestrictedImportsOverride('pool-master-data-route', poolMasterDataRouteModuleImports),
+  buildRouteRestrictedImportsOverride('topology-templates-route', topologyTemplatesRouteModuleImports),
   buildRouteRestrictedImportsOverride('templates-route', templatesRouteModuleImports),
   buildRouteRestrictedImportsOverride('workflow-list-route', workflowListRouteModuleImports),
   buildRouteRestrictedImportsOverride('workflow-executions-route', workflowExecutionsRouteModuleImports),
@@ -525,6 +785,7 @@ export default tseslint.config(
       'ui-platform-local/no-legacy-containers-in-platform-shell-modules': 'error',
       'ui-platform-local/app-routes-must-exist-in-governance-inventory': 'error',
       'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory': 'error',
+      'ui-platform-local/compact-master-pane-must-use-entity-list': 'error',
       'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },

@@ -111,6 +111,122 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects table-toolkit master panes on compact-governed operations routes', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Operations/OperationsPage.tsx',
+      `
+        import { MasterDetailShell, EntityDetails } from '../../components/platform'
+        import { TableToolkit } from '../../components/table/TableToolkit'
+
+        export function OperationsPage() {
+          return (
+            <MasterDetailShell
+              list={(
+                <TableToolkit
+                  table={{}}
+                  data={[]}
+                  total={0}
+                  columns={[]}
+                  rowKey="id"
+                />
+              )}
+              detail={<EntityDetails title="Inspect">inspect</EntityDetails>}
+            />
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/compact-master-pane-must-use-entity-list'
+        && message.message.includes('`TableToolkit`')
+    ))).toBe(true)
+  })
+
+  it('rejects master panes that hide compact catalog composition behind a wrapper component', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Operations/OperationsPage.tsx',
+      `
+        import { MasterDetailShell, EntityDetails } from '../../components/platform'
+
+        function OperationsCatalog() {
+          return <div>catalog</div>
+        }
+
+        export function OperationsPage() {
+          return (
+            <MasterDetailShell
+              list={<OperationsCatalog />}
+              detail={<EntityDetails title="Inspect">inspect</EntityDetails>}
+            />
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/compact-master-pane-must-use-entity-list'
+        && message.message.includes('`EntityList`')
+    ))).toBe(true)
+  })
+
+  it('rejects horizontal-overflow wrappers in compact-governed master panes', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Databases/Databases.tsx',
+      `
+        import { MasterDetailShell, EntityDetails, EntityList } from '../../components/platform'
+
+        export function Databases() {
+          return (
+            <MasterDetailShell
+              list={(
+                <div style={{ overflowX: 'auto' }}>
+                  <EntityList title="Catalog" dataSource={[]} renderItem={() => null} />
+                </div>
+              )}
+              detail={<EntityDetails title="Inspect">inspect</EntityDetails>}
+            />
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/compact-master-pane-must-use-entity-list'
+        && message.message.includes('horizontal overflow')
+    ))).toBe(true)
+  })
+
+  it('rejects entity-table master panes on compact-governed topology template routes', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/PoolTopologyTemplatesPage.tsx',
+      `
+        import { EntityDetails, EntityTable, MasterDetailShell } from '../../components/platform'
+
+        export function PoolTopologyTemplatesPage() {
+          return (
+            <MasterDetailShell
+              list={(
+                <EntityTable
+                  title="Catalog"
+                  dataSource={[]}
+                  columns={[]}
+                  rowKey="id"
+                />
+              )}
+              detail={<EntityDetails title="Detail">detail</EntityDetails>}
+            />
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/compact-master-pane-must-use-entity-list'
+        && message.message.includes('`EntityTable`')
+    ))).toBe(true)
+  })
+
   it('rejects generic shell violations even when the shell file is not suffixed Modal or Drawer', async () => {
     const messages = await lintSnippet(
       'src/pages/Pools/masterData/GLAccountsTab.tsx',

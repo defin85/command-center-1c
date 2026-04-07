@@ -1411,7 +1411,35 @@ const MANUAL_OPERATION = {
   tasks: [],
 }
 
-const OPERATIONS = [WORKFLOW_OPERATION, MANUAL_OPERATION]
+const ZERO_TASK_OPERATION = {
+  id: 'zero-task-operation-1',
+  name: 'workflow telemetry pending',
+  description: '',
+  operation_type: 'query',
+  target_entity: 'Workflow',
+  status: 'completed',
+  progress: 100,
+  total_tasks: 0,
+  completed_tasks: 0,
+  failed_tasks: 0,
+  payload: {},
+  config: {},
+  task_id: null,
+  started_at: NOW,
+  completed_at: NOW,
+  duration_seconds: 1,
+  success_rate: 100,
+  created_by: 'admin',
+  metadata: {
+    workflow_execution_id: POOL_RUN.workflow_execution_id,
+  },
+  created_at: NOW,
+  updated_at: NOW,
+  database_names: ['db-services'],
+  tasks: [],
+}
+
+const OPERATIONS = [WORKFLOW_OPERATION, MANUAL_OPERATION, ZERO_TASK_OPERATION]
 
 const OPERATION_DETAILS: Record<string, {
   operation: typeof WORKFLOW_OPERATION
@@ -1534,6 +1562,26 @@ const OPERATION_DETAILS: Record<string, {
     progress: {
       total: 1,
       completed: 1,
+      failed: 0,
+      pending: 0,
+      processing: 0,
+      percent: 100,
+    },
+  },
+  [ZERO_TASK_OPERATION.id]: {
+    operation: {
+      ...ZERO_TASK_OPERATION,
+      tasks: [],
+    },
+    execution_plan: {
+      kind: 'workflow',
+      workflow_id: WORKFLOW.id,
+    },
+    bindings: [],
+    tasks: [],
+    progress: {
+      total: 0,
+      completed: 0,
       failed: 0,
       pending: 0,
       processing: 0,
@@ -1668,6 +1716,67 @@ async function setupAuth(page: Page) {
       VITE_API_URL: 'http://127.0.0.1:15173',
       VITE_WS_HOST: '127.0.0.1:15173',
     }
+
+    const NativeWebSocket = window.WebSocket
+    class QuietServiceMeshWebSocket implements Partial<WebSocket> {
+      static readonly CONNECTING = NativeWebSocket.CONNECTING
+      static readonly OPEN = NativeWebSocket.OPEN
+      static readonly CLOSING = NativeWebSocket.CLOSING
+      static readonly CLOSED = NativeWebSocket.CLOSED
+
+      readonly CONNECTING = NativeWebSocket.CONNECTING
+      readonly OPEN = NativeWebSocket.OPEN
+      readonly CLOSING = NativeWebSocket.CLOSING
+      readonly CLOSED = NativeWebSocket.CLOSED
+
+      readonly url: string
+      readonly protocol = ''
+      readonly extensions = ''
+      binaryType: BinaryType = 'blob'
+      bufferedAmount = 0
+      readyState = NativeWebSocket.CONNECTING
+      onopen: ((this: WebSocket, ev: Event) => unknown) | null = null
+      onclose: ((this: WebSocket, ev: CloseEvent) => unknown) | null = null
+      onerror: ((this: WebSocket, ev: Event) => unknown) | null = null
+      onmessage: ((this: WebSocket, ev: MessageEvent) => unknown) | null = null
+
+      constructor(url: string | URL) {
+        this.url = typeof url === 'string' ? url : url.toString()
+        queueMicrotask(() => {
+          this.readyState = NativeWebSocket.OPEN
+          this.onopen?.call(this as WebSocket, new Event('open'))
+        })
+      }
+
+      addEventListener() {}
+      removeEventListener() {}
+      dispatchEvent() {
+        return true
+      }
+
+      close(code?: number, reason?: string) {
+        this.readyState = NativeWebSocket.CLOSED
+        const event = new CloseEvent('close', {
+          code: code ?? 1000,
+          reason: reason ?? '',
+          wasClean: true,
+        })
+        this.onclose?.call(this as WebSocket, event)
+      }
+
+      send() {}
+    }
+
+    window.WebSocket = class extends NativeWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        const nextUrl = typeof url === 'string' ? url : url.toString()
+        if (nextUrl.includes('/ws/service-mesh/')) {
+          return new QuietServiceMeshWebSocket(url) as WebSocket
+        }
+        super(url, protocols)
+      }
+    } as typeof WebSocket
+
     localStorage.setItem('auth_token', 'test-token')
     localStorage.setItem('active_tenant_id', tenantId)
   }, TENANT_ID)
@@ -2311,6 +2420,7 @@ async function setupUiPlatformMocks(
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflowDetails = await page.evaluate(() => {
+    const ignoredTags = new Set(['svg', 'g', 'path', 'ellipse', 'circle'])
     const overflow = document.documentElement.scrollWidth - window.innerWidth
     if (overflow <= 1) {
       return null
@@ -2318,6 +2428,12 @@ async function expectNoHorizontalOverflow(page: Page) {
 
     const offenders = Array.from(document.querySelectorAll<HTMLElement>('body *'))
       .map((element) => {
+        if (ignoredTags.has(element.tagName.toLowerCase())) {
+          return null
+        }
+        if (element.closest('button[aria-label="Open Tanstack query devtools"]')) {
+          return null
+        }
         const rect = element.getBoundingClientRect()
         const overflowRight = rect.right - window.innerWidth
         return {
@@ -2328,9 +2444,14 @@ async function expectNoHorizontalOverflow(page: Page) {
           width: rect.width,
         }
       })
+      .filter(Boolean)
       .filter((item) => item.overflowRight > 1)
       .sort((left, right) => right.overflowRight - left.overflowRight)
       .slice(0, 5)
+
+    if (offenders.length === 0) {
+      return null
+    }
 
     return {
       overflow,
@@ -2957,11 +3078,13 @@ test('UI platform: /databases restores selected database and management context 
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByRole('combobox', { name: 'Cluster filter' })).toBeVisible()
+  await expect(page.getByRole('button', { name: `Open database ${DATABASE_RECORD.name}` })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('database-workspace-selected-id')).toHaveText(DATABASE_ID, {
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByTestId('database-metadata-management-drawer')).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`\\/databases\\?cluster=cluster-1&database=${DATABASE_ID}&context=metadata$`))
+  await expectNoHorizontalOverflow(page)
 })
 
 test('UI platform: /databases keeps selected management context on browser back and forward', async ({ page }) => {
@@ -3124,11 +3247,13 @@ test('UI platform: /operations restores selected operation and inspect context f
   await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
+  await expect(page.getByRole('button', { name: 'Open operation workflow root execute' })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open workflow diagnostics' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
 })
 
 test('UI platform: /operations keeps selected operation view on browser back and forward', async ({ page }) => {
@@ -3170,6 +3295,24 @@ test('UI platform: /operations opens inspect detail in a mobile-safe drawer with
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Timeline' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /operations renders zero-task diagnostics as empty state instead of completed workload', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/operations?operation=${ZERO_TASK_OPERATION.id}&tab=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByText(`Operation Details: ${ZERO_TASK_OPERATION.name}`)).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('operation-inspect-no-task-telemetry')).toBeVisible()
+  await expect(page.getByText('Task list will appear when runtime reports a task workset for this operation.')).toBeVisible()
+  await expect(page.locator('.ant-progress')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 })
 

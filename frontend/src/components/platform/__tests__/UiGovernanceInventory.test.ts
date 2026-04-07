@@ -4,13 +4,60 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import * as ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
-import {
+type GovernanceTier = 'platform-governed' | 'legacy-monitored' | 'excluded'
+type RouteStateTransport = 'none' | 'search-params' | 'path-params' | 'mixed'
+type DetailMobileFallbackKind = 'none' | 'drawer' | 'dedicated-route' | 'mixed'
+type CompactMasterPaneMode = 'compact-selection'
+
+type RouteInventoryEntry = {
+  routePath: string
+  modulePath: string | null
+  tier: GovernanceTier
+  redirectTarget?: string
+  workspaceKind?: string
+  stateTransport?: RouteStateTransport
+  detailMobileFallback?: DetailMobileFallbackKind
+  lintProfile?: string
+  masterPaneGovernance?: {
+    mode: CompactMasterPaneMode
+    reason: string
+  }
+}
+
+type ShellSurfaceEntry = {
+  filePath: string
+  shellKinds: string[]
+  tier: GovernanceTier
+}
+
+type AppRouteEntry = {
+  routePath: string
+  modulePath: string | null
+}
+
+type ShellSurfaceUsage = {
+  filePath: string
+  shellKinds: string[]
+}
+
+// @ts-expect-error checked-in JS inventory is the runtime source of truth for governance checks
+import * as governanceInventory from '../../../uiGovernanceInventory.js'
+
+const {
+  compactMasterPaneModes,
   detailMobileFallbackKinds,
   governanceTiers,
   routeGovernanceInventory,
   routeStateTransports,
   shellSurfaceGovernanceInventory,
-} from '../../../uiGovernanceInventory.js'
+} = governanceInventory as {
+  compactMasterPaneModes: CompactMasterPaneMode[]
+  detailMobileFallbackKinds: DetailMobileFallbackKind[]
+  governanceTiers: GovernanceTier[]
+  routeGovernanceInventory: RouteInventoryEntry[]
+  routeStateTransports: RouteStateTransport[]
+  shellSurfaceGovernanceInventory: ShellSurfaceEntry[]
+}
 
 const frontendRoot = path.resolve(__dirname, '../../../..')
 const appSourcePath = path.join(frontendRoot, 'src/App.tsx')
@@ -38,18 +85,22 @@ function collectSourceFiles(rootPath: string): string[] {
   })
 }
 
-function collectAppRoutePaths() {
+function collectAppRoutePaths(): string[] {
   return collectAppRouteEntries().map((entry) => entry.routePath).sort()
 }
 
-function createAppSourceFile() {
+function createAppSourceFile(): ts.SourceFile {
   const content = readFileSync(appSourcePath, 'utf8')
   return ts.createSourceFile(appSourcePath, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 }
 
-function extractStaticStringAttribute(attributes, attributeName) {
+function getJsxAttributeName(attribute: ts.JsxAttribute): string {
+  return attribute.name.getText()
+}
+
+function extractStaticStringAttribute(attributes: ts.JsxAttributes, attributeName: string): string | null {
   for (const attribute of attributes.properties) {
-    if (!ts.isJsxAttribute(attribute) || attribute.name.text !== attributeName || !attribute.initializer) {
+    if (!ts.isJsxAttribute(attribute) || getJsxAttributeName(attribute) !== attributeName || !attribute.initializer) {
       continue
     }
 
@@ -69,9 +120,12 @@ function extractStaticStringAttribute(attributes, attributeName) {
   return null
 }
 
-function getJsxExpressionAttribute(attributes, attributeName) {
+function getJsxExpressionAttribute(
+  attributes: ts.JsxAttributes,
+  attributeName: string,
+): ts.Expression | null {
   for (const attribute of attributes.properties) {
-    if (!ts.isJsxAttribute(attribute) || attribute.name.text !== attributeName || !attribute.initializer) {
+    if (!ts.isJsxAttribute(attribute) || getJsxAttributeName(attribute) !== attributeName || !attribute.initializer) {
       continue
     }
 
@@ -83,7 +137,7 @@ function getJsxExpressionAttribute(attributes, attributeName) {
   return null
 }
 
-function resolveSourceModulePath(moduleSpecifier: string) {
+function resolveSourceModulePath(moduleSpecifier: string): string | null {
   const basePath = path.resolve(appSourceDir, moduleSpecifier)
   const candidates = [
     `${basePath}.tsx`,
@@ -101,10 +155,10 @@ function resolveSourceModulePath(moduleSpecifier: string) {
   return null
 }
 
-function findImportSpecifier(node) {
-  let specifier = null
+function findImportSpecifier(node: ts.Node): string | null {
+  let specifier: string | null = null
 
-  const visit = (current) => {
+  const visit = (current: ts.Node) => {
     if (specifier) {
       return
     }
@@ -126,15 +180,15 @@ function findImportSpecifier(node) {
   return specifier
 }
 
-function collectLazyRouteModules(sourceFile) {
-  const declarationBodies = new Map()
-  const lazyModules = new Map()
+function collectLazyRouteModules(sourceFile: ts.SourceFile): Map<string, string> {
+  const declarationBodies = new Map<string, ts.Node>()
+  const lazyModules = new Map<string, string>()
 
-  const registerDeclarationBody = (name, body) => {
+  const registerDeclarationBody = (name: string, body: ts.Node) => {
     declarationBodies.set(name, body)
   }
 
-  const visitDeclarations = (node) => {
+  const visitDeclarations = (node: ts.Node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
       registerDeclarationBody(node.name.text, node.initializer)
     }
@@ -146,7 +200,7 @@ function collectLazyRouteModules(sourceFile) {
     ts.forEachChild(node, visitDeclarations)
   }
 
-  const resolveLazyArgument = (arg) => {
+  const resolveLazyArgument = (arg: ts.Expression): string | null => {
     if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) {
       return findImportSpecifier(arg.body)
     }
@@ -159,7 +213,7 @@ function collectLazyRouteModules(sourceFile) {
     return null
   }
 
-  const visitLazyDeclarations = (node) => {
+  const visitLazyDeclarations = (node: ts.Node) => {
     if (
       ts.isVariableDeclaration(node)
       && ts.isIdentifier(node.name)
@@ -186,7 +240,11 @@ function collectLazyRouteModules(sourceFile) {
   return lazyModules
 }
 
-function findRouteEntryModulePath(node, sourceFile, lazyModules) {
+function findRouteEntryModulePath(
+  node: ts.Node | null | undefined,
+  sourceFile: ts.SourceFile,
+  lazyModules: Map<string, string>,
+): string | null | undefined {
   if (!node) {
     return undefined
   }
@@ -201,8 +259,8 @@ function findRouteEntryModulePath(node, sourceFile, lazyModules) {
     }
   }
 
-  let result
-  const visit = (current) => {
+  let result: string | null | undefined
+  const visit = (current: ts.Node) => {
     if (result !== undefined) {
       return
     }
@@ -220,12 +278,12 @@ function findRouteEntryModulePath(node, sourceFile, lazyModules) {
   return result
 }
 
-function collectAppRouteEntries() {
+function collectAppRouteEntries(): AppRouteEntry[] {
   const sourceFile = createAppSourceFile()
   const lazyModules = collectLazyRouteModules(sourceFile)
-  const routes = []
+  const routes: AppRouteEntry[] = []
 
-  const visit = (node) => {
+  const visit = (node: ts.Node) => {
     if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(sourceFile) === 'Route') {
       const routePath = extractStaticStringAttribute(node.attributes, 'path')
       if (!routePath) {
@@ -248,12 +306,12 @@ function collectAppRouteEntries() {
   return routes
 }
 
-function collectPlatformShellSurfaceUsage() {
+function collectPlatformShellSurfaceUsage(): ShellSurfaceUsage[] {
   return collectSourceFiles(path.join(frontendRoot, 'src'))
     .filter((relativePath) => !relativePath.startsWith('src/components/platform/'))
     .map((relativePath) => {
       const content = readFileSync(path.join(frontendRoot, relativePath), 'utf8')
-      const shellKinds = []
+      const shellKinds: string[] = []
       if (content.includes('ModalFormShell')) {
         shellKinds.push('modal')
       }
@@ -268,7 +326,7 @@ function collectPlatformShellSurfaceUsage() {
         shellKinds: shellKinds.sort(),
       }
     })
-    .filter(Boolean)
+    .filter((entry): entry is ShellSurfaceUsage => Boolean(entry))
 }
 
 describe('ui governance inventory', () => {
@@ -308,6 +366,20 @@ describe('ui governance inventory', () => {
       expect(routeStateTransports).toContain(entry.stateTransport)
       expect(detailMobileFallbackKinds).toContain(entry.detailMobileFallback)
       expect(typeof entry.lintProfile).toBe('string')
+    }
+  })
+
+  it('keeps compact master-pane governance metadata valid for enrolled routes', () => {
+    const compactMasterPaneEntries = routeGovernanceInventory.filter((entry) => entry.masterPaneGovernance)
+
+    expect(compactMasterPaneEntries.length).toBeGreaterThan(0)
+
+    for (const entry of compactMasterPaneEntries) {
+      expect(entry.tier).toBe('platform-governed')
+      expect(entry.modulePath).not.toBeNull()
+      expect(compactMasterPaneModes).toContain(entry.masterPaneGovernance?.mode)
+      expect(typeof entry.masterPaneGovernance?.reason).toBe('string')
+      expect(entry.masterPaneGovernance?.reason.trim().length).toBeGreaterThan(0)
     }
   })
 

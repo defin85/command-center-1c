@@ -12,6 +12,9 @@ const mockCancelMutate = vi.fn()
 const mockRefetch = vi.fn()
 const mockGetRuntimeSettings = vi.fn()
 const mockSetFilter = vi.fn()
+const mockSetSearch = vi.fn()
+const mockSetPage = vi.fn()
+const mockSetPageSize = vi.fn()
 
 function buildOperation(overrides: Partial<UIBatchOperation> = {}): UIBatchOperation {
   return {
@@ -110,32 +113,13 @@ vi.mock('../../../components/table/hooks/useTableToolkit', () => ({
   useTableToolkit: () => ({
     pagination: { page: 1, pageSize: 50 },
     search: '',
+    setSearch: mockSetSearch,
     filtersPayload: undefined,
     sortPayload: undefined,
     setFilter: mockSetFilter,
-    totalColumnsWidth: 960,
+    setPage: mockSetPage,
+    setPageSize: mockSetPageSize,
   }),
-}))
-
-vi.mock('../components/OperationsTable', () => ({
-  OperationsTable: ({
-    operations: items,
-    onViewDetails,
-  }: {
-    operations: UIBatchOperation[]
-    onViewDetails: (operation: UIBatchOperation) => void
-  }) => (
-    <div data-testid="operations-table">
-      {items.map((operation) => (
-        <div key={operation.id}>
-          <span>{operation.name}</span>
-          <button type="button" onClick={() => onViewDetails(operation)}>
-            Details {operation.id}
-          </button>
-        </div>
-      ))}
-    </div>
-  ),
 }))
 
 vi.mock('../components/OperationDetailsModal', () => ({
@@ -253,7 +237,7 @@ describe('OperationsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Details manual-op-1' }))
+    await user.click(screen.getByRole('button', { name: 'Open operation manual lock scheduled jobs' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=manual-op-1&tab=inspect')

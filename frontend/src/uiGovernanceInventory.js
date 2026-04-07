@@ -1,6 +1,7 @@
 export const governanceTiers = ['platform-governed', 'legacy-monitored', 'excluded']
 export const routeStateTransports = ['none', 'search-params', 'path-params', 'mixed']
 export const detailMobileFallbackKinds = ['none', 'drawer', 'dedicated-route', 'mixed']
+export const compactMasterPaneModes = ['compact-selection']
 
 /**
  * Checked-in route governance inventory for operator-facing frontend surfaces.
@@ -43,6 +44,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Operations route master pane must stay a compact operation catalog; dense telemetry grids belong in inspect, timeline, and dedicated secondary surfaces.',
+    },
   },
   {
     routePath: '/artifacts',
@@ -57,6 +62,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Databases route master pane must stay a compact database catalog; bulk-heavy controls and metadata-dense layouts belong in detail-owned management surfaces.',
+    },
   },
   {
     routePath: '/extensions',
@@ -166,7 +175,15 @@ export const routeGovernanceInventory = [
   {
     routePath: '/pools/topology-templates',
     modulePath: 'src/pages/Pools/PoolTopologyTemplatesPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'topology-templates-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Topology templates route master pane must stay a compact reusable template catalog; revision lineage and structural summary belong in the detail pane.',
+    },
   },
   {
     routePath: '/pools/execution-packs',
@@ -331,7 +348,7 @@ export const shellSurfaceGovernanceInventory = [
   },
   {
     filePath: 'src/pages/Pools/PoolTopologyTemplatesEditorDrawer.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/pools/topology-templates'],
   },
@@ -350,6 +367,10 @@ export const platformGovernedRouteInventory = routeGovernanceInventory.filter(
   (entry) => entry.tier === 'platform-governed'
 )
 
+export const compactMasterPaneRouteInventory = routeGovernanceInventory.filter(
+  (entry) => entry.modulePath && entry.masterPaneGovernance?.mode === 'compact-selection'
+)
+
 export const platformGovernedRouteModulesByLintProfile = platformGovernedRouteInventory.reduce(
   (acc, entry) => {
     if (!entry.lintProfile || !entry.modulePath) {
@@ -365,4 +386,19 @@ export const platformGovernedRouteModulesByLintProfile = platformGovernedRouteIn
 
 export function getRouteModulesByLintProfile(lintProfile) {
   return [...(platformGovernedRouteModulesByLintProfile[lintProfile] ?? [])].sort()
+}
+
+const compactMasterPaneGovernanceByModulePath = compactMasterPaneRouteInventory.reduce(
+  (acc, entry) => {
+    if (!entry.modulePath) {
+      return acc
+    }
+    acc[entry.modulePath] = entry.masterPaneGovernance
+    return acc
+  },
+  {}
+)
+
+export function getCompactMasterPaneGovernance(modulePath) {
+  return compactMasterPaneGovernanceByModulePath[modulePath] ?? null
 }
