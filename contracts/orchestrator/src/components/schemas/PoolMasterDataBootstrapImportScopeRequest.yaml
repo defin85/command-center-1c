@@ -12,6 +12,7 @@ properties:
         - party
         - item
         - tax_profile
+        - gl_account
         - contract
         - binding
 required:

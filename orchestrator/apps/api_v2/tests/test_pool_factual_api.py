@@ -424,6 +424,15 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
     assert payload["summary"]["backlog_total"] == 0
     assert payload["summary"]["freshness_state"] == "fresh"
     assert payload["summary"]["source_availability"] == "available"
+    assert payload["summary"]["sync_status"] == "success"
+    assert payload["summary"]["checkpoints_pending"] == 0
+    assert payload["summary"]["checkpoints_running"] == 0
+    assert payload["summary"]["checkpoints_failed"] == 0
+    assert payload["summary"]["checkpoints_ready"] == 1
+    assert payload["summary"]["activity"] == "active"
+    assert payload["summary"]["polling_tier"] == "active"
+    assert payload["summary"]["poll_interval_seconds"] == 120
+    assert payload["summary"]["freshness_target_seconds"] == 120
     assert payload["summary"]["scope_contract"]["scope_fingerprint"] == "scope-fp-workspace"
     assert payload["summary"]["scope_contract"]["resolved_bindings"][0]["target_ref_key"] == "account-62"
     assert len(payload["settlements"]) == 2
@@ -917,6 +926,15 @@ def test_get_pool_factual_workspace_bootstraps_default_sync_when_checkpoint_miss
     assert kwargs["movement_kinds"] == ("credit", "debit")
     payload = response.json()
     assert payload["summary"]["checkpoint_total"] == 1
+    assert payload["summary"]["sync_status"] == "running"
+    assert payload["summary"]["checkpoints_pending"] == 0
+    assert payload["summary"]["checkpoints_running"] == 1
+    assert payload["summary"]["checkpoints_failed"] == 0
+    assert payload["summary"]["checkpoints_ready"] == 0
+    assert payload["summary"]["activity"] == "active"
+    assert payload["summary"]["polling_tier"] == "active"
+    assert payload["summary"]["poll_interval_seconds"] == 120
+    assert payload["summary"]["freshness_target_seconds"] == 120
 
 
 @pytest.mark.django_db

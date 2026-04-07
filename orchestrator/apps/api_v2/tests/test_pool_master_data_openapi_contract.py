@@ -15,6 +15,21 @@ def _load_openapi_contract() -> dict[str, Any]:
     return payload
 
 
+def _load_openapi_source_schema(schema_name: str) -> dict[str, Any]:
+    schema_path = (
+        Path(__file__).resolve().parents[4]
+        / "contracts"
+        / "orchestrator"
+        / "src"
+        / "components"
+        / "schemas"
+        / f"{schema_name}.yaml"
+    )
+    payload = yaml.safe_load(schema_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
+
+
 def test_pool_master_data_paths_and_operation_ids_are_present() -> None:
     contract = _load_openapi_contract()
     paths = contract.get("paths")
@@ -135,3 +150,18 @@ def test_pool_master_data_bootstrap_job_list_contract_has_pagination_and_problem
     assert {"200", "400", "401"}.issubset(set(responses.keys()))
     bad_request = responses["400"]["content"]["application/problem+json"]["schema"]["$ref"]
     assert bad_request == "#/components/schemas/ProblemDetailsError"
+
+
+def test_pool_master_data_bootstrap_scope_contract_includes_gl_account() -> None:
+    contract = _load_openapi_contract()
+    source_schema = _load_openapi_source_schema("PoolMasterDataBootstrapImportScopeRequest")
+
+    bundled_scope = (
+        contract["components"]["schemas"]["PoolMasterDataBootstrapImportScopeRequest"]["properties"]["entity_scope"][
+            "items"
+        ]["enum"]
+    )
+    source_scope = source_schema["properties"]["entity_scope"]["items"]["enum"]
+
+    assert "gl_account" in bundled_scope
+    assert "gl_account" in source_scope

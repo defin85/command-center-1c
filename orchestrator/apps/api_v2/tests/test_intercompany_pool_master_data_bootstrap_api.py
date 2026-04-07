@@ -21,6 +21,7 @@ from apps.intercompany_pools.master_data_bootstrap_import_source_adapter import 
 from apps.intercompany_pools.models import PoolMasterParty
 from apps.intercompany_pools.models import PoolMasterContract
 from apps.intercompany_pools.models import PoolMasterDataBootstrapImportJob
+from apps.intercompany_pools.models import PoolMasterGLAccount
 from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant, TenantMember
@@ -298,6 +299,58 @@ def test_bootstrap_jobs_dry_run_execute_list_and_get(
     assert detail_payload["report"]["created_count"] >= 2
     assert detail_payload["chunks"]
     assert PoolMasterParty.objects.filter(tenant=default_tenant, canonical_id="party-001").exists()
+
+
+@pytest.mark.django_db
+def test_bootstrap_execute_accepts_gl_account_scope_and_imports_rows(
+    admin_client: APIClient,
+    admin_user: User,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"pool-bootstrap-gl-account-{uuid4().hex[:8]}")
+    gl_account_canonical_id = f"gl-account-{uuid4().hex[:8]}"
+    _configure_source_callbacks(
+        rows_by_entity={
+            "gl_account": [
+                {
+                    "canonical_id": gl_account_canonical_id,
+                    "code": "10.01",
+                    "name": "Main Account",
+                    "chart_identity": "ChartOfAccounts_Main",
+                    "config_name": "Accounting Enterprise",
+                    "config_version": "3.0.1",
+                }
+            ]
+        }
+    )
+
+    execute_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-import/jobs/",
+        {
+            "database_id": str(database.id),
+            "entity_scope": ["gl_account"],
+            "mode": "execute",
+        },
+        format="json",
+    )
+    assert execute_response.status_code == 201
+    execute_job = execute_response.json()["job"]
+    assert execute_job["entity_scope"] == ["gl_account"]
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=execute_job["id"],
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
+
+    detail_response = admin_client.get(f"/api/v2/pools/master-data/bootstrap-import/jobs/{execute_job['id']}/")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()["job"]
+    assert detail_payload["status"] == "finalized"
+    assert detail_payload["report"]["created_count"] >= 1
+    assert PoolMasterGLAccount.objects.filter(
+        tenant=default_tenant,
+        canonical_id=gl_account_canonical_id,
+    ).exists()
 
 
 @pytest.mark.django_db

@@ -7,12 +7,59 @@ TARGETS_DIR="$PROJECT_ROOT/infrastructure/monitoring/prometheus/targets"
 TCP_TARGET_FILE="$TARGETS_DIR/blackbox_tcp.yml"
 HTTP_TARGET_FILE="$TARGETS_DIR/blackbox_http.yml"
 
-# Load env (prefer already exported vars from caller, fallback to .env.local)
-if [[ -z "${RAS_SERVER_ADDR:-}" && -z "${RAS_SERVER:-}" ]] && [[ -f "$PROJECT_ROOT/.env.local" ]]; then
+normalize_frontend_probe_target() {
+  local target="${1:-}"
+
+  # Vite dev server binds on IPv4 in local native runs, while `localhost`
+  # may resolve to ::1 for blackbox-exporter and produce a false offline probe.
+  if [[ "$target" == http://localhost* ]]; then
+    printf '%s\n' "http://127.0.0.1${target#http://localhost}"
+    return
+  fi
+
+  if [[ "$target" == https://localhost* ]]; then
+    printf '%s\n' "https://127.0.0.1${target#https://localhost}"
+    return
+  fi
+
+  printf '%s\n' "$target"
+}
+
+# Load env (prefer already exported vars from caller, fallback to .env.local).
+# We still source the file when present because callers may export only part of
+# the probe config (for example just RAS), while frontend probe settings remain
+# in .env.local.
+if [[ -f "$PROJECT_ROOT/.env.local" ]]; then
+  existing_ras_server_addr="${RAS_SERVER_ADDR:-}"
+  existing_ras_server="${RAS_SERVER:-}"
+  existing_frontend_url="${FRONTEND_URL:-}"
+  existing_cc1c_base_host="${CC1C_BASE_HOST:-}"
+  existing_frontend_port="${FRONTEND_PORT:-}"
+  existing_use_docker="${USE_DOCKER:-}"
+
   # shellcheck disable=SC1091
   set -a
   source "$PROJECT_ROOT/.env.local"
   set +a
+
+  if [[ -n "$existing_ras_server_addr" ]]; then
+    export RAS_SERVER_ADDR="$existing_ras_server_addr"
+  fi
+  if [[ -n "$existing_ras_server" ]]; then
+    export RAS_SERVER="$existing_ras_server"
+  fi
+  if [[ -n "$existing_frontend_url" ]]; then
+    export FRONTEND_URL="$existing_frontend_url"
+  fi
+  if [[ -n "$existing_cc1c_base_host" ]]; then
+    export CC1C_BASE_HOST="$existing_cc1c_base_host"
+  fi
+  if [[ -n "$existing_frontend_port" ]]; then
+    export FRONTEND_PORT="$existing_frontend_port"
+  fi
+  if [[ -n "$existing_use_docker" ]]; then
+    export USE_DOCKER="$existing_use_docker"
+  fi
 fi
 
 RAS_TARGET="${RAS_SERVER_ADDR:-${RAS_SERVER:-}}"
@@ -33,6 +80,8 @@ else
   FRONTEND_PORT="${FRONTEND_PORT:-15173}"
   FRONTEND_TARGET="http://${BASE_HOST}:${FRONTEND_PORT}/"
 fi
+
+FRONTEND_TARGET="$(normalize_frontend_probe_target "$FRONTEND_TARGET")"
 
 mkdir -p "$TARGETS_DIR"
 

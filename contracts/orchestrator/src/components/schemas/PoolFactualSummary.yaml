@@ -39,6 +39,30 @@ properties:
     type: string
     format: date-time
     nullable: true
+  sync_status:
+    type: string
+  checkpoints_pending:
+    type: integer
+    minimum: 0
+  checkpoints_running:
+    type: integer
+    minimum: 0
+  checkpoints_failed:
+    type: integer
+    minimum: 0
+  checkpoints_ready:
+    type: integer
+    minimum: 0
+  activity:
+    type: string
+  polling_tier:
+    type: string
+  poll_interval_seconds:
+    type: integer
+    minimum: 0
+  freshness_target_seconds:
+    type: integer
+    minimum: 0
   scope_fingerprint:
     type: string
   scope_contract_version:
@@ -59,7 +83,12 @@ required:
   - attention_required_total
   - backlog_total
   - checkpoint_total
+  - checkpoints_failed
+  - checkpoints_pending
+  - checkpoints_ready
+  - checkpoints_running
   - freshness_state
+  - freshness_target_seconds
   - amount_with_vat
   - amount_without_vat
   - gl_account_set_revision_id
@@ -67,11 +96,14 @@ required:
   - open_balance
   - outgoing_amount
   - pending_review_total
+  - poll_interval_seconds
+  - polling_tier
   - quarter
   - quarter_end
   - quarter_start
   - settlement_total
   - source_availability
+  - sync_status
   - scope_contract_version
   - scope_fingerprint
   - vat_amount

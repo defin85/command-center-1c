@@ -22,7 +22,10 @@ vi.mock('../../../../api/intercompanyPools', async () => {
   }
 })
 
-import { loadPoolMasterDataTokenCatalog } from '../tokenCatalog'
+import {
+  getSupportedPoolMasterDataTokenEntityOptions,
+  loadPoolMasterDataTokenCatalog,
+} from '../tokenCatalog'
 
 const registryEntries: PoolMasterDataRegistryEntry[] = [
   {
@@ -199,7 +202,7 @@ describe('pool master-data token catalog adapter', () => {
   })
 
   it('surfaces registry-published token entities that do not yet have a compatibility loader', async () => {
-    const result = await loadPoolMasterDataTokenCatalog([
+    const registryEntriesWithUnsupportedType: PoolMasterDataRegistryEntry[] = [
       ...registryEntries,
       {
         entity_type: 'cost_center',
@@ -225,8 +228,12 @@ describe('pool master-data token catalog adapter', () => {
         bootstrap_contract: { enabled: false, dependency_order: null },
         runtime_consumers: ['token_catalog', 'token_parser'],
       },
-    ])
+    ]
+    const result = await loadPoolMasterDataTokenCatalog(registryEntriesWithUnsupportedType)
 
     expect(result.unsupported_entity_types).toEqual(['cost_center'])
+    expect(
+      getSupportedPoolMasterDataTokenEntityOptions(registryEntriesWithUnsupportedType, result).map((item) => item.value)
+    ).toEqual(['party', 'item', 'gl_account', 'contract'])
   })
 })

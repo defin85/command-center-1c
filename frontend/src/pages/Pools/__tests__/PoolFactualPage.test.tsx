@@ -206,6 +206,15 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       source_availability: 'available',
       source_availability_detail: '',
       last_synced_at: '2026-03-27T10:00:00Z',
+      sync_status: 'success',
+      checkpoints_pending: 0,
+      checkpoints_running: 0,
+      checkpoints_failed: 0,
+      checkpoints_ready: 1,
+      activity: 'active',
+      polling_tier: 'active',
+      poll_interval_seconds: 120,
+      freshness_target_seconds: 120,
       scope_fingerprint: 'scope-fp-q1',
       scope_contract_version: 'factual_scope_contract.v2',
       gl_account_set_revision_id: 'gl_account_set_rev_q1',
@@ -572,6 +581,86 @@ describe('PoolFactualPage', () => {
     })
     expect(screen.getByText('1 running, 0 pending, 0 failed, 0 ready checkpoint(s).')).toBeInTheDocument()
     expect(screen.getByText('Requested 2026-03-27 10:01:00 UTC on active tier (120s).')).toBeInTheDocument()
+  })
+
+  it('converges refresh state to terminal workspace status without another manual click', async () => {
+    const user = userEvent.setup()
+    const intervalHandlers = new Map<number, Array<() => void>>()
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(((handler: TimerHandler, timeout?: number) => {
+      if (typeof handler === 'function' && typeof timeout === 'number') {
+        const existing = intervalHandlers.get(timeout) ?? []
+        existing.push(() => {
+          handler()
+        })
+        intervalHandlers.set(timeout, existing)
+      }
+      return 1 as unknown as number
+    }) as typeof window.setInterval)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
+
+    try {
+      mockListOrganizationPools.mockResolvedValue([buildPool()])
+      mockGetPoolFactualWorkspace
+        .mockResolvedValueOnce(buildWorkspace({
+          summary: {
+            ...buildWorkspace().summary,
+            checkpoint_total: 0,
+            sync_status: 'idle',
+            checkpoints_pending: 0,
+            checkpoints_running: 0,
+            checkpoints_failed: 0,
+            checkpoints_ready: 0,
+            activity: '',
+            polling_tier: '',
+            poll_interval_seconds: 0,
+            freshness_target_seconds: 0,
+          },
+        }))
+        .mockResolvedValue(buildWorkspace({
+          summary: {
+            ...buildWorkspace().summary,
+            sync_status: 'success',
+            checkpoints_pending: 0,
+            checkpoints_running: 0,
+            checkpoints_failed: 0,
+            checkpoints_ready: 1,
+            activity: 'active',
+            polling_tier: 'active',
+            poll_interval_seconds: 120,
+            freshness_target_seconds: 120,
+          },
+        }))
+      mockRefreshPoolFactualWorkspace.mockResolvedValue(buildRefreshResponse())
+
+      renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1&quarter_start=2026-01-01')
+
+      await screen.findByText('Sync control')
+      await user.click(screen.getByRole('button', { name: 'Refresh factual sync' }))
+
+      await waitFor(() => {
+        expect(mockRefreshPoolFactualWorkspace).toHaveBeenCalledTimes(1)
+      })
+      expect(intervalHandlers.get(5000)?.length ?? 0).toBeGreaterThan(0)
+      expect(screen.getByText('1 running, 0 pending, 0 failed, 0 ready checkpoint(s).')).toBeInTheDocument()
+
+      const refreshPoll = intervalHandlers.get(5000)?.[0]
+      if (!refreshPoll) {
+        throw new Error('Expected short refresh polling handler to be registered')
+      }
+
+      await act(async () => {
+        refreshPoll()
+      })
+
+      await waitFor(() => {
+        expect(mockGetPoolFactualWorkspace).toHaveBeenCalledTimes(2)
+      })
+      expect(screen.getByText('0 running, 0 pending, 0 failed, 1 ready checkpoint(s).')).toBeInTheDocument()
+      expect(screen.getByText('Requested 2026-03-27 10:01:00 UTC on active tier (120s).')).toBeInTheDocument()
+    } finally {
+      setIntervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+    }
   })
 
   it('opens an attribution modal and updates queue state after choosing explicit targets', async () => {

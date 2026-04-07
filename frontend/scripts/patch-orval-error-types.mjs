@@ -54,6 +54,18 @@ const streamConflictResponsePath = resolve(
   process.cwd(),
   'src/api/generated/model/databaseStreamConflictResponse.ts'
 )
+const bootstrapImportScopeEntityScopeItemPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolMasterDataBootstrapImportScopeRequestEntityScopeItem.ts'
+)
+const bootstrapImportJobEntityScopeItemPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolMasterDataBootstrapImportJobEntityScopeItem.ts'
+)
+const factualSummaryPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolFactualSummary.ts'
+)
 
 const bodyImportRegex = /import type { BodyType } from ['"]\.\.\/\.\.\/mutator['"];?/
 const mutatorTypeImport = "import type { ErrorType } from '../../mutator';"
@@ -78,6 +90,47 @@ const generatedHeader =
   ' * API для управления операциями в 700+ базах 1С\n' +
   ' * OpenAPI spec version: 1.0.0\n' +
   ' */\n'
+
+function ensureBootstrapImportGlAccountEnum(filePath) {
+  const enumMember = "  gl_account: 'gl_account',\n"
+  let content = readFileSync(filePath, 'utf8')
+  if (!content.includes(enumMember)) {
+    content = content.replace(
+      "  tax_profile: 'tax_profile',\n",
+      "  tax_profile: 'tax_profile',\n" + enumMember
+    )
+  }
+  writeFileSync(filePath, content, 'utf8')
+}
+
+function ensurePoolFactualSummarySyncFields(filePath) {
+  let content = readFileSync(filePath, 'utf8')
+  const syncFieldBlock =
+    '  sync_status: string;\n' +
+    '  /** @minimum 0 */\n' +
+    '  checkpoints_pending: number;\n' +
+    '  /** @minimum 0 */\n' +
+    '  checkpoints_running: number;\n' +
+    '  /** @minimum 0 */\n' +
+    '  checkpoints_failed: number;\n' +
+    '  /** @minimum 0 */\n' +
+    '  checkpoints_ready: number;\n' +
+    '  activity?: string;\n' +
+    '  polling_tier: string;\n' +
+    '  /** @minimum 0 */\n' +
+    '  poll_interval_seconds: number;\n' +
+    '  /** @minimum 0 */\n' +
+    '  freshness_target_seconds: number;\n'
+
+  if (!content.includes('  sync_status: string;\n')) {
+    content = content.replace(
+      '  /** @nullable */\n  last_synced_at?: string | null;\n',
+      '  /** @nullable */\n  last_synced_at?: string | null;\n' + syncFieldBlock
+    )
+  }
+
+  writeFileSync(filePath, content, 'utf8')
+}
 
 let content = readFileSync(targetPath, 'utf8')
 
@@ -393,3 +446,7 @@ for (const exportLine of [
   }
 }
 writeFileSync(modelIndexPath, modelIndexContent, 'utf8')
+
+ensureBootstrapImportGlAccountEnum(bootstrapImportScopeEntityScopeItemPath)
+ensureBootstrapImportGlAccountEnum(bootstrapImportJobEntityScopeItemPath)
+ensurePoolFactualSummarySyncFields(factualSummaryPath)

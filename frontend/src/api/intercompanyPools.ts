@@ -683,6 +683,15 @@ export type PoolFactualSummary = {
   source_availability: string
   source_availability_detail: string
   last_synced_at: string | null
+  sync_status: PoolFactualRefreshStatus
+  checkpoints_pending: number
+  checkpoints_running: number
+  checkpoints_failed: number
+  checkpoints_ready: number
+  activity: string
+  polling_tier: string
+  poll_interval_seconds: number
+  freshness_target_seconds: number
   scope_fingerprint: string
   scope_contract_version: string
   gl_account_set_revision_id: string

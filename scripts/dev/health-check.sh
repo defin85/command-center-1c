@@ -22,6 +22,22 @@ PIDS_DIR="$PROJECT_ROOT/pids"
 load_env_file
 FRONTEND_PORT="${FRONTEND_PORT:-15173}"
 
+normalize_frontend_probe_target() {
+    local target="${1:-}"
+
+    if [[ "$target" == http://localhost* ]]; then
+        printf '%s\n' "http://127.0.0.1${target#http://localhost}"
+        return
+    fi
+
+    if [[ "$target" == https://localhost* ]]; then
+        printf '%s\n' "https://127.0.0.1${target#https://localhost}"
+        return
+    fi
+
+    printf '%s\n' "$target"
+}
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  CommandCenter1C - Health Check${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -122,6 +138,8 @@ if [ -f "$PROJECT_ROOT/frontend/.env.local" ]; then
         fi
     fi
 fi
+
+BLACKBOX_FRONTEND_TARGET="$(normalize_frontend_probe_target "$FRONTEND_URL/")"
 
 check_http "Frontend" "$FRONTEND_URL"
 check_http "API Gateway" "http://localhost:8180/health"
@@ -352,7 +370,7 @@ if command -v curl &>/dev/null; then
         echo -e "  Frontend probe: ${GREEN}✓ online${NC}"
     else
         echo -e "  Frontend probe: ${YELLOW}⚠️  offline${NC}"
-        echo -e "    check: http://localhost:9115/probe?module=http_2xx&target=http://localhost:${FRONTEND_PORT}/"
+        echo -e "    check: http://localhost:9115/probe?module=http_2xx&target=${BLACKBOX_FRONTEND_TARGET}"
     fi
     if curl -sS "http://localhost:9090/api/v1/query?query=max(probe_success%7Bcc1c_service%3D%22ras-server%22%7D)" \
         | grep -q '"value":[^]]*"1"'; then

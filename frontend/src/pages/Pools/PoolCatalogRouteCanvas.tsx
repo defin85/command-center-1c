@@ -112,6 +112,7 @@ import {
 import {
   EMPTY_POOL_MASTER_DATA_TOKEN_CATALOG,
   getPoolMasterDataTokenCatalogOptions,
+  getSupportedPoolMasterDataTokenEntityOptions,
   loadPoolMasterDataTokenCatalog,
   type PoolMasterDataTokenCatalogSnapshot,
 } from './masterData/tokenCatalog'
@@ -2385,18 +2386,37 @@ export function PoolCatalogPage() {
     [organizations]
   )
 
-  const masterDataTokenEntityOptions = useMemo(
+  const masterDataTokenRegistryEntityOptions = useMemo(
     () => getTokenEntityOptions(masterDataRegistryEntries),
     [masterDataRegistryEntries]
   )
   const masterDataTokenEntityCatalogSignature = useMemo(
-    () => masterDataTokenEntityOptions
+    () => masterDataTokenRegistryEntityOptions
       .map((option) => option.value)
       .sort((left, right) => left.localeCompare(right))
       .join('|'),
-    [masterDataTokenEntityOptions]
+    [masterDataTokenRegistryEntityOptions]
   )
   const [loadedMasterDataTokenCatalogSignature, setLoadedMasterDataTokenCatalogSignature] = useState('')
+  const isMasterDataTokenCatalogLoaded = (
+    Boolean(masterDataTokenEntityCatalogSignature)
+    && loadedMasterDataTokenCatalogSignature === masterDataTokenEntityCatalogSignature
+  )
+  const masterDataTokenPickerEntityOptions = useMemo(() => {
+    if (!isMasterDataTokenCatalogLoaded) {
+      return []
+    }
+    return getSupportedPoolMasterDataTokenEntityOptions(masterDataRegistryEntries, masterDataTokenCatalog)
+  }, [
+    isMasterDataTokenCatalogLoaded,
+    masterDataRegistryEntries,
+    masterDataTokenCatalog,
+  ])
+  const isMasterDataTokenPickerLoading = (
+    loadingMasterDataRegistry
+    || loadingMasterDataTokenCatalog
+    || (Boolean(masterDataTokenEntityCatalogSignature) && !isMasterDataTokenCatalogLoaded)
+  )
 
   const flow = useMemo(() => buildFlowLayout(graph), [graph])
 
@@ -5356,8 +5376,8 @@ export function PoolCatalogPage() {
                                                                                                     >
                                                                                                       <Select
                                                                                                         placeholder="entity"
-                                                                                                        options={masterDataTokenEntityOptions}
-                                                                                                        loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
+                                                                                                        options={masterDataTokenPickerEntityOptions}
+                                                                                                        loading={isMasterDataTokenPickerLoading}
                                                                                                         data-testid={(
                                                                                                           `pool-catalog-topology-field-mapping-token-entity-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                         )}
@@ -5705,8 +5725,8 @@ export function PoolCatalogPage() {
                                                                                                                 >
                                                                                                                   <Select
                                                                                                                     placeholder="entity"
-                                                                                                                    options={masterDataTokenEntityOptions}
-                                                                                                                    loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
+                                                                                                                    options={masterDataTokenPickerEntityOptions}
+                                                                                                                    loading={isMasterDataTokenPickerLoading}
                                                                                                                   />
                                                                                                                 </Form.Item>
                                                                                                               </Col>

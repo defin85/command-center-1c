@@ -2350,34 +2350,21 @@ def _build_pool_factual_refresh_response(
         _serialize_pool_factual_refresh_checkpoint(checkpoint)
         for checkpoint in checkpoints
     ]
-    pending_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "pending")
-    running_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "running")
-    failed_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "failed")
-    ready_total = max(len(serialized_checkpoints) - pending_total - running_total - failed_total, 0)
-    if not serialized_checkpoints:
-        status = "idle"
-    elif running_total > 0:
-        status = "running"
-    elif pending_total > 0:
-        status = "pending"
-    elif failed_total > 0:
-        status = "failed"
-    else:
-        status = "success"
+    sync_status = _summarize_pool_factual_sync_status(serialized_checkpoints=serialized_checkpoints)
     return {
         "pool_id": str(pool.id),
         "quarter_start": quarter_start,
         "requested_at": requested_at,
-        "status": status,
+        "status": sync_status["status"],
         "activity": activity_decision.activity,
         "polling_tier": activity_decision.polling_tier,
         "poll_interval_seconds": activity_decision.poll_interval_seconds,
         "freshness_target_seconds": activity_decision.freshness_target_seconds,
-        "checkpoint_total": len(serialized_checkpoints),
-        "checkpoints_pending": pending_total,
-        "checkpoints_running": running_total,
-        "checkpoints_failed": failed_total,
-        "checkpoints_ready": ready_total,
+        "checkpoint_total": sync_status["checkpoint_total"],
+        "checkpoints_pending": sync_status["checkpoints_pending"],
+        "checkpoints_running": sync_status["checkpoints_running"],
+        "checkpoints_failed": sync_status["checkpoints_failed"],
+        "checkpoints_ready": sync_status["checkpoints_ready"],
         "checkpoints": serialized_checkpoints,
     }
 
@@ -2502,6 +2489,11 @@ def _build_pool_factual_workspace_summary(
     if not isinstance(review_summary, dict):
         review_summary = {}
     read_summary = build_pool_factual_read_summary(checkpoints=checkpoints, now=timezone.now())
+    serialized_checkpoints = [
+        _serialize_pool_factual_refresh_checkpoint(checkpoint)
+        for checkpoint in checkpoints
+    ]
+    sync_status = _summarize_pool_factual_sync_status(serialized_checkpoints=serialized_checkpoints)
     review_attention_required_total = int(review_summary.get("attention_required_total") or 0)
     checkpoint_summary = _summarize_pool_factual_checkpoints(
         checkpoints=checkpoints,
@@ -2515,6 +2507,11 @@ def _build_pool_factual_workspace_summary(
     latest_metadata = _pool_factual_checkpoint_metadata(checkpoint=latest_checkpoint)
     latest_factual_scope_contract = _normalize_pool_factual_scope_contract(
         latest_metadata.get("factual_scope_contract")
+    )
+    latest_refresh_checkpoint = (
+        _serialize_pool_factual_refresh_checkpoint(latest_checkpoint)
+        if latest_checkpoint is not None
+        else None
     )
 
     return {
@@ -2537,6 +2534,23 @@ def _build_pool_factual_workspace_summary(
         "source_availability": checkpoint_summary["source_availability"],
         "source_availability_detail": checkpoint_summary["source_availability_detail"],
         "last_synced_at": last_synced_at,
+        "sync_status": sync_status["status"],
+        "checkpoints_pending": sync_status["checkpoints_pending"],
+        "checkpoints_running": sync_status["checkpoints_running"],
+        "checkpoints_failed": sync_status["checkpoints_failed"],
+        "checkpoints_ready": sync_status["checkpoints_ready"],
+        "activity": latest_refresh_checkpoint["activity"] if latest_refresh_checkpoint is not None else "",
+        "polling_tier": latest_refresh_checkpoint["polling_tier"] if latest_refresh_checkpoint is not None else "",
+        "poll_interval_seconds": (
+            latest_refresh_checkpoint["poll_interval_seconds"]
+            if latest_refresh_checkpoint is not None
+            else 0
+        ),
+        "freshness_target_seconds": (
+            latest_refresh_checkpoint["freshness_target_seconds"]
+            if latest_refresh_checkpoint is not None
+            else 0
+        ),
         "scope_fingerprint": str(
             (
                 getattr(latest_checkpoint, "scope_fingerprint", "")
@@ -2555,6 +2569,34 @@ def _build_pool_factual_workspace_summary(
         "scope_contract": latest_factual_scope_contract,
         "settlement_total": len(settlements),
         "checkpoint_total": len(checkpoints),
+    }
+
+
+def _summarize_pool_factual_sync_status(
+    *,
+    serialized_checkpoints: list[dict[str, Any]],
+) -> dict[str, int | str]:
+    pending_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "pending")
+    running_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "running")
+    failed_total = sum(1 for item in serialized_checkpoints if item["workflow_status"] == "failed")
+    ready_total = max(len(serialized_checkpoints) - pending_total - running_total - failed_total, 0)
+    if not serialized_checkpoints:
+        status = "idle"
+    elif running_total > 0:
+        status = "running"
+    elif pending_total > 0:
+        status = "pending"
+    elif failed_total > 0:
+        status = "failed"
+    else:
+        status = "success"
+    return {
+        "status": status,
+        "checkpoint_total": len(serialized_checkpoints),
+        "checkpoints_pending": pending_total,
+        "checkpoints_running": running_total,
+        "checkpoints_failed": failed_total,
+        "checkpoints_ready": ready_total,
     }
 
 
@@ -3396,6 +3438,15 @@ class PoolFactualSummarySerializer(serializers.Serializer):
     source_availability = serializers.CharField()
     source_availability_detail = serializers.CharField(required=False, allow_blank=True)
     last_synced_at = serializers.DateTimeField(required=False, allow_null=True)
+    sync_status = serializers.CharField()
+    checkpoints_pending = serializers.IntegerField(min_value=0)
+    checkpoints_running = serializers.IntegerField(min_value=0)
+    checkpoints_failed = serializers.IntegerField(min_value=0)
+    checkpoints_ready = serializers.IntegerField(min_value=0)
+    activity = serializers.CharField(required=False, allow_blank=True)
+    polling_tier = serializers.CharField(required=False, allow_blank=True)
+    poll_interval_seconds = serializers.IntegerField(min_value=0)
+    freshness_target_seconds = serializers.IntegerField(min_value=0)
     scope_fingerprint = serializers.CharField()
     scope_contract_version = serializers.CharField()
     gl_account_set_revision_id = serializers.CharField()

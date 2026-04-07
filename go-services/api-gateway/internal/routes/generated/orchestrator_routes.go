@@ -167,6 +167,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/pools/batches/", OperationID: "v2_pools_batches_list"},
 	{Method: "POST", Path: "/pools/batches/", OperationID: "v2_pools_batches_create"},
 	{Method: "GET", Path: "/pools/factual/workspace/", OperationID: "v2_pools_factual_workspace"},
+	{Method: "POST", Path: "/pools/factual/refresh/", OperationID: "v2_pools_factual_refresh"},
 	{Method: "POST", Path: "/pools/factual/review-actions/", OperationID: "v2_pools_factual_review_actions"},
 	{Method: "GET", Path: "/pools/runs/", OperationID: "v2_pools_runs_list"},
 	{Method: "POST", Path: "/pools/runs/", OperationID: "v2_pools_runs_create"},

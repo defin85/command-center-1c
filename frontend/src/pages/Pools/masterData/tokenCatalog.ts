@@ -6,7 +6,7 @@ import {
   listMasterDataTaxProfiles,
   type PoolMasterDataRegistryEntry,
 } from '../../../api/intercompanyPools'
-import { getTokenEntityOptions } from './registry'
+import { getTokenEntityOptions, type PoolMasterDataRegistryOption } from './registry'
 
 export type PoolMasterDataTokenCatalogOption = {
   value: string
@@ -169,6 +169,14 @@ export async function loadPoolMasterDataTokenCatalog(
     contract_owner_by_canonical_id: contractOwnerByCanonicalId,
     unsupported_entity_types: unsupportedEntityTypes,
   }
+}
+
+export function getSupportedPoolMasterDataTokenEntityOptions(
+  registryEntries: PoolMasterDataRegistryEntry[],
+  snapshot: PoolMasterDataTokenCatalogSnapshot,
+): Array<PoolMasterDataRegistryOption<string>> {
+  const supportedEntityTypes = new Set(Object.keys(snapshot.options_by_entity_type))
+  return getTokenEntityOptions(registryEntries).filter((option) => supportedEntityTypes.has(option.value))
 }
 
 export function getPoolMasterDataTokenCatalogOptions(

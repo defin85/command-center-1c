@@ -46,7 +46,21 @@ type ReviewRowWithTargets = PoolFactualReviewRow & {
   organizationId: string | null
 }
 
+type PoolFactualRefreshCardState = {
+  requestedAt: string | null
+  status: string
+  checkpointsPending: number
+  checkpointsRunning: number
+  checkpointsFailed: number
+  checkpointsReady: number
+  activity: string
+  pollingTier: string
+  pollIntervalSeconds: number
+  freshnessTargetSeconds: number
+}
+
 const FACTUAL_WORKSPACE_POLL_INTERVAL_MS = 120_000
+const FACTUAL_REFRESH_STATE_POLL_INTERVAL_MS = 5_000
 
 const formatShortId = (value: string | null | undefined) => {
   if (!value) {
@@ -69,7 +83,47 @@ const formatQuarterWindow = (quarterStart: string | null | undefined, quarterEnd
   return quarterStart ?? quarterEnd ?? '-'
 }
 
-const getRefreshTone = (refreshState: PoolFactualRefreshResponse | null) => {
+const buildRefreshStateFromResponse = (
+  response: PoolFactualRefreshResponse
+): PoolFactualRefreshCardState => ({
+  requestedAt: response.requested_at,
+  status: response.status,
+  checkpointsPending: response.checkpoints_pending,
+  checkpointsRunning: response.checkpoints_running,
+  checkpointsFailed: response.checkpoints_failed,
+  checkpointsReady: response.checkpoints_ready,
+  activity: response.activity,
+  pollingTier: response.polling_tier,
+  pollIntervalSeconds: response.poll_interval_seconds,
+  freshnessTargetSeconds: response.freshness_target_seconds,
+})
+
+const buildRefreshStateFromSummary = (
+  summary: PoolFactualSummary,
+  requestedAt: string | null
+): PoolFactualRefreshCardState | null => {
+  if (summary.checkpoint_total <= 0) {
+    return null
+  }
+  return {
+    requestedAt,
+    status: summary.sync_status,
+    checkpointsPending: summary.checkpoints_pending,
+    checkpointsRunning: summary.checkpoints_running,
+    checkpointsFailed: summary.checkpoints_failed,
+    checkpointsReady: summary.checkpoints_ready,
+    activity: summary.activity,
+    pollingTier: summary.polling_tier,
+    pollIntervalSeconds: summary.poll_interval_seconds,
+    freshnessTargetSeconds: summary.freshness_target_seconds,
+  }
+}
+
+const isRefreshStateInFlight = (refreshState: PoolFactualRefreshCardState | null) => (
+  refreshState?.status === 'pending' || refreshState?.status === 'running'
+)
+
+const getRefreshTone = (refreshState: PoolFactualRefreshCardState | null) => {
   switch (refreshState?.status) {
     case 'running':
       return 'warning'
@@ -84,11 +138,11 @@ const getRefreshTone = (refreshState: PoolFactualRefreshResponse | null) => {
   }
 }
 
-const getRefreshCopy = (refreshState: PoolFactualRefreshResponse | null) => {
+const getRefreshCopy = (refreshState: PoolFactualRefreshCardState | null) => {
   if (!refreshState) {
     return 'Use the shipped refresh control when the operator needs an immediate bounded sync for this pool and quarter.'
   }
-  return `${refreshState.checkpoints_running} running, ${refreshState.checkpoints_pending} pending, ${refreshState.checkpoints_failed} failed, ${refreshState.checkpoints_ready} ready checkpoint(s).`
+  return `${refreshState.checkpointsRunning} running, ${refreshState.checkpointsPending} pending, ${refreshState.checkpointsFailed} failed, ${refreshState.checkpointsReady} ready checkpoint(s).`
 }
 
 const getCarryForwardSummary = (row: PoolBatch) => {
@@ -213,7 +267,7 @@ export function PoolFactualWorkspaceDetail({
   const [loadingWorkspace, setLoadingWorkspace] = useState(true)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [refreshingWorkspace, setRefreshingWorkspace] = useState(false)
-  const [refreshState, setRefreshState] = useState<PoolFactualRefreshResponse | null>(null)
+  const [refreshState, setRefreshState] = useState<PoolFactualRefreshCardState | null>(null)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [reviewActionError, setReviewActionError] = useState<string | null>(null)
   const [pendingReviewItemId, setPendingReviewItemId] = useState<string | null>(null)
@@ -246,6 +300,13 @@ export function PoolFactualWorkspaceDetail({
           return
         }
         setWorkspace(data)
+        setRefreshState((current) => {
+          const next = buildRefreshStateFromSummary(
+            data.summary,
+            current?.requestedAt ?? null,
+          )
+          return next ?? current
+        })
       } catch (error) {
         if (cancelled) {
           return
@@ -273,6 +334,42 @@ export function PoolFactualWorkspaceDetail({
     }
   }, [quarterStart, selectedPool.id])
 
+  useEffect(() => {
+    if (!isRefreshStateInFlight(refreshState)) {
+      return
+    }
+
+    let cancelled = false
+    const pollId = window.setInterval(() => {
+      void (async () => {
+        try {
+          const data = await getPoolFactualWorkspace({
+            poolId: selectedPool.id,
+            quarterStart: quarterStart ?? undefined,
+          })
+          if (cancelled) {
+            return
+          }
+          setWorkspace(data)
+          setRefreshState((current) => {
+            const next = buildRefreshStateFromSummary(
+              data.summary,
+              current?.requestedAt ?? refreshState?.requestedAt ?? null,
+            )
+            return next ?? current
+          })
+        } catch {
+          // Keep the last known state and let the regular workspace polling recover.
+        }
+      })()
+    }, FACTUAL_REFRESH_STATE_POLL_INTERVAL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(pollId)
+    }
+  }, [quarterStart, refreshState, selectedPool.id])
+
   const handleRefreshWorkspace = async () => {
     setRefreshingWorkspace(true)
     setRefreshError(null)
@@ -282,7 +379,7 @@ export function PoolFactualWorkspaceDetail({
         pool_id: selectedPool.id,
         quarter_start: quarterStart ?? undefined,
       })
-      setRefreshState(response)
+      setRefreshState(buildRefreshStateFromResponse(response))
     } catch (error) {
       const resolved = resolveApiError(error, 'Failed to refresh factual workspace sync.')
       setRefreshError(resolved.message)
@@ -572,7 +669,9 @@ export function PoolFactualWorkspaceDetail({
               <Text type="secondary">{getRefreshCopy(refreshState)}</Text>
               {refreshState ? (
                 <Text type="secondary">
-                  Requested {formatTimestamp(refreshState.requested_at)} on {refreshState.polling_tier} tier ({refreshState.poll_interval_seconds}s).
+                  {refreshState.requestedAt
+                    ? `Requested ${formatTimestamp(refreshState.requestedAt)} on ${refreshState.pollingTier || 'unknown'} tier (${refreshState.pollIntervalSeconds}s).`
+                    : `Current ${refreshState.pollingTier || 'unknown'} tier (${refreshState.pollIntervalSeconds}s) for this workspace context.`}
                 </Text>
               ) : null}
             </Space>
