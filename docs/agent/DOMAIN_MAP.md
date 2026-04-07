@@ -47,7 +47,8 @@ Canonical execution path:
 
 ## Реально существующие product surfaces на текущей ветке
 
-Источник UI-маршрутов: [frontend/src/App.tsx](../../frontend/src/App.tsx).
+Источник checked-in UI governance inventory: [frontend/src/uiGovernanceInventory.js](../../frontend/src/uiGovernanceInventory.js).
+Источник route map: [frontend/src/App.tsx](../../frontend/src/App.tsx).
 
 ### Операторские и runtime surfaces
 
@@ -90,7 +91,8 @@ Canonical execution path:
 
 ## Где искать source-of-truth по домену
 
-- UI route inventory: [frontend/src/App.tsx](../../frontend/src/App.tsx)
+- UI governance inventory: [frontend/src/uiGovernanceInventory.js](../../frontend/src/uiGovernanceInventory.js)
+- UI route map: [frontend/src/App.tsx](../../frontend/src/App.tsx)
 - Domain intent и project context: [openspec/project.md](../../openspec/project.md)
 - Текущий shipped contract: `openspec/specs/**`
 - Planned / in-flight surfaces: `openspec/changes/**`

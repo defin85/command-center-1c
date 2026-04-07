@@ -12,6 +12,7 @@
   - `frontend/package.json`
 - Entry points:
   - `frontend/src/main.tsx`
+  - `frontend/src/uiGovernanceInventory.js`
   - `frontend/src/components/platform/`
   - `frontend/src/pages/`
 - Local constraints:
@@ -19,6 +20,7 @@
   - if the task matches a UI skill profile, follow `docs/agent/ui-skills.md` and proactively use the minimal relevant shared skill set from `/home/egor/.agents/skills/`
   - generated API client lives in `frontend/src/api/generated/**`
   - prefer page composition through platform primitives, not raw page-level `antd` shells
+  - checked-in UI governance inventory lives in `frontend/src/uiGovernanceInventory.js`; new route-entry modules and shell-backed authoring surfaces must be enrolled there before `npm run lint` can pass
 - Canonical validation commands:
   - `cd frontend && npm run lint`
   - `cd frontend && npm run test:run -- <path>`

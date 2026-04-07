@@ -3,6 +3,11 @@ import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
+import {
+  getRouteModulesByLintProfile,
+  routeGovernancePathSet,
+  shellSurfaceFilePathSet,
+} from './src/uiGovernanceInventory.js'
 
 const contextAwareAntdImports = [
   {
@@ -181,6 +186,44 @@ const platformShellRestrictedAntdImports = new Map([
   ['Divider', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe spacing/separators instead of raw `Divider`.'],
 ])
 
+const normalizeInventoryPath = (value) => value.replace(/\\/g, '/')
+const filePathMatchesInventory = (filename, relativePath) => {
+  const normalizedFilename = normalizeInventoryPath(filename)
+  return normalizedFilename === relativePath || normalizedFilename.endsWith(`/${relativePath}`)
+}
+
+const getJsxIdentifierName = (node) => (node?.type === 'JSXIdentifier' ? node.name : null)
+const getStaticJsxAttributeValue = (attributes, attributeName) => {
+  const attributeList = Array.isArray(attributes) ? attributes : attributes?.attributes
+  if (!Array.isArray(attributeList)) {
+    return null
+  }
+
+  for (const attribute of attributeList) {
+    if (attribute.type !== 'JSXAttribute') {
+      continue
+    }
+
+    if (getJsxIdentifierName(attribute.name) !== attributeName || !attribute.value) {
+      continue
+    }
+
+    if (attribute.value.type === 'Literal' && typeof attribute.value.value === 'string') {
+      return attribute.value.value
+    }
+
+    if (
+      attribute.value.type === 'JSXExpressionContainer'
+      && attribute.value.expression?.type === 'Literal'
+      && typeof attribute.value.expression.value === 'string'
+    ) {
+      return attribute.value.expression.value
+    }
+  }
+
+  return null
+}
+
 const uiPlatformLocalPlugin = {
   rules: {
     'no-legacy-containers-in-platform-shell-modules': {
@@ -238,8 +281,131 @@ const uiPlatformLocalPlugin = {
         }
       },
     },
+    'app-routes-must-exist-in-governance-inventory': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        if (!filePathMatchesInventory(filename, 'src/App.tsx')) {
+          return {}
+        }
+
+        const routePaths = new Set()
+        const collectRoutePath = (node) => {
+          if (getJsxIdentifierName(node.name) !== 'Route') {
+            return
+          }
+
+          const routePath = getStaticJsxAttributeValue(node.attributes, 'path')
+          if (routePath) {
+            routePaths.add(routePath)
+          }
+        }
+
+        return {
+          JSXOpeningElement: collectRoutePath,
+          JSXSelfClosingElement: collectRoutePath,
+          'Program:exit'(node) {
+            for (const routePath of routePaths) {
+              if (routeGovernancePathSet.has(routePath)) {
+                continue
+              }
+
+              context.report({
+                node,
+                message: `Route path "${routePath}" must be classified in src/uiGovernanceInventory.js.`,
+              })
+            }
+          },
+        }
+      },
+    },
+    'platform-shell-modules-must-exist-in-governance-inventory': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        if (/\.test\.[jt]sx?$/.test(filename)) {
+          return {}
+        }
+
+        const relativePath = normalizeInventoryPath(filename).split('/frontend/').pop() ?? normalizeInventoryPath(filename)
+        let usesPlatformShell = false
+
+        return {
+          ImportDeclaration(node) {
+            const source = typeof node.source.value === 'string' ? node.source.value : ''
+            if (!source.includes('components/platform')) {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (
+                specifier.type === 'ImportSpecifier'
+                && platformShellImportNames.has(specifier.imported.name)
+              ) {
+                usesPlatformShell = true
+              }
+            }
+          },
+          'Program:exit'(node) {
+            if (!usesPlatformShell) {
+              return
+            }
+            if (shellSurfaceFilePathSet.has(relativePath)) {
+              return
+            }
+
+            context.report({
+              node,
+              message: `Platform shell module "${relativePath}" must be classified in src/uiGovernanceInventory.js.`,
+            })
+          },
+        }
+      },
+    },
   },
 }
+
+const buildRouteRestrictedImportsOverride = (lintProfile, paths) => {
+  const files = getRouteModulesByLintProfile(lintProfile)
+  if (files.length === 0) {
+    return null
+  }
+
+  return {
+    files,
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [
+          ...contextAwareAntdImports,
+          ...paths,
+        ],
+        patterns: competingFoundationImportPatterns,
+      }],
+    },
+  }
+}
+
+const inventoryDrivenRouteOverrides = [
+  buildRouteRestrictedImportsOverride('canonical-page-route', canonicalPageContainerImports),
+  buildRouteRestrictedImportsOverride('dashboard-route', dashboardRouteModuleImports),
+  buildRouteRestrictedImportsOverride('operations-route', operationsRouteModuleImports),
+  buildRouteRestrictedImportsOverride('databases-route', databasesRouteModuleImports),
+  buildRouteRestrictedImportsOverride('pool-catalog-route', poolCatalogRouteModuleImports),
+  buildRouteRestrictedImportsOverride('pool-runs-route', poolRunsRouteModuleImports),
+  buildRouteRestrictedImportsOverride('pool-schema-templates-route', poolSchemaTemplatesRouteModuleImports),
+  buildRouteRestrictedImportsOverride('pool-master-data-route', poolMasterDataRouteModuleImports),
+  buildRouteRestrictedImportsOverride('templates-route', templatesRouteModuleImports),
+  buildRouteRestrictedImportsOverride('workflow-list-route', workflowListRouteModuleImports),
+  buildRouteRestrictedImportsOverride('workflow-executions-route', workflowExecutionsRouteModuleImports),
+  buildRouteRestrictedImportsOverride('workflow-designer-route', workflowDesignerRouteModuleImports),
+  buildRouteRestrictedImportsOverride('workflow-monitor-route', workflowMonitorRouteModuleImports),
+].filter(Boolean)
 
 export default tseslint.config(
   { ignores: ['dist', 'src/api/generated/**'] },
@@ -305,6 +471,8 @@ export default tseslint.config(
         patterns: competingFoundationImportPatterns,
       }],
       'ui-platform-local/no-legacy-containers-in-platform-shell-modules': 'error',
+      'ui-platform-local/app-routes-must-exist-in-governance-inventory': 'error',
+      'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory': 'error',
       'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },
@@ -391,174 +559,7 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', noStaticModalMethodsRule, ...shellSafeInternalNavigationRules],
     },
   },
-  {
-    files: [
-      'src/pages/Dashboard/Dashboard.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...dashboardRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Operations/OperationsPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...operationsRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Databases/Databases.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...databasesRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Pools/PoolCatalogPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...poolCatalogRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Pools/PoolRunsPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...poolRunsRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Pools/PoolSchemaTemplatesPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...poolSchemaTemplatesRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Pools/PoolMasterDataPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...poolMasterDataRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Templates/TemplatesPage.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...templatesRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Workflows/WorkflowList.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...workflowListRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Workflows/WorkflowExecutions.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...workflowExecutionsRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Workflows/WorkflowDesigner.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...workflowDesignerRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
-  {
-    files: [
-      'src/pages/Workflows/WorkflowMonitor.tsx',
-    ],
-    rules: {
-      'no-restricted-imports': ['error', {
-        paths: [
-          ...contextAwareAntdImports,
-          ...workflowMonitorRouteModuleImports,
-        ],
-        patterns: competingFoundationImportPatterns,
-      }],
-    },
-  },
+  ...inventoryDrivenRouteOverrides,
   {
     files: [
       'src/pages/Databases/components/DatabaseCredentialsModal.tsx',

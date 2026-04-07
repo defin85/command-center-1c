@@ -33,6 +33,7 @@
   - root [AGENTS.md](../../AGENTS.md) section `UI Platform Contract`
 - Первые code entry points:
   - [frontend/src/main.tsx](../../frontend/src/main.tsx)
+  - [frontend/src/uiGovernanceInventory.js](../../frontend/src/uiGovernanceInventory.js)
   - [frontend/src/App.tsx](../../frontend/src/App.tsx)
 - `frontend/src/components/platform/`
 - `frontend/src/pages/`

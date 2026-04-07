@@ -1,0 +1,368 @@
+export const governanceTiers = ['platform-governed', 'legacy-monitored', 'excluded']
+export const routeStateTransports = ['none', 'search-params', 'path-params', 'mixed']
+export const detailMobileFallbackKinds = ['none', 'drawer', 'dedicated-route', 'mixed']
+
+/**
+ * Checked-in route governance inventory for operator-facing frontend surfaces.
+ *
+ * `modulePath` points to the route-entry module used from `src/App.tsx`.
+ * Redirect-only helper aliases keep `modulePath: null` and document the redirect target instead.
+ */
+export const routeGovernanceInventory = [
+  {
+    routePath: '/login',
+    modulePath: 'src/pages/Login/Login.tsx',
+    tier: 'excluded',
+    exclusionReason: 'public-auth-route',
+  },
+  {
+    routePath: '/forbidden',
+    modulePath: 'src/pages/Forbidden/ForbiddenPage.tsx',
+    tier: 'excluded',
+    exclusionReason: 'public-forbidden-route',
+  },
+  {
+    routePath: '/',
+    modulePath: 'src/pages/Dashboard/Dashboard.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'dashboard-route',
+    workspaceKind: 'dashboard',
+    stateTransport: 'none',
+    detailMobileFallback: 'none',
+  },
+  {
+    routePath: '/clusters',
+    modulePath: 'src/pages/Clusters/Clusters.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/operations',
+    modulePath: 'src/pages/Operations/OperationsPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'operations-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/artifacts',
+    modulePath: 'src/pages/Artifacts/ArtifactsPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/databases',
+    modulePath: 'src/pages/Databases/Databases.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'databases-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/extensions',
+    modulePath: 'src/pages/Extensions/Extensions.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/installation-monitor',
+    modulePath: null,
+    tier: 'excluded',
+    exclusionReason: 'legacy-route-alias',
+    redirectTarget: '/operations?tab=list',
+  },
+  {
+    routePath: '/operation-monitor',
+    modulePath: null,
+    tier: 'excluded',
+    exclusionReason: 'legacy-route-alias',
+    redirectTarget: '/operations?tab=monitor',
+  },
+  {
+    routePath: '/system-status',
+    modulePath: 'src/pages/SystemStatus/SystemStatus.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/workflows',
+    modulePath: 'src/pages/Workflows/WorkflowList.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'workflow-list-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/workflows/executions',
+    modulePath: 'src/pages/Workflows/WorkflowExecutions.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'workflow-executions-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/workflows/new',
+    modulePath: 'src/pages/Workflows/WorkflowDesigner.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'workflow-designer-route',
+    workspaceKind: 'authoring-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'mixed',
+  },
+  {
+    routePath: '/workflows/:id',
+    modulePath: 'src/pages/Workflows/WorkflowDesigner.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'workflow-designer-route',
+    workspaceKind: 'authoring-workspace',
+    stateTransport: 'mixed',
+    detailMobileFallback: 'mixed',
+  },
+  {
+    routePath: '/workflows/executions/:executionId',
+    modulePath: 'src/pages/Workflows/WorkflowMonitor.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'workflow-monitor-route',
+    workspaceKind: 'diagnostics-workspace',
+    stateTransport: 'mixed',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/templates',
+    modulePath: 'src/pages/Templates/TemplatesPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'templates-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/decisions',
+    modulePath: 'src/pages/Decisions/DecisionsPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'canonical-page-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/pools/templates',
+    modulePath: 'src/pages/Pools/PoolSchemaTemplatesPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'pool-schema-templates-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/pools/catalog',
+    modulePath: 'src/pages/Pools/PoolCatalogPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'pool-catalog-route',
+    workspaceKind: 'task-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/pools/topology-templates',
+    modulePath: 'src/pages/Pools/PoolTopologyTemplatesPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/pools/execution-packs',
+    modulePath: 'src/pages/Pools/PoolBindingProfilesPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'canonical-page-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/pools/master-data',
+    modulePath: 'src/pages/Pools/PoolMasterDataPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'pool-master-data-route',
+    workspaceKind: 'multi-zone-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/pools/factual',
+    modulePath: 'src/pages/Pools/PoolFactualPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/pools/runs',
+    modulePath: 'src/pages/Pools/PoolRunsPage.tsx',
+    tier: 'platform-governed',
+    lintProfile: 'pool-runs-route',
+    workspaceKind: 'stage-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+  },
+  {
+    routePath: '/service-mesh',
+    modulePath: 'src/pages/ServiceMesh/ServiceMeshPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/rbac',
+    modulePath: 'src/pages/RBAC/RBACPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/users',
+    modulePath: 'src/pages/Users/UsersPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/dlq',
+    modulePath: 'src/pages/DLQ/DLQPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/settings/runtime',
+    modulePath: 'src/pages/Settings/RuntimeSettingsPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/settings/driver-catalogs',
+    modulePath: null,
+    tier: 'excluded',
+    exclusionReason: 'redirect-alias-to-command-schemas',
+    redirectTarget: '/settings/command-schemas?mode=raw',
+  },
+  {
+    routePath: '/settings/command-schemas',
+    modulePath: 'src/pages/CommandSchemas/CommandSchemasPage.tsx',
+    tier: 'legacy-monitored',
+  },
+  {
+    routePath: '/settings/timeline',
+    modulePath: 'src/pages/Settings/TimelineSettingsPage.tsx',
+    tier: 'legacy-monitored',
+  },
+]
+
+/**
+ * Checked-in inventory for shell-backed authoring surfaces that use platform form shells.
+ *
+ * Entries are file-based because a single module may own several shell lifecycles,
+ * while governance currently applies at the module level.
+ */
+export const shellSurfaceGovernanceInventory = [
+  {
+    filePath: 'src/pages/Databases/components/DatabaseCredentialsModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/pages/Databases/components/DatabaseDbmsMetadataModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/pages/Databases/components/DatabaseIbcmdConnectionProfileModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/pages/Databases/components/DatabaseMetadataManagementDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/pages/Databases/components/ExtensionsDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/pages/Decisions/DecisionsPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/decisions'],
+  },
+  {
+    filePath: 'src/pages/Pools/masterData/GLAccountsTab.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/pools/master-data'],
+  },
+  {
+    filePath: 'src/pages/Pools/masterData/GLAccountSetsTab.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/pools/master-data'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolBatchIntakeDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/pools/runs'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolBindingProfilesEditorModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/pools/execution-packs'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolCatalogRouteCanvas.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/pools/catalog'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolFactualReviewAttributeModal.tsx',
+    tier: 'legacy-monitored',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/pools/factual'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolSchemaTemplatesPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/pools/templates'],
+  },
+  {
+    filePath: 'src/pages/Pools/PoolTopologyTemplatesEditorDrawer.tsx',
+    tier: 'legacy-monitored',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/pools/topology-templates'],
+  },
+  {
+    filePath: 'src/pages/Workflows/WorkflowDesigner.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer', 'modal'],
+    ownerRoutes: ['/workflows/new', '/workflows/:id'],
+  },
+]
+
+export const routeGovernancePathSet = new Set(routeGovernanceInventory.map((entry) => entry.routePath))
+export const shellSurfaceFilePathSet = new Set(shellSurfaceGovernanceInventory.map((entry) => entry.filePath))
+
+export const platformGovernedRouteInventory = routeGovernanceInventory.filter(
+  (entry) => entry.tier === 'platform-governed'
+)
+
+export const platformGovernedRouteModulesByLintProfile = platformGovernedRouteInventory.reduce(
+  (acc, entry) => {
+    if (!entry.lintProfile || !entry.modulePath) {
+      return acc
+    }
+    const files = acc[entry.lintProfile] ?? []
+    files.push(entry.modulePath)
+    acc[entry.lintProfile] = files
+    return acc
+  },
+  {}
+)
+
+export function getRouteModulesByLintProfile(lintProfile) {
+  return [...(platformGovernedRouteModulesByLintProfile[lintProfile] ?? [])].sort()
+}

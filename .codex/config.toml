@@ -1,5 +1,9 @@
 [mcp_servers.claude-context]
-command = "/home/egor/.local/bin/claude-context-mcp-local"
+command = "bash"
+args = [
+  "-lc",
+  "source \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1 && nvm exec --silent 20 claude-context-mcp-local || claude-context-mcp-local",
+]
 startup_timeout_sec = 60.0
 
 [mcp_servers.claude-context.env]
@@ -10,6 +14,9 @@ CUSTOM_EXTENSIONS = ".bsl"
 CUSTOM_IGNORE_PATTERNS = ".git/**,.venv/**,.beads/**,.agent-browser/**,.ruff_cache/**,frontend/node_modules/**,frontend/dist/**,frontend/test-results/**,orchestrator/.pytest_cache/**,orchestrator/__pycache__/**,orchestrator/htmlcov/**,logs/**,pids/**,bin/**,docs/archive/**,frontend/src/api/generated/**,generated/**,com._1c.v8.ibis.admin-1.6.7/**"
 
 [mcp_servers.chrome-devtools]
-command = "npx"
-args = ["-y", "chrome-devtools-mcp@latest", "--executablePath=/usr/lib/chromium/chromium", "--isolated", "--headless", "--logFile=/tmp/chrome-devtools-mcp.log", "--chromeArg=--no-sandbox", "--chromeArg=--disable-setuid-sandbox", "--chromeArg=--no-first-run", "--chromeArg=--no-default-browser-check", "--chromeArg=--disable-dev-shm-usage"]
+command = "bash"
+args = [
+  "-lc",
+  "source \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1 && nvm exec --silent 20 npx -y chrome-devtools-mcp@latest --executablePath=/usr/bin/chromium --isolated --headless --logFile=/tmp/chrome-devtools-mcp.log --chromeArg=--no-sandbox --chromeArg=--disable-setuid-sandbox --chromeArg=--no-first-run --chromeArg=--no-default-browser-check --chromeArg=--disable-dev-shm-usage || npx -y chrome-devtools-mcp@latest --executablePath=/usr/bin/chromium --isolated --headless --logFile=/tmp/chrome-devtools-mcp.log --chromeArg=--no-sandbox --chromeArg=--disable-setuid-sandbox --chromeArg=--no-first-run --chromeArg=--no-default-browser-check --chromeArg=--disable-dev-shm-usage",
+]
 startup_timeout_sec = 30.0

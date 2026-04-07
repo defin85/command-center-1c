@@ -43,6 +43,50 @@ function collectSourceFiles(rootPath: string): string[] {
 }
 
 describe('ui platform governance lint', () => {
+  it('rejects App route paths missing from governance inventory', async () => {
+    const messages = await lintSnippet(
+      'src/App.tsx',
+      `
+        import { Route, Routes } from 'react-router-dom'
+
+        export default function App() {
+          return (
+            <Routes>
+              <Route path="/future-governed-route" element={<div />} />
+            </Routes>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/app-routes-must-exist-in-governance-inventory'
+        && message.message.includes('/future-governed-route')
+    ))).toBe(true)
+  })
+
+  it('rejects platform shell modules missing from governance inventory', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Future/FuturePlatformModal.tsx',
+      `
+        import { ModalFormShell } from '../../components/platform'
+
+        export function FuturePlatformModal() {
+          return (
+            <ModalFormShell open title="Future authoring" onClose={() => {}} onSubmit={() => {}}>
+              future
+            </ModalFormShell>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory'
+        && message.message.includes('FuturePlatformModal.tsx')
+    ))).toBe(true)
+  })
+
   it('rejects raw Ant container composition in Decisions panel modules', async () => {
     const messages = await lintSnippet(
       'src/pages/Decisions/FutureDecisionPanel.tsx',
