@@ -193,10 +193,29 @@ const filePathMatchesInventory = (filename, relativePath) => {
 }
 
 const getJsxIdentifierName = (node) => (node?.type === 'JSXIdentifier' ? node.name : null)
+const getJsxTagRootName = (node) => {
+  if (!node) {
+    return null
+  }
+
+  if (node.type === 'JSXIdentifier') {
+    return node.name
+  }
+
+  if (node.type === 'JSXMemberExpression') {
+    return getJsxTagRootName(node.object)
+  }
+
+  if (node.type === 'JSXNamespacedName') {
+    return getJsxIdentifierName(node.namespace)
+  }
+
+  return null
+}
 const getStaticJsxAttributeValue = (attributes, attributeName) => {
   const attributeList = Array.isArray(attributes) ? attributes : attributes?.attributes
   if (!Array.isArray(attributeList)) {
-    return null
+    return { found: false, value: null }
   }
 
   for (const attribute of attributeList) {
@@ -209,7 +228,16 @@ const getStaticJsxAttributeValue = (attributes, attributeName) => {
     }
 
     if (attribute.value.type === 'Literal' && typeof attribute.value.value === 'string') {
-      return attribute.value.value
+      return { found: true, value: attribute.value.value }
+    }
+
+    if (
+      attribute.value.type === 'JSXExpressionContainer'
+      && attribute.value.expression?.type === 'TemplateLiteral'
+      && attribute.value.expression.expressions.length === 0
+      && attribute.value.expression.quasis.length === 1
+    ) {
+      return { found: true, value: attribute.value.expression.quasis[0].value.cooked ?? null }
     }
 
     if (
@@ -217,11 +245,13 @@ const getStaticJsxAttributeValue = (attributes, attributeName) => {
       && attribute.value.expression?.type === 'Literal'
       && typeof attribute.value.expression.value === 'string'
     ) {
-      return attribute.value.expression.value
+      return { found: true, value: attribute.value.expression.value }
     }
+
+    return { found: true, value: null }
   }
 
-  return null
+  return { found: false, value: null }
 }
 
 const uiPlatformLocalPlugin = {
@@ -232,11 +262,27 @@ const uiPlatformLocalPlugin = {
         schema: [],
       },
       create(context) {
-        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
-        const isShellSurfaceFile = /(?:Modal|Drawer)\.tsx$/.test(filename)
-        let usesPlatformShell = false
-        /** @type {Array<{ node: import('estree').Node, message: string }>} */
-        const offenders = []
+        const sourceCode = context.getSourceCode()
+        const platformShellLocalNames = new Set()
+        const restrictedAntdLocalNames = new Map()
+
+        const hasPlatformShellAncestor = (node) => sourceCode.getAncestors(node).some((ancestor) => (
+          ancestor.type === 'JSXElement'
+          && platformShellLocalNames.has(getJsxTagRootName(ancestor.openingElement.name))
+        ))
+
+        const reportForbiddenShellNode = (node) => {
+          const tagRootName = getJsxTagRootName(node.name)
+          const message = restrictedAntdLocalNames.get(tagRootName)
+          if (!message || !hasPlatformShellAncestor(node)) {
+            return
+          }
+
+          context.report({
+            node,
+            message,
+          })
+        }
 
         return {
           ImportDeclaration(node) {
@@ -247,7 +293,7 @@ const uiPlatformLocalPlugin = {
                   specifier.type === 'ImportSpecifier'
                   && platformShellImportNames.has(specifier.imported.name)
                 ) {
-                  usesPlatformShell = true
+                  platformShellLocalNames.add(specifier.local.name)
                 }
               }
             }
@@ -262,22 +308,12 @@ const uiPlatformLocalPlugin = {
               }
               const message = platformShellRestrictedAntdImports.get(specifier.imported.name)
               if (message) {
-                offenders.push({ node: specifier, message })
+                restrictedAntdLocalNames.set(specifier.local.name, message)
               }
             }
           },
-          'Program:exit'() {
-            if (!isShellSurfaceFile || !usesPlatformShell) {
-              return
-            }
-
-            for (const offender of offenders) {
-              context.report({
-                node: offender.node,
-                message: offender.message,
-              })
-            }
-          },
+          JSXOpeningElement: reportForbiddenShellNode,
+          JSXSelfClosingElement: reportForbiddenShellNode,
         }
       },
     },
@@ -293,21 +329,37 @@ const uiPlatformLocalPlugin = {
         }
 
         const routePaths = new Set()
+        /** @type {import('estree').Node[]} */
+        const nonLiteralPathNodes = []
         const collectRoutePath = (node) => {
           if (getJsxIdentifierName(node.name) !== 'Route') {
             return
           }
 
-          const routePath = getStaticJsxAttributeValue(node.attributes, 'path')
-          if (routePath) {
-            routePaths.add(routePath)
+          const routePathAttribute = getStaticJsxAttributeValue(node.attributes, 'path')
+          if (!routePathAttribute.found) {
+            return
           }
+
+          if (!routePathAttribute.value) {
+            nonLiteralPathNodes.push(node)
+            return
+          }
+
+          routePaths.add(routePathAttribute.value)
         }
 
         return {
           JSXOpeningElement: collectRoutePath,
           JSXSelfClosingElement: collectRoutePath,
           'Program:exit'(node) {
+            for (const routeNode of nonLiteralPathNodes) {
+              context.report({
+                node: routeNode,
+                message: 'Route path in src/App.tsx must stay a static string literal so governance inventory can classify it.',
+              })
+            }
+
             for (const routePath of routePaths) {
               if (routeGovernancePathSet.has(routePath)) {
                 continue

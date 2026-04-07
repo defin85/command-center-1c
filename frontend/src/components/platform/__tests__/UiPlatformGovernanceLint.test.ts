@@ -65,6 +65,30 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects non-literal App route paths that bypass governance inventory classification', async () => {
+    const messages = await lintSnippet(
+      'src/App.tsx',
+      `
+        import { Route, Routes } from 'react-router-dom'
+
+        const FUTURE_PATH = '/future-governed-route'
+
+        export default function App() {
+          return (
+            <Routes>
+              <Route path={FUTURE_PATH} element={<div />} />
+            </Routes>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/app-routes-must-exist-in-governance-inventory'
+        && message.message.includes('static string')
+    ))).toBe(true)
+  })
+
   it('rejects platform shell modules missing from governance inventory', async () => {
     const messages = await lintSnippet(
       'src/pages/Future/FuturePlatformModal.tsx',
@@ -85,6 +109,54 @@ describe('ui platform governance lint', () => {
       message.ruleId === 'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory'
         && message.message.includes('FuturePlatformModal.tsx')
     ))).toBe(true)
+  })
+
+  it('rejects generic shell violations even when the shell file is not suffixed Modal or Drawer', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/masterData/GLAccountsTab.tsx',
+      `
+        import { Descriptions } from 'antd'
+        import { ModalFormShell } from '../../../components/platform'
+
+        export function GLAccountsTab() {
+          return (
+            <ModalFormShell open title="GL accounts" onClose={() => {}} onSubmit={() => {}}>
+              <Descriptions />
+            </ModalFormShell>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/no-legacy-containers-in-platform-shell-modules'
+        && message.message.includes('Descriptions')
+    ))).toBe(true)
+  })
+
+  it('allows banned Ant containers outside the shell subtree in mixed route modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Decisions/DecisionsPage.tsx',
+      `
+        import { Collapse } from 'antd'
+        import { DrawerFormShell } from '../../components/platform'
+
+        export function DecisionsPage() {
+          return (
+            <>
+              <Collapse items={[{ key: 'summary', label: 'Summary', children: 'outside-shell' }]} />
+              <DrawerFormShell open title="Editor" onClose={() => {}} onSubmit={() => {}}>
+                <div>safe shell content</div>
+              </DrawerFormShell>
+            </>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/no-legacy-containers-in-platform-shell-modules'
+    ))).toBe(false)
   })
 
   it('rejects raw Ant container composition in Decisions panel modules', async () => {
