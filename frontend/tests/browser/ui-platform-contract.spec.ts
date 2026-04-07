@@ -56,6 +56,190 @@ const DATABASE_RECORD = {
   updated_at: NOW,
 }
 
+const CLUSTER_RECORD = {
+  id: 'cluster-1',
+  name: 'Main Cluster',
+  description: 'Primary RAS cluster for shared services',
+  ras_host: 'srv-ras.local',
+  ras_port: 1545,
+  ras_server: 'srv-ras.local:1545',
+  rmngr_host: 'srv-rmngr.local',
+  rmngr_port: 1541,
+  ragent_host: 'srv-ragent.local',
+  ragent_port: 1540,
+  rphost_port_from: 1560,
+  rphost_port_to: 1591,
+  cluster_service_url: 'http://srv-ragent.local:8188',
+  cluster_user: 'cluster-admin',
+  cluster_pwd_configured: true,
+  status: 'active',
+  status_display: 'Active',
+  last_sync: NOW,
+  metadata: {
+    deployment: 'primary',
+    region: 'eu-central',
+  },
+  databases_count: 1,
+  created_at: NOW,
+  updated_at: NOW,
+}
+
+const CLUSTER_DETAIL_RESPONSE = {
+  cluster: CLUSTER_RECORD,
+  databases: [DATABASE_RECORD],
+  statistics: {
+    total_databases: 1,
+    healthy_databases: 1,
+    databases_by_status: {
+      active: 1,
+      inactive: 0,
+      error: 0,
+      maintenance: 0,
+    },
+  },
+}
+
+const SYSTEM_HEALTH_RESPONSE = {
+  timestamp: NOW,
+  overall_status: 'degraded',
+  services: [
+    {
+      name: 'api-gateway',
+      type: 'go-service',
+      url: 'http://gateway.local/health',
+      status: 'online',
+      response_time_ms: 24,
+      last_check: NOW,
+      details: {
+        version: '1.0.0',
+      },
+    },
+    {
+      name: 'orchestrator',
+      type: 'django',
+      url: 'http://orchestrator.local/health',
+      status: 'degraded',
+      response_time_ms: 148,
+      last_check: NOW,
+      details: {
+        reason: 'Delayed queue drain',
+      },
+    },
+    {
+      name: 'worker',
+      type: 'go-service',
+      url: 'http://worker.local/health',
+      status: 'online',
+      response_time_ms: 41,
+      last_check: NOW,
+      details: {
+        active_jobs: 3,
+      },
+    },
+  ],
+  statistics: {
+    total: 3,
+    online: 2,
+    offline: 0,
+    degraded: 1,
+  },
+}
+
+const SERVICE_MESH_METRICS_MESSAGE = {
+  type: 'metrics_update',
+  timestamp: NOW,
+  overallHealth: 'degraded',
+  services: [
+    {
+      name: 'api-gateway',
+      display_name: 'API Gateway',
+      status: 'healthy',
+      ops_per_minute: 124,
+      active_operations: 2,
+      p95_latency_ms: 32,
+      error_rate: 0.003,
+      last_updated: NOW,
+    },
+    {
+      name: 'orchestrator',
+      display_name: 'Orchestrator',
+      status: 'degraded',
+      ops_per_minute: 76,
+      active_operations: 1,
+      p95_latency_ms: 190,
+      error_rate: 0.018,
+      last_updated: NOW,
+    },
+    {
+      name: 'worker',
+      display_name: 'Worker',
+      status: 'healthy',
+      ops_per_minute: 58,
+      active_operations: 1,
+      p95_latency_ms: 64,
+      error_rate: 0.001,
+      last_updated: NOW,
+    },
+  ],
+  connections: [
+    {
+      source: 'api-gateway',
+      target: 'orchestrator',
+      requests_per_minute: 124,
+      avg_latency_ms: 18,
+    },
+    {
+      source: 'orchestrator',
+      target: 'worker',
+      requests_per_minute: 58,
+      avg_latency_ms: 42,
+    },
+  ],
+}
+
+const SERVICE_MESH_HISTORY: Record<string, {
+  service: string
+  display_name: string
+  minutes: number
+  data_points: Array<{
+    timestamp: string
+    ops_per_minute: number
+    p95_latency_ms: number
+    error_rate: number
+  }>
+}> = {
+  orchestrator: {
+    service: 'orchestrator',
+    display_name: 'Orchestrator',
+    minutes: 30,
+    data_points: [
+      { timestamp: '2026-03-10T11:40:00Z', ops_per_minute: 68, p95_latency_ms: 160, error_rate: 0.01 },
+      { timestamp: '2026-03-10T11:50:00Z', ops_per_minute: 74, p95_latency_ms: 176, error_rate: 0.015 },
+      { timestamp: '2026-03-10T12:00:00Z', ops_per_minute: 76, p95_latency_ms: 190, error_rate: 0.018 },
+    ],
+  },
+  'api-gateway': {
+    service: 'api-gateway',
+    display_name: 'API Gateway',
+    minutes: 30,
+    data_points: [
+      { timestamp: '2026-03-10T11:40:00Z', ops_per_minute: 118, p95_latency_ms: 28, error_rate: 0.002 },
+      { timestamp: '2026-03-10T11:50:00Z', ops_per_minute: 122, p95_latency_ms: 30, error_rate: 0.003 },
+      { timestamp: '2026-03-10T12:00:00Z', ops_per_minute: 124, p95_latency_ms: 32, error_rate: 0.003 },
+    ],
+  },
+  worker: {
+    service: 'worker',
+    display_name: 'Worker',
+    minutes: 30,
+    data_points: [
+      { timestamp: '2026-03-10T11:40:00Z', ops_per_minute: 52, p95_latency_ms: 58, error_rate: 0.001 },
+      { timestamp: '2026-03-10T11:50:00Z', ops_per_minute: 55, p95_latency_ms: 61, error_rate: 0.001 },
+      { timestamp: '2026-03-10T12:00:00Z', ops_per_minute: 58, p95_latency_ms: 64, error_rate: 0.001 },
+    ],
+  },
+}
+
 const METADATA_CONTEXT = {
   database_id: DATABASE_ID,
   snapshot_id: 'snapshot-shared-services',
@@ -1984,7 +2168,10 @@ type RequestCounts = {
   streamMuxStatusReads: number
   commandSchemasEditorReads: number
   clusterLists: number
+  clusterDetails: number
   databaseLists: number
+  systemHealthReads: number
+  serviceHistoryReads: number
   metadataManagementReads: number
   decisionsScoped: number
   decisionsUnscoped: number
@@ -2020,7 +2207,10 @@ function createRequestCounts(): RequestCounts {
     streamMuxStatusReads: 0,
     commandSchemasEditorReads: 0,
     clusterLists: 0,
+    clusterDetails: 0,
     databaseLists: 0,
+    systemHealthReads: 0,
+    serviceHistoryReads: 0,
     metadataManagementReads: 0,
     decisionsScoped: 0,
     decisionsUnscoped: 0,
@@ -2039,7 +2229,7 @@ function createRequestCounts(): RequestCounts {
 }
 
 async function setupAuth(page: Page) {
-  await page.addInitScript((tenantId: string) => {
+  await page.addInitScript(({ tenantId, serviceMeshMetricsMessage }) => {
     window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:15173',
@@ -2074,6 +2264,14 @@ async function setupAuth(page: Page) {
         queueMicrotask(() => {
           this.readyState = NativeWebSocket.OPEN
           this.onopen?.call(this as WebSocket, new Event('open'))
+          queueMicrotask(() => {
+            this.onmessage?.call(
+              this as WebSocket,
+              new MessageEvent('message', {
+                data: JSON.stringify(serviceMeshMetricsMessage),
+              }),
+            )
+          })
         })
       }
 
@@ -2093,7 +2291,23 @@ async function setupAuth(page: Page) {
         this.onclose?.call(this as WebSocket, event)
       }
 
-      send() {}
+      send(payload?: string) {
+        try {
+          const message = typeof payload === 'string' ? JSON.parse(payload) as { action?: string } : null
+          if (message?.action === 'get_metrics') {
+            queueMicrotask(() => {
+              this.onmessage?.call(
+                this as WebSocket,
+                new MessageEvent('message', {
+                  data: JSON.stringify(serviceMeshMetricsMessage),
+                }),
+              )
+            })
+          }
+        } catch {
+          // ignore malformed test payloads
+        }
+      }
     }
 
     window.WebSocket = class extends NativeWebSocket {
@@ -2108,7 +2322,10 @@ async function setupAuth(page: Page) {
 
     localStorage.setItem('auth_token', 'test-token')
     localStorage.setItem('active_tenant_id', tenantId)
-  }, TENANT_ID)
+  }, {
+    tenantId: TENANT_ID,
+    serviceMeshMetricsMessage: SERVICE_MESH_METRICS_MESSAGE,
+  })
 }
 
 async function setupPersistentDatabaseStream(page: Page) {
@@ -2152,6 +2369,8 @@ async function setupUiPlatformMocks(
   options?: {
     isStaff?: boolean
     counts?: RequestCounts
+    clusterAccessLevel?: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' | null
+    clusterDetailDelayMs?: number
     selectedUserOutsideCatalogSlice?: boolean
     selectedDlqOutsideCatalogSlice?: boolean
     selectedArtifactOutsideCatalogSlice?: boolean
@@ -2159,6 +2378,8 @@ async function setupUiPlatformMocks(
 ) {
   const counts = options?.counts
   const isStaff = options?.isStaff ?? false
+  const clusterAccessLevel = options?.clusterAccessLevel ?? null
+  const clusterDetailDelayMs = options?.clusterDetailDelayMs ?? 0
   const selectedUserOutsideCatalogSlice = options?.selectedUserOutsideCatalogSlice ?? false
   const selectedDlqOutsideCatalogSlice = options?.selectedDlqOutsideCatalogSlice ?? false
   const selectedArtifactOutsideCatalogSlice = options?.selectedArtifactOutsideCatalogSlice ?? false
@@ -2215,7 +2436,10 @@ async function setupUiPlatformMocks(
         tenant_context: tenantContext,
         access: {
           user: { id: currentUser.id, username: currentUser.username },
-          clusters: [],
+          clusters: clusterAccessLevel ? [{
+            cluster: { id: CLUSTER_RECORD.id, name: CLUSTER_RECORD.name },
+            level: clusterAccessLevel,
+          }] : [],
           databases: [],
           operation_templates: [],
         },
@@ -2260,16 +2484,20 @@ async function setupUiPlatformMocks(
         counts.clusterLists += 1
       }
       return fulfillJson(route, {
-        clusters: [
-          {
-            id: 'cluster-1',
-            name: 'Main Cluster',
-            status: 'connected',
-          },
-        ],
+        clusters: [CLUSTER_RECORD],
         count: 1,
         total: 1,
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/clusters/get-cluster/') {
+      if (counts) {
+        counts.clusterDetails += 1
+      }
+      if (clusterDetailDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, clusterDetailDelayMs))
+      }
+      return fulfillJson(route, CLUSTER_DETAIL_RESPONSE)
     }
 
     if (method === 'GET' && path === '/api/v2/databases/get-database/') {
@@ -2513,6 +2741,25 @@ async function setupUiPlatformMocks(
         active_subscriptions: 3,
         max_subscriptions: 64,
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/system/health/') {
+      if (counts) {
+        counts.systemHealthReads += 1
+      }
+      return fulfillJson(route, SYSTEM_HEALTH_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/service-mesh/get-history/') {
+      const serviceName = String(url.searchParams.get('service') || '')
+      const history = SERVICE_MESH_HISTORY[serviceName]
+      if (!history) {
+        return fulfillJson(route, { detail: 'Service history not found.' }, 404)
+      }
+      if (counts) {
+        counts.serviceHistoryReads += 1
+      }
+      return fulfillJson(route, history)
     }
 
     if (method === 'GET' && path === '/api/v2/settings/runtime/') {
@@ -3929,6 +4176,371 @@ test('UI platform: /operations renders zero-task diagnostics as empty state inst
   await expect(page.getByText('Task list will appear when runtime reports a task workset for this operation.')).toBeVisible()
   await expect(page.locator('.ant-progress')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /clusters restores selected cluster context and opens edit flow in a canonical modal shell', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/clusters?cluster=cluster-1&context=edit&q=Main&status=active', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const editModal = page.getByRole('dialog')
+  await expect(editModal).toBeVisible()
+  await expect(editModal.getByLabel('Cluster Name')).toHaveValue(CLUSTER_RECORD.name)
+  await expect(editModal.getByLabel('RAS Host')).toHaveValue(CLUSTER_RECORD.ras_host)
+  await expect(editModal.getByRole('button', { name: 'Update' })).toBeVisible()
+  await expect.poll(() => counts.clusterLists).toBe(1)
+  await expect.poll(() => counts.clusterDetails).toBe(1)
+  await expectNoHorizontalOverflow(page)
+})
+
+test('Runtime contract: /clusters hands off to /databases without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/clusters?cluster=cluster-1&context=inspect', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect.poll(() => counts.clusterLists).toBe(1)
+  await expect.poll(() => counts.clusterDetails).toBe(1)
+
+  await page.getByRole('button', { name: 'Open Databases' }).click()
+
+  await expect(page).toHaveURL(/\/databases\?cluster=cluster-1(?:&.*)?$/)
+  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /clusters ignores same-route menu re-entry and keeps selected cluster context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/clusters?cluster=cluster-1&context=inspect', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const clustersMenuItem = page.getByRole('menuitem', { name: /Clusters/i })
+
+  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
+  await expect.poll(() => counts.clusterLists).toBe(1)
+  await expect.poll(() => counts.clusterDetails).toBe(1)
+
+  const initialUrl = page.url()
+  const initialClusterListReads = counts.clusterLists
+  const initialClusterDetailReads = counts.clusterDetails
+
+  await clustersMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.clusterLists).toBe(initialClusterListReads)
+  await expect(counts.clusterDetails).toBe(initialClusterDetailReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('UI platform: /clusters opens inspect detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/clusters?cluster=cluster-1&context=inspect', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expect(detailDrawer.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect(detailDrawer.getByText('Primary RAS cluster for shared services')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(detailDrawer, 'Clusters detail drawer')
+})
+
+test('Runtime contract: /clusters normalizes unauthorized mutating deep-links to inspect state', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: false, clusterAccessLevel: 'VIEW' })
+
+  await page.goto('/clusters?cluster=cluster-1&context=edit', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByRole('button', { name: 'Update' })).toHaveCount(0)
+  await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Edit' })).toBeDisabled()
+  await expect.poll(() => {
+    const currentUrl = new URL(page.url())
+    return {
+      path: currentUrl.pathname,
+      cluster: currentUrl.searchParams.get('cluster'),
+      context: currentUrl.searchParams.get('context'),
+    }
+  }).toEqual({
+    path: '/clusters',
+    cluster: 'cluster-1',
+    context: 'inspect',
+  })
+})
+
+test('UI platform: /clusters keeps detail loading fail-closed until the detail snapshot arrives', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, clusterDetailDelayMs: 1500 })
+
+  await page.goto('/clusters?cluster=cluster-1&context=inspect', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await page.waitForTimeout(200)
+  await expect(page.getByText('No databases returned for this cluster detail snapshot.')).toHaveCount(0)
+  await expect(page.getByText('Cluster metadata')).toHaveCount(0)
+  await expect(page.getByText('Database preview')).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(page.getByText('db-services')).toBeVisible()
+})
+
+test('UI platform: /system-status restores diagnostics context in a mobile-safe drawer with paused polling', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/system-status?service=orchestrator&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Resume auto-refresh' })).toBeVisible()
+  await expect(detailDrawer).toContainText('orchestrator')
+  await expect(detailDrawer.getByText('Delayed queue drain')).toBeVisible()
+  await expect.poll(() => counts.systemHealthReads).toBeGreaterThan(0)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(detailDrawer, 'System status detail drawer')
+})
+
+test('Runtime contract: /system-status hands off to /service-mesh without replaying shell reads', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/system-status?service=orchestrator&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Delayed queue drain')).toBeVisible()
+  await expect.poll(() => counts.systemHealthReads).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Open service mesh' }).click()
+
+  await expect(page).toHaveURL(/\/service-mesh\?service=orchestrator$/)
+  await expect(page.getByRole('heading', { name: 'Service mesh', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('service-mesh-service-drawer')).toBeVisible()
+  await expect.poll(() => counts.serviceHistoryReads).toBeGreaterThan(0)
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.meReads).toBe(0)
+  await expect(counts.myTenantsReads).toBe(0)
+})
+
+test('Runtime contract: /system-status ignores same-route menu re-entry and keeps diagnostics context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/system-status?service=orchestrator&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const systemStatusMenuItem = page.getByRole('menuitem', { name: /System status/i })
+
+  await expect(page.getByText('Delayed queue drain')).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect.poll(() => counts.systemHealthReads).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialSystemHealthReads = counts.systemHealthReads
+
+  await systemStatusMenuItem.click()
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(page.getByText('Delayed queue drain')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.systemHealthReads).toBe(initialSystemHealthReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('UI platform: /service-mesh restores selected service context in a mobile-safe drawer', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/service-mesh?service=orchestrator', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Service mesh', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const serviceDrawer = page.getByTestId('service-mesh-service-drawer')
+  await expect(serviceDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expect(serviceDrawer.getByText('Historical Metrics')).toBeVisible()
+  await expect(serviceDrawer.locator('.ant-statistic-title').filter({ hasText: 'Ops/min' }).first()).toBeVisible()
+  await expect.poll(() => counts.serviceHistoryReads).toBeGreaterThan(0)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(serviceDrawer, 'Service mesh service drawer')
+})
+
+test('UI platform: /service-mesh restores realtime context in a mobile-safe timeline drawer', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/service-mesh?service=orchestrator&operation=${WORKFLOW_OPERATION.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Service mesh', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Operation timeline context restored from the route state.')).toBeVisible()
+  const timelineDrawer = page.getByTestId('service-mesh-operation-timeline-drawer')
+  await expect(timelineDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expect(timelineDrawer.getByText('Operation Timeline')).toBeVisible()
+  await expect(timelineDrawer.getByText(WORKFLOW_OPERATION.id)).toBeVisible()
+  await expect.poll(() => counts.operationsList).toBeGreaterThan(0)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(timelineDrawer, 'Service mesh timeline drawer')
+})
+
+test('Runtime contract: /service-mesh ignores same-route menu re-entry and keeps selected service context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/service-mesh?service=orchestrator', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const serviceMeshMenuItem = page.getByRole('menuitem', { name: /Service mesh/i })
+  const serviceDrawer = page.getByTestId('service-mesh-service-drawer')
+
+  await expect(serviceDrawer).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(serviceDrawer.getByText('Historical Metrics')).toBeVisible()
+  await expect.poll(() => counts.serviceHistoryReads).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialServiceHistoryReads = counts.serviceHistoryReads
+
+  await serviceMeshMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(serviceDrawer).toBeVisible()
+  await expect(serviceDrawer.getByText('Historical Metrics')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.serviceHistoryReads).toBe(initialServiceHistoryReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /service-mesh ignores same-route menu re-entry and keeps realtime context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/service-mesh?service=orchestrator&operation=${WORKFLOW_OPERATION.id}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const serviceMeshMenuItem = page.getByRole('menuitem', { name: /Service mesh/i })
+  const timelineDrawer = page.getByTestId('service-mesh-operation-timeline-drawer')
+
+  await expect(timelineDrawer).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Operation timeline context restored from the route state.')).toBeVisible()
+  await expect.poll(() => counts.operationsList).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialOperationsListReads = counts.operationsList
+
+  await serviceMeshMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(timelineDrawer).toBeVisible()
+  await expect(page.getByText('Operation timeline context restored from the route state.')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.operationsList).toBe(initialOperationsListReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
 test('UI platform: /rbac restores selected mode and tab from URL-backed governance workspace state', async ({ page }) => {

@@ -1,30 +1,62 @@
-/**
- * Service Mesh Page.
- *
- * Full-page layout for service mesh monitoring with
- * real-time visualization and metrics.
- */
-import React from 'react'
-import { Typography } from 'antd'
+import { useCallback } from 'react'
+import { Alert, Space } from 'antd'
+import { useSearchParams } from 'react-router-dom'
+
 import ServiceMeshTab from '../../components/service-mesh/ServiceMeshTab'
-import './ServiceMeshPage.css'
+import { PageHeader, RouteButton, WorkspacePage } from '../../components/platform'
 
-const { Title } = Typography
+const ServiceMeshPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedService = (searchParams.get('service') || '').trim() || null
+  const selectedOperationId = (searchParams.get('operation') || '').trim() || null
 
-const ServiceMeshPage: React.FC = () => {
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
+
   return (
-    <div className="service-mesh-page">
-      <div className="service-mesh-page__header">
-        <Title level={3} className="service-mesh-page__title">
-          Service Mesh Monitor
-        </Title>
-        <span className="service-mesh-page__subtitle">
-          Real-time visualization of microservice topology and metrics
-        </span>
-      </div>
-
-      <ServiceMeshTab />
-    </div>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Service mesh"
+          subtitle="Real-time topology and metrics inside the shared observability workspace."
+          actions={(
+            <Space wrap>
+              <RouteButton
+                to={selectedService ? `/system-status?service=${encodeURIComponent(selectedService)}` : '/system-status'}
+              >
+                Open system status
+              </RouteButton>
+            </Space>
+          )}
+        />
+      )}
+    >
+      {selectedOperationId ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Operation timeline context restored from the route state."
+        />
+      ) : null}
+      <ServiceMeshTab
+        selectedService={selectedService}
+        onSelectedServiceChange={(service) => updateSearchParams({ service })}
+        selectedOperationId={selectedOperationId}
+        onSelectedOperationIdChange={(operationId) => updateSearchParams({ operation: operationId })}
+      />
+    </WorkspacePage>
   )
 }
 

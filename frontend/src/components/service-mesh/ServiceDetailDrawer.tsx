@@ -8,8 +8,7 @@
  * - Recent operations for this service
  */
 import React, { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Drawer, Card, Statistic, Row, Col, Spin, Empty, Button } from 'antd'
+import { Button, Card, Statistic, Row, Col, Spin, Empty } from 'antd'
 import {
   LineChartOutlined,
   ClockCircleOutlined,
@@ -38,6 +37,7 @@ import {
 } from '../../types/serviceMesh'
 import { getV2 } from '../../api/generated'
 import { transformServiceHistoryResponse } from '../../utils/serviceMeshTransforms'
+import { DrawerSurfaceShell, RouteButton } from '../platform'
 import './ServiceDetailDrawer.css'
 
 const api = getV2()
@@ -68,7 +68,6 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
   visible,
   onClose,
 }) => {
-  const navigate = useNavigate()
   const [historicalData, setHistoricalData] = useState<HistoricalDataPoint[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedMinutes, setSelectedMinutes] = useState(30)
@@ -115,7 +114,11 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
   }))
 
   return (
-    <Drawer
+    <DrawerSurfaceShell
+      open={visible}
+      onClose={onClose}
+      width={500}
+      drawerTestId="service-mesh-service-drawer"
       title={
         <div className="service-detail-drawer__title">
           <span
@@ -130,14 +133,10 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
           </span>
         </div>
       }
-      placement="right"
-      width={500}
-      open={visible}
-      onClose={onClose}
-      className="service-detail-drawer"
     >
-      {/* Description */}
-      <p className="service-detail-drawer__description">{description}</p>
+      <div className="service-detail-drawer">
+        {/* Description */}
+        <p className="service-detail-drawer__description">{description}</p>
 
       {/* Current Metrics */}
       <Card size="small" className="service-detail-drawer__metrics">
@@ -312,17 +311,14 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
       </Card>
 
       {/* View All Operations Button */}
-      <Button
-        type="link"
+      <RouteButton
         className="service-detail-drawer__view-all"
-        onClick={() => {
-          // Navigate to operations page with service filter
-          navigate(`/operations?service=${service.name}`)
-        }}
+        to={`/operations?service=${service.name}`}
       >
         View All Operations for {service.displayName}
-      </Button>
-    </Drawer>
+      </RouteButton>
+      </div>
+    </DrawerSurfaceShell>
   )
 }
 

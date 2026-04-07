@@ -89,6 +89,64 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects custom div/css shell composition on the service-mesh route module', async () => {
+    const messages = await lintSnippet(
+      'src/pages/ServiceMesh/ServiceMeshPage.tsx',
+      `
+        import { WorkspacePage, PageHeader } from '../../components/platform'
+
+        export default function ServiceMeshPage() {
+          return (
+            <WorkspacePage header={<PageHeader title="Service mesh" />}>
+              <div className="legacy-shell">
+                <div className="legacy-topology">topology</div>
+                <div className="legacy-sidepanel">metrics</div>
+              </div>
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/route-modules-must-keep-platform-primary-composition'
+        && message.message.includes('custom shell composition')
+    ))).toBe(true)
+  })
+
+  it('rejects raw wrapper composition in the clusters master-detail route module', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Clusters/Clusters.tsx',
+      `
+        import { WorkspacePage, PageHeader, MasterDetailShell } from '../../components/platform'
+
+        export function Clusters() {
+          return (
+            <WorkspacePage header={<PageHeader title="Clusters" />}>
+              <MasterDetailShell
+                list={<div className="legacy-cluster-catalog">catalog</div>}
+                detail={<div className="legacy-cluster-detail">detail</div>}
+              />
+            </WorkspacePage>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/route-modules-must-keep-platform-primary-composition'
+        && message.message.includes('custom shell composition')
+    ))).toBe(true)
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/route-modules-must-keep-platform-primary-composition'
+        && message.message.includes('`EntityList`')
+    ))).toBe(true)
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/route-modules-must-keep-platform-primary-composition'
+        && message.message.includes('`EntityDetails`')
+    ))).toBe(true)
+  })
+
   it('rejects platform shell modules missing from governance inventory', async () => {
     const messages = await lintSnippet(
       'src/pages/Future/FuturePlatformModal.tsx',

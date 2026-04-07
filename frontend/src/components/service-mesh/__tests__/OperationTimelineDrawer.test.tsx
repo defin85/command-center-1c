@@ -88,8 +88,8 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      // Ant Design Drawer with open=false should not show title
-      expect(screen.queryByText('Operation Timeline')).not.toBeInTheDocument()
+      expect(document.querySelector('.ant-drawer-open')).not.toBeInTheDocument()
+      expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled()
     })
 
     it('renders when visible is true', async () => {

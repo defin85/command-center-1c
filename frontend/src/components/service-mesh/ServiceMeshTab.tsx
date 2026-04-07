@@ -20,7 +20,19 @@ import RecentOperationsTable from './RecentOperationsTable'
 import type { ServiceMetrics } from '../../types/serviceMesh'
 import './ServiceMeshTab.css'
 
-const ServiceMeshTab: React.FC = () => {
+type ServiceMeshTabProps = {
+  selectedService?: string | null
+  onSelectedServiceChange?: (service: string | null) => void
+  selectedOperationId?: string | null
+  onSelectedOperationIdChange?: (operationId: string | null) => void
+}
+
+const ServiceMeshTab: React.FC<ServiceMeshTabProps> = ({
+  selectedService: controlledSelectedService,
+  onSelectedServiceChange,
+  selectedOperationId: controlledSelectedOperationId,
+  onSelectedOperationIdChange,
+}) => {
   // Ref for diagram container (used by useResponsiveDirection)
   const diagramContainerRef = useRef<HTMLDivElement>(null)
 
@@ -39,10 +51,14 @@ const ServiceMeshTab: React.FC = () => {
   const { mode: directionMode, direction, setMode: setDirectionMode } = useResponsiveDirection(diagramContainerRef)
 
   // Selected service for detail drawer
-  const [selectedService, setSelectedService] = useState<string | null>(null)
+  const [uncontrolledSelectedService, setUncontrolledSelectedService] = useState<string | null>(null)
+  const selectedService = controlledSelectedService ?? uncontrolledSelectedService
 
   // Selected operation for timeline drawer
-  const [selectedOperationId, setSelectedOperationId] = useState<string | null>(null)
+  const [uncontrolledSelectedOperationId, setUncontrolledSelectedOperationId] = useState<string | null>(null)
+  const selectedOperationId = controlledSelectedOperationId ?? uncontrolledSelectedOperationId
+  const serviceDrawerVisible = selectedService !== null && selectedOperationId === null
+  const timelineDrawerVisible = selectedOperationId !== null
 
   const rasServerMetrics = useMemo(
     () => services.find((service) => service.name === 'ras-server') || null,
@@ -57,23 +73,35 @@ const ServiceMeshTab: React.FC = () => {
 
   // Handle service selection from diagram
   const handleServiceSelect = useCallback((service: string | null) => {
-    setSelectedService(service)
-  }, [])
+    onSelectedServiceChange?.(service)
+    if (controlledSelectedService === undefined) {
+      setUncontrolledSelectedService(service)
+    }
+  }, [controlledSelectedService, onSelectedServiceChange])
 
   // Handle drawer close
   const handleDrawerClose = useCallback(() => {
-    setSelectedService(null)
-  }, [])
+    onSelectedServiceChange?.(null)
+    if (controlledSelectedService === undefined) {
+      setUncontrolledSelectedService(null)
+    }
+  }, [controlledSelectedService, onSelectedServiceChange])
 
   // Handle operation click - open timeline drawer
   const handleOperationClick = useCallback((operationId: string) => {
-    setSelectedOperationId(operationId)
-  }, [])
+    onSelectedOperationIdChange?.(operationId)
+    if (controlledSelectedOperationId === undefined) {
+      setUncontrolledSelectedOperationId(operationId)
+    }
+  }, [controlledSelectedOperationId, onSelectedOperationIdChange])
 
   // Handle timeline drawer close
   const handleTimelineClose = useCallback(() => {
-    setSelectedOperationId(null)
-  }, [])
+    onSelectedOperationIdChange?.(null)
+    if (controlledSelectedOperationId === undefined) {
+      setUncontrolledSelectedOperationId(null)
+    }
+  }, [controlledSelectedOperationId, onSelectedOperationIdChange])
 
   // Show loading state if no services yet
   if (services.length === 0 && !connectionError) {
@@ -141,14 +169,14 @@ const ServiceMeshTab: React.FC = () => {
       {/* Service Detail Drawer */}
       <ServiceDetailDrawer
         service={selectedServiceMetrics}
-        visible={selectedService !== null}
+        visible={serviceDrawerVisible}
         onClose={handleDrawerClose}
       />
 
       {/* Operation Timeline Drawer */}
       <OperationTimelineDrawer
         operationId={selectedOperationId}
-        visible={selectedOperationId !== null}
+        visible={timelineDrawerVisible}
         onClose={handleTimelineClose}
       />
     </div>

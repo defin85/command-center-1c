@@ -81,6 +81,22 @@ const databasesRouteModuleImports = [
   },
 ]
 
+const clustersRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Modal', 'Row', 'Col', 'Spin', 'Table', 'Tabs'],
+    message: 'Clusters route must compose through `WorkspacePage`, `PageHeader`, `MasterDetailShell`, and canonical secondary shells instead of raw Ant route containers.',
+  },
+]
+
+const observabilityRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Empty', 'Layout', 'Modal', 'Row', 'Col', 'Spin', 'Table', 'Tabs'],
+    message: 'Infra observability routes must compose through `WorkspacePage`, `PageHeader`, and platform-owned diagnostics surfaces instead of raw Ant route containers.',
+  },
+]
+
 const poolCatalogRouteModuleImports = [
   {
     name: 'antd',
@@ -203,6 +219,7 @@ const platformShellRestrictedAntdImports = new Map([
   ['Tag', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe status/summary chips instead of raw `Tag`.'],
   ['Divider', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe spacing/separators instead of raw `Divider`.'],
 ])
+const routePrimaryShellForbiddenHtmlTags = new Set(['div', 'section', 'main', 'aside', 'article'])
 
 const normalizeInventoryPath = (value) => value.replace(/\\/g, '/')
 const resolveFrontendRelativePath = (filename) => (
@@ -345,6 +362,51 @@ const expressionIsHorizontalOverflowDependency = (expression) => {
   }
 
   return false
+}
+
+const visitJsxExpressionTree = (node, visitor) => {
+  if (!node) {
+    return
+  }
+
+  visitor(node)
+
+  if (node.type === 'JSXElement') {
+    visitJsxExpressionTree(node.openingElement, visitor)
+    node.children.forEach((child) => visitJsxExpressionTree(child, visitor))
+    return
+  }
+
+  if (node.type === 'JSXFragment') {
+    node.children.forEach((child) => visitJsxExpressionTree(child, visitor))
+    return
+  }
+
+  if (node.type === 'JSXExpressionContainer') {
+    visitJsxExpressionTree(node.expression, visitor)
+    return
+  }
+
+  if (node.type === 'ConditionalExpression') {
+    visitJsxExpressionTree(node.consequent, visitor)
+    visitJsxExpressionTree(node.alternate, visitor)
+    return
+  }
+
+  if (node.type === 'LogicalExpression') {
+    visitJsxExpressionTree(node.left, visitor)
+    visitJsxExpressionTree(node.right, visitor)
+    return
+  }
+
+  if (node.type === 'SequenceExpression') {
+    node.expressions.forEach((expression) => visitJsxExpressionTree(expression, visitor))
+    return
+  }
+
+  if (node.type === 'ArrayExpression') {
+    node.elements.forEach((element) => visitJsxExpressionTree(element, visitor))
+  }
 }
 
 const uiPlatformLocalPlugin = {
@@ -688,6 +750,207 @@ const uiPlatformLocalPlugin = {
         }
       },
     },
+    'route-modules-must-keep-platform-primary-composition': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        const relativeFilename = resolveFrontendRelativePath(filename)
+
+        const clusterRouteFile = 'src/pages/Clusters/Clusters.tsx'
+        const systemStatusRouteFile = 'src/pages/SystemStatus/SystemStatus.tsx'
+        const serviceMeshRouteFile = 'src/pages/ServiceMesh/ServiceMeshPage.tsx'
+
+        const contract = filePathMatchesInventory(relativeFilename, clusterRouteFile)
+          ? {
+            routeLabel: 'Clusters route',
+            requireWorkspacePage: true,
+            requirePageHeader: true,
+            requireMasterDetailShell: true,
+            requireEntityList: true,
+            requireEntityDetails: true,
+            requireServiceMeshTab: false,
+          }
+          : filePathMatchesInventory(relativeFilename, systemStatusRouteFile)
+            ? {
+              routeLabel: 'System status route',
+              requireWorkspacePage: true,
+              requirePageHeader: true,
+              requireMasterDetailShell: true,
+              requireEntityList: true,
+              requireEntityDetails: true,
+              requireServiceMeshTab: false,
+            }
+            : filePathMatchesInventory(relativeFilename, serviceMeshRouteFile)
+              ? {
+                routeLabel: 'Service mesh route',
+                requireWorkspacePage: true,
+                requirePageHeader: true,
+                requireMasterDetailShell: false,
+                requireEntityList: false,
+                requireEntityDetails: false,
+                requireServiceMeshTab: true,
+              }
+              : null
+
+        if (!contract) {
+          return {}
+        }
+
+        const workspacePageLocalNames = new Set()
+        const pageHeaderLocalNames = new Set()
+        const masterDetailShellLocalNames = new Set()
+        const entityListLocalNames = new Set()
+        const entityDetailsLocalNames = new Set()
+        const serviceMeshTabLocalNames = new Set()
+
+        let hasWorkspacePage = false
+        let hasPageHeader = false
+        let hasMasterDetailShell = false
+        let hasEntityListInMasterDetail = false
+        let hasEntityDetailsInMasterDetail = false
+        let hasServiceMeshTab = false
+
+        const trackRequiredTagUsage = (tagRootName) => {
+          if (workspacePageLocalNames.has(tagRootName)) {
+            hasWorkspacePage = true
+          }
+          if (pageHeaderLocalNames.has(tagRootName)) {
+            hasPageHeader = true
+          }
+          if (serviceMeshTabLocalNames.has(tagRootName)) {
+            hasServiceMeshTab = true
+          }
+        }
+
+        const inspectMasterDetailShell = (node) => {
+          if (!masterDetailShellLocalNames.has(getJsxTagRootName(node.name))) {
+            return
+          }
+
+          hasMasterDetailShell = true
+
+          const listExpression = getJsxAttributeExpression(node.attributes, 'list')
+          visitJsxExpressionTree(listExpression, (expressionNode) => {
+            if (
+              (expressionNode.type === 'JSXOpeningElement' || expressionNode.type === 'JSXSelfClosingElement')
+              && entityListLocalNames.has(getJsxTagRootName(expressionNode.name))
+            ) {
+              hasEntityListInMasterDetail = true
+            }
+          })
+
+          const detailExpression = getJsxAttributeExpression(node.attributes, 'detail')
+          visitJsxExpressionTree(detailExpression, (expressionNode) => {
+            if (
+              (expressionNode.type === 'JSXOpeningElement' || expressionNode.type === 'JSXSelfClosingElement')
+              && entityDetailsLocalNames.has(getJsxTagRootName(expressionNode.name))
+            ) {
+              hasEntityDetailsInMasterDetail = true
+            }
+          })
+        }
+
+        const inspectOpeningElement = (node) => {
+          const tagRootName = getJsxTagRootName(node.name)
+          trackRequiredTagUsage(tagRootName)
+          inspectMasterDetailShell(node)
+
+          if (!routePrimaryShellForbiddenHtmlTags.has(tagRootName)) {
+            return
+          }
+
+          context.report({
+            node,
+            message: `${contract.routeLabel} must not fall back to raw \`${tagRootName}\`-based custom shell composition; keep the primary route layout in platform primitives.`,
+          })
+        }
+
+        return {
+          ImportDeclaration(node) {
+            const source = typeof node.source.value === 'string' ? node.source.value : ''
+            if (source.includes('components/platform')) {
+              for (const specifier of node.specifiers) {
+                if (specifier.type !== 'ImportSpecifier') {
+                  continue
+                }
+
+                if (specifier.imported.name === 'WorkspacePage') {
+                  workspacePageLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'PageHeader') {
+                  pageHeaderLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'MasterDetailShell') {
+                  masterDetailShellLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'EntityList') {
+                  entityListLocalNames.add(specifier.local.name)
+                }
+                if (specifier.imported.name === 'EntityDetails') {
+                  entityDetailsLocalNames.add(specifier.local.name)
+                }
+              }
+            }
+
+            if (filePathMatchesInventory(relativeFilename, serviceMeshRouteFile) && source.includes('components/service-mesh/ServiceMeshTab')) {
+              for (const specifier of node.specifiers) {
+                if (specifier.type === 'ImportDefaultSpecifier' || specifier.type === 'ImportSpecifier') {
+                  serviceMeshTabLocalNames.add(specifier.local.name)
+                }
+              }
+            }
+          },
+          JSXOpeningElement: inspectOpeningElement,
+          JSXSelfClosingElement: inspectOpeningElement,
+          'Program:exit'(node) {
+            if (contract.requireWorkspacePage && !hasWorkspacePage) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must render through \`WorkspacePage\` at the route level.`,
+              })
+            }
+
+            if (contract.requirePageHeader && !hasPageHeader) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must render through \`PageHeader\` at the route level.`,
+              })
+            }
+
+            if (contract.requireMasterDetailShell && !hasMasterDetailShell) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must keep \`MasterDetailShell\` as the primary catalog/detail composition.`,
+              })
+            }
+
+            if (contract.requireEntityList && !hasEntityListInMasterDetail) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must compose the primary catalog through \`EntityList\` inside \`MasterDetailShell\`.`,
+              })
+            }
+
+            if (contract.requireEntityDetails && !hasEntityDetailsInMasterDetail) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must compose the primary diagnostics/detail surface through \`EntityDetails\` inside \`MasterDetailShell\`.`,
+              })
+            }
+
+            if (contract.requireServiceMeshTab && !hasServiceMeshTab) {
+              context.report({
+                node,
+                message: `${contract.routeLabel} must keep \`ServiceMeshTab\` as the primary realtime surface inside \`WorkspacePage\`.`,
+              })
+            }
+          },
+        }
+      },
+    },
   },
 }
 
@@ -717,6 +980,8 @@ const inventoryDrivenRouteOverrides = [
   buildRouteRestrictedImportsOverride('dashboard-route', dashboardRouteModuleImports),
   buildRouteRestrictedImportsOverride('operations-route', operationsRouteModuleImports),
   buildRouteRestrictedImportsOverride('databases-route', databasesRouteModuleImports),
+  buildRouteRestrictedImportsOverride('clusters-route', clustersRouteModuleImports),
+  buildRouteRestrictedImportsOverride('observability-route', observabilityRouteModuleImports),
   buildRouteRestrictedImportsOverride('pool-catalog-route', poolCatalogRouteModuleImports),
   buildRouteRestrictedImportsOverride('pool-runs-route', poolRunsRouteModuleImports),
   buildRouteRestrictedImportsOverride('pool-schema-templates-route', poolSchemaTemplatesRouteModuleImports),
@@ -796,6 +1061,7 @@ export default tseslint.config(
       'ui-platform-local/app-routes-must-exist-in-governance-inventory': 'error',
       'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory': 'error',
       'ui-platform-local/compact-master-pane-must-use-entity-list': 'error',
+      'ui-platform-local/route-modules-must-keep-platform-primary-composition': 'error',
       'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },

@@ -34,7 +34,11 @@ export const routeGovernanceInventory = [
   {
     routePath: '/clusters',
     modulePath: 'src/pages/Clusters/Clusters.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'clusters-route',
+    workspaceKind: 'management-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/operations',
@@ -97,7 +101,11 @@ export const routeGovernanceInventory = [
   {
     routePath: '/system-status',
     modulePath: 'src/pages/SystemStatus/SystemStatus.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'observability-route',
+    workspaceKind: 'diagnostics-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/workflows',
@@ -228,7 +236,11 @@ export const routeGovernanceInventory = [
   {
     routePath: '/service-mesh',
     modulePath: 'src/pages/ServiceMesh/ServiceMeshPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'observability-route',
+    workspaceKind: 'realtime-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/rbac',
@@ -301,6 +313,12 @@ export const routeGovernanceInventory = [
  */
 export const shellSurfaceGovernanceInventory = [
   {
+    filePath: 'src/components/clusters/DiscoverClustersModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/clusters'],
+  },
+  {
     filePath: 'src/pages/Artifacts/ArtifactDetailsDrawer.tsx',
     tier: 'platform-governed',
     shellKinds: ['drawer'],
@@ -347,6 +365,18 @@ export const shellSurfaceGovernanceInventory = [
     tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/databases'],
+  },
+  {
+    filePath: 'src/components/service-mesh/OperationTimelineDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/service-mesh'],
+  },
+  {
+    filePath: 'src/components/service-mesh/ServiceDetailDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/service-mesh'],
   },
   {
     filePath: 'src/pages/Decisions/DecisionsPage.tsx',
@@ -413,6 +443,18 @@ export const shellSurfaceGovernanceInventory = [
     tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/pools/topology-templates'],
+  },
+  {
+    filePath: 'src/pages/Clusters/components/ClusterCredentialsModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/clusters'],
+  },
+  {
+    filePath: 'src/pages/Clusters/components/ClusterUpsertModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/clusters'],
   },
   {
     filePath: 'src/pages/Settings/RuntimeSettingsPage.tsx',

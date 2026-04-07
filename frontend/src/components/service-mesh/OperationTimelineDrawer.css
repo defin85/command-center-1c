@@ -15,6 +15,7 @@
 .operation-timeline-drawer__title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 16px;
 }
@@ -31,6 +32,7 @@
   border-radius: 4px;
   color: #595959;
   margin-left: auto;
+  overflow-wrap: anywhere;
 }
 
 /* Loading state */
@@ -77,6 +79,10 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
+.operation-timeline-drawer__event-list .ant-list-item {
+  align-items: flex-start;
+}
+
 /* Empty state */
 .operation-timeline-drawer__empty {
   padding: 48px 0;
@@ -86,6 +92,15 @@
 @media (max-width: 640px) {
   .operation-timeline-drawer .ant-drawer-content-wrapper {
     width: 100% !important;
+  }
+
+  .operation-timeline-drawer__title {
+    align-items: flex-start;
+  }
+
+  .operation-timeline-drawer__id {
+    margin-left: 0;
+    width: 100%;
   }
 
   .operation-timeline-drawer__summary .ant-col {

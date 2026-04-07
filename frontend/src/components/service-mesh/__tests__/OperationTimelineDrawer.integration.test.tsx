@@ -75,7 +75,8 @@ describe('OperationTimelineDrawer (integration)', () => {
       />
     )
 
-    expect(screen.queryByText('Operation Timeline')).not.toBeInTheDocument()
+    expect(document.querySelector('.ant-drawer-open')).not.toBeInTheDocument()
+    expect(vi.mocked(apiClient.post)).not.toHaveBeenCalled()
 
     rerender(
       <OperationTimelineDrawer
@@ -139,4 +140,3 @@ describe('OperationTimelineDrawer (integration)', () => {
     })
   })
 })
-

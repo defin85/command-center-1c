@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { getV2 } from '../generated'
 import type { Cluster } from '../generated/model/cluster'
+import type { ClusterDetailResponse } from '../generated/model/clusterDetailResponse'
 import type { ClusterListResponse } from '../generated/model/clusterListResponse'
 import type { ClusterSyncResponse } from '../generated/model/clusterSyncResponse'
 import type { DiscoverClustersRequest } from '../generated/model/discoverClustersRequest'
@@ -98,6 +99,10 @@ async function fetchClusters(filters?: ClusterFilters): Promise<ClusterListRespo
   })
 }
 
+async function fetchCluster(clusterId: string): Promise<ClusterDetailResponse> {
+  return api.getClustersGetCluster({ cluster_id: clusterId })
+}
+
 async function fetchSystemConfig(): Promise<SystemConfig> {
   try {
     return await api.getSystemConfig()
@@ -122,6 +127,14 @@ export function useClusters(filters?: ClusterFilters) {
   return useQuery({
     queryKey: queryKeys.clusters.list(filters),
     queryFn: () => fetchClusters(filters),
+  })
+}
+
+export function useCluster(clusterId?: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: clusterId ? queryKeys.clusters.detail(clusterId) : [...queryKeys.clusters.all, 'detail', null],
+    queryFn: () => fetchCluster(clusterId as string),
+    enabled: Boolean(clusterId) && (options?.enabled ?? true),
   })
 }
 

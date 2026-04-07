@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
-import { Modal, Form, Input, InputNumber, App, Row, Col } from 'antd'
+import { App, Form, Input, InputNumber, Space } from 'antd'
 import type { DiscoverClustersRequest } from '../../api/generated/model/discoverClustersRequest'
+import { ModalFormShell } from '../platform'
 import {
     DEFAULT_CLUSTER_SERVICE_URL,
     DEFAULT_RAS_SERVER,
@@ -11,12 +12,12 @@ import {
 } from '../../api/queries/clusters'
 
 interface DiscoverClustersModalProps {
-    visible: boolean
+    open: boolean
     onClose: () => void
 }
 
 export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
-    visible,
+    open,
     onClose,
 }) => {
     const { message } = App.useApp()
@@ -28,14 +29,14 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
 
     // Set default values when modal opens
     useEffect(() => {
-        if (!visible) return
+        if (!open) return
         const rasDefaults = parseHostPort(systemConfig?.ras_default_server ?? DEFAULT_RAS_SERVER)
         form.setFieldsValue({
             ras_host: rasDefaults.host,
             ras_port: rasDefaults.port || DEFAULT_RAS_PORT,
             cluster_service_url: DEFAULT_CLUSTER_SERVICE_URL,
         })
-    }, [visible, systemConfig, form])
+    }, [open, systemConfig, form])
 
     const handleDiscover = async () => {
         try {
@@ -76,18 +77,19 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
     }
 
     return (
-        <Modal
+        <ModalFormShell
+            open={open}
+            onClose={handleCancel}
+            onSubmit={handleDiscover}
             title="Discover Clusters from RAS Server"
-            open={visible}
-            onOk={handleDiscover}
-            onCancel={handleCancel}
+            subtitle="Probe a RAS endpoint and enqueue discovered clusters"
             confirmLoading={discoverClusters.isPending}
-            okText="Discover"
-            cancelText="Cancel"
+            submitText="Discover"
+            forceRender
         >
             <Form form={form} layout="vertical">
-                <Row gutter={12}>
-                    <Col span={16}>
+                <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                    <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 140px' }}>
                         <Form.Item
                             label="RAS Host"
                             name="ras_host"
@@ -96,8 +98,6 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                         >
                             <Input id="discover-ras-host" placeholder="localhost" />
                         </Form.Item>
-                    </Col>
-                    <Col span={8}>
                         <Form.Item
                             label="RAS Port"
                             name="ras_port"
@@ -112,25 +112,25 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                                 placeholder={String(DEFAULT_RAS_PORT)}
                             />
                         </Form.Item>
-                    </Col>
-                </Row>
-                <Form.Item
-                    label="Cluster Service URL"
-                    name="cluster_service_url"
-                    rules={[{ required: true, message: 'Cluster service URL is required' }]}
-                    extra="RAS Adapter service URL (e.g., http://localhost:8188)"
-                    htmlFor="discover-cluster-service-url"
-                >
-                    <Input id="discover-cluster-service-url" placeholder="http://localhost:8188" />
-                </Form.Item>
-                <Form.Item label="Cluster Admin User (optional)" name="cluster_user" htmlFor="discover-cluster-user">
-                    <Input id="discover-cluster-user" placeholder="admin" />
-                </Form.Item>
-                <Form.Item label="Cluster Admin Password (optional)" name="cluster_pwd" htmlFor="discover-cluster-password">
-                    <Input.Password id="discover-cluster-password" placeholder="password" />
-                </Form.Item>
+                    </div>
+                    <Form.Item
+                        label="Cluster Service URL"
+                        name="cluster_service_url"
+                        rules={[{ required: true, message: 'Cluster service URL is required' }]}
+                        extra="RAS Adapter service URL (e.g., http://localhost:8188)"
+                        htmlFor="discover-cluster-service-url"
+                    >
+                        <Input id="discover-cluster-service-url" placeholder="http://localhost:8188" />
+                    </Form.Item>
+                    <Form.Item label="Cluster Admin User (optional)" name="cluster_user" htmlFor="discover-cluster-user">
+                        <Input id="discover-cluster-user" placeholder="admin" />
+                    </Form.Item>
+                    <Form.Item label="Cluster Admin Password (optional)" name="cluster_pwd" htmlFor="discover-cluster-password">
+                        <Input.Password id="discover-cluster-password" placeholder="password" />
+                    </Form.Item>
+                </Space>
             </Form>
-        </Modal>
+        </ModalFormShell>
     )
 }
 

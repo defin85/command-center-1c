@@ -19,6 +19,18 @@ export {
   useUpdateTemplate,
   useDeleteTemplate,
 } from './templates'
+export {
+  useCluster,
+  useClusters,
+  useSystemConfig,
+  useCreateCluster,
+  useUpdateCluster,
+  useDeleteCluster,
+  useSyncCluster,
+  useResetClusterSyncStatus,
+  useDiscoverClusters,
+  useUpdateClusterCredentials,
+} from './clusters'
 export { useShellBootstrap } from './shellBootstrap'
 export { useMe } from './me'
 export { useDlqMessage, useDlqMessages, useRetryDlqMessage } from './dlq'
