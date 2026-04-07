@@ -137,10 +137,12 @@ Export bundle должен включать сводку:
 
 1. Зафиксировать capability `ui-action-observability` и event/correlation schema.
 2. Инструментировать shared frontend boundaries (`router`, API client, `ErrorBoundary`, global error hooks).
-3. Пробросить `request_id` / `ui_action_id` через gateway/orchestrator error/logging path.
+3. Пробросить `request_id` / `ui_action_id` через gateway/orchestrator error/logging path, сохранив additive и backward-compatible diagnostic contract для headers/problem details.
 4. Добавить debug export workflow и automated validation.
+5. Наращивать route/surface-specific realtime instrumentation только после landing shared boundaries, начиная с `serviceMeshManager`, `useWorkflowExecution` и других long-lived connection owners.
 
 ## Open Questions
 
 - Нужен ли phase-2 persisted server-side ingestion journal bundle, или локального debug export path достаточно на обозримый период.
 - Нужно ли включать sampled successful requests в journal, или phase-1 должен фиксировать только failures и explicitly annotated operator actions.
+- Должен ли `trace_id` стать нормативным полем capability `ui-action-observability`, или на phase-1 достаточно оставить его optional companion correlation field поверх `request_id` / `ui_action_id`.

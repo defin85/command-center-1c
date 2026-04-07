@@ -23,6 +23,7 @@
 - Зафиксировать новый capability `settings-management-workspaces` для `/settings/runtime` и `/settings/timeline`, чтобы route-level UI truth не смешивался с backend semantics `runtime-settings-overrides`.
 - Доработать `extensions-overview`, чтобы `/extensions` был описан как canonical management workspace с URL-addressable selected extension context и secondary drill-down/authoring surfaces.
 - Доработать `command-schemas-driver-options`, чтобы `/settings/command-schemas` был описан как canonical command schema workspace с route-addressable driver/mode/selected command context и responsive fallback.
+- Подключить admin/support routes к shared governance inventory и tier registry из `01-expand-ui-frontend-governance-coverage`, не открывая новый route-specific perimeter список вручную.
 - Зафиксировать, что blocking frontend gate для этой волны включает lint, unit/runtime tests, browser `ui-platform` regressions и production build.
 
 ## Impact
@@ -35,6 +36,7 @@
 - Affected code (expected, when implementing this change):
   - `frontend/src/App.tsx`
   - `frontend/eslint.config.js`
+  - route inventory рядом с `frontend/src/App.tsx`
   - `frontend/src/components/platform/**`
   - `frontend/src/pages/RBAC/**`
   - `frontend/src/pages/Users/**`

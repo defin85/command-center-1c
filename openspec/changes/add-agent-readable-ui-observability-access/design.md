@@ -8,7 +8,7 @@
 
 При этом отсутствует canonical agent-facing contract, который делает UI инциденты machine-readable для LLM/агента и на dev, и на prod.
 
-Отдельный change `add-ui-action-journal-and-error-correlation` уже закрывает нижний слой: bounded UI journal, `request_id` / `ui_action_id`, redaction policy и debug export path. Новый change должен не дублировать этот слой, а зафиксировать, как именно агент его читает и что обязано быть доступно на production surface.
+Отдельный change `05-add-ui-action-journal-and-error-correlation` уже закрывает нижний слой: bounded UI journal, `request_id` / `ui_action_id`, redaction policy и debug export path. Новый change должен не дублировать этот слой, а зафиксировать, как именно агент его читает и что обязано быть доступно на production surface.
 
 ## Goals
 
@@ -59,9 +59,9 @@ Default agent monitoring path строится поверх:
 
 ### 4. Dependency management
 
-Новый change зависит от `add-ui-action-journal-and-error-correlation`, потому что без него нет stable source-of-truth для frontend journal и correlation identifiers.
+Новый change зависит от `05-add-ui-action-journal-and-error-correlation`, потому что без него нет stable source-of-truth для frontend journal и correlation identifiers.
 
-`expand-ui-frontend-governance-coverage` и route-level UI governance остаются orthogonal prerequisites: они улучшают perimeter discipline, но не заменяют observability access.
+`01-expand-ui-frontend-governance-coverage` и route-level UI governance остаются orthogonal prerequisites: они улучшают perimeter discipline, но не заменяют observability access.
 
 ## Alternatives
 

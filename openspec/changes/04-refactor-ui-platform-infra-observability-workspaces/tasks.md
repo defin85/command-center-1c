@@ -1,5 +1,5 @@
 ## 1. Shared governance and platform perimeter
-- [ ] 1.1 Расширить `frontend/eslint.config.js` и связанные governance checks с уже migrated routes на `/clusters`, `/system-status` и `/service-mesh`.
+- [ ] 1.1 Добавить `/clusters`, `/system-status` и `/service-mesh` в shared governance inventory, назначить им `platform-governed` tier и при необходимости расширить inventory-driven governance helpers без выделения отдельного residual perimeter списка.
 - [ ] 1.2 Доработать shared platform primitives и route helpers только там, где текущего thin design layer не хватает для infra/observability catalog, diagnostics и realtime surfaces.
 
 ## 2. Infrastructure and observability workspaces
@@ -10,4 +10,4 @@
 
 ## 3. Validation
 - [ ] 3.1 Прогнать `npm --prefix frontend run lint`, `npm --prefix frontend run test:run`, `npm --prefix frontend run test:browser:ui-platform`, `npm --prefix frontend run build`.
-- [ ] 3.2 Прогнать `openspec validate refactor-ui-platform-infra-observability-workspaces --strict --no-interactive`.
+- [ ] 3.2 Прогнать `openspec validate 04-refactor-ui-platform-infra-observability-workspaces --strict --no-interactive`.

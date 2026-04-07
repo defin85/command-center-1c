@@ -2,9 +2,9 @@
 
 ## Почему
 
-После `expand-ui-frontend-governance-coverage` frontend perimeter станет лучше классифицирован и проверяем lint/browser gate, но это не даёт агенту или LLM runtime-доступа к реальным UI инцидентам.
+После `01-expand-ui-frontend-governance-coverage` frontend perimeter станет лучше классифицирован и проверяем lint/browser gate, но это не даёт агенту или LLM runtime-доступа к реальным UI инцидентам.
 
-В проекте уже есть backend observability stack (`Prometheus`, `Grafana`, `Jaeger`) и frontend trace viewer для server-side traces, а также отдельно запланирован built-in UI journal в `add-ui-action-journal-and-error-correlation`. Однако до сих пор не зафиксирован canonical access path, по которому агент сможет:
+В проекте уже есть backend observability stack (`Prometheus`, `Grafana`, `Jaeger`) и frontend trace viewer для server-side traces, а также отдельно запланирован built-in UI journal в `05-add-ui-action-journal-and-error-correlation`. Однако до сих пор не зафиксирован canonical access path, по которому агент сможет:
 - на dev-контуре получить текущий machine-readable bundle воспроизведённой UI-проблемы;
 - на prod-контуре читать redacted machine-readable signals о UI ошибках и коррелированных trace/request/action идентификаторах;
 - делать это без обязательного session replay, DOM video capture или прямого интерактивного доступа к пользовательскому браузеру.
@@ -25,7 +25,7 @@
   - semantic error/action/journal events
   и НЕ ДОЛЖЕН (SHALL NOT) требовать visual replay как обязательное условие.
 - Зафиксировать access, redaction, sampling и retention contract для agent-readable UI diagnostics, чтобы prod path был безопасным.
-- Зафиксировать dependency на `add-ui-action-journal-and-error-correlation` как на source capability для frontend journal/correlation bundle.
+- Зафиксировать dependency на `05-add-ui-action-journal-and-error-correlation` как на source capability для frontend journal/correlation bundle.
 
 ## Impact
 
@@ -34,8 +34,8 @@
 - Related existing specs/changes:
   - `ui-frontend-governance`
   - `execution-runtime-unification`
-  - `add-ui-action-journal-and-error-correlation`
-  - `expand-ui-frontend-governance-coverage`
+  - `05-add-ui-action-journal-and-error-correlation`
+  - `01-expand-ui-frontend-governance-coverage`
 - Affected code:
   - `frontend/src/**`
   - `go-services/api-gateway/**`

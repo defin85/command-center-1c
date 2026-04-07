@@ -71,6 +71,11 @@ Repo-wide invariant про SPA handoff и отсутствие redundant shell r
 - не переписываем этот invariant заново;
 - но расширяем governance perimeter и browser coverage на новые migrated routes, чтобы admin/support pages тоже перестали выпадать из общего shell contract.
 
+### 6. Shared governance inventory остаётся единственным perimeter registry
+Эта wave должна подключать `/rbac`, `/users`, `/dlq`, `/artifacts`, `/extensions`, `/settings/runtime`, `/settings/command-schemas` и `/settings/timeline` через shared governance inventory из `01-expand-ui-frontend-governance-coverage`.
+
+Route enrollment, tier assignment и targeting route-specific rules не должны возвращаться к новой hand-maintained perimeter allowlist в `eslint.config.js`. Если в ходе migration выяснится, что generic shared rules не хватает, change расширяет inventory-driven helpers, а не создаёт второй источник истины.
+
 ## Alternatives Considered
 
 ### Вариант A: Продолжать точечными bugfix без нового change
@@ -102,7 +107,7 @@ Repo-wide invariant про SPA handoff и отсутствие redundant shell r
 Минусы:
 - `rxzs` уже описывает единый согласованный slice;
 - возрастает overhead на coordination и validation;
-- часть shared governance work всё равно пришлось бы дублировать.
+- часть shared governance work всё равно пришлось бы дублировать вместо переиспользования inventory из `01-expand-ui-frontend-governance-coverage`.
 
 Итог: отклонён.
 

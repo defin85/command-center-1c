@@ -1,4 +1,4 @@
-# Change: add-ui-action-journal-and-error-correlation
+# Change: 05-add-ui-action-journal-and-error-correlation
 
 ## Why
 
@@ -30,6 +30,7 @@
   - long-lived shared channels объявляют стабильный `owner` / `reuse_key`;
   - journal фиксирует active connection count, reconnect churn и close codes;
   - debug bundle позволяет увидеть, какой hook/store/surface создаёт избыточные соединения вместо reuse.
+- Зафиксировать shared-boundary-first rollout: сначала instrumentируются router, shared API client, `ErrorBoundary` и global error hooks, а route/surface-specific realtime instrumentation добавляется additive slices поверх этого baseline.
 - Зафиксировать безопасный debug export path для active frontend session через существующий local debug toolkit, чтобы инженер мог снять JSON bundle без ручного copy/paste из console.
 - Зафиксировать redaction policy: журнал и коррелированные error payloads НЕ ДОЛЖНЫ (SHALL NOT) включать tokens, cookies, raw request/response bodies, password-like fields и другие чувствительные значения.
 

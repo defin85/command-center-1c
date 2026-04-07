@@ -1,5 +1,5 @@
 ## Context
-В authenticated shell остался последний небольшой, но всё ещё legacy блок route:
+Workflow/template perimeter уже закрыт archived change `2026-04-05-04-refactor-ui-platform-workflow-template-workspaces`. После него и admin/support волны в authenticated shell остаётся последний небольшой, но всё ещё legacy блок route:
 - `/clusters`;
 - `/system-status`;
 - `/service-mesh`.
@@ -42,6 +42,14 @@
 
 ### 3. `/clusters` считается management workspace, а не просто CRUD table
 По составу действий `/clusters` уже давно больше, чем список записей: create/edit, discover, sync, credentials, reset. Поэтому route должен мигрироваться как полноценный management workspace с canonical secondary surfaces, а не как “таблица плюс пару модалок”.
+
+### 4. Infra wave потребляет shared governance inventory
+Как и другие route waves, этот change должен подключать свои route через shared governance inventory из `01-expand-ui-frontend-governance-coverage`.
+
+Это означает:
+- tier assignment и route targeting остаются в одном registry;
+- route-specific lint/browser rules читают inventory-driven metadata;
+- `frontend/eslint.config.js` не превращается во второй список residual perimeter только для infra slice.
 
 ## Alternatives Considered
 

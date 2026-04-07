@@ -1,5 +1,5 @@
 ## 1. Shared governance and platform perimeter
-- [ ] 1.1 Расширить `frontend/eslint.config.js` и связанные governance checks с operational perimeter на `/rbac`, `/users`, `/dlq`, `/artifacts`, `/extensions`, `/settings/runtime`, `/settings/command-schemas`, `/settings/timeline`.
+- [ ] 1.1 Добавить `/rbac`, `/users`, `/dlq`, `/artifacts`, `/extensions`, `/settings/runtime`, `/settings/command-schemas`, `/settings/timeline` в shared governance inventory, назначить им `platform-governed` tier и при необходимости расширить inventory-driven governance helpers без возврата к route-specific perimeter спискам.
 - [ ] 1.2 Доработать shared platform primitives и route helpers только там, где текущего thin design layer не хватает для privileged catalog/detail/authoring surfaces и responsive fallback.
 
 ## 2. Admin and support catalog workspaces
@@ -15,4 +15,4 @@
 
 ## 4. Validation
 - [ ] 4.1 Прогнать `npm --prefix frontend run lint`, `npm --prefix frontend run test:run`, `npm --prefix frontend run test:browser:ui-platform`, `npm --prefix frontend run build`.
-- [ ] 4.2 Прогнать `openspec validate refactor-ui-platform-admin-support-workspaces --strict --no-interactive`.
+- [ ] 4.2 Прогнать `openspec validate 03-refactor-ui-platform-admin-support-workspaces --strict --no-interactive`.

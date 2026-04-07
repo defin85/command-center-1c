@@ -6,7 +6,7 @@
 
 ## 2. Safety and correlation
 
-- [ ] 2.1 Зафиксировать dependency на `add-ui-action-journal-and-error-correlation` и contract reuse для `trace_id`, `request_id`, `ui_action_id`. (после 1.1)
+- [ ] 2.1 Зафиксировать dependency на `05-add-ui-action-journal-and-error-correlation` и contract reuse для `trace_id`, `request_id`, `ui_action_id`. (после 1.1)
 - [ ] 2.2 Зафиксировать RBAC, redaction, sampling и retention rules для prod agent monitoring path. (после 1.3)
 - [ ] 2.3 Зафиксировать canonical backend trace lookup path, чтобы agent мог перейти от UI incident к correlated server-side diagnostics без screen scraping vendor UI. (после 2.1; можно параллельно с 2.2)
 
