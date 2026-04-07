@@ -7,10 +7,12 @@ import * as React from 'react'
 
 import {
   DashboardPage,
+  DrawerSurfaceShell,
   DrawerFormShell,
   EntityList,
   MasterDetailShell,
   ModalFormShell,
+  ModalSurfaceShell,
   PageHeader,
   RouteButton,
   StatusBadge,
@@ -140,6 +142,57 @@ describe('platform primitives', () => {
 
     expect(screen.getByRole('button', { name: 'Header action' })).toBeInTheDocument()
     expect(screen.getByText('Drawer body')).toBeInTheDocument()
+  })
+
+  it('renders DrawerSurfaceShell as the canonical non-form drawer surface', async () => {
+    const user = userEvent.setup()
+
+    function DrawerSurfaceHarness() {
+      const [open, setOpen] = React.useState(false)
+
+      return (
+        <AntApp>
+          <button type="button" onClick={() => setOpen(true)}>
+            Open inspect drawer
+          </button>
+          <DrawerSurfaceShell
+            open={open}
+            onClose={() => setOpen(false)}
+            title="Inspect surface"
+            drawerTestId="platform-drawer-surface"
+          >
+            <div>Inspect content</div>
+          </DrawerSurfaceShell>
+        </AntApp>
+      )
+    }
+
+    render(<DrawerSurfaceHarness />)
+
+    await user.click(screen.getByRole('button', { name: 'Open inspect drawer' }))
+
+    expect(await screen.findByTestId('platform-drawer-surface')).toBeInTheDocument()
+    expect(screen.getByText('Inspect content')).toBeInTheDocument()
+  })
+
+  it('renders ModalSurfaceShell as the canonical non-form modal surface', () => {
+    render(
+      <AntApp>
+        <ModalSurfaceShell
+          open
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+          title="Review remediation"
+          submitText="Retry"
+        >
+          <div>Remediation content</div>
+        </ModalSurfaceShell>
+      </AntApp>,
+    )
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('Remediation content')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
   })
 
   it('degrades MasterDetailShell into list plus Drawer on narrow viewport', async () => {

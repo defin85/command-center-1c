@@ -312,10 +312,10 @@ function collectPlatformShellSurfaceUsage(): ShellSurfaceUsage[] {
     .map((relativePath) => {
       const content = readFileSync(path.join(frontendRoot, relativePath), 'utf8')
       const shellKinds: string[] = []
-      if (content.includes('ModalFormShell')) {
+      if (content.includes('ModalFormShell') || content.includes('ModalSurfaceShell')) {
         shellKinds.push('modal')
       }
-      if (content.includes('DrawerFormShell')) {
+      if (content.includes('DrawerFormShell') || content.includes('DrawerSurfaceShell')) {
         shellKinds.push('drawer')
       }
       if (shellKinds.length === 0) {

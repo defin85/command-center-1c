@@ -1,51 +1,80 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Alert, App, Button, Space, Tabs, Typography } from 'antd'
+import { useCallback, useMemo } from 'react'
+import { Alert, App, Button, Space, Typography } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuthz } from '../../authz/useAuthz'
 import { useArtifacts, useDeleteArtifact, useRestoreArtifact } from '../../api/queries'
 import type { Artifact } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { PageHeader, WorkspacePage } from '../../components/platform'
 import { queryKeys } from '../../api/queries'
 import { ArtifactsCreateModal } from './ArtifactsCreateModal'
 import { ArtifactDetailsDrawer } from './ArtifactDetailsDrawer'
 import { ArtifactsPurgeModal } from './ArtifactsPurgeModal'
 import { useArtifactsColumns } from './useArtifactsColumns'
 
-const { Title } = Typography
+type ArtifactCatalogTab = 'active' | 'deleted'
+type ArtifactContext = 'inspect' | 'create' | 'purge'
+
+const parseCatalogTab = (value: string | null): ArtifactCatalogTab => (
+  value === 'deleted' ? 'deleted' : 'active'
+)
+
+const parseArtifactContext = (value: string | null): ArtifactContext => {
+  if (value === 'create' || value === 'purge') {
+    return value
+  }
+  return 'inspect'
+}
 
 export const ArtifactsPage = () => {
   const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const { isStaff } = useAuthz()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [catalogTab, setCatalogTab] = useState<'active' | 'deleted'>('active')
-  const [createOpen, setCreateOpen] = useState(false)
-
-  const [detailsOpen, setDetailsOpen] = useState(false)
-  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null)
-
-  const [purgeOpen, setPurgeOpen] = useState(false)
-  const [purgeTarget, setPurgeTarget] = useState<Artifact | null>(null)
+  const catalogTab = parseCatalogTab(searchParams.get('tab'))
+  const activeContext = parseArtifactContext(searchParams.get('context'))
+  const selectedArtifactId = (searchParams.get('artifact') || '').trim() || null
 
   const deleteArtifactMutation = useDeleteArtifact()
   const restoreArtifactMutation = useRestoreArtifact()
 
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
+
   const handleOpenDetails = useCallback((artifact: Artifact) => {
-    setSelectedArtifact(artifact)
-    setDetailsOpen(true)
-  }, [])
+    updateSearchParams({
+      artifact: artifact.id,
+      context: 'inspect',
+    })
+  }, [updateSearchParams])
 
   const openPurgeModal = useCallback((artifact: Artifact) => {
     if (!isStaff) {
       message.error('Permanent delete requires staff access')
       return
     }
-    setPurgeTarget(artifact)
-    setPurgeOpen(true)
-  }, [isStaff, message])
+    updateSearchParams({
+      artifact: artifact.id,
+      context: 'purge',
+    })
+  }, [isStaff, message, updateSearchParams])
 
   const handleDeleteArtifact = useCallback((artifact: Artifact) => {
     if (!isStaff) {
@@ -61,17 +90,14 @@ export const ArtifactsPage = () => {
         try {
           await deleteArtifactMutation.mutateAsync(artifact.id)
           message.success('Artifact deleted')
-          if (selectedArtifact?.id === artifact.id) {
-            setDetailsOpen(false)
-            setSelectedArtifact(null)
-          }
+          updateSearchParams({ artifact: null, context: null, tab: 'deleted' })
           queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
         } catch {
           message.error('Failed to delete artifact')
         }
       },
     })
-  }, [deleteArtifactMutation, isStaff, message, modal, queryClient, selectedArtifact?.id])
+  }, [deleteArtifactMutation, isStaff, message, modal, queryClient, updateSearchParams])
 
   const handleRestoreArtifact = useCallback((artifact: Artifact) => {
     if (!isStaff) {
@@ -86,17 +112,14 @@ export const ArtifactsPage = () => {
         try {
           await restoreArtifactMutation.mutateAsync(artifact.id)
           message.success('Artifact restored')
-          if (selectedArtifact?.id === artifact.id) {
-            setDetailsOpen(false)
-            setSelectedArtifact(null)
-          }
+          updateSearchParams({ artifact: artifact.id, context: 'inspect', tab: 'active' })
           queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
         } catch {
           message.error('Failed to restore artifact')
         }
       },
     })
-  }, [isStaff, message, modal, queryClient, restoreArtifactMutation, selectedArtifact?.id])
+  }, [isStaff, message, modal, queryClient, restoreArtifactMutation, updateSearchParams])
 
   const columns = useArtifactsColumns({
     catalogTab,
@@ -142,36 +165,55 @@ export const ArtifactsPage = () => {
 
   const artifacts = artifactsQuery.data?.artifacts ?? []
   const totalArtifacts = artifactsQuery.data?.count ?? artifacts.length
+  const selectedArtifact = selectedArtifactId
+    ? artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null
+    : null
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16, justifyContent: 'space-between', width: '100%' }}>
-        <Title level={2} style={{ margin: 0 }}>Artifacts</Title>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Artifacts"
+          subtitle="Catalog workspace с URL-backed tab/artifact context и canonical secondary surfaces."
+          actions={(
+            <Space wrap>
+              <Button onClick={() => artifactsQuery.refetch()} loading={artifactsQuery.isFetching}>
+                Refresh
+              </Button>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => updateSearchParams({ artifact: null, context: 'create' })}
+                disabled={!isStaff}
+              >
+                Add artifact
+              </Button>
+            </Space>
+          )}
+        />
+      )}
+    >
+      <Space wrap>
         <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateOpen(true)}
-          disabled={!isStaff}
+          type={catalogTab === 'active' ? 'primary' : 'default'}
+          onClick={() => updateSearchParams({ tab: 'active', artifact: null, context: null })}
         >
-          Add artifact
+          Active
         </Button>
+        <Button
+          type={catalogTab === 'deleted' ? 'primary' : 'default'}
+          onClick={() => updateSearchParams({ tab: 'deleted', artifact: null, context: null })}
+        >
+          Deleted
+        </Button>
+        <Typography.Text type="secondary">tab={catalogTab}</Typography.Text>
       </Space>
-
-      <Tabs
-        activeKey={catalogTab}
-        onChange={(key) => setCatalogTab(key as 'active' | 'deleted')}
-        items={[
-          { key: 'active', label: 'Active' },
-          { key: 'deleted', label: 'Deleted' },
-        ]}
-      />
 
       {!isStaff && (
         <Alert
           type="warning"
           message="Доступ ограничен"
           description="Каталог артефактов доступен только сотрудникам."
-          style={{ marginBottom: 16 }}
         />
       )}
 
@@ -179,7 +221,6 @@ export const ArtifactsPage = () => {
         <Alert
           type="error"
           message="Не удалось загрузить артефакты"
-          style={{ marginBottom: 16 }}
         />
       )}
 
@@ -193,40 +234,40 @@ export const ArtifactsPage = () => {
         tableLayout="fixed"
         scroll={{ x: table.totalColumnsWidth }}
         searchPlaceholder="Search artifacts"
+        onRow={(record) => ({
+          onClick: () => handleOpenDetails(record),
+          style: { cursor: 'pointer' },
+        })}
       />
 
       <ArtifactsCreateModal
-        open={createOpen}
+        open={activeContext === 'create'}
         isStaff={isStaff}
-        onClose={() => setCreateOpen(false)}
+        onClose={() => updateSearchParams({ context: null, artifact: selectedArtifactId })}
         onCreated={handleOpenDetails}
       />
 
       <ArtifactDetailsDrawer
-        open={detailsOpen}
+        open={activeContext === 'inspect' && Boolean(selectedArtifact)}
         artifact={selectedArtifact}
         catalogTab={catalogTab}
         isStaff={isStaff}
-        onClose={() => setDetailsOpen(false)}
+        onClose={() => updateSearchParams({ artifact: null, context: null })}
         onDeleteArtifact={handleDeleteArtifact}
         onRestoreArtifact={handleRestoreArtifact}
         onOpenPurgeModal={openPurgeModal}
       />
 
       <ArtifactsPurgeModal
-        open={purgeOpen}
-        target={purgeTarget}
-        onClose={() => {
-          setPurgeOpen(false)
-          setPurgeTarget(null)
-        }}
+        open={activeContext === 'purge' && Boolean(selectedArtifact)}
+        target={selectedArtifact}
+        onClose={() => updateSearchParams({ context: 'inspect', artifact: selectedArtifactId })}
         onDeleted={(artifactId) => {
-          if (selectedArtifact?.id === artifactId) {
-            setDetailsOpen(false)
-            setSelectedArtifact(null)
+          if (selectedArtifactId === artifactId) {
+            updateSearchParams({ artifact: null, context: null })
           }
         }}
       />
-    </div>
+    </WorkspacePage>
   )
 }

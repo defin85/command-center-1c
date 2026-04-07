@@ -276,6 +276,7 @@ export const useTablePreferences = (
   return {
     preferences,
     activePreset,
+    loadedFromStorage,
     setActivePreset,
     updatePreset,
     createPreset,

@@ -1652,6 +1652,311 @@ const OPERATION_TIMELINES: Record<string, {
   },
 }
 
+const ADMIN_USER = {
+  id: 101,
+  username: 'admin',
+  email: 'admin@example.com',
+  first_name: 'Admin',
+  last_name: 'Operator',
+  is_staff: true,
+  is_active: true,
+  last_login: NOW,
+  date_joined: NOW,
+}
+
+const USERS_RESPONSE = {
+  users: [ADMIN_USER],
+  count: 1,
+  total: 1,
+}
+
+const DLQ_MESSAGE = {
+  dlq_message_id: 'dlq-message-1',
+  operation_id: WORKFLOW_OPERATION.id,
+  original_message_id: 'original-message-1',
+  worker_id: 'worker-1',
+  failed_at: NOW,
+  error_code: 'network_error',
+  error_message: 'Temporary failure while executing operation',
+}
+
+const DLQ_LIST_RESPONSE = {
+  messages: [DLQ_MESSAGE],
+  count: 1,
+  total: 1,
+}
+
+const ACTIVE_ARTIFACT = {
+  id: 'artifact-services-config',
+  name: 'services-config',
+  kind: 'config_xml',
+  is_versioned: true,
+  tags: ['services'],
+  is_deleted: false,
+  deleted_at: null,
+  purge_state: 'none',
+  purge_after: null,
+  purge_blocked_until: null,
+  purge_blockers: [],
+  created_at: NOW,
+}
+
+const DELETED_ARTIFACT = {
+  ...ACTIVE_ARTIFACT,
+  id: 'artifact-services-config-deleted',
+  name: 'services-config-deleted',
+  is_deleted: true,
+  deleted_at: NOW,
+}
+
+const ARTIFACT_VERSIONS_RESPONSE = {
+  versions: [
+    {
+      id: 'artifact-version-1',
+      version: 'v1',
+      filename: 'services-config.xml',
+      storage_key: 'artifacts/services-config/v1.xml',
+      size: 128,
+      checksum: 'a'.repeat(64),
+      content_type: 'application/xml',
+      metadata: {},
+      created_at: NOW,
+    },
+  ],
+  count: 1,
+}
+
+const ARTIFACT_ALIASES_RESPONSE = {
+  aliases: [
+    {
+      id: 'artifact-alias-stable',
+      alias: 'stable',
+      version: 'v1',
+      version_id: 'artifact-version-1',
+      updated_at: NOW,
+    },
+  ],
+  count: 1,
+}
+
+const EXTENSIONS_OVERVIEW_RESPONSE = {
+  extensions: [
+    {
+      name: 'ServicePublisher',
+      purpose: 'Publishes service-related extensions across accessible databases.',
+      flags: {
+        active: {
+          policy: true,
+          observed: { state: 'on', true_count: 1, false_count: 0, unknown_count: 0 },
+          drift_count: 0,
+          unknown_drift_count: 0,
+        },
+        safe_mode: {
+          policy: false,
+          observed: { state: 'off', true_count: 0, false_count: 1, unknown_count: 0 },
+          drift_count: 0,
+          unknown_drift_count: 0,
+        },
+        unsafe_action_protection: {
+          policy: true,
+          observed: { state: 'on', true_count: 1, false_count: 0, unknown_count: 0 },
+          drift_count: 0,
+          unknown_drift_count: 0,
+        },
+      },
+      installed_count: 1,
+      active_count: 1,
+      inactive_count: 0,
+      missing_count: 0,
+      unknown_count: 0,
+      versions: [{ version: '1.0.0', count: 1 }],
+      latest_snapshot_at: NOW,
+    },
+  ],
+  count: 1,
+  total: 1,
+  total_databases: 1,
+}
+
+const EXTENSIONS_DATABASES_RESPONSE = {
+  databases: [
+    {
+      database_id: DATABASE_ID,
+      database_name: DATABASE_RECORD.name,
+      cluster_id: 'cluster-1',
+      cluster_name: 'Main Cluster',
+      status: 'active',
+      version: '1.0.0',
+      snapshot_updated_at: NOW,
+      flags: {
+        active: true,
+        safe_mode: false,
+        unsafe_action_protection: true,
+      },
+    },
+  ],
+  count: 1,
+  total: 1,
+}
+
+const EXTENSIONS_MANUAL_BINDINGS_RESPONSE = {
+  bindings: [
+    {
+      manual_operation: 'extensions.set_flags',
+      template_id: 'tpl-sync-extension',
+      updated_at: NOW,
+      updated_by: 'analyst',
+    },
+  ],
+}
+
+const RUNTIME_SETTINGS_RESPONSE = {
+  settings: [
+    {
+      key: 'runtime.concurrency.max_workers',
+      value: 8,
+      source: 'runtime',
+      value_type: 'int',
+      description: 'Maximum number of concurrent workers.',
+      min_value: 1,
+      max_value: 32,
+      default: 4,
+    },
+    {
+      key: 'runtime.feature_flags.enable_fast_path',
+      value: true,
+      source: 'runtime',
+      value_type: 'bool',
+      description: 'Enables the fast-path runtime optimization.',
+      min_value: null,
+      max_value: null,
+      default: false,
+    },
+    {
+      key: 'observability.timeline.polling_interval_seconds',
+      value: 15,
+      source: 'runtime',
+      value_type: 'int',
+      description: 'Polling interval for timeline reads.',
+      min_value: 5,
+      max_value: 60,
+      default: 10,
+    },
+    {
+      key: 'observability.timeline.enable_projection_refresh',
+      value: true,
+      source: 'runtime',
+      value_type: 'bool',
+      description: 'Enables projection refresh for timeline consumers.',
+      min_value: null,
+      max_value: null,
+      default: true,
+    },
+  ],
+}
+
+const COMMAND_SCHEMAS_EDITOR_VIEW = {
+  driver: 'ibcmd',
+  etag: 'command-schemas-etag-1',
+  base: {
+    approved_version: 'approved-v1',
+    approved_version_id: 'approved-v1-id',
+    latest_version: 'latest-v1',
+    latest_version_id: 'latest-v1-id',
+  },
+  overrides: {
+    active_version: 'overrides-v1',
+    active_version_id: 'overrides-v1-id',
+  },
+  catalogs: {
+    base: {
+      catalog_version: 2,
+      driver: 'ibcmd',
+      commands_by_id: {
+        'ibcmd.publish': {
+          label: 'Publish infobase',
+          description: 'Publishes the selected infobase.',
+          argv: ['ibcmd', 'publish'],
+          scope: 'per_database',
+          risk_level: 'safe',
+          params_by_name: {
+            mode: {
+              kind: 'flag',
+              flag: '--mode',
+              required: false,
+              expects_value: true,
+              label: 'Mode',
+              description: 'Publication mode',
+              value_type: 'string',
+              enum: ['safe', 'force'],
+            },
+          },
+        },
+      },
+    },
+    overrides: {
+      catalog_version: 2,
+      driver: 'ibcmd',
+      overrides: {
+        driver_schema: {},
+        commands_by_id: {},
+      },
+    },
+    effective: {
+      base_version: 'approved-v1',
+      base_version_id: 'approved-v1-id',
+      base_alias: 'approved',
+      overrides_version: 'overrides-v1',
+      overrides_version_id: 'overrides-v1-id',
+      source: 'merged',
+      catalog: {
+        catalog_version: 2,
+        driver: 'ibcmd',
+        commands_by_id: {
+          'ibcmd.publish': {
+            label: 'Publish infobase',
+            description: 'Publishes the selected infobase.',
+            argv: ['ibcmd', 'publish'],
+            scope: 'per_database',
+            risk_level: 'safe',
+            params_by_name: {
+              mode: {
+                kind: 'flag',
+                flag: '--mode',
+                required: false,
+                expects_value: true,
+                label: 'Mode',
+                description: 'Publication mode',
+                value_type: 'string',
+                enum: ['safe', 'force'],
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+}
+
+const RBAC_AUDIT_RESPONSE = {
+  items: [
+    {
+      id: 1,
+      created_at: NOW,
+      actor_username: 'admin',
+      actor_id: 1,
+      action: 'role.updated',
+      outcome: 'success',
+      target_type: 'role',
+      target_id: 'services_operator',
+      metadata: { reason: 'Initial bootstrap' },
+      error_message: '',
+    },
+  ],
+  count: 1,
+  total: 1,
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -1886,7 +2191,7 @@ async function setupUiPlatformMocks(
         },
         capabilities: {
           can_manage_rbac: isStaff,
-          can_manage_driver_catalogs: false,
+          can_manage_driver_catalogs: isStaff,
         },
       })
     }
@@ -1896,6 +2201,10 @@ async function setupUiPlatformMocks(
         counts.meReads += 1
       }
       return fulfillJson(route, currentUser)
+    }
+
+    if (method === 'GET' && path === '/api/v2/ui/table-metadata/') {
+      return fulfillJson(route, { table: String(url.searchParams.get('table') || ''), columns: [] })
     }
 
     if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
@@ -2073,10 +2382,53 @@ async function setupUiPlatformMocks(
             operation_type: 'designer_cli',
             template_exposure_revision: 4,
           },
+          {
+            id: 'template-exposure-2',
+            definition_id: 'definition-2',
+            surface: 'template',
+            alias: 'tpl-set-flags-extension',
+            name: 'Set Extension Flags',
+            description: 'Updates extension flags on selected databases',
+            is_active: true,
+            capability: 'extensions.set_flags',
+            status: 'published',
+            operation_type: 'designer_cli',
+            template_exposure_revision: 3,
+          },
         ],
-        count: 1,
-        total: 1,
+        count: 2,
+        total: 2,
       })
+    }
+
+    if (method === 'GET' && path === '/api/v2/extensions/overview/') {
+      return fulfillJson(route, EXTENSIONS_OVERVIEW_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/extensions/overview/databases/') {
+      return fulfillJson(route, EXTENSIONS_DATABASES_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/extensions/manual-operation-bindings/') {
+      return fulfillJson(route, EXTENSIONS_MANUAL_BINDINGS_RESPONSE)
+    }
+
+    const manualBindingMatch = path.match(/^\/api\/v2\/extensions\/manual-operation-bindings\/([^/]+)\/$/)
+    if (method === 'PUT' && manualBindingMatch) {
+      const manualOperation = manualBindingMatch[1] ?? 'extensions.set_flags'
+      const payload = request.postDataJSON() as { template_id?: string } | null
+      return fulfillJson(route, {
+        binding: {
+          manual_operation: manualOperation,
+          template_id: payload?.template_id || 'tpl-set-flags-extension',
+          updated_at: NOW,
+          updated_by: 'ui-platform',
+        },
+      })
+    }
+
+    if (method === 'DELETE' && manualBindingMatch) {
+      return fulfillJson(route, { deleted: true }, 204)
     }
 
     if (method === 'GET' && path === '/api/v2/operations/list-operations/') {
@@ -2110,6 +2462,89 @@ async function setupUiPlatformMocks(
         return fulfillJson(route, { detail: 'Operation timeline not found.' }, 404)
       }
       return fulfillJson(route, timeline)
+    }
+
+    if (method === 'GET' && path === '/api/v2/operations/stream-mux-status/') {
+      return fulfillJson(route, {
+        active_streams: 2,
+        max_streams: 16,
+        active_subscriptions: 3,
+        max_subscriptions: 64,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/settings/runtime/') {
+      return fulfillJson(route, RUNTIME_SETTINGS_RESPONSE)
+    }
+
+    const runtimeSettingMatch = path.match(/^\/api\/v2\/settings\/runtime\/(.+)\/$/)
+    if (method === 'PATCH' && runtimeSettingMatch) {
+      const key = decodeURIComponent(runtimeSettingMatch[1] ?? '')
+      const payload = request.postDataJSON() as { value?: unknown } | null
+      const existing = RUNTIME_SETTINGS_RESPONSE.settings.find((item) => item.key === key)
+      if (!existing) {
+        return fulfillJson(route, { detail: 'Runtime setting not found.' }, 404)
+      }
+      existing.value = payload?.value
+      return fulfillJson(route, existing)
+    }
+
+    if (method === 'GET' && path === '/api/v2/settings/command-schemas/editor/') {
+      return fulfillJson(route, COMMAND_SCHEMAS_EDITOR_VIEW)
+    }
+
+    if (method === 'GET' && path === '/api/v2/users/list/') {
+      return fulfillJson(route, USERS_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/dlq/list/') {
+      return fulfillJson(route, DLQ_LIST_RESPONSE)
+    }
+
+    if (method === 'POST' && path === '/api/v2/dlq/retry/') {
+      return fulfillJson(route, {
+        retried: true,
+        operation_id: WORKFLOW_OPERATION.id,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/artifacts/') {
+      const onlyDeleted = url.searchParams.get('only_deleted') === 'true'
+      const artifacts = onlyDeleted ? [DELETED_ARTIFACT] : [ACTIVE_ARTIFACT]
+      return fulfillJson(route, {
+        artifacts,
+        count: artifacts.length,
+      })
+    }
+
+    const artifactVersionsMatch = path.match(/^\/api\/v2\/artifacts\/([^/]+)\/versions\/$/)
+    if (method === 'GET' && artifactVersionsMatch) {
+      return fulfillJson(route, ARTIFACT_VERSIONS_RESPONSE)
+    }
+
+    const artifactAliasesMatch = path.match(/^\/api\/v2\/artifacts\/([^/]+)\/aliases\/$/)
+    if (method === 'GET' && artifactAliasesMatch) {
+      return fulfillJson(route, ARTIFACT_ALIASES_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/list-roles/') {
+      return fulfillJson(route, {
+        roles: [
+          {
+            id: 1,
+            name: 'services_operator',
+            users_count: 1,
+            permissions_count: 2,
+            permission_codes: ['databases.view', 'operations.view'],
+          },
+        ],
+        count: 1,
+        total: 1,
+      })
+    }
+
+    if (method === 'GET' && path === '/api/v2/rbac/list-admin-audit/') {
+      return fulfillJson(route, RBAC_AUDIT_RESPONSE)
     }
 
     const decisionDetailMatch = path.match(/^\/api\/v2\/decisions\/([^/]+)\/$/)
@@ -3375,6 +3810,173 @@ test('UI platform: /operations renders zero-task diagnostics as empty state inst
   await expect(page.getByTestId('operation-inspect-no-task-telemetry')).toBeVisible()
   await expect(page.getByText('Task list will appear when runtime reports a task workset for this operation.')).toBeVisible()
   await expect(page.locator('.ant-progress')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /rbac restores selected mode and tab from URL-backed governance workspace state', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto('/rbac?mode=roles&tab=audit', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'RBAC', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('rbac-tab-roles')).toBeVisible()
+  await expect(page.getByTestId('rbac-tab-audit')).toBeVisible()
+  await expect(page.getByTestId('rbac-tab-permissions')).toHaveCount(0)
+  await expect(page.getByTestId('rbac-audit-panel')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /users restores selected user context and opens edit flow in a canonical modal shell', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/users?user=${ADMIN_USER.id}&context=edit`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Users', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('users-selected-username')).toContainText(ADMIN_USER.username)
+  const editModal = page.getByRole('dialog')
+  await expect(editModal).toBeVisible()
+  await expect(editModal.getByLabel('Username')).toHaveValue(ADMIN_USER.username)
+  await expect(editModal.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /dlq preserves selected message context and hands off to /operations without leaving the SPA shell', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+
+  await page.goto(`/dlq?message=${DLQ_MESSAGE.dlq_message_id}`, { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'DLQ', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const detailDrawer = page.getByTestId('dlq-message-detail-drawer')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText(DLQ_MESSAGE.error_message)).toBeVisible()
+  await detailDrawer.getByRole('button', { name: 'Open in Operations' }).click()
+
+  await expect(page).toHaveURL(new RegExp(`\\/operations\\?tab=monitor&operation=${WORKFLOW_OPERATION.id}$`))
+  await expect(page.getByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+})
+
+test('UI platform: /artifacts restores deleted catalog tab and selected artifact detail in a mobile-safe drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/artifacts?tab=deleted&artifact=${DELETED_ARTIFACT.id}&context=inspect`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Artifacts', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('tab=deleted')).toBeVisible()
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText(DELETED_ARTIFACT.name)).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Delete permanently' })).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /extensions restores selected extension context in a mobile-safe secondary drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto(`/extensions?extension=ServicePublisher&database=${DATABASE_ID}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Extensions', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  const detailDrawer = page.getByTestId('extensions-management-drawer')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('extensions-selected-name')).toHaveText('ServicePublisher')
+  await expect(detailDrawer.getByTestId('extensions-selected-database')).toHaveText(DATABASE_RECORD.name)
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(detailDrawer, 'Extensions management drawer')
+})
+
+test('UI platform: /settings/runtime restores selected setting context in a canonical settings drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/settings/runtime?setting=runtime.concurrency.max_workers&context=setting', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Runtime Settings', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('runtime-settings-page')).toBeVisible()
+  const detailDrawer = page.getByTestId('runtime-settings-detail-drawer')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText('runtime.concurrency.max_workers')).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expectNoHorizontalOverflow(page)
+})
+
+test('UI platform: /settings/timeline keeps diagnostics in a single mobile-safe secondary drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/settings/timeline?context=diagnostics', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Timeline Settings', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('timeline-settings-page')).toBeVisible()
+  const diagnosticsDrawer = page.getByTestId('timeline-settings-diagnostics-drawer')
+  await expect(diagnosticsDrawer).toBeVisible()
+  await expect(diagnosticsDrawer.getByText('Active mux streams: 2/16')).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
+  await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(diagnosticsDrawer, 'Timeline settings diagnostics drawer')
+})
+
+test('UI platform: /settings/command-schemas restores driver, mode, and selected command in a mobile-safe detail drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/settings/command-schemas?driver=ibcmd&mode=guided&command=ibcmd.publish', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Command Schemas', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('command-schemas-page')).toBeVisible()
+  await expect(page.getByTestId('command-schemas-command-ibcmd.publish')).toHaveAttribute('aria-current', 'true')
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText('Publish infobase')).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
   await expectNoHorizontalOverflow(page)
 })
 

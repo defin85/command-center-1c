@@ -62,6 +62,34 @@ const normalizeRouteParam = (value: string | null): string | null => {
   return normalized.length > 0 ? normalized : null
 }
 
+const hasRouteFilterValue = (value: unknown): boolean => {
+  if (value === null || value === undefined) {
+    return false
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+}
+
+const countRawRouteFilterKeys = (rawValue: string | null): number => {
+  if (!rawValue) {
+    return 0
+  }
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 0
+    }
+    return Object.values(parsed).filter((value) => hasRouteFilterValue(value)).length
+  } catch {
+    return 0
+  }
+}
+
 const formatDateTime = (value: string | null | undefined) => (
   value ? new Date(value).toLocaleString() : '—'
 )
@@ -140,6 +168,8 @@ const WorkflowList = () => {
   const searchFromUrl = searchParams.get('q') ?? ''
   const selectedWorkflowFromUrl = normalizeRouteParam(searchParams.get('workflow'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
+  const rawFiltersFromUrl = searchParams.get('filters')
+  const rawSortFromUrl = searchParams.get('sort')
   const isRuntimeDiagnosticsSurface = surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null | undefined>(
     () => selectedWorkflowFromUrl ?? undefined
@@ -154,6 +184,9 @@ const WorkflowList = () => {
     filters: {},
     sort: { key: null, order: null },
   })
+  const pendingRouteFiltersRef = useRef<string | null>(rawFiltersFromUrl)
+  const pendingRouteSortRef = useRef<string | null>(rawSortFromUrl)
+  const routeUrlSyncPrimedRef = useRef(false)
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -195,9 +228,18 @@ const WorkflowList = () => {
     }
 
     const currentTableState = latestTableRouteStateRef.current
-    const normalizedSearch = currentTableState.search.trim()
-    const serializedFilters = serializeRouteTableFilters(currentTableState.filters)
-    const serializedSort = serializeRouteTableSort(currentTableState.sort)
+    const routeSearch = searchParams.get('q') ?? ''
+    const routeFilters = searchParams.get('filters') ?? ''
+    const routeSort = searchParams.get('sort') ?? ''
+    const normalizedSearch = tableRouteHydratedRef.current
+      ? currentTableState.search.trim()
+      : routeSearch.trim()
+    const serializedFilters = tableRouteHydratedRef.current
+      ? serializeRouteTableFilters(currentTableState.filters)
+      : routeFilters
+    const serializedSort = tableRouteHydratedRef.current
+      ? serializeRouteTableSort(currentTableState.sort)
+      : routeSort
     const nextWorkflowId = workflowId === undefined ? selectedWorkflowId ?? null : workflowId
     const nextDetailOpen = detailOpen ?? isDetailDrawerOpen
 
@@ -218,7 +260,7 @@ const WorkflowList = () => {
     }
 
     return buildRelativeHref('/workflows', next)
-  }, [decisionDatabaseId, isDetailDrawerOpen, selectedWorkflowId, surface])
+  }, [decisionDatabaseId, isDetailDrawerOpen, searchParams, selectedWorkflowId, surface])
 
   const handleClone = useCallback(async (id: string, name: string) => {
     try {
@@ -361,6 +403,9 @@ const WorkflowList = () => {
     tableId: 'workflows',
     columns,
     fallbackColumns: fallbackColumnConfigs,
+    initialSearch: searchFromUrl,
+    initialFiltersRaw: rawFiltersFromUrl,
+    initialSortRaw: rawSortFromUrl,
     initialPageSize: 50,
   })
   const { setFilters: setTableFilters, setSearch: setTableSearch, setSort: setTableSort } = table
@@ -376,6 +421,15 @@ const WorkflowList = () => {
     () => parseRouteTableSort(searchParams.get('sort'), table.sortableColumns),
     [searchParams, table.sortableColumns]
   )
+  const routeFiltersReady = useMemo(() => {
+    const rawFilterCount = countRawRouteFilterKeys(rawFiltersFromUrl)
+    if (rawFilterCount === 0) {
+      return true
+    }
+    const recognizedFilterCount = Object.values(routeFiltersFromUrl).filter((value) => hasRouteFilterValue(value)).length
+    return recognizedFilterCount === rawFilterCount
+  }, [rawFiltersFromUrl, routeFiltersFromUrl])
+  const routeSortReady = !rawSortFromUrl || Boolean(routeSortFromUrl.key && routeSortFromUrl.order)
 
   useEffect(() => {
     latestTableRouteStateRef.current = {
@@ -384,6 +438,27 @@ const WorkflowList = () => {
       sort: table.sort,
     }
   }, [table.filters, table.search, table.sort])
+
+  useEffect(() => {
+    pendingRouteFiltersRef.current = rawFiltersFromUrl
+  }, [rawFiltersFromUrl])
+
+  useEffect(() => {
+    pendingRouteSortRef.current = rawSortFromUrl
+  }, [rawSortFromUrl])
+
+  useEffect(() => {
+    const hasAppliedRouteFilters = Object.values(table.filters).some((value) => hasRouteFilterValue(value))
+    if (hasAppliedRouteFilters) {
+      pendingRouteFiltersRef.current = null
+    }
+  }, [table.filters])
+
+  useEffect(() => {
+    if (table.sort.key && table.sort.order) {
+      pendingRouteSortRef.current = null
+    }
+  }, [table.sort.key, table.sort.order])
 
   useEffect(() => {
     const current = latestTableRouteStateRef.current
@@ -406,11 +481,17 @@ const WorkflowList = () => {
       return
     }
 
+    if (!routeFiltersReady || !routeSortReady) {
+      return
+    }
+
     tableRouteHydratedRef.current = true
   }, [
     routeFiltersFromUrl,
+    routeFiltersReady,
     routeSortFromUrl.key,
     routeSortFromUrl.order,
+    routeSortReady,
     searchFromUrl,
     setTableFilters,
     setTableSearch,
@@ -513,11 +594,17 @@ const WorkflowList = () => {
     if (!tableRouteHydratedRef.current) {
       return
     }
+    if (!routeUrlSyncPrimedRef.current) {
+      routeUrlSyncPrimedRef.current = true
+      return
+    }
 
     const next = new URLSearchParams(searchParams)
     const normalizedSearch = table.search.trim()
     const serializedFilters = serializeRouteTableFilters(table.filters)
     const serializedSort = serializeRouteTableSort(table.sort)
+    const effectiveSerializedFilters = serializedFilters ?? pendingRouteFiltersRef.current
+    const effectiveSerializedSort = serializedSort ?? pendingRouteSortRef.current
 
     if (normalizedSearch) {
       next.set('q', normalizedSearch)
@@ -525,14 +612,14 @@ const WorkflowList = () => {
       next.delete('q')
     }
 
-    if (serializedFilters) {
-      next.set('filters', serializedFilters)
+    if (effectiveSerializedFilters) {
+      next.set('filters', effectiveSerializedFilters)
     } else {
       next.delete('filters')
     }
 
-    if (serializedSort) {
-      next.set('sort', serializedSort)
+    if (effectiveSerializedSort) {
+      next.set('sort', effectiveSerializedSort)
     } else {
       next.delete('sort')
     }

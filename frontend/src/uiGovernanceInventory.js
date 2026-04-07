@@ -52,7 +52,11 @@ export const routeGovernanceInventory = [
   {
     routePath: '/artifacts',
     modulePath: 'src/pages/Artifacts/ArtifactsPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'catalog-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/databases',
@@ -70,7 +74,11 @@ export const routeGovernanceInventory = [
   {
     routePath: '/extensions',
     modulePath: 'src/pages/Extensions/Extensions.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'management-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/installation-monitor',
@@ -225,22 +233,38 @@ export const routeGovernanceInventory = [
   {
     routePath: '/rbac',
     modulePath: 'src/pages/RBAC/RBACPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'governance-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/users',
     modulePath: 'src/pages/Users/UsersPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/dlq',
     modulePath: 'src/pages/DLQ/DLQPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'remediation-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/settings/runtime',
     modulePath: 'src/pages/Settings/RuntimeSettingsPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'settings-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/settings/driver-catalogs',
@@ -252,12 +276,20 @@ export const routeGovernanceInventory = [
   {
     routePath: '/settings/command-schemas',
     modulePath: 'src/pages/CommandSchemas/CommandSchemasPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'authoring-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
   {
     routePath: '/settings/timeline',
     modulePath: 'src/pages/Settings/TimelineSettingsPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'privileged-workspace-route',
+    workspaceKind: 'settings-workspace',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
   },
 ]
 
@@ -268,6 +300,24 @@ export const routeGovernanceInventory = [
  * while governance currently applies at the module level.
  */
 export const shellSurfaceGovernanceInventory = [
+  {
+    filePath: 'src/pages/Artifacts/ArtifactDetailsDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/artifacts'],
+  },
+  {
+    filePath: 'src/pages/Artifacts/ArtifactsCreateModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/artifacts'],
+  },
+  {
+    filePath: 'src/pages/Artifacts/ArtifactsPurgeModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/artifacts'],
+  },
   {
     filePath: 'src/pages/Databases/components/DatabaseCredentialsModal.tsx',
     tier: 'platform-governed',
@@ -303,6 +353,18 @@ export const shellSurfaceGovernanceInventory = [
     tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/decisions'],
+  },
+  {
+    filePath: 'src/pages/DLQ/DLQPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/dlq'],
+  },
+  {
+    filePath: 'src/pages/Extensions/Extensions.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/extensions'],
   },
   {
     filePath: 'src/pages/Pools/masterData/GLAccountsTab.tsx',
@@ -351,6 +413,24 @@ export const shellSurfaceGovernanceInventory = [
     tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/pools/topology-templates'],
+  },
+  {
+    filePath: 'src/pages/Settings/RuntimeSettingsPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/settings/runtime'],
+  },
+  {
+    filePath: 'src/pages/Settings/TimelineSettingsPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/settings/timeline'],
+  },
+  {
+    filePath: 'src/pages/Users/UsersPage.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/users'],
   },
   {
     filePath: 'src/pages/Workflows/WorkflowDesigner.tsx',

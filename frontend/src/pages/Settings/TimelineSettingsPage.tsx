@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, InputNumber, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, InputNumber, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuthz } from '../../authz/useAuthz'
 import { getStreamMuxStatus } from '../../api/operations'
 import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '../../api/runtimeSettings'
+import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 type RuntimeSettingRow = RuntimeSetting & { draftValue: unknown }
 
@@ -29,6 +31,7 @@ const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
 
 export function TimelineSettingsPage() {
   const { isStaff } = useAuthz()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +43,23 @@ export function TimelineSettingsPage() {
   } | null>(null)
 
   const canEdit = isStaff
+  const selectedSettingKey = (searchParams.get('setting') || '').trim() || null
+  const activeContext = (searchParams.get('context') || '').trim()
+
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -151,26 +171,8 @@ export function TimelineSettingsPage() {
       key: 'value',
       width: 180,
       render: (_value, record) => {
-        if (record.value_type === 'int') {
-          return (
-            <InputNumber
-              min={record.min_value ?? undefined}
-              max={record.max_value ?? undefined}
-              value={toNumber(record.draftValue) ?? undefined}
-              onChange={(next) => updateDraft(record.key, next ?? 0)}
-              disabled={!canEdit}
-              style={{ width: '100%' }}
-            />
-          )
-        }
         if (record.value_type === 'bool') {
-          return (
-            <Switch
-              checked={isBool(record.draftValue) ? record.draftValue : Boolean(record.draftValue)}
-              onChange={(next) => updateDraft(record.key, next)}
-              disabled={!canEdit}
-            />
-          )
+          return <Tag color={isBool(record.draftValue) ? (record.draftValue ? 'green' : 'default') : 'default'}>{String(record.draftValue)}</Tag>
         }
         return <Text>{String(record.draftValue ?? '')}</Text>
       },
@@ -195,21 +197,17 @@ export function TimelineSettingsPage() {
       title: 'Действия',
       key: 'actions',
       width: 140,
-      render: (_value, record) => {
-        const isChanged = record.draftValue !== record.value
-        return (
-          <Button
-            type="primary"
-            size="small"
-            disabled={!canEdit || !isChanged}
-            onClick={() => saveSetting(record)}
-          >
-            Save
-          </Button>
-        )
-      },
+      render: (_value, record) => (
+        <Button
+          size="small"
+          type="primary"
+          onClick={() => updateSearchParams({ setting: record.key, context: 'setting' })}
+        >
+          Edit
+        </Button>
+      ),
     },
-  ]), [canEdit, saveSetting, updateDraft])
+  ]), [updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'timeline_settings',
@@ -311,26 +309,57 @@ export function TimelineSettingsPage() {
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
   const pageItems = sortedSettings.slice(pageStart, pageStart + table.pagination.pageSize)
+  const selectedSetting = selectedSettingKey
+    ? sortedSettings.find((item) => item.key === selectedSettingKey) ?? null
+    : null
+
+  const renderSettingEditor = (setting: RuntimeSettingRow) => {
+    if (setting.value_type === 'int') {
+      return (
+        <InputNumber
+          min={setting.min_value ?? undefined}
+          max={setting.max_value ?? undefined}
+          value={toNumber(setting.draftValue) ?? undefined}
+          onChange={(next) => updateDraft(setting.key, next ?? 0)}
+          disabled={!canEdit}
+          style={{ width: '100%' }}
+        />
+      )
+    }
+    if (setting.value_type === 'bool') {
+      return (
+        <Switch
+          checked={isBool(setting.draftValue) ? setting.draftValue : Boolean(setting.draftValue)}
+          onChange={(next) => updateDraft(setting.key, next)}
+          disabled={!canEdit}
+        />
+      )
+    }
+    return <Text>{String(setting.draftValue ?? '')}</Text>
+  }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div>
-        <Title level={3} style={{ marginBottom: 0 }}>Timeline Settings</Title>
-        <Text type="secondary">Настройки очереди и воркеров для timeline событий.</Text>
-        {streamStatus && (
-          <div style={{ marginTop: 8 }}>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Timeline Settings"
+          subtitle="Timeline settings workspace с secondary diagnostics/remediation внутри того же platform shell."
+          actions={(
             <Space wrap>
-              <Tag color={streamStatus.active >= streamStatus.max ? 'red' : 'blue'}>
-                Active mux streams: {streamStatus.active}/{streamStatus.max}
-              </Tag>
-              <Tag color={streamStatus.subscriptions >= streamStatus.maxSubscriptions ? 'red' : 'blue'}>
-                Active subscriptions: {streamStatus.subscriptions}/{streamStatus.maxSubscriptions}
-              </Tag>
+              <Button onClick={() => void loadSettings()} loading={loading}>
+                Refresh
+              </Button>
+              <Button
+                data-testid="timeline-settings-open-diagnostics"
+                onClick={() => updateSearchParams({ context: 'diagnostics', setting: null })}
+              >
+                Diagnostics
+              </Button>
             </Space>
-          </div>
-        )}
-      </div>
-
+          )}
+        />
+      )}
+    >
       {!isStaff && (
         <Alert
           type="warning"
@@ -343,7 +372,7 @@ export function TimelineSettingsPage() {
         <Alert type="error" message={error} />
       )}
 
-      <Card>
+      <div data-testid="timeline-settings-page">
         <TableToolkit
           table={table}
           data={pageItems}
@@ -352,13 +381,66 @@ export function TimelineSettingsPage() {
           rowKey="key"
           columns={columns}
           searchPlaceholder="Search timeline settings"
-          toolbarActions={(
-            <Button danger onClick={resetQueue} disabled={!canEdit}>
-              Пересоздать очередь
-            </Button>
-          )}
+          onRow={(record) => ({
+            onClick: () => updateSearchParams({ setting: record.key, context: 'setting' }),
+            style: { cursor: 'pointer' },
+          })}
         />
-      </Card>
-    </Space>
+      </div>
+
+      <DrawerSurfaceShell
+        open={Boolean(selectedSetting) && activeContext !== 'diagnostics'}
+        onClose={() => updateSearchParams({ setting: null, context: null })}
+        title={selectedSetting?.key ?? 'Timeline setting'}
+        subtitle={selectedSetting?.description ?? undefined}
+        drawerTestId="timeline-settings-detail-drawer"
+        extra={selectedSetting ? (
+          <Button
+            type="primary"
+            disabled={!canEdit || selectedSetting.draftValue === selectedSetting.value}
+            onClick={() => { void saveSetting(selectedSetting) }}
+          >
+            Save
+          </Button>
+        ) : null}
+      >
+        {selectedSetting ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Text><strong>Current:</strong> {String(selectedSetting.value ?? '—')}</Text>
+            <Text><strong>Default:</strong> {String(selectedSetting.default ?? '—')}</Text>
+            <Text><strong>Range:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? '—' : `${selectedSetting.min_value ?? '-'}..${selectedSetting.max_value ?? '-'}`}</Text>
+            <div>{renderSettingEditor(selectedSetting)}</div>
+          </Space>
+        ) : null}
+      </DrawerSurfaceShell>
+
+      <DrawerSurfaceShell
+        open={activeContext === 'diagnostics'}
+        onClose={() => updateSearchParams({ context: null, setting: null })}
+        title="Timeline diagnostics"
+        subtitle="Runtime controls stay primary; diagnostics/remediation live in the same workspace shell."
+        drawerTestId="timeline-settings-diagnostics-drawer"
+        extra={(
+          <Button danger onClick={() => { void resetQueue() }} disabled={!canEdit}>
+            Пересоздать очередь
+          </Button>
+        )}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {streamStatus ? (
+            <Space direction="vertical" size="small" style={{ width: '100%' }}>
+              <Tag color={streamStatus.active >= streamStatus.max ? 'red' : 'blue'}>
+                Active mux streams: {streamStatus.active}/{streamStatus.max}
+              </Tag>
+              <Tag color={streamStatus.subscriptions >= streamStatus.maxSubscriptions ? 'red' : 'blue'}>
+                Active subscriptions: {streamStatus.subscriptions}/{streamStatus.maxSubscriptions}
+              </Tag>
+            </Space>
+          ) : (
+            <Text type="secondary">Stream diagnostics are unavailable.</Text>
+          )}
+        </Space>
+      </DrawerSurfaceShell>
+    </WorkspacePage>
   )
 }

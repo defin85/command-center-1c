@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, App, Collapse, Descriptions, Form, Input, Modal, Progress, Space, Spin, Typography } from 'antd'
+import { Alert, App, Collapse, Descriptions, Form, Input, Progress, Space, Spin, Typography } from 'antd'
 import { useQueryClient } from '@tanstack/react-query'
 
 import type { Artifact, ArtifactPurgeBlocker, ArtifactPurgeJob, ArtifactPurgePlan } from '../../api/artifacts'
 import { purgeArtifact as purgeArtifactApi } from '../../api/artifacts'
 import { useArtifactPurgeJob, usePurgeArtifact } from '../../api/queries'
+import { ModalSurfaceShell } from '../../components/platform'
 import { queryKeys } from '../../api/queries'
 import { formatBytes } from './artifactsUtils'
 
@@ -140,20 +141,20 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
   ), [purgeBlockers.length, purgeConfirmName, purgeJobId, purgePreflightError, purgePreflightLoading, purgeReason, target])
 
   return (
-    <Modal
-      title={purgeJobId ? 'Deleting permanently…' : `Delete permanently "${target?.name ?? ''}"?`}
+    <ModalSurfaceShell
       open={open}
-      onCancel={onClose}
-      okText={purgeJobId ? 'In progress' : 'Delete permanently'}
+      onClose={onClose}
+      onSubmit={() => { void handleStartPurge() }}
+      title={purgeJobId ? 'Deleting permanently…' : `Delete permanently "${target?.name ?? ''}"?`}
+      submitText={purgeJobId ? 'In progress' : 'Delete permanently'}
       cancelText={purgeJobId ? 'Close' : 'Cancel'}
       okButtonProps={{
         danger: true,
         disabled: okDisabled,
-        loading: purgeArtifactMutation.isPending,
       }}
-      onOk={handleStartPurge}
+      confirmLoading={purgeArtifactMutation.isPending}
       width={720}
-      destroyOnHidden
+      forceRender
     >
       {!target ? (
         <Text type="secondary">Select an artifact.</Text>
@@ -249,6 +250,6 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
           </Space>
         </Spin>
       )}
-    </Modal>
+    </ModalSurfaceShell>
   )
 }

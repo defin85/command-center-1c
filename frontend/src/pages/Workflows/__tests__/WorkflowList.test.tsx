@@ -1,6 +1,7 @@
+import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -8,10 +9,19 @@ import WorkflowList from '../WorkflowList'
 
 const mockGetWorkflowsListWorkflows = vi.fn()
 const mockGetWorkflowsGetWorkflow = vi.fn()
+const mockNavigate = vi.fn()
 const ROUTER_FUTURE = {
   v7_startTransition: true,
   v7_relativeSplatPath: true,
 } as const
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>()
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 vi.mock('../../../api/generated', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/generated')>()
@@ -34,21 +44,33 @@ function renderPage(initialEntry = '/workflows') {
     },
   })
 
-  return render(
+  const content = (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]} future={ROUTER_FUTURE}>
         <AntApp>
           <WorkflowList />
+          <WorkflowListLocationProbe />
         </AntApp>
       </MemoryRouter>
     </QueryClientProvider>
   )
+
+  return {
+    renderStrict: () => render(<StrictMode>{content}</StrictMode>),
+    renderDefault: () => render(content),
+  }
+}
+
+function WorkflowListLocationProbe() {
+  const location = useLocation()
+  return <output data-testid="workflow-list-route-search">{location.search}</output>
 }
 
 describe('WorkflowList', () => {
   beforeEach(() => {
     mockGetWorkflowsListWorkflows.mockReset()
     mockGetWorkflowsGetWorkflow.mockReset()
+    mockNavigate.mockReset()
     mockGetWorkflowsListWorkflows.mockResolvedValue({
       workflows: [],
       count: 0,
@@ -105,7 +127,7 @@ describe('WorkflowList', () => {
   })
 
   it('renders workflow authoring phase rollout banner', async () => {
-    renderPage()
+    renderPage().renderDefault()
 
     await waitFor(() => {
       expect(screen.getByText('Workflow-centric active phase')).toBeInTheDocument()
@@ -160,7 +182,7 @@ describe('WorkflowList', () => {
       authoring_phase: null,
     })
 
-    renderPage('/workflows?database_id=22222222-2222-2222-2222-222222222222')
+    renderPage('/workflows?database_id=22222222-2222-2222-2222-222222222222').renderDefault()
 
     const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
     expect(link).toHaveAttribute(
@@ -206,7 +228,7 @@ describe('WorkflowList', () => {
     params.set('workflow', 'workflow-1')
     params.set('detail', '1')
 
-    renderPage(`/workflows?${params.toString()}`)
+    renderPage(`/workflows?${params.toString()}`).renderDefault()
 
     await waitFor(() => {
       expect(mockGetWorkflowsListWorkflows).toHaveBeenCalledWith(expect.objectContaining({
@@ -261,9 +283,113 @@ describe('WorkflowList', () => {
       authoring_phase: null,
     })
 
-    renderPage('/workflows?workflow=workflow-1&detail=1')
+    renderPage('/workflows?workflow=workflow-1&detail=1').renderDefault()
 
     expect(await screen.findByTestId('workflow-list-selected-id')).toHaveTextContent('workflow-1')
     expect(await screen.findByTestId('workflow-list-selected-dag')).toHaveTextContent('"nodes"')
+  })
+
+  it('preserves filters and sort in designer handoff before table hydration settles', async () => {
+    mockGetWorkflowsListWorkflows.mockResolvedValue({
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Decision-aware Workflow',
+          description: 'authoring',
+          workflow_type: 'complex',
+          category: 'custom',
+          is_valid: true,
+          is_active: true,
+          is_system_managed: false,
+          management_mode: 'user_authored',
+          visibility_surface: 'workflow_library',
+          read_only_reason: null,
+          version_number: 1,
+          parent_version: null,
+          created_by: null,
+          created_by_username: 'analyst',
+          node_count: 2,
+          execution_count: 0,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 1,
+      total: 1,
+      authoring_phase: null,
+    })
+
+    const params = new URLSearchParams()
+    params.set('q', 'Decision')
+    params.set('filters', JSON.stringify({ workflow_type: 'complex' }))
+    params.set('sort', JSON.stringify({ key: 'updated_at', order: 'desc' }))
+    params.set('workflow', 'workflow-1')
+    params.set('detail', '1')
+
+    renderPage(`/workflows?${params.toString()}`).renderDefault()
+
+    fireEvent.click(await screen.findByTestId('workflow-list-detail-open'))
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      `/workflows/workflow-1?returnTo=${encodeURIComponent(`/workflows?${params.toString()}`)}`
+    )
+  })
+
+  it('does not strip route-backed filters and sort during strict-mode mount', async () => {
+    mockGetWorkflowsListWorkflows.mockResolvedValue({
+      workflows: [
+        {
+          id: 'workflow-1',
+          name: 'Decision-aware Workflow',
+          description: 'authoring',
+          workflow_type: 'complex',
+          category: 'custom',
+          is_valid: true,
+          is_active: true,
+          is_system_managed: false,
+          management_mode: 'user_authored',
+          visibility_surface: 'workflow_library',
+          read_only_reason: null,
+          version_number: 1,
+          parent_version: null,
+          created_by: null,
+          created_by_username: 'analyst',
+          node_count: 2,
+          execution_count: 0,
+          created_at: '2026-03-08T12:00:00Z',
+          updated_at: '2026-03-08T12:00:00Z',
+        },
+      ],
+      count: 1,
+      total: 1,
+      authoring_phase: null,
+    })
+
+    const params = new URLSearchParams()
+    params.set('q', 'Services')
+    params.set('filters', JSON.stringify({ workflow_type: 'complex' }))
+    params.set('sort', JSON.stringify({ key: 'updated_at', order: 'desc' }))
+    params.set('workflow', 'workflow-1')
+    params.set('detail', '1')
+
+    renderPage(`/workflows?${params.toString()}`).renderStrict()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workflow-list-route-search')).toHaveTextContent(`?${params.toString()}`)
+    })
+
+    expect(mockGetWorkflowsListWorkflows).toHaveBeenCalledWith(expect.objectContaining({
+      search: 'Services',
+      filters: JSON.stringify({
+        workflow_type: {
+          op: 'contains',
+          value: 'complex',
+        },
+      }),
+      sort: JSON.stringify({
+        key: 'updated_at',
+        order: 'desc',
+      }),
+    }))
   })
 })

@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, InputNumber, Space, Switch, Tag, Typography } from 'antd'
+import { Alert, Button, InputNumber, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useSearchParams } from 'react-router-dom'
 
 import { useAuthz } from '../../authz/useAuthz'
 import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '../../api/runtimeSettings'
+import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 type RuntimeSettingRow = RuntimeSetting & { draftValue: unknown }
 
@@ -26,11 +28,28 @@ const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
 
 export function RuntimeSettingsPage() {
   const { isStaff } = useAuthz()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const canEdit = isStaff
+  const selectedSettingKey = (searchParams.get('setting') || '').trim() || null
+
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
@@ -109,26 +128,8 @@ export function RuntimeSettingsPage() {
       key: 'value',
       width: 180,
       render: (_value, record) => {
-        if (record.value_type === 'int') {
-          return (
-            <InputNumber
-              min={record.min_value ?? undefined}
-              max={record.max_value ?? undefined}
-              value={toNumber(record.draftValue) ?? undefined}
-              onChange={(next) => updateDraft(record.key, next ?? 0)}
-              disabled={!canEdit}
-              style={{ width: '100%' }}
-            />
-          )
-        }
         if (record.value_type === 'bool') {
-          return (
-            <Switch
-              checked={isBool(record.draftValue) ? record.draftValue : Boolean(record.draftValue)}
-              onChange={(next) => updateDraft(record.key, next)}
-              disabled={!canEdit}
-            />
-          )
+          return <Tag color={isBool(record.draftValue) ? (record.draftValue ? 'green' : 'default') : 'default'}>{String(record.draftValue)}</Tag>
         }
         return <Text>{String(record.draftValue ?? '')}</Text>
       },
@@ -153,21 +154,17 @@ export function RuntimeSettingsPage() {
       title: 'Действия',
       key: 'actions',
       width: 140,
-      render: (_value, record) => {
-        const isChanged = record.draftValue !== record.value
-        return (
-          <Button
-            type="primary"
-            size="small"
-            disabled={!canEdit || !isChanged}
-            onClick={() => saveSetting(record)}
-          >
-            Save
-          </Button>
-        )
-      },
+      render: (_value, record) => (
+        <Button
+          size="small"
+          type="primary"
+          onClick={() => updateSearchParams({ setting: record.key, context: 'setting' })}
+        >
+          Edit
+        </Button>
+      ),
     },
-  ]), [canEdit, saveSetting, updateDraft])
+  ]), [updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'runtime_settings',
@@ -269,14 +266,49 @@ export function RuntimeSettingsPage() {
 
   const pageStart = (table.pagination.page - 1) * table.pagination.pageSize
   const pageItems = sortedSettings.slice(pageStart, pageStart + table.pagination.pageSize)
+  const selectedSetting = selectedSettingKey
+    ? sortedSettings.find((item) => item.key === selectedSettingKey) ?? null
+    : null
+
+  const renderSettingEditor = (setting: RuntimeSettingRow) => {
+    if (setting.value_type === 'int') {
+      return (
+        <InputNumber
+          min={setting.min_value ?? undefined}
+          max={setting.max_value ?? undefined}
+          value={toNumber(setting.draftValue) ?? undefined}
+          onChange={(next) => updateDraft(setting.key, next ?? 0)}
+          disabled={!canEdit}
+          style={{ width: '100%' }}
+        />
+      )
+    }
+    if (setting.value_type === 'bool') {
+      return (
+        <Switch
+          checked={isBool(setting.draftValue) ? setting.draftValue : Boolean(setting.draftValue)}
+          onChange={(next) => updateDraft(setting.key, next)}
+          disabled={!canEdit}
+        />
+      )
+    }
+    return <Text>{String(setting.draftValue ?? '')}</Text>
+  }
 
   return (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <div>
-        <Title level={3} style={{ marginBottom: 0 }}>Runtime Settings</Title>
-        <Text type="secondary">Управление runtime-настройками UI и операций.</Text>
-      </div>
-
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Runtime Settings"
+          subtitle="Settings workspace с route-addressable selected setting context и canonical edit surface."
+          actions={(
+            <Button onClick={() => void loadSettings()} loading={loading}>
+              Refresh
+            </Button>
+          )}
+        />
+      )}
+    >
       {!isStaff && (
         <Alert
           type="warning"
@@ -289,7 +321,7 @@ export function RuntimeSettingsPage() {
         <Alert type="error" message={error} />
       )}
 
-      <Card>
+      <div data-testid="runtime-settings-page">
         <TableToolkit
           table={table}
           data={pageItems}
@@ -298,8 +330,38 @@ export function RuntimeSettingsPage() {
           rowKey="key"
           columns={columns}
           searchPlaceholder="Search settings"
+          onRow={(record) => ({
+            onClick: () => updateSearchParams({ setting: record.key, context: 'setting' }),
+            style: { cursor: 'pointer' },
+          })}
         />
-      </Card>
-    </Space>
+      </div>
+
+      <DrawerSurfaceShell
+        open={Boolean(selectedSetting)}
+        onClose={() => updateSearchParams({ setting: null, context: null })}
+        title={selectedSetting?.key ?? 'Runtime setting'}
+        subtitle={selectedSetting?.description ?? undefined}
+        drawerTestId="runtime-settings-detail-drawer"
+        extra={selectedSetting ? (
+          <Button
+            type="primary"
+            disabled={!canEdit || selectedSetting.draftValue === selectedSetting.value}
+            onClick={() => { void saveSetting(selectedSetting) }}
+          >
+            Save
+          </Button>
+        ) : null}
+      >
+        {selectedSetting ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <Text><strong>Current:</strong> {String(selectedSetting.value ?? '—')}</Text>
+            <Text><strong>Default:</strong> {String(selectedSetting.default ?? '—')}</Text>
+            <Text><strong>Range:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? '—' : `${selectedSetting.min_value ?? '-'}..${selectedSetting.max_value ?? '-'}`}</Text>
+            <div>{renderSettingEditor(selectedSetting)}</div>
+          </Space>
+        ) : null}
+      </DrawerSurfaceShell>
+    </WorkspacePage>
   )
 }

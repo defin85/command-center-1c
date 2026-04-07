@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -9,10 +9,19 @@ const mockGetWorkflowsListWorkflows = vi.fn()
 const mockGetDecisionsCollection = vi.fn()
 const mockListOperationCatalogExposures = vi.fn()
 const mockPropertyEditor = vi.fn()
+const mockNavigate = vi.fn()
 const ROUTER_FUTURE = {
   v7_startTransition: true,
   v7_relativeSplatPath: true,
 } as const
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>()
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -80,6 +89,7 @@ describe('WorkflowDesigner', () => {
     mockGetDecisionsCollection.mockReset()
     mockListOperationCatalogExposures.mockReset()
     mockPropertyEditor.mockReset()
+    mockNavigate.mockReset()
 
     mockGetWorkflowsGetWorkflow.mockResolvedValue({
       workflow: {
@@ -419,6 +429,24 @@ describe('WorkflowDesigner', () => {
     })
 
     expect(screen.getByTestId('workflow-designer-selected-node')).toHaveTextContent('Selected node: Start')
+  })
+
+  it('keeps encoded list filters and sort when returning through the Back action', async () => {
+    const returnTo = '/workflows?q=Services&filters=%7B%22workflow_type%22%3A%22complex%22%7D&sort=%7B%22key%22%3A%22updated_at%22%2C%22order%22%3A%22desc%22%7D&workflow=workflow-revision-3&detail=1'
+
+    renderPage(`/workflows/analyst-1?returnTo=${encodeURIComponent(returnTo)}`)
+
+    await waitFor(() => {
+      expect(screen.getByText('Runtime Projection')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }))
+
+    expect(mockNavigate).toHaveBeenCalledWith({
+      pathname: '/workflows',
+      search: '?q=Services&filters=%7B%22workflow_type%22%3A%22complex%22%7D&sort=%7B%22key%22%3A%22updated_at%22%2C%22order%22%3A%22desc%22%7D&workflow=workflow-revision-3&detail=1',
+      hash: '',
+    })
   })
 
   it('opens execute authoring surface from route-backed state', async () => {

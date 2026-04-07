@@ -126,6 +126,22 @@ const normalizeRouteParam = (value: string | null): string | null => {
   return normalized.length > 0 ? normalized : null
 }
 
+const resolveInternalNavigationTarget = (value: string) => {
+  if (typeof window === 'undefined') {
+    return value
+  }
+  try {
+    const resolved = new URL(value, window.location.origin)
+    return {
+      pathname: resolved.pathname,
+      search: resolved.search,
+      hash: resolved.hash,
+    }
+  } catch {
+    return value
+  }
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 )
@@ -301,6 +317,9 @@ const WorkflowDesigner = () => {
     databaseId: decisionDatabaseId,
     surface: designerSurface,
   })
+  const resolvedBackTarget = useMemo(() => (
+    returnToFromUrl ? resolveInternalNavigationTarget(returnToFromUrl) : backTarget
+  ), [backTarget, returnToFromUrl])
   const runtimeProjectionReadOnlyReason = state.template?.read_only_reason
     || 'System-managed runtime workflow projections are available for diagnostics only.'
   const designerReturnTarget = useMemo(() => {
@@ -722,7 +741,7 @@ const WorkflowDesigner = () => {
               <Space className="designer-header" wrap size={[8, 8]}>
                 <Button
                   icon={<ArrowLeftOutlined />}
-                  onClick={() => navigate(backTarget)}
+                  onClick={() => navigate(resolvedBackTarget)}
                 >
                   Back
                 </Button>

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Alert, App, Button, Checkbox, Drawer, Input, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
+import { Alert, App, Button, Checkbox, Grid, Input, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
 import dayjs from 'dayjs'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { getV2 } from '../../api/generated'
 import { useClusters } from '../../api/queries/clusters'
@@ -23,7 +23,14 @@ import {
 } from '../../api/queries/extensions'
 import { listOperationCatalogExposures } from '../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
+import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { useAuthz } from '../../authz/useAuthz'
+import {
+  ExtensionsBindingsTable,
+  ExtensionsDriftTable,
+  ExtensionsDrilldownTable,
+  ExtensionsOverviewTable,
+} from './ExtensionsTables'
 import {
   buildSetFlagsRuntimeInput,
   hasSetFlagsMaskSelection,
@@ -31,9 +38,10 @@ import {
   type SetFlagsPolicyState,
 } from './setFlagsWorkflow'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 const api = getV2()
+const { useBreakpoint } = Grid
 
 type Status = 'active' | 'inactive' | 'missing' | 'unknown'
 
@@ -138,6 +146,16 @@ export const Extensions = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
   const { isStaff } = useAuthz()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const screens = useBreakpoint()
+  const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
+  const isNarrow = hasMatchedBreakpoint
+    ? !screens.lg
+    : (
+      typeof window !== 'undefined'
+        ? window.innerWidth < 992
+        : false
+    )
   const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
   const mutatingDisabled = isStaff && !hasTenantContext
 
@@ -176,11 +194,10 @@ export const Extensions = () => {
     offset: (page - 1) * pageSize,
   })
 
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [selectedExtension, setSelectedExtension] = useState<string | null>(null)
+  const selectedExtension = (searchParams.get('extension') || '').trim() || null
+  const drawerOpen = Boolean(selectedExtension)
   const [drawerStatus, setDrawerStatus] = useState<Status | undefined>(undefined)
   const [drawerVersion, setDrawerVersion] = useState<string>('')
-  const [drawerDatabaseId, setDrawerDatabaseId] = useState<string | undefined>(undefined)
   const [drawerPage, setDrawerPage] = useState(1)
   const [drawerPageSize, setDrawerPageSize] = useState(50)
   const [adoptPending, setAdoptPending] = useState(false)
@@ -202,6 +219,31 @@ export const Extensions = () => {
 
   const [manualOperation, setManualOperation] = useState<ManualOperationKey>('extensions.set_flags')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined)
+  const drawerDatabaseId = (searchParams.get('database') || '').trim() || undefined
+  const selectedDrawerDatabaseLabel = useMemo(() => {
+    if (!drawerDatabaseId) {
+      return null
+    }
+    return databaseOptions.find((option) => option.value === drawerDatabaseId)?.label ?? drawerDatabaseId
+  }, [databaseOptions, drawerDatabaseId])
+
+  const updateSearchParams = useCallback(
+    (updates: Record<string, string | null>) => {
+      const next = new URLSearchParams(searchParams)
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value) {
+          next.delete(key)
+        } else {
+          next.set(key, value)
+        }
+      })
+      if (next.toString() === searchParams.toString()) {
+        return
+      }
+      setSearchParams(next)
+    },
+    [searchParams, setSearchParams],
+  )
 
   const bindingsQuery = useManualOperationBindings()
   const upsertBindingMutation = useUpsertManualOperationBinding()
@@ -279,13 +321,6 @@ export const Extensions = () => {
     setSelectedTemplateId(undefined)
   }, [drawerOpen, preferredBinding?.template_id, selectedTemplateId, templateOptions])
 
-  useEffect(() => {
-    setDatabaseId(undefined)
-    setDrawerDatabaseId(undefined)
-    setPage(1)
-    setDrawerPage(1)
-  }, [clusterId])
-
   const drilldownEnabled = drawerOpen && Boolean(selectedExtension)
   const drilldownQuery = useExtensionsOverviewDatabases({
     name: selectedExtension || '',
@@ -337,12 +372,13 @@ export const Extensions = () => {
   }
 
   const openDrawer = (row: ExtensionsOverviewRow) => {
-    setSelectedExtension(row.name)
-    setDrawerOpen(true)
+    updateSearchParams({
+      extension: row.name,
+      database: databaseId ?? null,
+    })
     // Propagate current page-level filters into drawer by default so drilldown/apply works on the same slice.
     setDrawerStatus(status)
     setDrawerVersion(version)
-    setDrawerDatabaseId(databaseId)
     setDrawerPage(1)
     setDrawerPageSize(50)
     resetApplyFormFromPolicy(row.flags ? {
@@ -582,13 +618,9 @@ export const Extensions = () => {
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
                 {bindings.length > 0 ? (
-                  <Table
-                    size="small"
-                    rowKey={(_row, idx) => String(idx)}
-                    pagination={false}
-                    dataSource={bindings}
+                  <ExtensionsBindingsTable
+                    data={bindings}
                     columns={bindingColumns}
-                    scroll={{ x: 900 }}
                   />
                 ) : (
                   <div style={{ opacity: 0.7 }}>No bindings</div>
@@ -650,18 +682,7 @@ export const Extensions = () => {
                         Some target databases changed since the plan was built. Re-plan is required.
                       </div>
                       {driftRows.length > 0 ? (
-                        <Table
-                          size="small"
-                          rowKey={(row) => row.database_id}
-                          pagination={false}
-                          dataSource={driftRows.slice(0, 10)}
-                          columns={[
-                            { title: 'Database', dataIndex: 'database_id', key: 'database_id' },
-                            { title: 'Base at', dataIndex: 'base_at', key: 'base_at', width: 220 },
-                            { title: 'Current at', dataIndex: 'current_at', key: 'current_at', width: 220 },
-                          ]}
-                          scroll={{ x: 700 }}
-                        />
+                        <ExtensionsDriftTable data={driftRows.slice(0, 10)} />
                       ) : (
                         <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
                           {JSON.stringify(data ?? {}, null, 2)}
@@ -743,7 +764,12 @@ export const Extensions = () => {
       dataIndex: 'name',
       key: 'name',
       render: (value: string, row) => (
-        <Button type="link" style={{ padding: 0 }} onClick={() => openDrawer(row)}>
+        <Button
+          type="link"
+          style={{ padding: 0 }}
+          onClick={() => openDrawer(row)}
+          aria-label={`Open extension ${value}`}
+        >
           {value}
         </Button>
       ),
@@ -911,18 +937,25 @@ export const Extensions = () => {
   }
 
   return (
-    <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <div>
-          <Title level={2} style={{ marginBottom: 0 }}>Extensions</Title>
-          <Text type="secondary">Overview across accessible databases (snapshot-driven).</Text>
-        </div>
-        <Button onClick={() => overviewQuery.refetch()} loading={overviewQuery.isFetching}>
-          Refresh
-        </Button>
-      </div>
-
-      <Space wrap>
+    <WorkspacePage
+      header={(
+        <PageHeader
+          title="Extensions"
+          subtitle="Management workspace with URL-backed selected extension context and secondary drill-down surface."
+          actions={(
+            <Button
+              data-testid="extensions-refresh"
+              onClick={() => overviewQuery.refetch()}
+              loading={overviewQuery.isFetching}
+            >
+              Refresh
+            </Button>
+          )}
+        />
+      )}
+    >
+      <Space direction="vertical" size="middle" style={{ width: '100%' }} data-testid="extensions-page">
+        <Space wrap>
         <Input
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
@@ -968,7 +1001,7 @@ export const Extensions = () => {
           onChange={(v) => {
             setClusterId(v)
             setDatabaseId(undefined)
-            setDrawerDatabaseId(undefined)
+            updateSearchParams({ database: null })
             setPage(1)
             setDrawerPage(1)
           }}
@@ -983,29 +1016,37 @@ export const Extensions = () => {
         <Text type="secondary">
           Total DBs: {overviewQuery.data?.total_databases ?? '—'}
         </Text>
-      </Space>
+        </Space>
 
-      {overviewQuery.isError && (
-        <Alert type="error" showIcon message="Failed to load extensions overview" />
-      )}
+        {overviewQuery.isError && (
+          <Alert type="error" showIcon message="Failed to load extensions overview" />
+        )}
 
-      <Table
-        rowKey="name"
-        columns={overviewColumns}
-        dataSource={overviewQuery.data?.extensions ?? []}
-        loading={overviewQuery.isLoading}
-        pagination={overviewPagination}
-        size="middle"
-      />
+        <ExtensionsOverviewTable
+          columns={overviewColumns}
+          data={overviewQuery.data?.extensions ?? []}
+          loading={overviewQuery.isLoading}
+          pagination={overviewPagination}
+        />
 
-      <Drawer
-        title={selectedExtension ? `Extension: ${selectedExtension}` : 'Extension'}
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        width={860}
-        destroyOnHidden
-      >
+        <DrawerSurfaceShell
+          title={selectedExtension ? `Extension: ${selectedExtension}` : 'Extension'}
+          open={drawerOpen}
+          onClose={() => updateSearchParams({ extension: null, database: null })}
+          width={860}
+          drawerTestId="extensions-management-drawer"
+        >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          {selectedExtension ? (
+            <Text data-testid="extensions-selected-name" strong>
+              {selectedExtension}
+            </Text>
+          ) : null}
+          {selectedDrawerDatabaseLabel ? (
+            <Text data-testid="extensions-selected-database" type="secondary">
+              {selectedDrawerDatabaseLabel}
+            </Text>
+          ) : null}
           {mutatingDisabled && (
             <Alert
               type="warning"
@@ -1031,17 +1072,25 @@ export const Extensions = () => {
                     : 'Primary path for mass rollout. Progress is tracked in Operations.')
                   : 'Runs extensions.sync through selected template and manual-operation contract.'}
               />
-              <Space align="center" wrap>
+              <Space
+                align={isNarrow ? 'start' : 'center'}
+                direction={isNarrow ? 'vertical' : 'horizontal'}
+                style={{ width: '100%' }}
+              >
                 <Text type="secondary">Operation</Text>
                 <Select
                   data-testid="extensions-apply-manual-operation"
                   value={manualOperation}
                   options={MANUAL_OPERATION_OPTIONS}
                   onChange={(value) => setManualOperation(value)}
-                  style={{ minWidth: 280 }}
+                  style={{ width: isNarrow ? '100%' : 280 }}
                 />
               </Space>
-              <Space align="center" wrap>
+              <Space
+                align={isNarrow ? 'start' : 'center'}
+                direction={isNarrow ? 'vertical' : 'horizontal'}
+                style={{ width: '100%' }}
+              >
                 <Text type="secondary">Template</Text>
                 <Select
                   data-testid="extensions-apply-template"
@@ -1051,24 +1100,26 @@ export const Extensions = () => {
                   placeholder={templatesQuery.isLoading ? 'Loading templates…' : 'Select template (or rely on preferred)'}
                   loading={templatesQuery.isLoading}
                   allowClear
-                  style={{ minWidth: 420 }}
+                  style={{ width: isNarrow ? '100%' : 420 }}
                 />
-                <Button
-                  size="small"
-                  onClick={() => void savePreferredBinding()}
-                  loading={upsertBindingMutation.isPending}
-                  disabled={!selectedTemplateId || mutatingDisabled}
-                >
-                  Save preferred
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() => void clearPreferredBinding()}
-                  loading={deleteBindingMutation.isPending}
-                  disabled={!preferredBinding || mutatingDisabled}
-                >
-                  Clear preferred
-                </Button>
+                <Space wrap style={{ width: isNarrow ? '100%' : undefined }}>
+                  <Button
+                    size="small"
+                    onClick={() => void savePreferredBinding()}
+                    loading={upsertBindingMutation.isPending}
+                    disabled={!selectedTemplateId || mutatingDisabled}
+                  >
+                    Save preferred
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => void clearPreferredBinding()}
+                    loading={deleteBindingMutation.isPending}
+                    disabled={!preferredBinding || mutatingDisabled}
+                  >
+                    Clear preferred
+                  </Button>
+                </Space>
               </Space>
               {templatesQuery.isError && (
                 <Alert
@@ -1209,7 +1260,10 @@ export const Extensions = () => {
             <Select
               data-testid="extensions-drawer-database"
               value={drawerDatabaseId}
-              onChange={(v) => { setDrawerDatabaseId(v); setDrawerPage(1) }}
+              onChange={(v) => {
+                updateSearchParams({ database: v ?? null })
+                setDrawerPage(1)
+              }}
               allowClear
               placeholder="Database"
               style={{ width: 320 }}
@@ -1247,16 +1301,15 @@ export const Extensions = () => {
             <Alert type="error" showIcon message="Failed to load databases" />
           )}
 
-          <Table
-            rowKey="database_id"
+          <ExtensionsDrilldownTable
             columns={drillColumns}
-            dataSource={drilldownQuery.data?.databases ?? []}
+            data={drilldownQuery.data?.databases ?? []}
             loading={drilldownQuery.isLoading}
             pagination={drillPagination}
-            size="small"
           />
         </Space>
-      </Drawer>
-    </Space>
+        </DrawerSurfaceShell>
+      </Space>
+    </WorkspacePage>
   )
 }

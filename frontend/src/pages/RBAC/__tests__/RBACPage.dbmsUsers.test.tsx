@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 
 import { RBACPage } from '../RBACPage'
 
@@ -117,9 +118,11 @@ function renderPage() {
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <AntApp>
-        <RBACPage />
-      </AntApp>
+      <MemoryRouter initialEntries={['/rbac']}>
+        <AntApp>
+          <RBACPage />
+        </AntApp>
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }

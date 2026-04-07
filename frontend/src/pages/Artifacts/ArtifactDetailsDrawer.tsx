@@ -4,7 +4,6 @@ import {
   App,
   Button,
   Descriptions,
-  Drawer,
   Dropdown,
   Input,
   Select,
@@ -21,6 +20,7 @@ import { CheckOutlined, DownloadOutlined } from '@ant-design/icons'
 import type { Artifact, ArtifactAlias, ArtifactVersion } from '../../api/artifacts'
 import { downloadArtifactVersion } from '../../api/artifacts'
 import { useArtifactAliases, useArtifactVersions, useUpsertArtifactAlias } from '../../api/queries'
+import { DrawerSurfaceShell } from '../../components/platform'
 import { aliasMenuItems, diffLines, formatBytes, KIND_LABELS, MAX_PREVIEW_BYTES, renderAutoPurge, renderPurgeBlockers } from './artifactsUtils'
 
 const { Text } = Typography
@@ -355,11 +355,11 @@ export function ArtifactDetailsDrawer({
   ), [versions])
 
   return (
-    <Drawer
-      title="Artifact details"
-      width={860}
+    <DrawerSurfaceShell
       open={open}
       onClose={onClose}
+      title="Artifact details"
+      width={860}
       extra={artifact && (
         <Space>
           {catalogTab === 'deleted' ? (
@@ -580,6 +580,6 @@ export function ArtifactDetailsDrawer({
           />
         </Space>
       )}
-    </Drawer>
+    </DrawerSurfaceShell>
   )
 }

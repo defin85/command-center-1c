@@ -6,6 +6,7 @@ import type { CommandSchemasMode } from '../model/types'
 const { Title, Text } = Typography
 
 export function CommandSchemasHeader(props: {
+  hideTitle?: boolean
   mode: CommandSchemasMode
   setMode: (value: CommandSchemasMode) => void
   loading: boolean
@@ -27,10 +28,12 @@ export function CommandSchemasHeader(props: {
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-      <div>
-        <Title level={2} style={{ marginBottom: 0 }}>Command Schemas</Title>
-        <Text type="secondary">Human-oriented editor for driver command schemas (MinIO artifacts).</Text>
-      </div>
+      {props.hideTitle ? <div /> : (
+        <div>
+          <Title level={2} style={{ marginBottom: 0 }}>Command Schemas</Title>
+          <Text type="secondary">Human-oriented editor for driver command schemas (MinIO artifacts).</Text>
+        </div>
+      )}
       <Space wrap>
         <Space size="small" align="center">
           <Text type="secondary">Mode</Text>

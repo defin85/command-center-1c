@@ -27,15 +27,16 @@ import type { CommandSchemasEditorTab, CommandSchemasMode, CommandSchemasSideTab
 
 export function useCommandSchemasState() {
   const [searchParams, setSearchParams] = useSearchParams()
-
-  const [mode, setMode] = useState<CommandSchemasMode>(() => (
-    (searchParams.get('mode') || '').trim().toLowerCase() === 'raw' ? 'raw' : 'guided'
-  ))
-
-  const [activeDriver, setActiveDriver] = useState<CommandSchemaDriver>(() => {
+  const routeMode = (searchParams.get('mode') || '').trim().toLowerCase() === 'raw' ? 'raw' : 'guided'
+  const routeDriver = (() => {
     const raw = (searchParams.get('driver') || '').trim().toLowerCase()
     return raw === 'cli' ? 'cli' : 'ibcmd'
-  })
+  })()
+  const routeCommandId = (searchParams.get('command') || '').trim()
+
+  const [mode, setMode] = useState<CommandSchemasMode>(() => routeMode)
+
+  const [activeDriver, setActiveDriver] = useState<CommandSchemaDriver>(() => routeDriver)
 
   const [rawDirty, setRawDirty] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -44,7 +45,7 @@ export function useCommandSchemasState() {
 
   const [serverOverrides, setServerOverrides] = useState<CommandSchemasOverridesCatalogV2>(buildEmptyOverrides('ibcmd'))
   const [draftOverrides, setDraftOverrides] = useState<CommandSchemasOverridesCatalogV2>(buildEmptyOverrides('ibcmd'))
-  const [selectedCommandId, setSelectedCommandId] = useState<string>('')
+  const [selectedCommandId, setSelectedCommandId] = useState<string>(() => routeCommandId)
 
   const [search, setSearch] = useState('')
   const [riskFilter, setRiskFilter] = useState<'any' | 'safe' | 'dangerous'>('any')
@@ -113,7 +114,13 @@ export function useCommandSchemasState() {
 
       const effectiveCommands = safeCommandsById(data.catalogs?.effective?.catalog)
       const firstId = Object.keys(effectiveCommands).sort()[0] ?? ''
-      setSelectedCommandId((prev) => (prev && effectiveCommands[prev] ? prev : firstId))
+      const requestedCommandId = routeCommandId
+      setSelectedCommandId((prev) => {
+        if (requestedCommandId && effectiveCommands[requestedCommandId]) {
+          return requestedCommandId
+        }
+        return prev && effectiveCommands[prev] ? prev : firstId
+      })
 
       setActiveEditorTab('basics')
       setActiveSideTab('preview')
@@ -135,15 +142,45 @@ export function useCommandSchemasState() {
     } finally {
       setLoading(false)
     }
-  }, [activeDriver, mode])
+  }, [activeDriver, mode, routeCommandId])
 
   useEffect(() => {
     void fetchView()
   }, [fetchView])
 
   useEffect(() => {
-    setSearchParams({ driver: activeDriver, mode }, { replace: true })
-  }, [activeDriver, mode, setSearchParams])
+    if (mode !== routeMode) {
+      setMode(routeMode)
+    }
+  }, [mode, routeMode])
+
+  useEffect(() => {
+    if (activeDriver !== routeDriver) {
+      setActiveDriver(routeDriver)
+    }
+  }, [activeDriver, routeDriver])
+
+  useEffect(() => {
+    if (routeCommandId === selectedCommandId) {
+      return
+    }
+    setSelectedCommandId(routeCommandId)
+  }, [routeCommandId, selectedCommandId])
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams)
+    next.set('driver', activeDriver)
+    next.set('mode', mode)
+    if (selectedCommandId) {
+      next.set('command', selectedCommandId)
+    } else {
+      next.delete('command')
+    }
+    if (next.toString() === searchParams.toString()) {
+      return
+    }
+    setSearchParams(next, { replace: true })
+  }, [activeDriver, mode, searchParams, selectedCommandId, setSearchParams])
 
   const baseCatalog = view?.catalogs?.base
   const baseCommandsById = useMemo(() => safeCommandsById(baseCatalog), [baseCatalog])

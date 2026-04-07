@@ -5,7 +5,6 @@ import {
   Collapse,
   Form,
   Input,
-  Modal,
   Progress,
   Select,
   Space,
@@ -20,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Artifact, ArtifactKind, UploadProgressInfo } from '../../api/artifacts'
 import { createArtifact, uploadArtifactVersion, upsertArtifactAlias } from '../../api/artifacts'
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
+import { ModalSurfaceShell } from '../../components/platform'
 import { queryKeys } from '../../api/queries'
 import { buildMetadataTemplate, buildVersion, formatDuration, formatSpeed, KIND_LABELS } from './artifactsUtils'
 
@@ -208,18 +208,18 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
   ])
 
   return (
-    <Modal
-      title="Add artifact"
+    <ModalSurfaceShell
       open={open}
-      onCancel={() => {
+      onClose={() => {
         onClose()
         resetForm()
       }}
+      title="Add artifact"
       width={720}
-      okText="Create"
-      onOk={handleCreateArtifact}
-      okButtonProps={{ loading: createLoading, disabled: !isStaff }}
-      destroyOnHidden
+      submitText="Create"
+      onSubmit={() => { void handleCreateArtifact() }}
+      confirmLoading={createLoading}
+      okButtonProps={{ disabled: !isStaff }}
     >
       <Form
         form={form}
@@ -385,7 +385,6 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
           defaultActiveKey={['advanced']}
         />
       </Form>
-    </Modal>
+    </ModalSurfaceShell>
   )
 }
-

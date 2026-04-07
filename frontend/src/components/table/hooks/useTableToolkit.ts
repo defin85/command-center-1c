@@ -4,6 +4,7 @@ import { useTableMetadata } from '../../../api/queries'
 import type { TableFilterConfig, TableFilterValue, TableFilters, TableSortOrder } from '../types'
 import { useTableState } from './useTableState'
 import { useTablePreferences, type TableColumnConfig } from './useTablePreferences'
+import { parseRouteTableFilters, parseRouteTableSort } from '../routeState'
 
 export interface TableToolkitState<T> {
   search: string
@@ -44,6 +45,9 @@ export interface UseTableToolkitOptions<T> {
   tableId: string
   columns: ColumnsType<T>
   fallbackColumns: TableColumnConfig[]
+  initialSearch?: string
+  initialFiltersRaw?: string | null
+  initialSortRaw?: string | null
   initialPageSize?: number
   disableServerMetadata?: boolean
 }
@@ -78,9 +82,17 @@ export const useTableToolkit = <T,>({
   tableId,
   columns,
   fallbackColumns,
+  initialSearch = '',
+  initialFiltersRaw = null,
+  initialSortRaw = null,
   initialPageSize = 50,
   disableServerMetadata = false,
 }: UseTableToolkitOptions<T>): TableToolkitState<T> => {
+  const hasExternalInitialState = Boolean(
+    initialSearch.trim().length > 0
+    || initialFiltersRaw
+    || initialSortRaw
+  )
   const metadataTableId = disableServerMetadata ? '' : tableId
   const { data: tableMetadata } = useTableMetadata(metadataTableId)
   type MetadataColumn = NonNullable<typeof tableMetadata>['columns'][number]
@@ -148,6 +160,19 @@ export const useTableToolkit = <T,>({
     })
     return state
   }, [filterConfigs])
+  const initialSortableColumns = useMemo(() => new Set(
+    columnConfigs
+      .filter((config) => config.sortable)
+      .map((config) => config.key)
+  ), [columnConfigs])
+  const initialRouteFilters = useMemo<TableFilters>(() => ({
+    ...defaultFilterState,
+    ...parseRouteTableFilters(initialFiltersRaw, filterConfigs),
+  }), [defaultFilterState, filterConfigs, initialFiltersRaw])
+  const initialRouteSort = useMemo(
+    () => parseRouteTableSort(initialSortRaw, initialSortableColumns),
+    [initialSortRaw, initialSortableColumns]
+  )
 
   const {
     search,
@@ -162,12 +187,16 @@ export const useTableToolkit = <T,>({
     setPage,
     setPageSize,
   } = useTableState<TableFilters>({
-    initialFilters: defaultFilterState,
+    initialFilters: initialRouteFilters,
+    initialSearch,
     initialPageSize,
+    initialSort: initialRouteSort,
   })
   const filtersRef = useRef(filters)
   const sortRef = useRef(sort)
   const pageRef = useRef(pagination.page)
+  const appliedPresetIdRef = useRef<string | null>(null)
+  const preserveExternalRouteStateRef = useRef(hasExternalInitialState)
 
   useEffect(() => {
     filtersRef.current = filters
@@ -178,6 +207,7 @@ export const useTableToolkit = <T,>({
   const {
     preferences,
     activePreset,
+    loadedFromStorage,
     setActivePreset,
     updatePreset,
     createPreset,
@@ -194,6 +224,10 @@ export const useTableToolkit = <T,>({
   }, [activePreset.filterOrder, activePreset.filterVisibility, filterConfigs])
 
   useEffect(() => {
+    if (!loadedFromStorage) {
+      return
+    }
+
     const defaults = activePreset.defaultFilters || {}
     const nextFilters: TableFilters = { ...defaultFilterState }
     Object.entries(defaults).forEach(([key, value]) => {
@@ -201,21 +235,42 @@ export const useTableToolkit = <T,>({
         nextFilters[key] = value
       }
     })
-    if (!areFiltersEqual(filtersRef.current, nextFilters)) {
-      setFilters(nextFilters)
-    }
     const nextSortKey = activePreset.defaultSort?.key ?? null
     const nextSortOrder = activePreset.defaultSort?.order ?? null
-    if (sortRef.current.key !== nextSortKey || sortRef.current.order !== nextSortOrder) {
+    const presetChanged = appliedPresetIdRef.current !== activePreset.id
+    const filtersMatchDefaults = areFiltersEqual(filtersRef.current, nextFilters)
+    const sortMatchesDefaults = sortRef.current.key === nextSortKey && sortRef.current.order === nextSortOrder
+    const pageMatchesDefaults = pageRef.current === 1
+
+    if (
+      preserveExternalRouteStateRef.current
+      && (!filtersMatchDefaults || !sortMatchesDefaults || !pageMatchesDefaults)
+    ) {
+      appliedPresetIdRef.current = activePreset.id
+      return
+    }
+
+    if (!presetChanged && filtersMatchDefaults && sortMatchesDefaults && pageMatchesDefaults) {
+      return
+    }
+
+    appliedPresetIdRef.current = activePreset.id
+
+    if (!filtersMatchDefaults) {
+      setFilters(nextFilters)
+    }
+    if (!sortMatchesDefaults) {
       setSort(nextSortKey, nextSortOrder)
     }
-    if (pageRef.current !== 1) {
+    if (!pageMatchesDefaults) {
       setPage(1)
     }
   }, [
     activePreset.defaultFilters,
     activePreset.defaultSort,
+    activePreset.id,
     defaultFilterState,
+    loadedFromStorage,
     setFilters,
     setPage,
     setSort,
@@ -339,6 +394,11 @@ export const useTableToolkit = <T,>({
     }
   }, [activePreset.defaultFilters, activePreset.defaultSort, defaultFilterState, setFilters, setSearch, setSort])
 
+  const handleSetActivePreset = useCallback((presetId: string) => {
+    preserveExternalRouteStateRef.current = false
+    setActivePreset(presetId)
+  }, [setActivePreset])
+
   return {
     search,
     setSearch,
@@ -358,7 +418,7 @@ export const useTableToolkit = <T,>({
     activePreset,
     presets: preferences.presets,
     preferencesId: preferences.activePresetId,
-    setActivePreset,
+    setActivePreset: handleSetActivePreset,
     updatePreset,
     createPreset,
     deletePreset,

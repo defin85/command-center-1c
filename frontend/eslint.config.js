@@ -49,6 +49,14 @@ const operationalWorkspaceModuleImports = [
   },
 ]
 
+const privilegedWorkspaceRouteModuleImports = [
+  {
+    name: 'antd',
+    importNames: ['Card', 'Drawer', 'Modal', 'Row', 'Col', 'Table', 'Tabs'],
+    message: 'Privileged admin/support and settings routes must compose through `WorkspacePage`, `PageHeader`, platform-owned catalog/detail primitives, and platform secondary shells instead of raw Ant route containers.',
+  },
+]
+
 const dashboardRouteModuleImports = [
   {
     name: 'antd',
@@ -182,7 +190,8 @@ const shellSafeInternalNavigationRules = [
   },
 ]
 
-const platformShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell'])
+const trackedPlatformShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell', 'ModalSurfaceShell', 'DrawerSurfaceShell'])
+const platformFormShellImportNames = new Set(['ModalFormShell', 'DrawerFormShell'])
 const platformShellRestrictedAntdImports = new Map([
   ['Descriptions', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe summary rows instead of raw `Descriptions`.'],
   ['Table', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe list/summary surfaces instead of raw `Table`.'],
@@ -375,7 +384,7 @@ const uiPlatformLocalPlugin = {
               for (const specifier of node.specifiers) {
                 if (
                   specifier.type === 'ImportSpecifier'
-                  && platformShellImportNames.has(specifier.imported.name)
+                  && platformFormShellImportNames.has(specifier.imported.name)
                 ) {
                   platformShellLocalNames.add(specifier.local.name)
                 }
@@ -482,7 +491,7 @@ const uiPlatformLocalPlugin = {
             for (const specifier of node.specifiers) {
               if (
                 specifier.type === 'ImportSpecifier'
-                && platformShellImportNames.has(specifier.imported.name)
+                && trackedPlatformShellImportNames.has(specifier.imported.name)
               ) {
                 usesPlatformShell = true
               }
@@ -703,6 +712,7 @@ const buildRouteRestrictedImportsOverride = (lintProfile, paths) => {
 }
 
 const inventoryDrivenRouteOverrides = [
+  buildRouteRestrictedImportsOverride('privileged-workspace-route', privilegedWorkspaceRouteModuleImports),
   buildRouteRestrictedImportsOverride('canonical-page-route', canonicalPageContainerImports),
   buildRouteRestrictedImportsOverride('dashboard-route', dashboardRouteModuleImports),
   buildRouteRestrictedImportsOverride('operations-route', operationsRouteModuleImports),
