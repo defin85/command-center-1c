@@ -3353,9 +3353,11 @@ test('UI platform: /operations opens inspect detail in a mobile-safe drawer with
   await expect(page.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible({ timeout: 15000 })
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
+  await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
   await expect(detailDrawer.getByText(`Operation Details: ${WORKFLOW_OPERATION.name}`)).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Timeline' })).toBeVisible()
   await expectNoHorizontalOverflow(page)
+  await expectNoScopedHorizontalOverflow(page.getByTestId('operation-inspect-surface'), 'Operation inspect drawer surface')
 })
 
 test('UI platform: /operations renders zero-task diagnostics as empty state instead of completed workload', async ({ page }) => {
