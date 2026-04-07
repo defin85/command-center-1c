@@ -87,6 +87,7 @@ export const queryKeys = {
   dlq: {
     all: ['dlq'] as const,
     list: (filters?: unknown) => [...queryKeys.dlq.all, 'list', filters] as const,
+    detail: (messageId?: string | null) => [...queryKeys.dlq.all, 'detail', messageId ?? null] as const,
   },
   dashboard: {
     stats: ['dashboard', 'stats'] as const,
@@ -94,6 +95,10 @@ export const queryKeys = {
   artifacts: {
     all: ['artifacts'] as const,
     list: (filters?: ArtifactFilters) => [...queryKeys.artifacts.all, 'list', filters] as const,
+    detail: (
+      artifactId: string,
+      options?: { include_deleted?: boolean; only_deleted?: boolean },
+    ) => [...queryKeys.artifacts.all, 'detail', artifactId, options] as const,
     versions: (artifactId: string) => [...queryKeys.artifacts.all, 'versions', artifactId] as const,
     aliases: (artifactId: string) => [...queryKeys.artifacts.all, 'aliases', artifactId] as const,
     purgeJob: (jobId: string) => [...queryKeys.artifacts.all, 'purge-job', jobId] as const,
@@ -101,6 +106,7 @@ export const queryKeys = {
   users: {
     all: ['users'] as const,
     list: (filters?: unknown) => [...queryKeys.users.all, 'list', filters] as const,
+    detail: (userId?: number | null) => [...queryKeys.users.all, 'detail', userId ?? null] as const,
   },
   extensions: {
     all: ['extensions'] as const,

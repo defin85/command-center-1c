@@ -4,6 +4,11 @@ get:
   summary: List users
   parameters:
     - in: query
+      name: id
+      schema:
+        type: integer
+      description: Filter by user id
+    - in: query
       name: email
       schema:
         type: string

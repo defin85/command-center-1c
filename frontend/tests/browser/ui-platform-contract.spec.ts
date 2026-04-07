@@ -1971,6 +1971,18 @@ type RequestCounts = {
   meReads: number
   myTenantsReads: number
   streamTickets: number
+  usersList: number
+  usersDetail: number
+  dlqList: number
+  dlqDetail: number
+  artifactsList: number
+  artifactDetail: number
+  extensionsOverview: number
+  extensionsOverviewDatabases: number
+  extensionsManualBindings: number
+  runtimeSettingsReads: number
+  streamMuxStatusReads: number
+  commandSchemasEditorReads: number
   clusterLists: number
   databaseLists: number
   metadataManagementReads: number
@@ -1995,6 +2007,18 @@ function createRequestCounts(): RequestCounts {
     meReads: 0,
     myTenantsReads: 0,
     streamTickets: 0,
+    usersList: 0,
+    usersDetail: 0,
+    dlqList: 0,
+    dlqDetail: 0,
+    artifactsList: 0,
+    artifactDetail: 0,
+    extensionsOverview: 0,
+    extensionsOverviewDatabases: 0,
+    extensionsManualBindings: 0,
+    runtimeSettingsReads: 0,
+    streamMuxStatusReads: 0,
+    commandSchemasEditorReads: 0,
     clusterLists: 0,
     databaseLists: 0,
     metadataManagementReads: 0,
@@ -2128,10 +2152,16 @@ async function setupUiPlatformMocks(
   options?: {
     isStaff?: boolean
     counts?: RequestCounts
+    selectedUserOutsideCatalogSlice?: boolean
+    selectedDlqOutsideCatalogSlice?: boolean
+    selectedArtifactOutsideCatalogSlice?: boolean
   },
 ) {
   const counts = options?.counts
   const isStaff = options?.isStaff ?? false
+  const selectedUserOutsideCatalogSlice = options?.selectedUserOutsideCatalogSlice ?? false
+  const selectedDlqOutsideCatalogSlice = options?.selectedDlqOutsideCatalogSlice ?? false
+  const selectedArtifactOutsideCatalogSlice = options?.selectedArtifactOutsideCatalogSlice ?? false
   const currentUser = { id: 1, username: 'ui-platform', is_staff: isStaff }
   const tenantContext = {
     active_tenant_id: TENANT_ID,
@@ -2402,14 +2432,23 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/extensions/overview/') {
+      if (counts) {
+        counts.extensionsOverview += 1
+      }
       return fulfillJson(route, EXTENSIONS_OVERVIEW_RESPONSE)
     }
 
     if (method === 'GET' && path === '/api/v2/extensions/overview/databases/') {
+      if (counts) {
+        counts.extensionsOverviewDatabases += 1
+      }
       return fulfillJson(route, EXTENSIONS_DATABASES_RESPONSE)
     }
 
     if (method === 'GET' && path === '/api/v2/extensions/manual-operation-bindings/') {
+      if (counts) {
+        counts.extensionsManualBindings += 1
+      }
       return fulfillJson(route, EXTENSIONS_MANUAL_BINDINGS_RESPONSE)
     }
 
@@ -2465,6 +2504,9 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/operations/stream-mux-status/') {
+      if (counts) {
+        counts.streamMuxStatusReads += 1
+      }
       return fulfillJson(route, {
         active_streams: 2,
         max_streams: 16,
@@ -2474,6 +2516,9 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/settings/runtime/') {
+      if (counts) {
+        counts.runtimeSettingsReads += 1
+      }
       return fulfillJson(route, RUNTIME_SETTINGS_RESPONSE)
     }
 
@@ -2490,15 +2535,60 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/settings/command-schemas/editor/') {
+      if (counts) {
+        counts.commandSchemasEditorReads += 1
+      }
       return fulfillJson(route, COMMAND_SCHEMAS_EDITOR_VIEW)
     }
 
     if (method === 'GET' && path === '/api/v2/users/list/') {
+      if (counts) {
+        counts.usersList += 1
+      }
+      const requestedUserId = Number.parseInt(url.searchParams.get('id') || '', 10)
+      if (Number.isFinite(requestedUserId) && requestedUserId === ADMIN_USER.id) {
+        if (counts) {
+          counts.usersDetail += 1
+        }
+        return fulfillJson(route, {
+          users: [ADMIN_USER],
+          count: 1,
+          total: 1,
+        })
+      }
+      if (selectedUserOutsideCatalogSlice) {
+        return fulfillJson(route, {
+          users: [],
+          count: 0,
+          total: 0,
+        })
+      }
       return fulfillJson(route, USERS_RESPONSE)
     }
 
     if (method === 'GET' && path === '/api/v2/dlq/list/') {
+      if (counts) {
+        counts.dlqList += 1
+      }
+      if (selectedDlqOutsideCatalogSlice) {
+        return fulfillJson(route, {
+          messages: [],
+          count: 0,
+          total: 0,
+        })
+      }
       return fulfillJson(route, DLQ_LIST_RESPONSE)
+    }
+
+    if (method === 'GET' && path === '/api/v2/dlq/get/') {
+      if (counts) {
+        counts.dlqDetail += 1
+      }
+      const dlqMessageId = String(url.searchParams.get('dlq_message_id') || '')
+      if (dlqMessageId !== DLQ_MESSAGE.dlq_message_id) {
+        return fulfillJson(route, { detail: 'DLQ message not found.' }, 404)
+      }
+      return fulfillJson(route, DLQ_MESSAGE)
     }
 
     if (method === 'POST' && path === '/api/v2/dlq/retry/') {
@@ -2509,7 +2599,35 @@ async function setupUiPlatformMocks(
     }
 
     if (method === 'GET' && path === '/api/v2/artifacts/') {
+      if (counts) {
+        counts.artifactsList += 1
+      }
+      const artifactId = String(url.searchParams.get('artifact_id') || '')
       const onlyDeleted = url.searchParams.get('only_deleted') === 'true'
+      if (artifactId === DELETED_ARTIFACT.id) {
+        if (counts) {
+          counts.artifactDetail += 1
+        }
+        return fulfillJson(route, {
+          artifacts: [DELETED_ARTIFACT],
+          count: 1,
+        })
+      }
+      if (artifactId === ACTIVE_ARTIFACT.id) {
+        if (counts) {
+          counts.artifactDetail += 1
+        }
+        return fulfillJson(route, {
+          artifacts: [ACTIVE_ARTIFACT],
+          count: 1,
+        })
+      }
+      if (selectedArtifactOutsideCatalogSlice) {
+        return fulfillJson(route, {
+          artifacts: [],
+          count: 0,
+        })
+      }
       const artifacts = onlyDeleted ? [DELETED_ARTIFACT] : [ACTIVE_ARTIFACT]
       return fulfillJson(route, {
         artifacts,
@@ -3830,10 +3948,16 @@ test('UI platform: /rbac restores selected mode and tab from URL-backed governan
   await expectNoHorizontalOverflow(page)
 })
 
-test('UI platform: /users restores selected user context and opens edit flow in a canonical modal shell', async ({ page }) => {
+test('UI platform: /users restores selected user context outside the current catalog slice and opens edit flow in a canonical modal shell', async ({ page }) => {
+  const counts = createRequestCounts()
+
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
-  await setupUiPlatformMocks(page, { isStaff: true })
+  await setupUiPlatformMocks(page, {
+    isStaff: true,
+    counts,
+    selectedUserOutsideCatalogSlice: true,
+  })
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`/users?user=${ADMIN_USER.id}&context=edit`, { waitUntil: 'domcontentloaded' })
@@ -3846,13 +3970,20 @@ test('UI platform: /users restores selected user context and opens edit flow in 
   await expect(editModal).toBeVisible()
   await expect(editModal.getByLabel('Username')).toHaveValue(ADMIN_USER.username)
   await expect(editModal.getByRole('button', { name: 'Save' })).toBeVisible()
+  await expect.poll(() => counts.usersDetail).toBe(1)
   await expectNoHorizontalOverflow(page)
 })
 
-test('UI platform: /dlq preserves selected message context and hands off to /operations without leaving the SPA shell', async ({ page }) => {
+test('UI platform: /dlq preserves selected message context outside the current catalog slice and hands off to /operations without leaving the SPA shell', async ({ page }) => {
+  const counts = createRequestCounts()
+
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
-  await setupUiPlatformMocks(page, { isStaff: true })
+  await setupUiPlatformMocks(page, {
+    isStaff: true,
+    counts,
+    selectedDlqOutsideCatalogSlice: true,
+  })
 
   await page.goto(`/dlq?message=${DLQ_MESSAGE.dlq_message_id}`, { waitUntil: 'domcontentloaded' })
 
@@ -3862,6 +3993,7 @@ test('UI platform: /dlq preserves selected message context and hands off to /ope
   const detailDrawer = page.getByTestId('dlq-message-detail-drawer')
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText(DLQ_MESSAGE.error_message)).toBeVisible()
+  await expect.poll(() => counts.dlqDetail).toBe(1)
   await detailDrawer.getByRole('button', { name: 'Open in Operations' }).click()
 
   await expect(page).toHaveURL(new RegExp(`\\/operations\\?tab=monitor&operation=${WORKFLOW_OPERATION.id}$`))
@@ -3870,10 +4002,16 @@ test('UI platform: /dlq preserves selected message context and hands off to /ope
   })
 })
 
-test('UI platform: /artifacts restores deleted catalog tab and selected artifact detail in a mobile-safe drawer', async ({ page }) => {
+test('UI platform: /artifacts restores deleted catalog tab and selected artifact detail outside the current catalog slice in a mobile-safe drawer', async ({ page }) => {
+  const counts = createRequestCounts()
+
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
-  await setupUiPlatformMocks(page, { isStaff: true })
+  await setupUiPlatformMocks(page, {
+    isStaff: true,
+    counts,
+    selectedArtifactOutsideCatalogSlice: true,
+  })
   await page.setViewportSize({ width: 390, height: 844 })
 
   await page.goto(`/artifacts?tab=deleted&artifact=${DELETED_ARTIFACT.id}&context=inspect`, {
@@ -3888,6 +4026,7 @@ test('UI platform: /artifacts restores deleted catalog tab and selected artifact
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText(DELETED_ARTIFACT.name)).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Delete permanently' })).toBeVisible()
+  await expect.poll(() => counts.artifactDetail).toBe(1)
   await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
   await expectNoHorizontalOverflow(page)
 })
@@ -3978,6 +4117,143 @@ test('UI platform: /settings/command-schemas restores driver, mode, and selected
   await expect(detailDrawer.getByText('Publish infobase')).toBeVisible()
   await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
   await expectNoHorizontalOverflow(page)
+})
+
+test('Runtime contract: /extensions ignores same-route menu re-entry and keeps selected extension context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto(`/extensions?extension=ServicePublisher&database=${DATABASE_ID}`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const extensionsMenuItem = page.getByRole('menuitem', { name: /Extensions/i })
+  const detailDrawer = page.getByTestId('extensions-management-drawer')
+
+  await expect(detailDrawer).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(detailDrawer.getByTestId('extensions-selected-name')).toHaveText('ServicePublisher')
+  await expect.poll(() => counts.extensionsOverview).toBeGreaterThan(0)
+  await expect.poll(() => counts.extensionsOverviewDatabases).toBeGreaterThan(0)
+  await expect.poll(() => counts.extensionsManualBindings).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialOverviewReads = counts.extensionsOverview
+  const initialOverviewDatabasesReads = counts.extensionsOverviewDatabases
+  const initialManualBindingsReads = counts.extensionsManualBindings
+
+  await extensionsMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('extensions-selected-name')).toHaveText('ServicePublisher')
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.extensionsOverview).toBe(initialOverviewReads)
+  await expect(counts.extensionsOverviewDatabases).toBe(initialOverviewDatabasesReads)
+  await expect(counts.extensionsManualBindings).toBe(initialManualBindingsReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /settings/runtime ignores same-route menu re-entry and keeps selected setting context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/settings/runtime?setting=runtime.concurrency.max_workers&context=setting', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const runtimeSettingsMenuItem = page.getByRole('menuitem', { name: /Runtime Settings/i })
+  const detailDrawer = page.getByTestId('runtime-settings-detail-drawer')
+
+  await expect(detailDrawer).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(detailDrawer.getByText('runtime.concurrency.max_workers')).toBeVisible()
+  await expect.poll(() => counts.runtimeSettingsReads).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialRuntimeSettingsReads = counts.runtimeSettingsReads
+
+  await runtimeSettingsMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByText('runtime.concurrency.max_workers')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.runtimeSettingsReads).toBe(initialRuntimeSettingsReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /settings/timeline ignores same-route menu re-entry and keeps diagnostics context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/settings/timeline?context=diagnostics', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const timelineSettingsMenuItem = page.getByRole('menuitem', { name: /Timeline Settings/i })
+  const diagnosticsDrawer = page.getByTestId('timeline-settings-diagnostics-drawer')
+
+  await expect(diagnosticsDrawer).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(diagnosticsDrawer.getByText('Active mux streams: 2/16')).toBeVisible()
+  await expect.poll(() => counts.runtimeSettingsReads).toBeGreaterThan(0)
+  await expect.poll(() => counts.streamMuxStatusReads).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialRuntimeSettingsReads = counts.runtimeSettingsReads
+  const initialStreamMuxStatusReads = counts.streamMuxStatusReads
+
+  await timelineSettingsMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(diagnosticsDrawer).toBeVisible()
+  await expect(diagnosticsDrawer.getByText('Active mux streams: 2/16')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.runtimeSettingsReads).toBe(initialRuntimeSettingsReads)
+  await expect(counts.streamMuxStatusReads).toBe(initialStreamMuxStatusReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime contract: /settings/command-schemas ignores same-route menu re-entry and keeps selected command context stable', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/settings/command-schemas?driver=ibcmd&mode=guided&command=ibcmd.publish', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const commandSchemasMenuItem = page.getByRole('menuitem', { name: /Command Schemas/i })
+  const selectedCommand = page.getByTestId('command-schemas-command-ibcmd.publish')
+
+  await expect(selectedCommand).toHaveAttribute('aria-current', 'true', { timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(page.getByText('Publish infobase')).toBeVisible()
+  await expect.poll(() => counts.commandSchemasEditorReads).toBeGreaterThan(0)
+
+  const initialUrl = page.url()
+  const initialCommandSchemasReads = counts.commandSchemasEditorReads
+
+  await commandSchemasMenuItem.dispatchEvent('click')
+  await page.waitForTimeout(750)
+
+  await expect(page).toHaveURL(initialUrl)
+  await expect(selectedCommand).toHaveAttribute('aria-current', 'true')
+  await expect(page.getByText('Publish infobase')).toBeVisible()
+  await expect(counts.bootstrap).toBe(1)
+  await expect(counts.commandSchemasEditorReads).toBe(initialCommandSchemasReads)
+  await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
 test('Runtime contract: /decisions avoids mount-time waterfall and duplicate notifications on the default path', async ({ page }) => {

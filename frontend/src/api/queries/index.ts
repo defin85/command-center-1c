@@ -21,9 +21,9 @@ export {
 } from './templates'
 export { useShellBootstrap } from './shellBootstrap'
 export { useMe } from './me'
-export { useDlqMessages, useRetryDlqMessage } from './dlq'
+export { useDlqMessage, useDlqMessages, useRetryDlqMessage } from './dlq'
 export { useTableMetadata } from './ui'
-export { useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
+export { useUser, useUsers, useCreateUser, useUpdateUser, useSetUserPassword } from './users'
 export type { UserSummary } from './users'
 export { useExtensionsOverview, useExtensionsOverviewDatabases } from './extensions'
 export {
@@ -47,6 +47,7 @@ export {
 } from './databases'
 export {
   useArtifacts,
+  useArtifact,
   useArtifactVersions,
   useArtifactAliases,
   useUpsertArtifactAlias,

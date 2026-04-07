@@ -89,6 +89,7 @@ def _parse_bool(value: Optional[str]) -> Optional[bool]:
     summary="List users",
     description="List users for admin UI (staff only).",
     parameters=[
+        OpenApiParameter(name="id", type=int, required=False, description="Filter by user id"),
         OpenApiParameter(name="search", type=str, required=False, description="Search by username or name"),
         OpenApiParameter(name="username", type=str, required=False, description="Filter by username"),
         OpenApiParameter(name="email", type=str, required=False, description="Filter by email"),
@@ -106,6 +107,7 @@ def _parse_bool(value: Optional[str]) -> Optional[bool]:
 @api_view(["GET"])
 @permission_classes([IsAdminUser])
 def list_users(request):
+    raw_user_id = (request.query_params.get("id") or "").strip()
     search = (request.query_params.get("search") or "").strip()
     username = (request.query_params.get("username") or "").strip()
     email = (request.query_params.get("email") or "").strip()
@@ -124,6 +126,11 @@ def list_users(request):
         offset = 0
 
     qs = User.objects.all()
+    if raw_user_id:
+        try:
+            qs = qs.filter(id=int(raw_user_id))
+        except (TypeError, ValueError):
+            qs = qs.none()
     if search:
         qs = qs.filter(
             Q(username__icontains=search)

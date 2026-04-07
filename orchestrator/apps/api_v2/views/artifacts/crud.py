@@ -1,6 +1,8 @@
 # ruff: noqa: F405
 from __future__ import annotations
 
+from uuid import UUID
+
 from .common import *  # noqa: F403
 from .common import _ensure_permission, _get_active_artifact, _purge_ttl_days
 
@@ -60,9 +62,12 @@ def create_artifact(request):
     tags=["v2"],
     summary="List artifacts",
     parameters=[
+        OpenApiParameter(name="artifact_id", type=str, required=False),
         OpenApiParameter(name="kind", type=str, required=False),
         OpenApiParameter(name="name", type=str, required=False),
         OpenApiParameter(name="tag", type=str, required=False),
+        OpenApiParameter(name="include_deleted", type=bool, required=False),
+        OpenApiParameter(name="only_deleted", type=bool, required=False),
     ],
     responses={
         200: ArtifactListResponseSerializer,
@@ -92,7 +97,13 @@ def list_artifacts(request):
     kind = request.query_params.get("kind")
     name = request.query_params.get("name")
     tag = request.query_params.get("tag")
+    artifact_id = (request.query_params.get("artifact_id") or "").strip()
 
+    if artifact_id:
+        try:
+            queryset = queryset.filter(id=UUID(artifact_id))
+        except (TypeError, ValueError):
+            queryset = queryset.none()
     if kind:
         queryset = queryset.filter(kind=kind)
     if name:
@@ -209,4 +220,3 @@ def restore_artifact(request, artifact_id):
     )
     response = ArtifactSerializer(artifact)
     return Response(response.data, status=http_status.HTTP_200_OK)
-

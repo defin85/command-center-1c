@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Alert, App, Button, Input, Space, Tag, Typography } from 'antd'
+import { Alert, App, Button, Input, Space, Spin, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, RetweetOutlined, RightCircleOutlined } from '@ant-design/icons'
 import { useSearchParams } from 'react-router-dom'
 
 import type { DLQMessage } from '../../api/generated/model/dLQMessage'
-import { useDlqMessages, useRetryDlqMessage } from '../../api/queries/dlq'
+import { useDlqMessage, useDlqMessages, useRetryDlqMessage } from '../../api/queries/dlq'
 import { useAuthz } from '../../authz/useAuthz'
 import { DrawerSurfaceShell, PageHeader, RouteButton, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
@@ -227,8 +227,20 @@ export function DLQPage() {
     ? dlqQuery.data.total
     : messages.length
   const selectedMessageId = (searchParams.get('message') || '').trim() || null
-  const selectedMessage = selectedMessageId
+  const selectedMessageFromCatalog = selectedMessageId
     ? messages.find((entry) => entry.dlq_message_id === selectedMessageId) ?? null
+    : null
+  const selectedMessageQuery = useDlqMessage(selectedMessageId, {
+    enabled: isStaff && Boolean(selectedMessageId) && selectedMessageFromCatalog === null,
+  })
+  const selectedMessage = selectedMessageFromCatalog ?? selectedMessageQuery.data ?? null
+  const selectedMessageLoading = Boolean(selectedMessageId)
+    && selectedMessage === null
+    && selectedMessageQuery.isLoading
+  const selectedMessageError = Boolean(selectedMessageId)
+    && selectedMessage === null
+    && !selectedMessageLoading
+    ? 'Selected DLQ message could not be restored. Reload the workspace or choose another message from the catalog.'
     : null
 
   if (!isStaff) {
@@ -304,7 +316,7 @@ export function DLQPage() {
       />
 
       <DrawerSurfaceShell
-        open={Boolean(selectedMessage)}
+        open={Boolean(selectedMessageId)}
         onClose={() => updateSearchParams({ message: null })}
         title={selectedMessage ? `DLQ message ${selectedMessage.dlq_message_id}` : 'DLQ message'}
         subtitle={selectedMessage?.operation_id ? `operation=${selectedMessage.operation_id}` : undefined}
@@ -330,7 +342,18 @@ export function DLQPage() {
           </Space>
         ) : null}
       >
-        {selectedMessage ? (
+        {selectedMessageLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
+            <Spin />
+          </div>
+        ) : selectedMessageError ? (
+          <Alert
+            type="error"
+            message="Failed to restore selected message"
+            description={selectedMessageError}
+            showIcon
+          />
+        ) : selectedMessage ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             <Text><strong>DLQ ID:</strong> {selectedMessage.dlq_message_id}</Text>
             <Text><strong>Operation:</strong> {selectedMessage.operation_id || '—'}</Text>
@@ -341,7 +364,9 @@ export function DLQPage() {
             <Text><strong>Error message:</strong> {selectedMessage.error_message || '—'}</Text>
             <Text><strong>Retry reason:</strong> {retryReason || '—'}</Text>
           </Space>
-        ) : null}
+        ) : (
+          <Text type="secondary">Select a DLQ message to view details.</Text>
+        )}
       </DrawerSurfaceShell>
     </WorkspacePage>
   )

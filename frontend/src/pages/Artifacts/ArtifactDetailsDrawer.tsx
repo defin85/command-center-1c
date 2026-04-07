@@ -28,6 +28,8 @@ const { Text } = Typography
 export type ArtifactDetailsDrawerProps = {
   open: boolean
   artifact: Artifact | null
+  loading?: boolean
+  error?: string | null
   catalogTab: 'active' | 'deleted'
   isStaff: boolean
   onClose: () => void
@@ -39,6 +41,8 @@ export type ArtifactDetailsDrawerProps = {
 export function ArtifactDetailsDrawer({
   open,
   artifact,
+  loading = false,
+  error = null,
   catalogTab,
   isStaff,
   onClose,
@@ -379,7 +383,13 @@ export function ArtifactDetailsDrawer({
         </Space>
       )}
     >
-      {!artifact ? (
+      {error ? (
+        <Alert type="error" message={error} showIcon />
+      ) : loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '32px 0' }}>
+          <Spin />
+        </div>
+      ) : !artifact ? (
         <Text type="secondary">Select an artifact to view details.</Text>
       ) : (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>

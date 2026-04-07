@@ -33,7 +33,10 @@ export interface ClusterFilters {
 }
 
 export interface ArtifactFilters {
+  artifact_id?: string
   kind?: string
   name?: string
   tag?: string
+  include_deleted?: boolean
+  only_deleted?: boolean
 }

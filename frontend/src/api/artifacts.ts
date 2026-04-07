@@ -108,6 +108,7 @@ export interface ArtifactPurgeJob {
 }
 
 export interface ArtifactListParams {
+  artifact_id?: string
   kind?: string
   name?: string
   tag?: string

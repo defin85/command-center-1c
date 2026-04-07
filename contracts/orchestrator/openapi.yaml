@@ -93,13 +93,26 @@ paths:
       summary: List artifacts
       parameters:
         - in: query
+          name: artifact_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
           name: kind
           schema:
             type: string
         - in: query
+          name: include_deleted
+          schema:
+            type: boolean
+        - in: query
           name: name
           schema:
             type: string
+        - in: query
+          name: only_deleted
+          schema:
+            type: boolean
         - in: query
           name: tag
           schema:
@@ -12373,6 +12386,11 @@ paths:
       description: List users for admin UI (staff only).
       summary: List users
       parameters:
+        - in: query
+          name: id
+          schema:
+            type: integer
+          description: Filter by user id
         - in: query
           name: email
           schema:

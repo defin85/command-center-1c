@@ -9,6 +9,7 @@ import {
   restoreArtifact,
   purgeArtifact,
   getArtifactPurgeJob,
+  type Artifact,
   type ArtifactAliasUpsertPayload,
   type ArtifactListParams,
   type ArtifactListResponse,
@@ -26,6 +27,37 @@ export const useArtifacts = (params: ArtifactListParams, options?: { enabled?: b
     placeholderData: (previousData) => previousData,
     retry: false,
     enabled: options?.enabled ?? true,
+  })
+}
+
+export const useArtifact = (
+  artifactId?: string | null,
+  options?: {
+    enabled?: boolean
+    include_deleted?: boolean
+    only_deleted?: boolean
+  },
+) => {
+  return useQuery<Artifact | null, Error>({
+    queryKey: queryKeys.artifacts.detail(artifactId ?? 'none', {
+      include_deleted: options?.include_deleted,
+      only_deleted: options?.only_deleted,
+    }),
+    queryFn: ({ signal }) => {
+      if (!artifactId) {
+        return Promise.resolve(null)
+      }
+      return listArtifacts(
+        {
+          artifact_id: artifactId,
+          include_deleted: options?.include_deleted,
+          only_deleted: options?.only_deleted,
+        },
+        signal,
+      ).then((response) => response.artifacts[0] ?? null)
+    },
+    enabled: Boolean(artifactId) && (options?.enabled ?? true),
+    retry: false,
   })
 }
 

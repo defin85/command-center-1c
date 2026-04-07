@@ -7,7 +7,7 @@ import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { EntityDetails, ModalFormShell, PageHeader, WorkspacePage } from '../../components/platform'
-import { useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary } from '../../api/queries'
+import { useUser, useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary } from '../../api/queries'
 
 const { Text } = Typography
 
@@ -197,9 +197,21 @@ export function UsersPage() {
   const totalUsers = typeof usersQuery.data?.total === 'number'
     ? usersQuery.data.total
     : users.length
-  const selectedUser = selectedUserId === null
+  const selectedUserFromCatalog = selectedUserId === null
     ? null
     : users.find((user) => user.id === selectedUserId) ?? null
+  const selectedUserQuery = useUser(selectedUserId, {
+    enabled: isStaff && selectedUserId !== null && selectedUserFromCatalog === null,
+  })
+  const selectedUser = selectedUserFromCatalog ?? selectedUserQuery.data ?? null
+  const selectedUserLoading = selectedUserId !== null
+    && selectedUser === null
+    && (usersQuery.isLoading || selectedUserQuery.isLoading)
+  const selectedUserError = selectedUserId !== null
+    && selectedUser === null
+    && !selectedUserLoading
+    ? 'Selected user could not be restored. Reload the workspace or choose another user from the catalog.'
+    : null
 
   useEffect(() => {
     if (activeContext === 'create') {
@@ -344,9 +356,11 @@ export function UsersPage() {
 
       <EntityDetails
         title={selectedUser ? `User: ${selectedUser.username}` : 'User details'}
+        error={selectedUserError}
+        loading={selectedUserLoading}
         empty={!selectedUser}
         emptyDescription={selectedUserId
-          ? 'Selected user is outside the current catalog slice. Refine search or reload the catalog.'
+          ? 'Selected user is not available in the current route state.'
           : 'Select a user from the catalog or create a new one.'}
         extra={selectedUser ? (
           <Space wrap>
@@ -380,7 +394,7 @@ export function UsersPage() {
       </EntityDetails>
 
       <ModalFormShell
-        open={activeContext === 'create' || activeContext === 'edit'}
+        open={activeContext === 'create' || (activeContext === 'edit' && Boolean(selectedUser))}
         onClose={closeUserEditor}
         onSubmit={() => { void handleUserSave() }}
         title={activeContext === 'edit' && selectedUser ? `Edit User: ${selectedUser.username}` : 'Add User'}
@@ -418,7 +432,7 @@ export function UsersPage() {
       </ModalFormShell>
 
       <ModalFormShell
-        open={activeContext === 'password'}
+        open={activeContext === 'password' && Boolean(selectedUser)}
         onClose={closePasswordEditor}
         onSubmit={() => { void handlePasswordSave() }}
         title={selectedUser ? `Set Password: ${selectedUser.username}` : 'Set Password'}

@@ -23,6 +23,7 @@ export type UserListResponse = {
 }
 
 export type UserListFilters = {
+  id?: number
   search?: string
   username?: string
   email?: string
@@ -66,6 +67,23 @@ export function useUsers(filters: UserListFilters, options?: { enabled?: boolean
     },
     placeholderData: (previousData) => previousData,
     enabled: options?.enabled ?? true,
+  })
+}
+
+export function useUser(userId?: number | null, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: queryKeys.users.detail(userId),
+    queryFn: async (): Promise<UserSummary | null> => {
+      if (!userId) {
+        return null
+      }
+      const response = await apiClient.get<UserListResponse>('/api/v2/users/list/', {
+        params: { id: userId, limit: 1, offset: 0 },
+      })
+      return response.data.users[0] ?? null
+    },
+    enabled: Boolean(userId) && (options?.enabled ?? true),
+    retry: false,
   })
 }
 

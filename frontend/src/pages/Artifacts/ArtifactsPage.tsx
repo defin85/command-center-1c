@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 
 import { useAuthz } from '../../authz/useAuthz'
-import { useArtifacts, useDeleteArtifact, useRestoreArtifact } from '../../api/queries'
+import { useArtifact, useArtifacts, useDeleteArtifact, useRestoreArtifact } from '../../api/queries'
 import type { Artifact } from '../../api/artifacts'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
@@ -165,8 +165,22 @@ export const ArtifactsPage = () => {
 
   const artifacts = artifactsQuery.data?.artifacts ?? []
   const totalArtifacts = artifactsQuery.data?.count ?? artifacts.length
-  const selectedArtifact = selectedArtifactId
+  const selectedArtifactFromCatalog = selectedArtifactId
     ? artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? null
+    : null
+  const selectedArtifactQuery = useArtifact(selectedArtifactId, {
+    enabled: isStaff && Boolean(selectedArtifactId) && selectedArtifactFromCatalog === null,
+    include_deleted: catalogTab === 'deleted',
+    only_deleted: catalogTab === 'deleted',
+  })
+  const selectedArtifact = selectedArtifactFromCatalog ?? selectedArtifactQuery.data ?? null
+  const selectedArtifactLoading = Boolean(selectedArtifactId)
+    && selectedArtifact === null
+    && selectedArtifactQuery.isLoading
+  const selectedArtifactError = Boolean(selectedArtifactId)
+    && selectedArtifact === null
+    && !selectedArtifactLoading
+    ? 'Selected artifact could not be restored. Reload the workspace or choose another artifact from the catalog.'
     : null
 
   return (
@@ -248,8 +262,10 @@ export const ArtifactsPage = () => {
       />
 
       <ArtifactDetailsDrawer
-        open={activeContext === 'inspect' && Boolean(selectedArtifact)}
+        open={activeContext === 'inspect' && Boolean(selectedArtifactId)}
         artifact={selectedArtifact}
+        loading={selectedArtifactLoading}
+        error={selectedArtifactError}
         catalogTab={catalogTab}
         isStaff={isStaff}
         onClose={() => updateSearchParams({ artifact: null, context: null })}
@@ -259,7 +275,7 @@ export const ArtifactsPage = () => {
       />
 
       <ArtifactsPurgeModal
-        open={activeContext === 'purge' && Boolean(selectedArtifact)}
+        open={activeContext === 'purge' && Boolean(selectedArtifactId)}
         target={selectedArtifact}
         onClose={() => updateSearchParams({ context: 'inspect', artifact: selectedArtifactId })}
         onDeleted={(artifactId) => {
