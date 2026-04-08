@@ -139,4 +139,75 @@ describe('uiActionJournal', () => {
       outcome: 'churn_warning',
     })
   })
+
+  it('keeps detached async requests on the originating ui_action_id and drops non-whitelisted action context', async () => {
+    captureUiRouteTransition({
+      pathname: '/artifacts',
+      search: '?tab=active',
+      hash: '',
+    })
+
+    const deferredFailure = Promise.resolve().then(() => {
+      const request = startUiHttpRequest({
+        method: 'post',
+        path: '/api/v2/artifacts/alias/',
+      })
+      completeUiHttpRequest({
+        requestId: request.requestId,
+        uiActionId: request.uiActionId,
+        method: 'POST',
+        path: '/api/v2/artifacts/alias/',
+        status: 409,
+        problem: {
+          code: 'ARTIFACT_ALIAS_CONFLICT',
+          title: 'Artifact Alias Conflict',
+          request_id: 'req-artifact-1',
+          ui_action_id: request.uiActionId,
+        },
+      })
+    })
+
+    trackUiAction({
+      actionKind: 'operator.action',
+      actionName: 'Set artifact alias',
+      context: {
+        artifact_id: 'artifact-1',
+        artifact_name: 'operator entered artifact name',
+        alias: 'customer-entered-alias',
+        manual_operation: 'artifacts.set_alias',
+      },
+    }, () => {
+      void deferredFailure
+    })
+
+    await deferredFailure
+
+    const bundle = exportUiActionJournalBundle()
+    const actionEvent = bundle.events.find((event) => (
+      event.event_type === 'ui.action' && event.action_name === 'Set artifact alias'
+    ))
+    const failureEvent = bundle.events.find((event) => event.event_type === 'http.request.failure')
+
+    expect(actionEvent).toMatchObject({
+      context: {
+        artifact_id: 'artifact-1',
+        manual_operation: 'artifacts.set_alias',
+      },
+    })
+    expect(actionEvent).not.toMatchObject({
+      context: expect.objectContaining({
+        artifact_name: expect.anything(),
+      }),
+    })
+    expect(actionEvent).not.toMatchObject({
+      context: expect.objectContaining({
+        alias: expect.anything(),
+      }),
+    })
+    expect(failureEvent).toMatchObject({
+      request_id: 'req-artifact-1',
+      ui_action_id: actionEvent && 'ui_action_id' in actionEvent ? actionEvent.ui_action_id : undefined,
+    })
+    expect(bundle.events.filter((event) => event.event_type === 'ui.action')).toHaveLength(1)
+  })
 })

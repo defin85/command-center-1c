@@ -138,7 +138,7 @@ describe('ArtifactDetailsDrawer observability', () => {
       }),
       expect.objectContaining({
         actionKind: 'operator.action',
-        actionName: 'Set artifact alias stable',
+        actionName: 'Set artifact alias',
         context: {
           artifact_id: 'artifact-1',
           alias: 'stable',
@@ -164,7 +164,7 @@ describe('ArtifactDetailsDrawer observability', () => {
     expect(mockTrackUiAction).toHaveBeenCalledWith(
       expect.objectContaining({
         actionKind: 'operator.action',
-        actionName: 'Set artifact alias release-candidate',
+        actionName: 'Set artifact alias',
         context: {
           artifact_id: 'artifact-1',
           alias: 'release-candidate',

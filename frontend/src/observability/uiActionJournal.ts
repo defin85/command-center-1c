@@ -103,6 +103,7 @@ type ActiveActionContext = {
   route: RouteSnapshot
   context: Record<string, PrimitiveValue>
   timeout_id: ReturnType<typeof setTimeout> | null
+  settle_timeout_id: ReturnType<typeof setTimeout> | null
 }
 
 type ActiveHttpRequest = {
@@ -204,6 +205,11 @@ const ACTION_TTL_MS = 15_000
 const SLOW_REQUEST_THRESHOLD_MS = 2_000
 const WEBSOCKET_CHURN_WINDOW_MS = 60_000
 const WEBSOCKET_CHURN_THRESHOLD = 3
+const ACTION_CONTEXT_ALLOWLIST = new Set([
+  'manual_operation',
+  'next_is_active',
+  'node_type',
+])
 const ROUTE_CONTEXT_ALLOWLIST = new Set([
   'artifact',
   'batch',
@@ -302,6 +308,14 @@ const isRouteContextKeyAllowed = (key: string): boolean => {
   return normalized.endsWith('_id') || normalized.endsWith('_uuid')
 }
 
+const isActionContextKeyAllowed = (key: string): boolean => {
+  const normalized = key.trim().toLowerCase()
+  if (!normalized || SENSITIVE_KEY_PATTERN.test(normalized)) {
+    return false
+  }
+  return ACTION_CONTEXT_ALLOWLIST.has(normalized) || isRouteContextKeyAllowed(normalized)
+}
+
 const sanitizeContextRecord = (value: Record<string, unknown> | undefined): Record<string, PrimitiveValue> => {
   if (!value) {
     return {}
@@ -310,7 +324,7 @@ const sanitizeContextRecord = (value: Record<string, unknown> | undefined): Reco
   const normalized: Record<string, PrimitiveValue> = {}
   for (const [rawKey, rawValue] of Object.entries(value)) {
     const key = rawKey.trim()
-    if (!key || SENSITIVE_KEY_PATTERN.test(key)) {
+    if (!key || !isActionContextKeyAllowed(key)) {
       continue
     }
     if (!isPrimitiveValue(rawValue)) {
@@ -482,6 +496,7 @@ class UiActionJournal {
             this.resolveAction(action.ui_action_id)
           }) as T
       }
+      this.deferActionResolution(action.ui_action_id)
       return result
     } catch (error) {
       this.recordUiError('ui.error.global', error, {
@@ -716,10 +731,14 @@ class UiActionJournal {
         ...sanitizeContextRecord(meta.context),
       },
       timeout_id: null,
+      settle_timeout_id: null,
     }
 
     if (this.activeAction?.timeout_id) {
       clearTimeout(this.activeAction.timeout_id)
+    }
+    if (this.activeAction?.settle_timeout_id) {
+      clearTimeout(this.activeAction.settle_timeout_id)
     }
 
     action.timeout_id = setTimeout(() => {
@@ -750,7 +769,24 @@ class UiActionJournal {
     if (this.activeAction.timeout_id) {
       clearTimeout(this.activeAction.timeout_id)
     }
+    if (this.activeAction.settle_timeout_id) {
+      clearTimeout(this.activeAction.settle_timeout_id)
+    }
     this.activeAction = null
+  }
+
+  private deferActionResolution(uiActionId: string) {
+    if (this.activeAction?.ui_action_id !== uiActionId) {
+      return
+    }
+    if (this.activeAction.settle_timeout_id) {
+      clearTimeout(this.activeAction.settle_timeout_id)
+    }
+    this.activeAction.settle_timeout_id = setTimeout(() => {
+      if (this.activeAction?.ui_action_id === uiActionId) {
+        this.resolveAction(uiActionId)
+      }
+    }, 0)
   }
 
   private createSyntheticRequestAction(method: string, path: string): ActiveActionContext {
@@ -763,6 +799,7 @@ class UiActionJournal {
       route,
       context: route.context,
       timeout_id: null,
+      settle_timeout_id: null,
     }
 
     this.pushEvent({
@@ -924,6 +961,9 @@ class UiActionJournal {
   private reset() {
     if (this.activeAction?.timeout_id) {
       clearTimeout(this.activeAction.timeout_id)
+    }
+    if (this.activeAction?.settle_timeout_id) {
+      clearTimeout(this.activeAction.settle_timeout_id)
     }
     this.activeAction = null
     this.events.splice(0, this.events.length)

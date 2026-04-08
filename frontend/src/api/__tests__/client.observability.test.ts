@@ -7,6 +7,7 @@ import {
   clearUiActionJournal,
   exportUiActionJournalBundle,
   setUiActionJournalEnabled,
+  trackUiAction,
 } from '../../observability/uiActionJournal'
 
 const requestHandlers = (apiClient.interceptors.request as unknown as {
@@ -75,6 +76,35 @@ describe('apiClient observability interceptors', () => {
 
     responseHandler(createResponse(retriedConfig, 200, { ok: true }))
 
+    expect(exportUiActionJournalBundle().active_http_requests).toHaveLength(0)
+  })
+
+  it('preserves the originating ui_action_id for detached async mutation-style requests', async () => {
+    const deferredConfig = await new Promise<InternalAxiosRequestConfig>((resolve) => {
+      trackUiAction({
+        actionKind: 'operator.action',
+        actionName: 'Create pool run',
+      }, () => {
+        queueMicrotask(() => {
+          resolve(requestHandler(createConfig('/api/v2/pools/runs', 'post')))
+        })
+      })
+    })
+
+    const bundle = exportUiActionJournalBundle()
+    const actionEvents = bundle.events.filter((event) => event.event_type === 'ui.action')
+    const operatorAction = actionEvents[0]
+
+    expect(actionEvents).toHaveLength(1)
+    expect(operatorAction).toMatchObject({
+      action_name: 'Create pool run',
+      action_source: 'explicit',
+    })
+    expect(deferredConfig.headers['X-UI-Action-ID']).toBe(
+      operatorAction && 'ui_action_id' in operatorAction ? operatorAction.ui_action_id : undefined,
+    )
+
+    responseHandler(createResponse(deferredConfig, 200, { ok: true }))
     expect(exportUiActionJournalBundle().active_http_requests).toHaveLength(0)
   })
 

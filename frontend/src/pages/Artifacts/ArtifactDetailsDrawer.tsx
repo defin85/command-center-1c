@@ -253,7 +253,7 @@ export function ArtifactDetailsDrawer({
     }
     const actionMeta = {
       actionKind: 'operator.action',
-      actionName: `Set artifact alias ${alias}`,
+      actionName: 'Set artifact alias',
       context: {
         artifact_id: selectedArtifactId,
         alias,
