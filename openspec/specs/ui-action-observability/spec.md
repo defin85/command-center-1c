@@ -1,7 +1,7 @@
 # ui-action-observability Specification
 
 ## Purpose
-TBD - created by archiving change 05-add-ui-action-journal-and-error-correlation. Update Purpose after archive.
+Capability defines the bounded, redaction-first UI journal for the operator-facing SPA, plus end-to-end action/request correlation, WebSocket reuse diagnostics, and canonical debug export for incident analysis.
 ## Requirements
 ### Requirement: Operator-facing SPA MUST вести bounded redacted action journal
 
@@ -80,4 +80,3 @@ Export path ДОЛЖЕН (SHALL) возвращать machine-readable JSON bund
 - **WHEN** action завершаетcя ошибкой и journal bundle экспортируется
 - **THEN** bundle содержит только whitelisted metadata и correlation fields
 - **AND** raw sensitive value отсутствует в journal, error payload и correlated logs
-

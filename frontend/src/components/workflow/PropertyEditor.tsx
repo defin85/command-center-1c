@@ -39,6 +39,7 @@ import type {
   OperationIOMode,
 } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
+import { trackUiAction } from '../../observability/uiActionJournal'
 import { LazyJsonCodeEditor } from '../code/LazyJsonCodeEditor'
 import { DecisionRevisionSelect } from './DecisionRevisionSelect'
 import { WorkflowRevisionSelect } from './WorkflowRevisionSelect'
@@ -883,6 +884,16 @@ const PropertyEditor = ({
   const nodeInfo = NODE_TYPE_INFO[localData.nodeType]
   const compatibilityReadOnlyReason = resolveCompatibilityReadOnlyReason(localData)
   const effectiveReadOnly = readOnly || compatibilityReadOnlyReason !== null
+  const trackNodeAction = <T,>(actionName: string, handler: () => T) => (
+    trackUiAction({
+      actionKind: 'operator.action',
+      actionName,
+      context: {
+        node_id: nodeId,
+        node_type: localData.nodeType,
+      },
+    }, handler)
+  )
 
   const handleLabelChange = (label: string) => {
     setLocalData({ ...localData, label })
@@ -962,12 +973,12 @@ const PropertyEditor = ({
   }
 
   const handleDelete = () => {
-    onNodeDelete(nodeId)
+    void trackNodeAction('Delete workflow node', () => onNodeDelete(nodeId))
   }
 
   const handleDuplicate = () => {
     if (onNodeDuplicate) {
-      onNodeDuplicate(nodeId)
+      void trackNodeAction('Duplicate workflow node', () => onNodeDuplicate(nodeId))
     }
   }
 

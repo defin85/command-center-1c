@@ -1,9 +1,18 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
+import userEvent from '@testing-library/user-event'
+
+const { mockTrackUiAction } = vi.hoisted(() => ({
+  mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
+}))
 
 import type { OperationTemplateListItem, WorkflowNodeData } from '../../../types/workflow'
 import PropertyEditor from '../PropertyEditor'
+
+vi.mock('../../../observability/uiActionJournal', () => ({
+  trackUiAction: mockTrackUiAction,
+}))
 
 vi.mock('../../code/LazyJsonCodeEditor', () => ({
   LazyJsonCodeEditor: ({ id, value }: { id?: string; value?: string }) => (
@@ -18,10 +27,14 @@ const renderEditor = ({
   availableWorkflows = [],
   availableDecisions = [],
   operationTemplates = [],
+  onNodeDelete = vi.fn(),
+  onNodeDuplicate,
 }: {
   nodeId: string
   nodeData: WorkflowNodeData
   onNodeUpdate?: ReturnType<typeof vi.fn>
+  onNodeDelete?: ReturnType<typeof vi.fn>
+  onNodeDuplicate?: ReturnType<typeof vi.fn>
   availableWorkflows?: Array<{
     id: string
     name: string
@@ -44,14 +57,15 @@ const renderEditor = ({
         nodeId={nodeId}
         nodeData={nodeData}
         onNodeUpdate={onNodeUpdate as (nodeId: string, data: Partial<WorkflowNodeData>) => void}
-        onNodeDelete={vi.fn()}
+        onNodeDelete={onNodeDelete as (nodeId: string) => void}
+        onNodeDuplicate={onNodeDuplicate as ((nodeId: string) => void) | undefined}
         operationTemplates={operationTemplates}
         availableWorkflows={availableWorkflows}
         availableDecisions={availableDecisions}
       />
     </AntApp>
   )
-  return { onNodeUpdate }
+  return { onNodeDelete, onNodeDuplicate, onNodeUpdate }
 }
 
 const openSelect = async (testId: string) => {
@@ -62,6 +76,10 @@ const openSelect = async (testId: string) => {
 }
 
 describe('PropertyEditor', () => {
+  beforeEach(() => {
+    mockTrackUiAction.mockClear()
+  })
+
   it('keeps fresh decision gates on pinned-decision path by default', async () => {
     renderEditor({
       nodeId: 'fresh-decision-node',
@@ -307,5 +325,50 @@ describe('PropertyEditor', () => {
     expect(screen.getByText('designer_cli -> infobase')).toBeInTheDocument()
     expect(screen.getByText('Updates extension state in the target infobase.')).toBeInTheDocument()
     expect(screen.getByText('Missing required mappings: params.extension_name')).toBeInTheDocument()
+  })
+
+  it('tracks duplicate and delete actions for editable workflow nodes', async () => {
+    const user = userEvent.setup()
+    const onNodeDelete = vi.fn()
+    const onNodeDuplicate = vi.fn()
+
+    renderEditor({
+      nodeId: 'operation-node',
+      nodeData: {
+        label: 'Sync Extension',
+        nodeType: 'operation',
+        config: {},
+      },
+      onNodeDelete,
+      onNodeDuplicate,
+    })
+
+    await user.click(screen.getByRole('button', { name: /Duplicate/ }))
+    await user.click(screen.getByRole('button', { name: /Delete/ }))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Duplicate workflow node',
+        context: expect.objectContaining({
+          node_id: 'operation-node',
+          node_type: 'operation',
+        }),
+      }),
+      expect.any(Function),
+    )
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Delete workflow node',
+        context: expect.objectContaining({
+          node_id: 'operation-node',
+          node_type: 'operation',
+        }),
+      }),
+      expect.any(Function),
+    )
+    expect(onNodeDuplicate).toHaveBeenCalledWith('operation-node')
+    expect(onNodeDelete).toHaveBeenCalledWith('operation-node')
   })
 })

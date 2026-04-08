@@ -14,6 +14,7 @@ import {
 import { listOperationCatalogExposures } from '../../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
 import { DrawerFormShell } from '../../../components/platform'
+import { trackUiAction } from '../../../observability/uiActionJournal'
 
 const api = getV2()
 
@@ -488,6 +489,18 @@ export const ExtensionsDrawer = ({
   }
 
   const setFlagsOperationSelected = manualOperation === 'extensions.set_flags'
+  const trackExtensionsAction = <T,>(
+    actionName: string,
+    handler: () => T,
+  ) => trackUiAction({
+    actionKind: 'operator.action',
+    actionName,
+    context: {
+      database_id: databaseId,
+      manual_operation: manualOperation,
+      template_id: selectedTemplateId || preferredBinding?.template_id,
+    },
+  }, handler)
 
   return (
     <DrawerFormShell
@@ -533,7 +546,9 @@ export const ExtensionsDrawer = ({
             />
             <Button
               size="small"
-              onClick={() => void savePreferredBinding()}
+              onClick={() => {
+                void trackExtensionsAction('Save preferred template binding', savePreferredBinding)
+              }}
               loading={upsertBindingMutation.isPending}
               disabled={!selectedTemplateId || mutatingDisabled}
             >
@@ -541,7 +556,9 @@ export const ExtensionsDrawer = ({
             </Button>
             <Button
               size="small"
-              onClick={() => void clearPreferredBinding()}
+              onClick={() => {
+                void trackExtensionsAction('Clear preferred template binding', clearPreferredBinding)
+              }}
               loading={deleteBindingMutation.isPending}
               disabled={!preferredBinding || mutatingDisabled}
             >
@@ -624,7 +641,9 @@ export const ExtensionsDrawer = ({
           )}
           <Button
             type="primary"
-            onClick={() => void runManualOperation()}
+            onClick={() => {
+              void trackExtensionsAction('Apply extensions manual operation', runManualOperation)
+            }}
             loading={planPending || applyPending}
             disabled={mutatingDisabled || templateSelectionMissing || !databaseId}
           >
@@ -638,7 +657,9 @@ export const ExtensionsDrawer = ({
         <Space style={{ marginBottom: 8 }}>
           <Button
             size="small"
-            onClick={onRefreshSnapshot}
+            onClick={() => {
+              void trackExtensionsAction('Refresh extensions snapshot', onRefreshSnapshot)
+            }}
             loading={snapshotFetching}
           >
             Refresh

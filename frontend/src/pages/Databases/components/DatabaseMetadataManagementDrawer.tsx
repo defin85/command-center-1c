@@ -11,6 +11,7 @@ import {
   useReverifyDatabaseConfigurationProfile,
 } from '../../../api/queries/databases'
 import { DrawerFormShell } from '../../../components/platform'
+import { trackUiAction } from '../../../observability/uiActionJournal'
 
 type AlertTone = 'success' | 'info' | 'warning' | 'error'
 
@@ -258,6 +259,16 @@ export const DatabaseMetadataManagementDrawer = ({
     && profile?.reverify_blocking_action === 'configure_ibcmd_connection_profile'
   )
   const refreshBlockedByMissingProfile = snapshot?.missing_reason === 'configuration_profile_unavailable'
+  const trackMetadataAction = <T,>(actionName: string, handler: () => T) => (
+    trackUiAction({
+      actionKind: 'operator.action',
+      actionName,
+      context: {
+        database_id: databaseId,
+        operation_id: queuedOperationId || undefined,
+      },
+    }, handler)
+  )
 
   const handleReverify = () => {
     if (!databaseId || mutatingDisabled) return
@@ -300,7 +311,11 @@ export const DatabaseMetadataManagementDrawer = ({
         <Button
           size="small"
           icon={<LinkOutlined />}
-          onClick={() => onOperationQueued?.(queuedOperationId)}
+          onClick={() => {
+            void trackMetadataAction('Open metadata management operations', () => {
+              onOperationQueued?.(queuedOperationId)
+            })
+          }}
           data-testid="database-metadata-management-open-operations"
         >
           Открыть Operations
@@ -338,7 +353,9 @@ export const DatabaseMetadataManagementDrawer = ({
               reverifyBlockedByIbcmdProfile && onOpenIbcmdProfile ? (
                 <Button
                   icon={<LinkOutlined />}
-                  onClick={onOpenIbcmdProfile}
+                  onClick={() => {
+                    void trackMetadataAction('Open IBCMD profile', onOpenIbcmdProfile)
+                  }}
                   disabled={mutatingDisabled}
                   data-testid="database-metadata-management-open-ibcmd-profile"
                 >
@@ -347,7 +364,9 @@ export const DatabaseMetadataManagementDrawer = ({
               ) : (
                 <Button
                   icon={<SyncOutlined />}
-                  onClick={handleReverify}
+                  onClick={() => {
+                    void trackMetadataAction('Re-verify configuration identity', handleReverify)
+                  }}
                   loading={reverifyMutation.isPending}
                   disabled={mutatingDisabled || profile?.reverify_available === false}
                   data-testid="database-metadata-management-reverify"
@@ -394,7 +413,9 @@ export const DatabaseMetadataManagementDrawer = ({
             action={
               <Button
                 icon={<ReloadOutlined />}
-                onClick={handleRefresh}
+                onClick={() => {
+                  void trackMetadataAction('Refresh metadata snapshot', handleRefresh)
+                }}
                 loading={refreshMutation.isPending}
                 disabled={mutatingDisabled || refreshBlockedByMissingProfile}
                 data-testid="database-metadata-management-refresh"

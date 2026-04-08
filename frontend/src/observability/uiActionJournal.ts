@@ -14,7 +14,13 @@ type RouteSnapshot = {
 }
 
 type ActionSource = 'explicit' | 'navigation' | 'synthetic_request'
-type ActionKind = 'route.navigate' | 'modal.submit' | 'modal.confirm' | 'drawer.submit' | 'request.boundary'
+type ActionKind =
+  | 'route.navigate'
+  | 'modal.submit'
+  | 'modal.confirm'
+  | 'drawer.submit'
+  | 'operator.action'
+  | 'request.boundary'
 type WebSocketChannelKind = 'shared' | 'dedicated'
 type WebSocketLifecycleOutcome = 'connect' | 'reuse' | 'close' | 'reconnect'
 

@@ -5,11 +5,21 @@ import { App } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ComponentProps } from 'react'
 
+const { mockTrackUiAction } = vi.hoisted(() => ({
+  mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
+}))
+
 import { DatabaseMetadataManagementDrawer } from '../DatabaseMetadataManagementDrawer'
 
 const mockUseDatabaseMetadataManagement = vi.fn()
 const mockUseReverifyDatabaseConfigurationProfile = vi.fn()
 const mockUseRefreshDatabaseMetadataSnapshot = vi.fn()
+const mockReverifyMutate = vi.fn()
+const mockRefreshMutate = vi.fn()
+
+vi.mock('../../../../observability/uiActionJournal', () => ({
+  trackUiAction: mockTrackUiAction,
+}))
 
 vi.mock('../../../../api/queries/databases', () => ({
   useDatabaseMetadataManagement: (...args: unknown[]) => mockUseDatabaseMetadataManagement(...args),
@@ -47,13 +57,16 @@ describe('DatabaseMetadataManagementDrawer', () => {
     mockUseReverifyDatabaseConfigurationProfile.mockReset()
     mockUseRefreshDatabaseMetadataSnapshot.mockReset()
     mockUseDatabaseMetadataManagement.mockReset()
+    mockTrackUiAction.mockClear()
+    mockReverifyMutate.mockReset()
+    mockRefreshMutate.mockReset()
     mockUseReverifyDatabaseConfigurationProfile.mockReturnValue({
-      mutate: vi.fn(),
+      mutate: mockReverifyMutate,
       isPending: false,
       data: null,
     })
     mockUseRefreshDatabaseMetadataSnapshot.mockReturnValue({
-      mutate: vi.fn(),
+      mutate: mockRefreshMutate,
       isPending: false,
       data: null,
     })
@@ -118,6 +131,18 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeInTheDocument()
 
     await user.click(screen.getByTestId('database-metadata-management-open-operations'))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Open metadata management operations',
+        context: expect.objectContaining({
+          database_id: 'db-1',
+          operation_id: 'op-42',
+        }),
+      }),
+      expect.any(Function),
+    )
     expect(onOperationQueued).toHaveBeenCalledWith('op-42')
   })
 
@@ -183,6 +208,14 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
 
     await userEvent.setup().click(screen.getByTestId('database-metadata-management-open-ibcmd-profile'))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Open IBCMD profile',
+      }),
+      expect.any(Function),
+    )
     expect(onOpenIbcmdProfile).toHaveBeenCalledTimes(1)
   })
 
@@ -237,5 +270,88 @@ describe('DatabaseMetadataManagementDrawer', () => {
 
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
+  })
+
+  it('tracks reverify and refresh actions from the metadata drawer', async () => {
+    mockUseDatabaseMetadataManagement.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: {
+        database_id: 'db-1',
+        configuration_profile: {
+          status: 'verified',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          config_generation_id: 'gen-1',
+          config_root_name: 'БухгалтерияПредприятия',
+          config_vendor: '1С',
+          config_name_source: 'synonym_ru',
+          verification_operation_id: '',
+          verified_at: '2026-03-12T00:00:00Z',
+          generation_probe_requested_at: null,
+          generation_probe_checked_at: null,
+          observed_metadata_hash: '',
+          canonical_metadata_hash: '',
+          publication_drift: false,
+          reverify_available: true,
+          reverify_blocker_code: '',
+          reverify_blocker_message: '',
+          reverify_blocking_action: '',
+        },
+        metadata_snapshot: {
+          status: 'available',
+          missing_reason: '',
+          snapshot_id: 'snapshot-1',
+          source: 'db',
+          fetched_at: '2026-03-12T01:00:00Z',
+          catalog_version: 'v1:abc',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          extensions_fingerprint: '',
+          metadata_hash: 'a'.repeat(64),
+          resolution_mode: 'database_scope',
+          is_shared_snapshot: false,
+          provenance_database_id: 'db-1',
+          provenance_confirmed_at: '2026-03-12T01:00:00Z',
+          observed_metadata_hash: '',
+          publication_drift: false,
+        },
+      },
+    })
+
+    renderDrawer()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByTestId('database-metadata-management-reverify'))
+    await user.click(screen.getByTestId('database-metadata-management-refresh'))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Re-verify configuration identity',
+      }),
+      expect.any(Function),
+    )
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Refresh metadata snapshot',
+      }),
+      expect.any(Function),
+    )
+    expect(mockReverifyMutate).toHaveBeenCalledWith(
+      { database_id: 'db-1' },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    )
+    expect(mockRefreshMutate).toHaveBeenCalledWith(
+      { database_id: 'db-1' },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    )
   })
 })
