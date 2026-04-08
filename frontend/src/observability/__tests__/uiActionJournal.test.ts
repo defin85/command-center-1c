@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  __TESTING__,
   captureUiRouteTransition,
   clearUiActionJournal,
   completeUiHttpRequest,
@@ -27,7 +28,7 @@ describe('uiActionJournal', () => {
     captureUiRouteTransition({
       pathname: '/pools/runs',
       search: '?tab=create&token=super-secret',
-      hash: '',
+      hash: '#workflow=wf-services-r4&token=super-secret',
     })
 
     trackUiAction({
@@ -70,7 +71,14 @@ describe('uiActionJournal', () => {
 
     expect(bundle.session_id).toBeTruthy()
     expect(bundle.route.path).toBe('/pools/runs')
-    expect(bundle.route.context).toEqual({ tab: 'create' })
+    expect(bundle.route.search).toBe('?tab=create')
+    expect(bundle.route.hash).toBe('#workflow=wf-services-r4')
+    expect(bundle.route.context).toEqual({
+      tab: 'create',
+      workflow: 'wf-services-r4',
+    })
+    expect(bundle.release.fingerprint).toBe(__TESTING__.buildReleaseFingerprint())
+    expect(bundle.release.fingerprint).not.toBe(`${bundle.release.mode}:${bundle.release.origin}`)
     expect(bundle.events.map((event) => event.event_type)).toEqual(expect.arrayContaining([
       'route.transition',
       'ui.action',

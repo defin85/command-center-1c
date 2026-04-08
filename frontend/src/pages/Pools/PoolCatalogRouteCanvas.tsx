@@ -29,6 +29,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import 'reactflow/dist/style.css'
 
 import { useAuthz } from '../../authz/useAuthz'
+import { trackUiAction } from '../../observability/uiActionJournal'
 import { getBindingProfileDetail, type BindingProfileDetail } from '../../api/poolBindingProfiles'
 import { useDatabases } from '../../api/queries/databases'
 import { useBindingProfiles } from '../../api/queries/poolBindingProfiles'
@@ -4027,7 +4028,12 @@ export function PoolCatalogPage() {
                               </Button>
                               <Button
                                 type="primary"
-                                onClick={() => { void submitPoolBindings() }}
+                                onClick={() => {
+                                  void trackUiAction({
+                                    actionKind: 'drawer.submit',
+                                    actionName: 'Save bindings',
+                                  }, () => submitPoolBindings())
+                                }}
                                 loading={isPoolBindingsSaving}
                                 disabled={(
                                   mutatingDisabled

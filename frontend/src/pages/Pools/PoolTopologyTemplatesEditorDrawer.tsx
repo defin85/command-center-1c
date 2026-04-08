@@ -99,20 +99,14 @@ export function PoolTopologyTemplatesEditorDrawer({
     <DrawerFormShell
       open={open}
       onClose={onCancel}
+      onSubmit={() => handleSubmit()}
       title={mode === 'create' ? 'Create reusable topology template' : 'Publish topology template revision'}
       subtitle={mode === 'create'
         ? 'Author the reusable abstract graph here, then materialize a selected revision in /pools/catalog.'
         : 'Publish the next immutable revision for the selected reusable template.'}
-      extra={(
-        <Button
-          type="primary"
-          loading={submitting}
-          onClick={() => { void handleSubmit() }}
-          data-testid={buildFieldTestId(mode, 'submit')}
-        >
-          {mode === 'create' ? 'Create template' : 'Publish revision'}
-        </Button>
-      )}
+      submitText={mode === 'create' ? 'Create template' : 'Publish revision'}
+      confirmLoading={submitting}
+      submitButtonTestId={buildFieldTestId(mode, 'submit')}
       drawerTestId={`pool-topology-templates-${mode}-drawer`}
       width={960}
     >

@@ -170,6 +170,36 @@ describe('platform primitives', () => {
     expect(screen.getByText('Drawer body')).toBeInTheDocument()
   })
 
+  it('tracks DrawerFormShell submit through the canonical drawer authoring action', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+
+    render(
+      <AntApp>
+        <DrawerFormShell
+          open
+          onClose={vi.fn()}
+          onSubmit={onSubmit}
+          title="Attachment workspace"
+          submitText="Save bindings"
+        >
+          <div>Drawer body</div>
+        </DrawerFormShell>
+      </AntApp>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save bindings' }))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'drawer.submit',
+        actionName: 'Save bindings',
+      }),
+      expect.any(Function),
+    )
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
   it('renders DrawerSurfaceShell as the canonical non-form drawer surface', async () => {
     const user = userEvent.setup()
 

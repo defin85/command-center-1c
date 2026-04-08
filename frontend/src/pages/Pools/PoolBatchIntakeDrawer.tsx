@@ -271,20 +271,14 @@ export function PoolBatchIntakeDrawer({
     <DrawerFormShell
       open={open}
       onClose={onClose}
+      onSubmit={() => handleSubmit()}
       title="Create canonical pool batch"
       subtitle={`Pool context: ${poolLabel}`}
+      submitText="Create batch"
+      confirmLoading={submitting}
+      submitButtonTestId="pool-runs-batch-intake-submit"
       drawerTestId="pool-runs-batch-intake-drawer"
       width={880}
-      extra={(
-        <Button
-          type="primary"
-          loading={submitting}
-          onClick={() => { void handleSubmit() }}
-          data-testid="pool-runs-batch-intake-submit"
-        >
-          Create batch
-        </Button>
-      )}
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {submitError ? (

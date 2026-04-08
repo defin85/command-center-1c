@@ -2,6 +2,7 @@ import { Alert, Button, Descriptions, Input, Space, Typography } from 'antd'
 import type { DescriptionsProps } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
+import { trackUiAction } from '../../observability/uiActionJournal'
 import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
 import { DocumentPolicyBuilderEditor } from './DocumentPolicyBuilderEditor'
@@ -48,7 +49,7 @@ type DecisionEditorPanelProps = {
   metadataDocuments?: readonly PoolODataMetadataCatalogDocument[]
   onCancel: () => void
   onChange: (value: DecisionEditorState) => void
-  onSave: () => void
+  onSave: () => void | Promise<void>
   onTabChange: (tab: DecisionEditorTab) => void
 }
 
@@ -277,7 +278,16 @@ export function DecisionEditorPanel({
       )}
 
       <Space wrap>
-        <Button type="primary" loading={saving} onClick={onSave}>
+        <Button
+          type="primary"
+          loading={saving}
+          onClick={() => {
+            void trackUiAction({
+              actionKind: 'drawer.submit',
+              actionName: saveButtonLabel,
+            }, onSave)
+          }}
+        >
           {saveButtonLabel}
         </Button>
         <Button disabled={saving} onClick={onCancel}>

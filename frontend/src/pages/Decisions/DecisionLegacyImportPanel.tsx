@@ -2,6 +2,7 @@ import { Alert, Button, Input, Select, Space, Spin, Typography } from 'antd'
 
 import type { OrganizationPool, PoolGraph } from '../../api/intercompanyPools'
 import { EmptyState, EntityDetails } from '../../components/platform'
+import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text, Title } = Typography
 
@@ -24,7 +25,7 @@ type DecisionLegacyImportPanelProps = {
   value: DecisionLegacyImportState
   onCancel: () => void
   onChange: (value: DecisionLegacyImportState) => void
-  onImport: () => void
+  onImport: () => void | Promise<void>
 }
 
 const hasLegacyDocumentPolicy = (metadata: Record<string, unknown> | null | undefined): boolean => {
@@ -208,7 +209,12 @@ export function DecisionLegacyImportPanel({
           type="primary"
           loading={saving}
           disabled={!value.poolId || !value.edgeVersionId}
-          onClick={onImport}
+          onClick={() => {
+            void trackUiAction({
+              actionKind: 'drawer.submit',
+              actionName: 'Import to /decisions',
+            }, onImport)
+          }}
         >
           Import to /decisions
         </Button>

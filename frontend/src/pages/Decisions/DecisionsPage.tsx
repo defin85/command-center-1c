@@ -422,7 +422,7 @@ export function DecisionsPage() {
               legacyImport.setLegacyImportDraft(nextValue)
               legacyImport.setLegacyImportError(null)
             }}
-            onImport={() => void legacyImport.handleImportLegacyEdge()}
+            onImport={() => legacyImport.handleImportLegacyEdge()}
           />
         ) : null}
       </DrawerFormShell>
@@ -438,7 +438,7 @@ export function DecisionsPage() {
             saving={saving}
             metadataDocuments={editorMetadataDocuments}
             onCancel={editor.closeEditor}
-            onSave={() => void editor.handleSaveDecision()}
+            onSave={() => editor.handleSaveDecision()}
             onChange={editor.setEditorDraft}
             onTabChange={editor.handleEditorTabChange}
           />

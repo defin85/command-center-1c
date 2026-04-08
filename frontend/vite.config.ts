@@ -1,10 +1,39 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
 import { visualizer } from 'rollup-plugin-visualizer'
+
+const frontendPackage = JSON.parse(
+  readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'),
+) as { version?: string }
+
+const resolveFrontendBuildId = (): string => {
+  const explicitBuildId = process.env.CC1C_FRONTEND_BUILD_ID?.trim()
+  if (explicitBuildId) {
+    return explicitBuildId
+  }
+
+  try {
+    return execSync('git rev-parse --short=12 HEAD', {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim()
+  } catch {
+    return 'unknown'
+  }
+}
+
+const frontendVersion = frontendPackage.version?.trim() || '0.0.0'
+const frontendBuildId = resolveFrontendBuildId()
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_CC1C_APP_VERSION': JSON.stringify(frontendVersion),
+    'import.meta.env.VITE_CC1C_BUILD_ID': JSON.stringify(frontendBuildId),
+  },
   plugins: process.env.ANALYZE_BUNDLE === '1'
     ? [
       react(),

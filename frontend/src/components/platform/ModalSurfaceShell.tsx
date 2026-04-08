@@ -11,7 +11,7 @@ const DESKTOP_BREAKPOINT_PX = 992
 type ModalSurfaceShellProps = {
   open: boolean
   onClose: () => void
-  onSubmit?: () => void
+  onSubmit?: () => void | Promise<void>
   title?: ReactNode
   subtitle?: ReactNode
   submitText?: ReactNode

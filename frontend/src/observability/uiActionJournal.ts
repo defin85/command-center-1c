@@ -14,7 +14,7 @@ type RouteSnapshot = {
 }
 
 type ActionSource = 'explicit' | 'navigation' | 'synthetic_request'
-type ActionKind = 'route.navigate' | 'modal.submit' | 'modal.confirm' | 'request.boundary'
+type ActionKind = 'route.navigate' | 'modal.submit' | 'modal.confirm' | 'drawer.submit' | 'request.boundary'
 type WebSocketChannelKind = 'shared' | 'dedicated'
 type WebSocketLifecycleOutcome = 'connect' | 'reuse' | 'close' | 'reconnect'
 
@@ -230,6 +230,7 @@ const ROUTE_CONTEXT_ALLOWLIST = new Set([
 ])
 const SENSITIVE_KEY_PATTERN = /(auth|authorization|cookie|csrf|passwd|password|secret|session|token)/i
 const SECRET_VALUE_PATTERN = /\b(password|passwd|pwd|token|authorization|secret|cookie)\b[:=]\s*([^\s,;]+)/gi
+const DEFAULT_RELEASE_FINGERPRINT = '0.0.0+unknown'
 
 const nowIso = () => new Date().toISOString()
 
@@ -321,14 +322,13 @@ const sanitizeContextRecord = (value: Record<string, unknown> | undefined): Reco
   return normalized
 }
 
-const buildRouteSnapshot = (location?: RouteLocationInput): RouteSnapshot => {
-  const pathname = location?.pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/')
-  const rawSearch = location?.search ?? (typeof window !== 'undefined' ? window.location.search : '')
-  const hash = location?.hash ?? (typeof window !== 'undefined' ? window.location.hash : '')
-  const context: Record<string, PrimitiveValue> = {}
-  const sanitizedSearchParams = new URLSearchParams()
+const collectAllowedRouteParams = (
+  rawValue: string,
+  context: Record<string, PrimitiveValue>,
+): URLSearchParams => {
+  const sanitizedParams = new URLSearchParams()
+  const params = new URLSearchParams(rawValue.startsWith('?') ? rawValue.slice(1) : rawValue)
 
-  const params = new URLSearchParams(rawSearch.startsWith('?') ? rawSearch.slice(1) : rawSearch)
   params.forEach((value, key) => {
     if (!isRouteContextKeyAllowed(key)) {
       return
@@ -336,9 +336,42 @@ const buildRouteSnapshot = (location?: RouteLocationInput): RouteSnapshot => {
     const safeValue = sanitizeString(value, 120)
     if (safeValue !== undefined) {
       context[key] = safeValue
-      sanitizedSearchParams.set(key, safeValue)
+      sanitizedParams.set(key, safeValue)
     }
   })
+
+  return sanitizedParams
+}
+
+const sanitizeRouteHash = (
+  rawHash: string,
+  context: Record<string, PrimitiveValue>,
+): string => {
+  const normalized = rawHash.trim()
+  if (!normalized) {
+    return ''
+  }
+
+  const fragment = normalized.startsWith('#') ? normalized.slice(1) : normalized
+  if (!fragment || !/[=&]/.test(fragment)) {
+    return ''
+  }
+
+  const sanitizedParams = collectAllowedRouteParams(fragment, context)
+  if (sanitizedParams.size === 0) {
+    return ''
+  }
+
+  return `#${sanitizedParams.toString()}`
+}
+
+const buildRouteSnapshot = (location?: RouteLocationInput): RouteSnapshot => {
+  const pathname = location?.pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '/')
+  const rawSearch = location?.search ?? (typeof window !== 'undefined' ? window.location.search : '')
+  const rawHash = location?.hash ?? (typeof window !== 'undefined' ? window.location.hash : '')
+  const context: Record<string, PrimitiveValue> = {}
+  const sanitizedSearchParams = collectAllowedRouteParams(rawSearch, context)
+  const hash = sanitizeRouteHash(rawHash, context)
 
   const search = sanitizedSearchParams.size > 0
     ? `?${sanitizedSearchParams.toString()}`
@@ -352,7 +385,15 @@ const buildRouteSnapshot = (location?: RouteLocationInput): RouteSnapshot => {
   }
 }
 
-const buildCorrelationFingerprint = (mode: string, origin: string): string => `${mode}:${origin}`
+const buildReleaseFingerprint = (): string => {
+  const version = sanitizeString(import.meta.env.VITE_CC1C_APP_VERSION, 80) ?? '0.0.0'
+  const buildId = sanitizeString(import.meta.env.VITE_CC1C_BUILD_ID, 120) ?? 'unknown'
+  const fingerprint = `${version}+${buildId}`
+
+  return fingerprint === DEFAULT_RELEASE_FINGERPRINT
+    ? DEFAULT_RELEASE_FINGERPRINT
+    : fingerprint
+}
 
 class UiActionJournal {
   private enabled = false
@@ -624,7 +665,7 @@ class UiActionJournal {
       captured_at: nowIso(),
       release: {
         app: 'commandcenter1c-frontend',
-        fingerprint: buildCorrelationFingerprint(mode, origin),
+        fingerprint: buildReleaseFingerprint(),
         mode,
         origin,
       },
@@ -1017,7 +1058,9 @@ declare global {
 
 export const __TESTING__ = {
   buildRouteSnapshot,
+  buildReleaseFingerprint,
   sanitizeContextRecord,
+  sanitizeRouteHash,
   sanitizeString,
   normalizeRequestPath,
 }

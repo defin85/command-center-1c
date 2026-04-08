@@ -1,6 +1,8 @@
-import { Drawer, Grid, Space, Typography } from 'antd'
+import { Button, Drawer, Grid, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
+import { trackUiAction } from '../../observability/uiActionJournal'
+import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
@@ -9,10 +11,14 @@ const DESKTOP_BREAKPOINT_PX = 992
 type DrawerFormShellProps = {
   open: boolean
   onClose: () => void
+  onSubmit?: () => void | Promise<void>
   title?: ReactNode
   subtitle?: ReactNode
+  submitText?: ReactNode
+  confirmLoading?: boolean
   extra?: ReactNode
   width?: number
+  submitButtonTestId?: string
   drawerTestId?: string
   children: ReactNode
 }
@@ -20,10 +26,14 @@ type DrawerFormShellProps = {
 export function DrawerFormShell({
   open,
   onClose,
+  onSubmit,
   title,
   subtitle,
+  submitText = 'Save',
+  confirmLoading = false,
   extra,
   width = 880,
+  submitButtonTestId,
   drawerTestId,
   children,
 }: DrawerFormShellProps) {
@@ -65,13 +75,46 @@ export function DrawerFormShell({
     )
     : undefined
 
+  const actionName = firstSemanticActionLabel(
+    submitText,
+    title,
+    subtitle,
+  ) ?? 'Drawer submit'
+
+  const submitButton = onSubmit
+    ? (
+      <Button
+        type="primary"
+        loading={confirmLoading}
+        onClick={() => {
+          void trackUiAction({
+            actionKind: 'drawer.submit',
+            actionName,
+          }, onSubmit)
+        }}
+        data-testid={submitButtonTestId}
+      >
+        {submitText}
+      </Button>
+    )
+    : null
+
+  const drawerExtra = extra || submitButton
+    ? (
+      <Space size="small" wrap>
+        {extra}
+        {submitButton}
+      </Space>
+    )
+    : undefined
+
   return (
     <Drawer
       data-testid={drawerTestId}
       open={open}
       onClose={onClose}
       title={drawerTitle}
-      extra={extra}
+      extra={drawerExtra}
       width={isNarrow ? '100%' : width}
       forceRender
       destroyOnClose
