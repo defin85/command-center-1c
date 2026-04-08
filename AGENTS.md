@@ -137,6 +137,7 @@ Rules:
 ## Verification And Done
 
 - Use the smallest relevant validation set first, then widen only as needed.
+- For frontend work, prefer focused `vitest` paths/shards during iteration; reserve full `cd frontend && npm run test:run` for final pre-landing verification or changes that cut across multiple route-level suites.
 - Canonical validation paths live in `docs/agent/VERIFY.md`.
 - UI skill selection does not replace frontend verification gates; после UI-задач всё равно прогоняй релевантные команды из `docs/agent/VERIFY.md`.
 - For docs and guidance changes, run `./scripts/dev/check-agent-doc-freshness.sh`.

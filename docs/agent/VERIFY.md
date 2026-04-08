@@ -24,10 +24,15 @@ openspec validate <change-id> --strict --no-interactive
 
 UI skill routing lives in [ui-skills.md](./ui-skills.md). Выбор shared UI skills не заменяет проверки ниже.
 
+Во время итераций предпочитай focused/shard `vitest` прогоны вместо repo-wide `cd frontend && npm run test:run`, если change локален и не затрагивает несколько тяжёлых route-level suites.
+
+Перед handoff/landing frontend change полный `cd frontend && npm run test:run` остаётся обязательным, если не согласовано явное исключение.
+
 ```bash
 cd frontend && npm run generate:api
 cd frontend && npm run lint
 cd frontend && npm run test:run -- <path>
+cd frontend && npx vitest run <path...>
 cd frontend && npm run test:browser:ui-platform
 cd frontend && npm run validate:ui-platform
 ```

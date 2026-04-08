@@ -24,5 +24,7 @@
 - Canonical validation commands:
   - `cd frontend && npm run lint`
   - `cd frontend && npm run test:run -- <path>`
+  - during iteration, prefer focused `cd frontend && npx vitest run <path...>` or path-scoped `npm run test:run -- <path>` over full-suite reruns
+  - before landing frontend changes, rerun full `cd frontend && npm run test:run`
   - `cd frontend && npm run test:browser:ui-platform`
   - `cd frontend && npm run validate:ui-platform`
