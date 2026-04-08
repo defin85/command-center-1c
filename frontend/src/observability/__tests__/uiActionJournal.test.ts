@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   __TESTING__,
@@ -209,5 +209,73 @@ describe('uiActionJournal', () => {
       ui_action_id: actionEvent && 'ui_action_id' in actionEvent ? actionEvent.ui_action_id : undefined,
     })
     expect(bundle.events.filter((event) => event.event_type === 'ui.action')).toHaveLength(1)
+  })
+
+  it('does not materialize synthetic request actions for fast successful background reads', () => {
+    captureUiRouteTransition({
+      pathname: '/settings/runtime',
+      search: '?setting=operations.max_parallelism&context=setting',
+      hash: '',
+    })
+
+    const request = startUiHttpRequest({
+      method: 'get',
+      path: '/api/v2/settings/runtime/',
+      context: {
+        setting: 'operations.max_parallelism',
+      },
+    })
+
+    completeUiHttpRequest({
+      requestId: request.requestId,
+      uiActionId: request.uiActionId,
+      method: 'GET',
+      path: '/api/v2/settings/runtime/',
+      status: 200,
+    })
+
+    const bundle = exportUiActionJournalBundle()
+
+    expect(bundle.route.context).toEqual({
+      context: 'setting',
+      setting: 'operations.max_parallelism',
+    })
+    expect(bundle.events.map((event) => event.event_type)).toEqual(['route.transition'])
+  })
+
+  it('materializes synthetic request actions only when a detached request becomes slow', () => {
+    const nowSpy = vi.spyOn(Date, 'now')
+    nowSpy.mockReturnValueOnce(1_000)
+    const request = startUiHttpRequest({
+      method: 'get',
+      path: '/api/v2/system/health/',
+    })
+
+    nowSpy.mockReturnValueOnce(3_500)
+    completeUiHttpRequest({
+      requestId: request.requestId,
+      uiActionId: request.uiActionId,
+      method: 'GET',
+      path: '/api/v2/system/health/',
+      status: 200,
+    })
+    nowSpy.mockRestore()
+
+    const bundle = exportUiActionJournalBundle()
+    const syntheticAction = bundle.events.find((event) => (
+      event.event_type === 'ui.action' && event.action_source === 'synthetic_request'
+    ))
+    const slowEvent = bundle.events.find((event) => event.event_type === 'http.request.slow')
+
+    expect(syntheticAction).toMatchObject({
+      action_kind: 'request.boundary',
+      action_name: 'GET /api/v2/system/health/',
+      ui_action_id: request.uiActionId,
+    })
+    expect(slowEvent).toMatchObject({
+      request_id: request.requestId,
+      ui_action_id: request.uiActionId,
+      latency_ms: 2_500,
+    })
   })
 })

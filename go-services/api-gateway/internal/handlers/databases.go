@@ -16,6 +16,25 @@ import (
 
 var orchestratorURL = getOrchestratorURL()
 
+func correlatedErrorPayload(c *gin.Context, message string) gin.H {
+	payload := gin.H{
+		"error":      message,
+		"request_id": c.Writer.Header().Get("X-Request-ID"),
+	}
+	if payload["request_id"] == "" {
+		payload["request_id"] = c.GetHeader("X-Request-ID")
+	}
+
+	uiActionID := c.Writer.Header().Get("X-UI-Action-ID")
+	if uiActionID == "" {
+		uiActionID = c.GetHeader("X-UI-Action-ID")
+	}
+	if uiActionID != "" {
+		payload["ui_action_id"] = uiActionID
+	}
+	return payload
+}
+
 func getOrchestratorURL() string {
 	url := os.Getenv("ORCHESTRATOR_URL")
 	if url == "" {
@@ -54,7 +73,7 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 	// Create new request with buffered body
 	req, err := http.NewRequest(c.Request.Method, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		c.JSON(http.StatusInternalServerError, correlatedErrorPayload(c, "Failed to create request"))
 		return
 	}
 
@@ -86,7 +105,7 @@ func ProxyToOrchestratorV2(c *gin.Context) {
 	resp, err := client.Do(req)
 	if err != nil {
 		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy request to Orchestrator"})
+		c.JSON(http.StatusBadGateway, correlatedErrorPayload(c, "Failed to proxy request to Orchestrator"))
 		return
 	}
 	defer resp.Body.Close()
@@ -133,7 +152,7 @@ func ProxyToOrchestratorAuth(c *gin.Context) {
 	// Create new request with buffered body
 	req, err := http.NewRequest(c.Request.Method, targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		c.JSON(http.StatusInternalServerError, correlatedErrorPayload(c, "Failed to create request"))
 		return
 	}
 
@@ -159,7 +178,7 @@ func ProxyToOrchestratorAuth(c *gin.Context) {
 	resp, err := client.Do(req)
 	if err != nil {
 		httptrace.LogRequestError(logger.GetLogger(), req, time.Since(start), err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy auth request"})
+		c.JSON(http.StatusBadGateway, correlatedErrorPayload(c, "Failed to proxy auth request"))
 		return
 	}
 	defer resp.Body.Close()

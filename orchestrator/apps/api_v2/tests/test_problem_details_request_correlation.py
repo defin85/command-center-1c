@@ -1,8 +1,10 @@
 from __future__ import annotations
+import json
 from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import User
+from django.http import JsonResponse
 from django.test import RequestFactory
 from rest_framework.test import APIClient
 
@@ -14,6 +16,18 @@ def authenticated_client() -> APIClient:
     user = User.objects.create_user(
         username=f"request-correlation-{uuid4().hex[:8]}",
         password="pass",
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client
+
+
+@pytest.fixture
+def staff_client() -> APIClient:
+    user = User.objects.create_user(
+        username=f"request-correlation-staff-{uuid4().hex[:8]}",
+        password="pass",
+        is_staff=True,
     )
     client = APIClient()
     client.force_authenticate(user=user)
@@ -32,7 +46,7 @@ def test_shared_problem_helper_includes_request_correlation_fields(
     )
 
     assert response.status_code == 404
-    payload = response.json()
+    payload = json.loads(response.content)
     assert payload["code"] == "TENANT_NOT_FOUND"
     assert payload["request_id"] == "req-ui-1"
     assert payload["ui_action_id"] == "uia-1"
@@ -52,11 +66,77 @@ def test_local_problem_helper_includes_generated_request_id_when_header_missing(
     )
 
     assert response.status_code == 404
-    payload = response.json()
+    payload = json.loads(response.content)
     assert payload["code"] == "POOL_NOT_FOUND"
     assert payload["request_id"].startswith("req-")
     assert "ui_action_id" not in payload
     assert response.headers["X-Request-ID"] == payload["request_id"]
+
+
+def test_request_correlation_middleware_enriches_legacy_json_error_payloads() -> None:
+    request = RequestFactory().get(
+        "/api/v2/legacy-json/",
+        HTTP_X_REQUEST_ID="req-ui-legacy",
+        HTTP_X_UI_ACTION_ID="uia-legacy",
+    )
+    middleware = observability.RequestCorrelationMiddleware(
+        lambda _request: JsonResponse(
+            {"success": False, "error": {"code": "LEGACY_FAILURE", "message": "boom"}},
+            status=503,
+        )
+    )
+
+    response = middleware(request)
+    payload = json.loads(response.content)
+
+    assert payload["error"]["code"] == "LEGACY_FAILURE"
+    assert payload["request_id"] == "req-ui-legacy"
+    assert payload["ui_action_id"] == "uia-legacy"
+    assert response.headers["X-Request-ID"] == "req-ui-legacy"
+    assert response.headers["X-UI-Action-ID"] == "uia-legacy"
+
+
+@pytest.mark.django_db
+def test_runtime_settings_legacy_error_payload_includes_request_correlation_fields(
+    staff_client: APIClient,
+) -> None:
+    response = staff_client.patch(
+        "/api/v2/settings/runtime/missing-setting/",
+        {"value": True},
+        format="json",
+        HTTP_X_REQUEST_ID="req-runtime-setting-1",
+        HTTP_X_UI_ACTION_ID="uia-runtime-setting-1",
+    )
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "NOT_FOUND"
+    assert payload["request_id"] == "req-runtime-setting-1"
+    assert payload["ui_action_id"] == "uia-runtime-setting-1"
+    assert response.headers["X-Request-ID"] == "req-runtime-setting-1"
+    assert response.headers["X-UI-Action-ID"] == "uia-runtime-setting-1"
+
+
+@pytest.mark.django_db
+def test_dlq_legacy_error_payload_includes_request_correlation_fields(
+    staff_client: APIClient,
+) -> None:
+    response = staff_client.get(
+        "/api/v2/dlq/list/",
+        {"filters": '{"unsupported":{"value":"x"}}'},
+        HTTP_X_REQUEST_ID="req-dlq-1",
+        HTTP_X_UI_ACTION_ID="uia-dlq-1",
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "UNKNOWN_FILTER"
+    assert payload["request_id"] == "req-dlq-1"
+    assert payload["ui_action_id"] == "uia-dlq-1"
+    assert response.headers["X-Request-ID"] == "req-dlq-1"
+    assert response.headers["X-UI-Action-ID"] == "uia-dlq-1"
 
 
 def test_log_problem_response_uses_current_request_correlation(

@@ -11,6 +11,7 @@ import { DrawerSurfaceShell, PageHeader, RouteButton, WorkspacePage } from '../.
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { confirmWithTracking } from '../../observability/confirmWithTracking'
+import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text } = Typography
 
@@ -68,7 +69,16 @@ export function DLQPage() {
   }, [retryMutation, retryReason])
 
   const onRetry = useCallback(async (entry: DLQMessage) => {
-    const result = await retryEntry(entry)
+    const result = await trackUiAction({
+      actionKind: 'operator.action',
+      actionName: 'Retry DLQ message',
+      context: {
+        dlq_message_id: entry.dlq_message_id,
+        operation_id: entry.operation_id || undefined,
+        original_message_id: entry.original_message_id || undefined,
+        manual_operation: 'dlq.retry_single',
+      },
+    }, () => retryEntry(entry))
     if (result.ok) {
       message.success(`Re-enqueued ${result.id}`)
     } else {

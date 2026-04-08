@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from contextvars import ContextVar
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 HEADER_REQUEST_ID = "X-Request-ID"
 HEADER_UI_ACTION_ID = "X-UI-Action-ID"
+_JSON_CONTENT_TYPES = {"application/json", "application/problem+json"}
 _CORRELATION_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
 _current_request_correlation: ContextVar["RequestCorrelation | None"] = ContextVar(
     "api_v2_request_correlation",
@@ -71,16 +73,75 @@ def apply_correlation_headers(response, correlation: RequestCorrelation | None =
     return response
 
 
-def with_problem_correlation(payload: dict[str, Any]) -> dict[str, Any]:
-    correlation = get_request_correlation()
+def with_problem_correlation(
+    payload: dict[str, Any],
+    correlation: RequestCorrelation | None = None,
+) -> dict[str, Any]:
+    correlation = correlation or get_request_correlation()
     if correlation is None:
         return payload
 
     enriched = dict(payload)
-    enriched["request_id"] = correlation.request_id
+    enriched.setdefault("request_id", correlation.request_id)
     if correlation.ui_action_id:
-        enriched["ui_action_id"] = correlation.ui_action_id
+        enriched.setdefault("ui_action_id", correlation.ui_action_id)
     return enriched
+
+
+def _should_enrich_error_payload(payload: Any, status_code: int) -> bool:
+    if status_code < 400 or not isinstance(payload, dict):
+        return False
+
+    if "request_id" in payload or "ui_action_id" in payload:
+        return True
+
+    return (
+        payload.get("success") is False
+        or "error" in payload
+        or "code" in payload
+        or "title" in payload
+        or "detail" in payload
+    )
+
+
+def apply_error_payload_correlation(response, correlation: RequestCorrelation | None = None):
+    current = correlation or get_request_correlation()
+    if current is None or getattr(response, "streaming", False):
+        return response
+
+    status_code = int(getattr(response, "status_code", 0) or 0)
+    response_data = getattr(response, "data", None)
+    if _should_enrich_error_payload(response_data, status_code):
+        enriched = with_problem_correlation(response_data, current)
+        response.data = enriched
+        if getattr(response, "_is_rendered", False):
+            content = json.dumps(enriched, default=str).encode(
+                getattr(response, "charset", "utf-8") or "utf-8"
+            )
+            response.content = content
+            if "Content-Length" in response:
+                response["Content-Length"] = str(len(content))
+        return response
+
+    content_type = str(response.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    if content_type not in _JSON_CONTENT_TYPES:
+        return response
+
+    try:
+        payload = json.loads(response.content)
+    except Exception:
+        return response
+
+    if not _should_enrich_error_payload(payload, status_code):
+        return response
+
+    content = json.dumps(with_problem_correlation(payload, current), default=str).encode(
+        getattr(response, "charset", "utf-8") or "utf-8"
+    )
+    response.content = content
+    if "Content-Length" in response:
+        response["Content-Length"] = str(len(content))
+    return response
 
 
 def log_problem_response(payload: dict[str, Any]) -> None:
@@ -108,6 +169,7 @@ class RequestCorrelationMiddleware:
             _current_request_correlation.reset(token)
             raise
 
+        apply_error_payload_correlation(response, correlation)
         apply_correlation_headers(response, correlation)
         _current_request_correlation.reset(token)
         return response

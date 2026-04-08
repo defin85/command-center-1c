@@ -115,6 +115,17 @@ type ActiveHttpRequest = {
   started_at_ms: number
   route: RouteSnapshot
   context: Record<string, PrimitiveValue>
+  synthetic_action?: PendingSyntheticAction
+}
+
+type PendingSyntheticAction = {
+  occurred_at: string
+  route: RouteSnapshot
+  context: Record<string, PrimitiveValue>
+  ui_action_id: string
+  action_kind: 'request.boundary'
+  action_name: string
+  action_source: 'synthetic_request'
 }
 
 type ActiveWebSocket = {
@@ -232,6 +243,7 @@ const ROUTE_CONTEXT_ALLOWLIST = new Set([
   'quarter_start',
   'run',
   'service',
+  'setting',
   'stage',
   'tab',
   'template',
@@ -521,26 +533,37 @@ class UiActionJournal {
     const method = sanitizeString(input.method?.toUpperCase(), 16) ?? 'GET'
     const path = normalizeRequestPath(input.path)
     const requestId = generateRuntimeId('req')
-    const action = this.activeAction ?? this.createSyntheticRequestAction(method, path)
     const startedAt = nowIso()
+    const uiActionId = this.activeAction?.ui_action_id ?? generateRuntimeId('uia')
+    const requestContext = {
+      ...route.context,
+      ...sanitizeContextRecord(input.context),
+    }
     const activeRequest: ActiveHttpRequest = {
       request_id: requestId,
-      ui_action_id: action.ui_action_id,
+      ui_action_id: uiActionId,
       method,
       path,
       started_at: startedAt,
       started_at_ms: Date.now(),
       route,
-      context: {
-        ...route.context,
-        ...sanitizeContextRecord(input.context),
-      },
+      context: requestContext,
+    }
+    if (!this.activeAction) {
+      activeRequest.synthetic_action = this.createSyntheticRequestAction({
+        method,
+        path,
+        occurredAt: startedAt,
+        route,
+        context: requestContext,
+        uiActionId,
+      })
     }
 
     this.activeRequests.set(requestId, activeRequest)
     return {
       requestId,
-      uiActionId: activeRequest.ui_action_id,
+      uiActionId,
     }
   }
 
@@ -562,6 +585,7 @@ class UiActionJournal {
     const correlatedActionId = sanitizeString(problem?.ui_action_id, 160) ?? input.uiActionId ?? activeRequest.ui_action_id
 
     if (input.failed || (status ?? 0) >= 400) {
+      this.materializeSyntheticRequestAction(activeRequest)
       this.pushEvent({
         event_id: generateRuntimeId('evt'),
         event_type: 'http.request.failure',
@@ -582,6 +606,7 @@ class UiActionJournal {
     }
 
     if (latencyMs >= SLOW_REQUEST_THRESHOLD_MS) {
+      this.materializeSyntheticRequestAction(activeRequest)
       this.pushEvent({
         event_id: generateRuntimeId('evt'),
         event_type: 'http.request.slow',
@@ -789,31 +814,43 @@ class UiActionJournal {
     }, 0)
   }
 
-  private createSyntheticRequestAction(method: string, path: string): ActiveActionContext {
-    const route = this.currentRoute
-    const action: ActiveActionContext = {
-      ui_action_id: generateRuntimeId('uia'),
+  private createSyntheticRequestAction(input: {
+    method: string
+    path: string
+    occurredAt: string
+    route: RouteSnapshot
+    context: Record<string, PrimitiveValue>
+    uiActionId: string
+  }): PendingSyntheticAction {
+    return {
+      occurred_at: input.occurredAt,
+      route: input.route,
+      context: input.context,
+      ui_action_id: input.uiActionId,
       action_kind: 'request.boundary',
-      action_name: `${method} ${path}`,
+      action_name: `${input.method} ${input.path}`,
       action_source: 'synthetic_request',
-      route,
-      context: route.context,
-      timeout_id: null,
-      settle_timeout_id: null,
+    }
+  }
+
+  private materializeSyntheticRequestAction(activeRequest: ActiveHttpRequest) {
+    const action = activeRequest.synthetic_action
+    if (!action) {
+      return
     }
 
     this.pushEvent({
       event_id: generateRuntimeId('evt'),
       event_type: 'ui.action',
-      occurred_at: nowIso(),
-      route,
+      occurred_at: action.occurred_at,
+      route: action.route,
       context: action.context,
       ui_action_id: action.ui_action_id,
       action_kind: action.action_kind,
       action_name: action.action_name,
       action_source: action.action_source,
     })
-    return action
+    delete activeRequest.synthetic_action
   }
 
   private recordUiError(

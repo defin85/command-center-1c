@@ -8,6 +8,7 @@ import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '.
 import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text } = Typography
 
@@ -347,7 +348,16 @@ export function RuntimeSettingsPage() {
           <Button
             type="primary"
             disabled={!canEdit || selectedSetting.draftValue === selectedSetting.value}
-            onClick={() => { void saveSetting(selectedSetting) }}
+            onClick={() => {
+              void trackUiAction({
+                actionKind: 'drawer.submit',
+                actionName: 'Save runtime setting',
+                context: {
+                  setting: selectedSetting.key,
+                  manual_operation: 'settings.runtime.update',
+                },
+              }, () => saveSetting(selectedSetting))
+            }}
           >
             Save
           </Button>
