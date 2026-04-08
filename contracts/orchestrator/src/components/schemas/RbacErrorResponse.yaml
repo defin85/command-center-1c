@@ -5,5 +5,10 @@ properties:
     default: false
   error:
     $ref: ./RbacErrorDetail.yaml
+  request_id:
+    type: string
+  ui_action_id:
+    type: string
 required:
   - error
+  - request_id

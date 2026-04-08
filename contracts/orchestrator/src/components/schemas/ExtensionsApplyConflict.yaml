@@ -5,6 +5,11 @@ properties:
     default: false
   error: {}
   drift: {}
+  request_id:
+    type: string
+  ui_action_id:
+    type: string
 required:
   - drift
   - error
+  - request_id

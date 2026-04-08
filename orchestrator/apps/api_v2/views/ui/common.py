@@ -60,6 +60,8 @@ class UiErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
     error = UiErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class TableFilterOptionSerializer(serializers.Serializer):

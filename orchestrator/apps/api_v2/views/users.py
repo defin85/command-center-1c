@@ -28,6 +28,8 @@ class UserErrorDetailSerializer(serializers.Serializer):
 class UserErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
     error = UserErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class UserSerializer(serializers.Serializer):

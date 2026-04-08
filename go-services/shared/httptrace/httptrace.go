@@ -3,7 +3,9 @@ package httptrace
 import (
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +37,45 @@ const (
 	headerUIActionID = "X-UI-Action-ID"
 )
 
+var sensitiveQueryKeyPattern = regexp.MustCompile(`(?i)(auth|authorization|cookie|csrf|passwd|password|secret|session|token)`)
+
+func sanitizeQueryForLogs(rawQuery string) string {
+	if strings.TrimSpace(rawQuery) == "" {
+		return ""
+	}
+
+	parts := strings.Split(rawQuery, "&")
+	sanitizedParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		key, value, hasValue := strings.Cut(part, "=")
+		decodedKey, err := url.QueryUnescape(key)
+		if err != nil {
+			decodedKey = key
+		}
+
+		if sensitiveQueryKeyPattern.MatchString(decodedKey) {
+			if hasValue {
+				sanitizedParts = append(sanitizedParts, key+"=%5Bredacted%5D")
+			} else {
+				sanitizedParts = append(sanitizedParts, key)
+			}
+			continue
+		}
+
+		if hasValue {
+			sanitizedParts = append(sanitizedParts, key+"="+value)
+			continue
+		}
+		sanitizedParts = append(sanitizedParts, key)
+	}
+
+	return strings.Join(sanitizedParts, "&")
+}
+
 // PathFromURL returns URL path with query if present.
 func PathFromURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
@@ -46,8 +87,8 @@ func PathFromURL(rawURL string) string {
 	if path == "" {
 		path = "/"
 	}
-	if parsed.RawQuery != "" {
-		path += "?" + parsed.RawQuery
+	if sanitizedQuery := sanitizeQueryForLogs(parsed.RawQuery); sanitizedQuery != "" {
+		path += "?" + sanitizedQuery
 	}
 	return path
 }
@@ -61,8 +102,8 @@ func PathFromRequest(req *http.Request) string {
 	if path == "" {
 		path = "/"
 	}
-	if req.URL.RawQuery != "" {
-		path += "?" + req.URL.RawQuery
+	if sanitizedQuery := sanitizeQueryForLogs(req.URL.RawQuery); sanitizedQuery != "" {
+		path += "?" + sanitizedQuery
 	}
 	return path
 }

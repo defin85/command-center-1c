@@ -202,6 +202,8 @@ class ClusterErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
     error = ClusterErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class ClusterListResponseSerializer(serializers.Serializer):
@@ -321,5 +323,4 @@ class ResetSyncStatusResponseSerializer(serializers.Serializer):
     message = serializers.CharField()
     reset_count = serializers.IntegerField()
     clusters = ResetClusterInfoSerializer(many=True)
-
 

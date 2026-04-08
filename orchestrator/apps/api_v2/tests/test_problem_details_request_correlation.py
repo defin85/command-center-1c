@@ -9,6 +9,20 @@ from django.test import RequestFactory
 from rest_framework.test import APIClient
 
 from apps.api_v2 import observability
+from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.api_v2.views.clusters.common import ClusterErrorResponseSerializer
+from apps.api_v2.views.databases.common import (
+    DatabaseErrorResponseSerializer,
+    DatabaseStreamConflictResponseSerializer,
+)
+from apps.api_v2.views.extensions_plan_apply import ExtensionsApplyConflictSerializer
+from apps.api_v2.views.operations.schemas import OperationErrorResponseSerializer
+from apps.api_v2.views.rbac.serializers_core import RbacErrorResponseSerializer
+from apps.api_v2.views.service_mesh import ServiceMeshErrorResponseSerializer
+from apps.api_v2.views.timeline import TimelineErrorResponseSerializer
+from apps.api_v2.views.ui.common import UiErrorResponseSerializer
+from apps.api_v2.views.users import UserErrorResponseSerializer
+from apps.api_v2.views.workflows.common import WorkflowEnqueueFailClosedErrorResponseSerializer
 
 
 @pytest.fixture
@@ -172,3 +186,27 @@ def test_log_problem_response_uses_current_request_correlation(
         "404",
         "/api/v2/pools/binding-profiles/",
     )
+
+
+def test_legacy_error_serializers_declare_request_correlation_fields() -> None:
+    serializer_types = [
+        ErrorResponseSerializer,
+        ClusterErrorResponseSerializer,
+        DatabaseErrorResponseSerializer,
+        DatabaseStreamConflictResponseSerializer,
+        ExtensionsApplyConflictSerializer,
+        OperationErrorResponseSerializer,
+        RbacErrorResponseSerializer,
+        ServiceMeshErrorResponseSerializer,
+        TimelineErrorResponseSerializer,
+        UiErrorResponseSerializer,
+        UserErrorResponseSerializer,
+        WorkflowEnqueueFailClosedErrorResponseSerializer,
+    ]
+
+    for serializer_type in serializer_types:
+        fields = serializer_type().fields
+        assert "request_id" in fields
+        assert "ui_action_id" in fields
+        assert fields["request_id"].required is True
+        assert fields["ui_action_id"].required is False

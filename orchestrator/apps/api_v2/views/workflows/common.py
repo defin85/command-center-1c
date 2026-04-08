@@ -389,6 +389,8 @@ class WorkflowEnqueueFailClosedErrorDetailSerializer(serializers.Serializer):
 class WorkflowEnqueueFailClosedErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
     error = WorkflowEnqueueFailClosedErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class ExecutionListResponseSerializer(serializers.Serializer):

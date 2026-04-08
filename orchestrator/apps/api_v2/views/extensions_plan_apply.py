@@ -714,6 +714,8 @@ class ExtensionsApplyConflictSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
     error = serializers.JSONField()
     drift = serializers.JSONField()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 def _plan_is_legacy(plan_executor: dict[str, Any]) -> bool:

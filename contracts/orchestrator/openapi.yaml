@@ -13545,8 +13545,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/ErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     ArtifactAlias:
       type: object
       properties:
@@ -14005,8 +14010,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/ClusterErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     ClusterDeleteResponse:
       type: object
       description: Response for delete_cluster endpoint.
@@ -14518,8 +14528,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/DatabaseErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     DbmsUserMappingCreate:
       type: object
       properties:
@@ -15163,8 +15178,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/DatabaseStreamConflictErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     DatabaseCredentialsUpdateRequest:
       type: object
       description: Request body for update_database_credentials endpoint.
@@ -15447,9 +15467,14 @@ components:
           default: false
         error: {}
         drift: {}
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - drift
         - error
+        - request_id
     ExtensionsFlagsPolicy:
       type: object
       properties:
@@ -16638,8 +16663,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/OperationErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     OperationCatalogItem:
       type: object
       description: Operation catalog entry for Operations Center.
@@ -17715,8 +17745,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/TimelineErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     ListDriverCommandShortcutsResponse:
       type: object
       properties:
@@ -23293,8 +23328,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/RbacErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     RoleDeleteRequest:
       type: object
       properties:
@@ -24843,8 +24883,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/ServiceMeshErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     ServiceMetric:
       type: object
       description: Metrics for a single service.
@@ -26041,8 +26086,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/UiErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     UserCreateRequest:
       type: object
       properties:
@@ -26117,8 +26167,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/UserErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     UserListResponse:
       type: object
       properties:
@@ -26826,8 +26881,13 @@ components:
           default: false
         error:
           $ref: '#/components/schemas/WorkflowEnqueueFailClosedErrorDetail'
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
       required:
         - error
+        - request_id
     WorkflowStepResult:
       type: object
       description: Serializer for WorkflowStepResult model.

@@ -40,6 +40,8 @@ class ServiceMeshErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
     error = ServiceMeshErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class ServiceMetricSerializer(serializers.Serializer):

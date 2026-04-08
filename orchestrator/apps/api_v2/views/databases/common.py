@@ -359,6 +359,8 @@ class DatabaseErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
     error = DatabaseErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class DatabaseStreamConflictDetailsSerializer(serializers.Serializer):
@@ -385,6 +387,8 @@ class DatabaseStreamConflictResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField(default=False)
     error = DatabaseStreamConflictErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class DatabaseListFiltersSerializer(serializers.Serializer):

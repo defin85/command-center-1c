@@ -35,6 +35,8 @@ class RbacErrorDetailSerializer(serializers.Serializer):
 class RbacErrorResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField(default=False)
     error = RbacErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class RbacUserRefSerializer(serializers.Serializer):
@@ -245,5 +247,4 @@ class RefArtifactsResponseSerializer(serializers.Serializer):
     artifacts = ArtifactRefSerializer(many=True)
     count = serializers.IntegerField()
     total = serializers.IntegerField()
-
 

@@ -19,6 +19,8 @@ class ErrorResponseSerializer(serializers.Serializer):
 
     success = serializers.BooleanField(default=False)
     error = ErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 
 class ProblemDetailsErrorSerializer(serializers.Serializer):

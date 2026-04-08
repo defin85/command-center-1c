@@ -17,6 +17,8 @@ class OperationErrorResponseSerializer(serializers.Serializer):
     """Standard error response."""
     success = serializers.BooleanField(default=False)
     error = OperationErrorDetailSerializer()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
 
 class OperationProgressSerializer(serializers.Serializer):
     """Progress information for an operation."""
