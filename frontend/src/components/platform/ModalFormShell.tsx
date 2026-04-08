@@ -1,5 +1,7 @@
 import { Grid, Modal, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
+import { trackUiAction } from '../../observability/uiActionJournal'
+import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
@@ -51,12 +53,21 @@ export function ModalFormShell({
     )
     : undefined
 
+  const actionName = firstSemanticActionLabel(
+    submitText,
+    title,
+    subtitle,
+  ) ?? 'Modal submit'
+
   return (
     <Modal
       open={open}
       title={modalTitle}
       onCancel={onClose}
-      onOk={onSubmit}
+      onOk={onSubmit ? () => trackUiAction({
+        actionKind: 'modal.submit',
+        actionName,
+      }, () => onSubmit()) : undefined}
       okText={submitText}
       confirmLoading={confirmLoading}
       forceRender={forceRender}

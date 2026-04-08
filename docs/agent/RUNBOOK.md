@@ -103,6 +103,7 @@ printf '%s\n' "http://localhost:15173/pools/factual?pool=<pool-uuid>&quarter_sta
 - Runtime restart + probe: `./debug/restart-runtime.sh <runtime>`
 - Django eval: `./debug/eval-django.sh "<python code>"`
 - Frontend eval: `./debug/eval-frontend.sh "<js expression>"`
+- UI journal export: `./debug/export-ui-journal.sh [url-pattern]`
 
 ## Repo Tooling Surfaces
 

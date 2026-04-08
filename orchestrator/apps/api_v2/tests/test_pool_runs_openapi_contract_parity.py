@@ -977,6 +977,12 @@ def test_problem_details_error_schema_supports_field_and_referential_error_shape
     problem_schema = _schema(contract, "ProblemDetailsError")
     properties = problem_schema.get("properties")
     assert isinstance(properties, dict)
+    assert properties.get("request_id") == {"type": "string"}
+    assert properties.get("ui_action_id") == {"type": "string"}
+
+    required = problem_schema.get("required")
+    assert isinstance(required, list)
+    assert "request_id" in required
 
     errors_schema = properties.get("errors")
     assert isinstance(errors_schema, dict)
@@ -1015,6 +1021,8 @@ def test_confirm_publication_readiness_problem_details_schema_matches_runtime_se
 
     runtime_fields = set(pools_view.PoolRunConfirmPublicationReadinessProblemDetailsSerializer().fields.keys())
     assert runtime_fields.issubset(set(properties.keys()))
+    assert properties.get("request_id") == {"type": "string"}
+    assert properties.get("ui_action_id") == {"type": "string"}
 
     code_schema = properties.get("code")
     assert isinstance(code_schema, dict)

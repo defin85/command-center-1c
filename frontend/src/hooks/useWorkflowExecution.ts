@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getWsHost } from '../api/baseUrl'
+import { createUiRuntimeId, recordUiWebSocketLifecycle } from '../observability/uiActionJournal'
 
 // WebSocket message types (match server-side consumers.py)
 export type WorkflowStatusType = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -112,6 +113,7 @@ interface NodeStatusPayload {
 const RECONNECT_INITIAL_DELAY = 1000 // 1 second
 const RECONNECT_MAX_DELAY = 30000 // 30 seconds
 const RECONNECT_MAX_ATTEMPTS = 10
+const WORKFLOW_EXECUTION_OWNER = 'useWorkflowExecution'
 
 export const useWorkflowExecution = (
   executionId: string | null
@@ -137,6 +139,7 @@ export const useWorkflowExecution = (
   const statusRef = useRef<WorkflowStatusType>('pending')
   const reconnectAttemptsRef = useRef<number>(0)
   const manualDisconnectRef = useRef<boolean>(false)
+  const socketInstanceIdRef = useRef<string | null>(null)
 
   const setReconnectAttemptsSafe = useCallback(
     (next: number | ((prev: number) => number)) => {
@@ -281,11 +284,13 @@ export const useWorkflowExecution = (
     }
 
     const url = getWebSocketUrl(executionId)
+    const socketInstanceId = createUiRuntimeId('ws')
     console.debug('WebSocket connecting to:', url)
 
     try {
       const ws = new WebSocket(url)
       wsRef.current = ws
+      socketInstanceIdRef.current = socketInstanceId
 
       ws.onopen = () => {
         if (wsRef.current !== ws) {
@@ -295,6 +300,14 @@ export const useWorkflowExecution = (
         setIsConnected(true)
         setConnectionError(null)
         setReconnectAttemptsSafe(0)
+        recordUiWebSocketLifecycle({
+          owner: WORKFLOW_EXECUTION_OWNER,
+          reuseKey: `workflow-execution:${executionId}`,
+          channelKind: 'dedicated',
+          socketInstanceId,
+          outcome: reconnectAttemptsRef.current > 0 ? 'reconnect' : 'connect',
+          reconnectAttempt: reconnectAttemptsRef.current || undefined,
+        })
       }
 
       ws.onmessage = (event) => {
@@ -328,6 +341,17 @@ export const useWorkflowExecution = (
         console.debug('WebSocket closed:', event.code, event.reason)
         setIsConnected(false)
         wsRef.current = null
+        socketInstanceIdRef.current = null
+        recordUiWebSocketLifecycle({
+          owner: WORKFLOW_EXECUTION_OWNER,
+          reuseKey: `workflow-execution:${executionId}`,
+          channelKind: 'dedicated',
+          socketInstanceId,
+          outcome: 'close',
+          closeCode: event.code,
+          closeReason: event.reason,
+          reconnectAttempt: reconnectAttemptsRef.current || undefined,
+        })
 
         if (manualDisconnectRef.current) {
           return

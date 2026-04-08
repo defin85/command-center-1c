@@ -15,6 +15,7 @@ var skippedAccessLogPaths = map[string]struct{}{
 // LoggerMiddleware logs HTTP requests
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		requestID, uiActionID := ensureRequestCorrelation(c)
 		start := time.Now()
 		path := c.Request.URL.Path
 		method := c.Request.Method
@@ -32,12 +33,14 @@ func LoggerMiddleware() gin.HandlerFunc {
 
 		// Log with structured fields
 		logger.WithFields(logrus.Fields{
-			"method":     method,
-			"path":       path,
-			"status":     statusCode,
-			"latency_ms": latency.Milliseconds(),
-			"ip":         c.ClientIP(),
-			"user_agent": c.Request.UserAgent(),
+			"method":       method,
+			"path":         path,
+			"status":       statusCode,
+			"latency_ms":   latency.Milliseconds(),
+			"ip":           c.ClientIP(),
+			"user_agent":   c.Request.UserAgent(),
+			"request_id":   requestID,
+			"ui_action_id": uiActionID,
 		}).Info("HTTP request")
 	}
 }
@@ -76,7 +79,8 @@ func CORSMiddleware(cfg *CORSConfig) gin.HandlerFunc {
 		}
 		// If origin is set but not in allowed list - don't set CORS headers (browser will block)
 
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Last-Event-ID, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Last-Event-ID, X-Request-ID, X-UI-Action-ID, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-UI-Action-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours preflight cache
 

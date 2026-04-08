@@ -29,6 +29,8 @@ class ProblemDetailsErrorSerializer(serializers.Serializer):
     status = serializers.IntegerField()
     detail = serializers.CharField()
     code = serializers.CharField()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
     errors = serializers.JSONField(required=False)
 
 

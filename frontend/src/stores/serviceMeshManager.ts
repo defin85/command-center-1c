@@ -1,4 +1,5 @@
 import { getWsHost } from '../api/baseUrl'
+import { createUiRuntimeId, recordUiWebSocketLifecycle } from '../observability/uiActionJournal'
 import type {
   ServiceMetrics,
   ServiceConnection,
@@ -15,6 +16,8 @@ const RECONNECT_MAX_ATTEMPTS = 10
 const PING_INTERVAL = 30000
 const DISCONNECT_GRACE_MS = 250
 const LONG_RUNNING_OPERATION_TYPES = new Set(['sync_cluster', 'designer_cli', 'execute_workflow'])
+const SERVICE_MESH_OWNER = 'serviceMeshManager'
+const SERVICE_MESH_REUSE_KEY = 'service-mesh:global'
 
 export interface InvalidationEvent {
   scope: InvalidationScope
@@ -119,6 +122,7 @@ class ServiceMeshManager {
   private reconnectAttempts = 0
   private isConnecting = false
   private isManualClose = false
+  private socketInstanceId: string | null = null
 
   getState() {
     return this.state
@@ -144,6 +148,20 @@ class ServiceMeshManager {
     if (this.stopTimer) {
       clearTimeout(this.stopTimer)
       this.stopTimer = null
+    }
+    if (
+      this.refCount > 1
+      && this.ws
+      && this.socketInstanceId
+      && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      recordUiWebSocketLifecycle({
+        owner: SERVICE_MESH_OWNER,
+        reuseKey: SERVICE_MESH_REUSE_KEY,
+        channelKind: 'shared',
+        socketInstanceId: this.socketInstanceId,
+        outcome: 'reuse',
+      })
     }
     if (this.refCount === 1) {
       this.connect()
@@ -181,6 +199,7 @@ class ServiceMeshManager {
       this.isManualClose = true
       this.ws.close()
       this.ws = null
+      this.socketInstanceId = null
     }
     this.isConnecting = false
     if (force) {
@@ -247,15 +266,25 @@ class ServiceMeshManager {
     this.isConnecting = true
     this.isManualClose = false
     const url = this.getWebSocketUrl()
+    const socketInstanceId = createUiRuntimeId('ws')
 
     try {
       const ws = new WebSocket(url)
+      this.socketInstanceId = socketInstanceId
 
       ws.onopen = () => {
         this.isConnecting = false
         this.setState({
           isConnected: true,
           connectionError: null,
+        })
+        recordUiWebSocketLifecycle({
+          owner: SERVICE_MESH_OWNER,
+          reuseKey: SERVICE_MESH_REUSE_KEY,
+          channelKind: 'shared',
+          socketInstanceId,
+          outcome: this.reconnectAttempts > 0 ? 'reconnect' : 'connect',
+          reconnectAttempt: this.reconnectAttempts || undefined,
         })
         this.startPing()
       }
@@ -278,8 +307,21 @@ class ServiceMeshManager {
       ws.onclose = (event) => {
         this.clearPing()
         this.isConnecting = false
-        this.ws = null
+        if (this.ws === ws) {
+          this.ws = null
+          this.socketInstanceId = null
+        }
         this.setState({ isConnected: false })
+        recordUiWebSocketLifecycle({
+          owner: SERVICE_MESH_OWNER,
+          reuseKey: SERVICE_MESH_REUSE_KEY,
+          channelKind: 'shared',
+          socketInstanceId,
+          outcome: 'close',
+          closeCode: event.code,
+          closeReason: event.reason,
+          reconnectAttempt: this.reconnectAttempts || undefined,
+        })
 
         if (this.isManualClose || this.refCount === 0) {
           return

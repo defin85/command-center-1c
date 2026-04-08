@@ -30,6 +30,11 @@ var (
 	)
 )
 
+const (
+	headerRequestID  = "X-Request-ID"
+	headerUIActionID = "X-UI-Action-ID"
+)
+
 // PathFromURL returns URL path with query if present.
 func PathFromURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
@@ -136,12 +141,19 @@ func LogRequest(log *logrus.Logger, req *http.Request, status int, elapsed time.
 	if log == nil {
 		return
 	}
-	log.WithFields(logrus.Fields{
+	fields := logrus.Fields{
 		"method":     req.Method,
 		"path":       logPath,
 		"status":     status,
 		"elapsed_ms": elapsed.Milliseconds(),
-	}).Info("http_call")
+	}
+	if requestID := req.Header.Get(headerRequestID); requestID != "" {
+		fields["request_id"] = requestID
+	}
+	if uiActionID := req.Header.Get(headerUIActionID); uiActionID != "" {
+		fields["ui_action_id"] = uiActionID
+	}
+	log.WithFields(fields).Info("http_call")
 }
 
 // LogRequestError logs error using http.Request (logrus) and records metrics.
@@ -155,13 +167,20 @@ func LogRequestError(log *logrus.Logger, req *http.Request, elapsed time.Duratio
 	if log == nil {
 		return
 	}
-	log.WithFields(logrus.Fields{
+	fields := logrus.Fields{
 		"method":     req.Method,
 		"path":       logPath,
 		"status":     0,
 		"elapsed_ms": elapsed.Milliseconds(),
 		"error":      err.Error(),
-	}).Warn("http_call")
+	}
+	if requestID := req.Header.Get(headerRequestID); requestID != "" {
+		fields["request_id"] = requestID
+	}
+	if uiActionID := req.Header.Get(headerUIActionID); uiActionID != "" {
+		fields["ui_action_id"] = uiActionID
+	}
+	log.WithFields(fields).Warn("http_call")
 }
 
 // LogResponseZap logs HTTP call timing with status using zap and records metrics.

@@ -65,6 +65,49 @@ func TestLoggerMiddleware_LogsRegularRequests(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.NotEmpty(t, w.Header().Get("X-Request-ID"))
 	assert.Contains(t, logOutput.String(), "\"msg\":\"HTTP request\"")
 	assert.Contains(t, logOutput.String(), "\"path\":\"/api/v2/test/\"")
+	assert.Contains(t, logOutput.String(), "\"request_id\":")
+}
+
+func TestLoggerMiddleware_PreservesIncomingCorrelationHeaders(t *testing.T) {
+	logOutput := captureAccessLoggerOutput(t)
+
+	router := gin.New()
+	router.Use(LoggerMiddleware())
+	router.GET("/api/v2/test/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/test/", nil)
+	req.Header.Set("X-Request-ID", "req-ui-1")
+	req.Header.Set("X-UI-Action-ID", "uia-1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "req-ui-1", w.Header().Get("X-Request-ID"))
+	assert.Equal(t, "uia-1", w.Header().Get("X-UI-Action-ID"))
+	assert.Contains(t, logOutput.String(), "\"request_id\":\"req-ui-1\"")
+	assert.Contains(t, logOutput.String(), "\"ui_action_id\":\"uia-1\"")
+}
+
+func TestCORSMiddleware_ExposesCorrelationHeaders(t *testing.T) {
+	router := gin.New()
+	router.Use(CORSMiddleware(&CORSConfig{AllowedOrigins: []string{"http://localhost:15173"}}))
+	router.GET("/api/v2/test/", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v2/test/", nil)
+	req.Header.Set("Origin", "http://localhost:15173")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-Request-ID")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-UI-Action-ID")
+	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-Request-ID")
+	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-UI-Action-ID")
 }

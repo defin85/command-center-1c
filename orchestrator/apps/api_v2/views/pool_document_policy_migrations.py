@@ -10,6 +10,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
+from apps.api_v2.observability import (
+    apply_correlation_headers,
+    log_problem_response,
+    with_problem_correlation,
+)
 from apps.api_v2.views.databases.common import _resolve_tenant_id as _resolve_default_tenant_id
 from apps.intercompany_pools.document_policy_migrations import (
     DocumentPolicyMigrationError,
@@ -116,17 +121,22 @@ def _resolve_tenant_id(request) -> str | None:
 
 
 def _problem(*, code: str, title: str, detail: str, status_code: int) -> Response:
-    return Response(
+    payload = with_problem_correlation(
         {
             "type": "about:blank",
             "title": title,
             "status": status_code,
             "code": code,
             "detail": detail,
-        },
+        }
+    )
+    log_problem_response(payload)
+    response = Response(
+        payload,
         status=status_code,
         content_type="application/problem+json",
     )
+    return apply_correlation_headers(response)
 
 
 def _serialize_decision(decision: DecisionTable) -> dict[str, Any]:

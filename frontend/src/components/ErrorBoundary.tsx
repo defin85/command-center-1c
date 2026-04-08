@@ -1,6 +1,7 @@
 import { Component, ErrorInfo, ReactNode } from 'react'
 import { Result, Button, Typography, Space } from 'antd'
 import { BugOutlined, ReloadOutlined, HomeOutlined } from '@ant-design/icons'
+import { recordUiErrorBoundary } from '../observability/uiActionJournal'
 
 const { Text, Paragraph } = Typography
 
@@ -51,6 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('ErrorBoundary caught an error:', error, errorInfo)
 
     this.setState({ errorInfo })
+    recordUiErrorBoundary(error, errorInfo.componentStack)
 
     // TODO: Send error to monitoring service (Sentry, LogRocket, etc.)
     // Example: Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } })

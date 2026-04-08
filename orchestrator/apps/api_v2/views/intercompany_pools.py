@@ -22,6 +22,11 @@ from rest_framework.response import Response
 
 from apps.core import permission_codes as perms
 from apps.api_v2.serializers.common import ErrorResponseSerializer, ProblemDetailsErrorSerializer
+from apps.api_v2.observability import (
+    apply_correlation_headers,
+    log_problem_response,
+    with_problem_correlation,
+)
 from apps.databases.models import Database
 from apps.intercompany_pools.models import (
     Organization,
@@ -291,20 +296,22 @@ def _problem(
     type_uri: str = "about:blank",
     errors: Any | None = None,
 ) -> Response:
-    payload: dict[str, Any] = {
+    payload = with_problem_correlation({
         "type": type_uri,
         "title": title,
         "status": int(status_code),
         "detail": detail,
         "code": code,
-    }
+    })
     if errors is not None:
         payload["errors"] = errors
-    return Response(
+    log_problem_response(payload)
+    response = Response(
         payload,
         status=status_code,
         content_type="application/problem+json",
     )
+    return apply_correlation_headers(response)
 
 
 def _database_permission_problem(*, detail: str) -> Response:
@@ -2918,6 +2925,8 @@ class PoolRunConfirmPublicationReadinessProblemDetailsSerializer(serializers.Ser
     status = serializers.IntegerField()
     detail = serializers.CharField()
     code = serializers.CharField()
+    request_id = serializers.CharField()
+    ui_action_id = serializers.CharField(required=False)
     errors = PoolRunReadinessBlockerSerializer(many=True, required=False, default=list)
 
 

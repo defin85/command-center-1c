@@ -63,10 +63,20 @@ systemctl --user status beads-dolt.service --no-pager
 ./debug/eval-frontend.sh "window.location.href" "localhost:15173"
 ```
 
-9. `./debug/receiver.py --port 3333`
+9. `./debug/export-ui-journal.sh [url_pattern]`
+Canonical dump path для текущего UI observability bundle через existing frontend eval flow.
+
+Пример:
+
+```bash
+./debug/export-ui-journal.sh
+./debug/export-ui-journal.sh "localhost:15173/service-mesh"
+```
+
+10. `./debug/receiver.py --port 3333`
 Локальный HTTP receiver для sandbox-интеграций (эндпоинты: `GET /health`, `POST /log`).
 
-10. `./debug/start-dolt.sh`
+11. `./debug/start-dolt.sh`
 Переводит текущий Beads-репозиторий в shared Dolt server storage, запускает `systemd --user` сервис `beads-dolt.service` и валидирует доступ через `bd doctor --server`.
 
 Сервис общий для всех Beads-репозиториев и использует каталог:

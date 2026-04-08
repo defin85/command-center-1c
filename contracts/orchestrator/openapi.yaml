@@ -18258,6 +18258,10 @@ components:
           type: string
         code:
           type: string
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
         errors:
           description: Optional structured error details. For validation failures this is a field-errors map; for referential or topology compatibility validation this is an array of machine-readable diagnostic items.
           oneOf:
@@ -18271,6 +18275,7 @@ components:
         - status
         - title
         - type
+        - request_id
     BindingProfileRevisionWrite:
       type: object
       properties:
@@ -22814,6 +22819,10 @@ components:
           type: string
           enum:
             - POOL_RUN_READINESS_BLOCKED
+        request_id:
+          type: string
+        ui_action_id:
+          type: string
         errors:
           type: array
           items:
@@ -22824,6 +22833,7 @@ components:
         - status
         - title
         - type
+        - request_id
     PoolRunReportResponse:
       type: object
       properties:

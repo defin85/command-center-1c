@@ -1,6 +1,8 @@
 import { Grid, Modal, Space, Typography } from 'antd'
 import type { ButtonProps } from 'antd'
 import type { ReactNode } from 'react'
+import { trackUiAction } from '../../observability/uiActionJournal'
+import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
@@ -54,12 +56,21 @@ export function ModalSurfaceShell({
     )
     : undefined
 
+  const actionName = firstSemanticActionLabel(
+    submitText,
+    title,
+    subtitle,
+  ) ?? 'Modal confirm'
+
   return (
     <Modal
       open={open}
       title={modalTitle}
       onCancel={onClose}
-      onOk={onSubmit}
+      onOk={onSubmit ? () => trackUiAction({
+        actionKind: 'modal.confirm',
+        actionName,
+      }, () => onSubmit()) : undefined}
       okText={submitText}
       cancelText={cancelText}
       confirmLoading={confirmLoading}

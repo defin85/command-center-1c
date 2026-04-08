@@ -13,6 +13,8 @@ export interface ProblemDetailsError {
   status: number;
   detail: string;
   code: string;
+  request_id: string;
+  ui_action_id?: string;
   /** Optional structured error details. For validation failures this is a field-errors map; for referential or topology compatibility validation this is an array of machine-readable diagnostic items. */
   errors?: ProblemDetailsErrorErrors;
 }

@@ -16,6 +16,10 @@ properties:
     type: string
     enum:
       - POOL_RUN_READINESS_BLOCKED
+  request_id:
+    type: string
+  ui_action_id:
+    type: string
   errors:
     type: array
     items:
@@ -26,3 +30,4 @@ required:
   - status
   - title
   - type
+  - request_id

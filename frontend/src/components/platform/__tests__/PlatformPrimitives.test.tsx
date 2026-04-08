@@ -1,9 +1,17 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp, Form, Input } from 'antd'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import * as React from 'react'
+
+const { mockTrackUiAction } = vi.hoisted(() => ({
+  mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
+}))
+
+vi.mock('../../../observability/uiActionJournal', () => ({
+  trackUiAction: mockTrackUiAction,
+}))
 
 import {
   DashboardPage,
@@ -24,6 +32,10 @@ function RouteLocationProbe() {
 }
 
 describe('platform primitives', () => {
+  beforeEach(() => {
+    mockTrackUiAction.mockClear()
+  })
+
   it('renders EntityList as the canonical list pattern', () => {
     render(
       <AntApp>
@@ -39,13 +51,16 @@ describe('platform primitives', () => {
     expect(screen.getByText('Services publication policy')).toBeInTheDocument()
   })
 
-  it('renders ModalFormShell as the canonical modal authoring pattern', () => {
+  it('renders ModalFormShell as the canonical modal authoring pattern', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+
     render(
       <AntApp>
         <ModalFormShell
           open
           onClose={vi.fn()}
-          onSubmit={vi.fn()}
+          onSubmit={onSubmit}
           title="Create reusable profile"
           submitText="Create profile"
         >
@@ -58,6 +73,17 @@ describe('platform primitives', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByLabelText('Profile code')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Create profile' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Create profile' }))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'modal.submit',
+        actionName: 'Create profile',
+      }),
+      expect.any(Function),
+    )
+    expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
   it('keeps closed ModalFormShell form instances connected without console warnings when forceRender is enabled', () => {
@@ -175,13 +201,16 @@ describe('platform primitives', () => {
     expect(screen.getByText('Inspect content')).toBeInTheDocument()
   })
 
-  it('renders ModalSurfaceShell as the canonical non-form modal surface', () => {
+  it('renders ModalSurfaceShell as the canonical non-form modal surface', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn()
+
     render(
       <AntApp>
         <ModalSurfaceShell
           open
           onClose={vi.fn()}
-          onSubmit={vi.fn()}
+          onSubmit={onSubmit}
           title="Review remediation"
           submitText="Retry"
         >
@@ -193,6 +222,17 @@ describe('platform primitives', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Remediation content')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'modal.confirm',
+        actionName: 'Retry',
+      }),
+      expect.any(Function),
+    )
+    expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
   it('degrades MasterDetailShell into list plus Drawer on narrow viewport', async () => {
@@ -254,6 +294,14 @@ describe('platform primitives', () => {
     await user.click(screen.getByRole('button', { name: 'Open target' }))
 
     expect(screen.getByTestId('route-location')).toHaveTextContent('/target?tab=details')
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'route.navigate',
+        actionName: 'Open target',
+        actionSource: 'navigation',
+      }),
+      expect.any(Function),
+    )
   })
 
   it('renders deactivated badges with contrast-safe neutral styling', () => {

@@ -11,6 +11,10 @@ properties:
     type: string
   code:
     type: string
+  request_id:
+    type: string
+  ui_action_id:
+    type: string
   errors:
     description: >-
       Optional structured error details. For validation failures this is a
@@ -27,3 +31,4 @@ required:
   - status
   - title
   - type
+  - request_id

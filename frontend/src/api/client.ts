@@ -9,11 +9,18 @@ import {
   shouldDispatchGlobalApiError,
   type ApiErrorDetail,
 } from './apiErrorPolicy'
+import {
+  buildUiProblemCorrelation,
+  completeUiHttpRequest,
+  startUiHttpRequest,
+} from '../observability/uiActionJournal'
 
 const API_BASE_URL = getApiBaseUrl()
 
 // Token refresh endpoint (goes through API Gateway to Django)
 const TOKEN_REFRESH_URL = `${API_BASE_URL}/api/token/refresh/`
+const REQUEST_ID_HEADER = 'X-Request-ID'
+const UI_ACTION_ID_HEADER = 'X-UI-Action-ID'
 
 // Custom event for API errors (used by global error handler in App.tsx)
 export const API_ERROR_EVENT = 'api:error'
@@ -62,6 +69,84 @@ const processQueue = (error: Error | null, token: string | null = null) => {
   failedQueue = []
 }
 
+const setHeader = (headers: InternalAxiosRequestConfig['headers'], name: string, value: string) => {
+  if (!headers) {
+    return
+  }
+  if (typeof (headers as { set?: (header: string, nextValue: string) => void }).set === 'function') {
+    ;(headers as { set: (header: string, nextValue: string) => void }).set(name, value)
+    return
+  }
+  ;(headers as Record<string, string>)[name] = value
+}
+
+const deleteHeader = (headers: InternalAxiosRequestConfig['headers'], name: string) => {
+  if (!headers) {
+    return
+  }
+  if (typeof (headers as { delete?: (header: string) => void }).delete === 'function') {
+    ;(headers as { delete: (header: string) => void }).delete(name)
+    return
+  }
+  delete (headers as Record<string, string>)[name]
+}
+
+const getHeaderValue = (headers: unknown, name: string): string | undefined => {
+  if (!headers || typeof headers !== 'object') {
+    return undefined
+  }
+
+  const normalizedName = name.toLowerCase()
+  for (const [headerName, headerValue] of Object.entries(headers as Record<string, unknown>)) {
+    if (headerName.toLowerCase() !== normalizedName) {
+      continue
+    }
+    if (typeof headerValue === 'string') {
+      return headerValue
+    }
+    if (Array.isArray(headerValue)) {
+      return headerValue.find((value) => typeof value === 'string')
+    }
+  }
+  return undefined
+}
+
+const finalizeObservedRequest = ({
+  config,
+  status,
+  data,
+  headers,
+  failed,
+}: {
+  config?: InternalAxiosRequestConfig
+  status?: number
+  data?: unknown
+  headers?: unknown
+  failed?: boolean
+}) => {
+  const observedRequest = config?.cc1cObservedRequest
+  if (!observedRequest || !config) {
+    return
+  }
+
+  const problem = buildUiProblemCorrelation({
+    ...(data && typeof data === 'object' ? data as Record<string, unknown> : {}),
+    request_id: getHeaderValue(headers, REQUEST_ID_HEADER) ?? (data as { request_id?: unknown } | undefined)?.request_id,
+    ui_action_id: getHeaderValue(headers, UI_ACTION_ID_HEADER) ?? (data as { ui_action_id?: unknown } | undefined)?.ui_action_id,
+  })
+
+  completeUiHttpRequest({
+    requestId: observedRequest.requestId,
+    uiActionId: observedRequest.uiActionId,
+    method: observedRequest.method,
+    path: observedRequest.path,
+    status,
+    failed,
+    problem,
+  })
+  delete config.cc1cObservedRequest
+}
+
 // Attempt to refresh the access token
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem('refresh_token')
@@ -103,19 +188,35 @@ apiClient.interceptors.request.use(
     // Add auth token if available
     const token = localStorage.getItem('auth_token')
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+      setHeader(config.headers, 'Authorization', `Bearer ${token}`)
     }
 
     // Tenant context (optional)
     const tenantId = localStorage.getItem('active_tenant_id')
     if (tenantId) {
-      config.headers['X-CC1C-Tenant-ID'] = tenantId
+      setHeader(config.headers, 'X-CC1C-Tenant-ID', tenantId)
     }
 
     // Remove Content-Type for FormData (axios will set it with boundary)
     if (config.data instanceof FormData) {
-      delete config.headers['Content-Type']
+      deleteHeader(config.headers, 'Content-Type')
     }
+
+    if (!config.cc1cObservedRequest) {
+      const observedRequest = startUiHttpRequest({
+        method: config.method,
+        path: config.url,
+      })
+      config.cc1cObservedRequest = {
+        requestId: observedRequest.requestId,
+        uiActionId: observedRequest.uiActionId,
+        method: config.method?.toUpperCase(),
+        path: config.url,
+      }
+    }
+
+    setHeader(config.headers, REQUEST_ID_HEADER, config.cc1cObservedRequest.requestId)
+    setHeader(config.headers, UI_ACTION_ID_HEADER, config.cc1cObservedRequest.uiActionId)
 
     return config
   },
@@ -126,7 +227,15 @@ apiClient.interceptors.request.use(
 
 // Response interceptor with token refresh and error handling
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    finalizeObservedRequest({
+      config: response.config,
+      status: response.status,
+      data: response.data,
+      headers: response.headers,
+    })
+    return response
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean }
     const skipGlobalError = Boolean((originalRequest as { skipGlobalError?: boolean } | undefined)?.skipGlobalError)
@@ -146,6 +255,13 @@ apiClient.interceptors.response.use(
       // If no refresh token or not a token error, redirect to login
       const refreshToken = localStorage.getItem('refresh_token')
       if (!refreshToken || !isTokenExpired) {
+        finalizeObservedRequest({
+          config: originalRequest,
+          status: error.response?.status,
+          data: error.response?.data,
+          headers: error.response?.headers,
+          failed: true,
+        })
         localStorage.removeItem('auth_token')
         localStorage.removeItem('refresh_token')
         setAuthToken(null)
@@ -171,12 +287,21 @@ apiClient.interceptors.response.use(
         })
           .then((token) => {
             if (token) {
-              originalRequest.headers.Authorization = `Bearer ${token}`
+              setHeader(originalRequest.headers, 'Authorization', `Bearer ${token}`)
               return apiClient(originalRequest)
             }
             return Promise.reject(error)
           })
-          .catch((err) => Promise.reject(err))
+          .catch((err) => {
+            finalizeObservedRequest({
+              config: originalRequest,
+              status: error.response?.status,
+              data: error.response?.data,
+              headers: error.response?.headers,
+              failed: true,
+            })
+            return Promise.reject(err)
+          })
       }
 
       originalRequest._retry = true
@@ -188,17 +313,31 @@ apiClient.interceptors.response.use(
         if (newToken) {
           // Success - process queued requests and retry original
           processQueue(null, newToken)
-          originalRequest.headers.Authorization = `Bearer ${newToken}`
+          setHeader(originalRequest.headers, 'Authorization', `Bearer ${newToken}`)
           setAuthToken(newToken)
           return apiClient(originalRequest)
         } else {
           // Refresh failed
           processQueue(new Error('Token refresh failed'), null)
+          finalizeObservedRequest({
+            config: originalRequest,
+            status: error.response?.status,
+            data: error.response?.data,
+            headers: error.response?.headers,
+            failed: true,
+          })
           window.location.href = '/login'
           return Promise.reject(error)
         }
       } catch (refreshError) {
         processQueue(refreshError as Error, null)
+        finalizeObservedRequest({
+          config: originalRequest,
+          status: error.response?.status,
+          data: error.response?.data,
+          headers: error.response?.headers,
+          failed: true,
+        })
         window.location.href = '/login'
         return Promise.reject(refreshError)
       } finally {
@@ -210,6 +349,12 @@ apiClient.interceptors.response.use(
 
     // Skip canceled/aborted requests (component unmount, navigation, etc.)
     if (error.name === 'CanceledError' || error.name === 'AbortError') {
+      finalizeObservedRequest({
+        config: originalRequest,
+        status: error.response?.status,
+        data: error.response?.data,
+        headers: error.response?.headers,
+      })
       return Promise.reject(error)
     }
 
@@ -248,6 +393,14 @@ apiClient.interceptors.response.use(
     } else if (!error.response) {
       message = 'Network error. Please check your connection.'
     }
+
+    finalizeObservedRequest({
+      config: originalRequest,
+      status,
+      data: error.response?.data,
+      headers: error.response?.headers,
+      failed: !error.response,
+    })
 
     if (!skipGlobalError) {
       if (shouldDispatchGlobalApiError({ errorPolicy, skipGlobalError })) {

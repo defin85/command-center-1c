@@ -1,5 +1,5 @@
 import { useEffect, useState, Suspense, lazy } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { Button, ConfigProvider, App as AntApp, Result, Spin } from 'antd'
 import { MainLayout } from './components/layout/MainLayout'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -10,6 +10,12 @@ import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useShellBootstrap } from './api/queries/shellBootstrap'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
+import {
+  captureUiRouteTransition,
+  recordUiUnhandledRejection,
+  recordUiWindowError,
+  setUiActionJournalEnabled,
+} from './observability/uiActionJournal'
 
 const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
 const Operations = lazy(() => import('./pages/Operations/OperationsPage').then((m) => ({ default: m.OperationsPage })))
@@ -229,6 +235,44 @@ function GlobalApiErrorHandler() {
   return null
 }
 
+function UiObservabilityBridge({ enabled }: { enabled: boolean }) {
+  const location = useLocation()
+
+  useEffect(() => {
+    setUiActionJournalEnabled(enabled)
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    captureUiRouteTransition(location)
+  }, [enabled, location])
+
+  useEffect(() => {
+    if (!enabled) {
+      return
+    }
+
+    const handleWindowError = (event: ErrorEvent) => {
+      recordUiWindowError(event.error ?? event.message, { error_source: 'window.onerror' })
+    }
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      recordUiUnhandledRejection(event.reason)
+    }
+
+    window.addEventListener('error', handleWindowError)
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    return () => {
+      window.removeEventListener('error', handleWindowError)
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+    }
+  }, [enabled])
+
+  return null
+}
+
 function App() {
   const [authToken, setAuthToken] = useState(() => getAuthToken())
   // Enable real-time cache invalidation via WebSocket only for authenticated sessions
@@ -260,6 +304,7 @@ function App() {
           <AuthzProvider key={authToken ?? 'guest'}>
             <DatabaseStreamProvider>
               <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+                <UiObservabilityBridge enabled={Boolean(authToken)} />
                 <Routes>
                   {/* Публичный маршрут - логин */}
                   <Route path="/login" element={<LazyBoundary><Login /></LazyBoundary>} />

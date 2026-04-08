@@ -4,6 +4,18 @@ import { render, screen } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+const {
+  mockCaptureUiRouteTransition,
+  mockRecordUiUnhandledRejection,
+  mockRecordUiWindowError,
+  mockSetUiActionJournalEnabled,
+} = vi.hoisted(() => ({
+  mockCaptureUiRouteTransition: vi.fn(),
+  mockRecordUiUnhandledRejection: vi.fn(),
+  mockRecordUiWindowError: vi.fn(),
+  mockSetUiActionJournalEnabled: vi.fn(),
+}))
+
 import App from './App'
 
 vi.mock('./hooks/useRealtimeInvalidation', () => ({
@@ -23,6 +35,13 @@ vi.mock('./contexts/DatabaseStreamContext', () => ({
 
 vi.mock('./authz', () => ({
   AuthzProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+}))
+
+vi.mock('./observability/uiActionJournal', () => ({
+  captureUiRouteTransition: mockCaptureUiRouteTransition,
+  recordUiUnhandledRejection: mockRecordUiUnhandledRejection,
+  recordUiWindowError: mockRecordUiWindowError,
+  setUiActionJournalEnabled: mockSetUiActionJournalEnabled,
 }))
 
 const mockUseShellBootstrap = vi.fn()
@@ -50,6 +69,10 @@ vi.mock('./pages/Pools/PoolBindingProfilesPage', () => ({
 
 describe('App pools binding profiles route', () => {
   beforeEach(() => {
+    mockCaptureUiRouteTransition.mockReset()
+    mockRecordUiUnhandledRejection.mockReset()
+    mockRecordUiWindowError.mockReset()
+    mockSetUiActionJournalEnabled.mockReset()
     mockUseShellBootstrap.mockReset()
     mockUseShellBootstrap.mockReturnValue({
       data: {
@@ -99,6 +122,10 @@ describe('App pools binding profiles route', () => {
 
     expect(await screen.findByTestId('pool-binding-profiles-route-page')).toBeInTheDocument()
     expect(screen.getByText('Pool Execution Packs')).toBeInTheDocument()
+    expect(mockSetUiActionJournalEnabled).toHaveBeenCalledWith(true)
+    expect(mockCaptureUiRouteTransition).toHaveBeenCalledWith(expect.objectContaining({
+      pathname: '/pools/execution-packs',
+    }))
   })
 
   it('labels the tenant selector when multiple tenants are available', async () => {

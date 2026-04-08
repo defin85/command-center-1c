@@ -4543,6 +4543,56 @@ test('Runtime contract: /service-mesh ignores same-route menu re-entry and keeps
   await expect(page.getByText('Request Error')).toHaveCount(0)
 })
 
+test('Runtime contract: /service-mesh exports websocket owner diagnostics through the UI journal bundle', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page)
+
+  await page.goto('/service-mesh?service=orchestrator', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'Service mesh', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+
+  await expect.poll(async () => page.evaluate(() => {
+    const bundle = (window as Window & {
+      __CC1C_UI_JOURNAL__?: {
+        exportBundle: () => {
+          events: Array<Record<string, unknown>>
+          active_websockets_by_owner: Record<string, Record<string, unknown>>
+        }
+      }
+    }).__CC1C_UI_JOURNAL__?.exportBundle()
+
+    if (!bundle) {
+      return null
+    }
+
+    return {
+      lifecycleEvents: bundle.events.filter(
+        (event) => event.event_type === 'websocket.lifecycle' && event.owner === 'serviceMeshManager',
+      ),
+      ownerSummary: bundle.active_websockets_by_owner.serviceMeshManager ?? null,
+    }
+  }), {
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  }).toEqual(expect.objectContaining({
+    lifecycleEvents: expect.arrayContaining([
+      expect.objectContaining({
+        owner: 'serviceMeshManager',
+        reuse_key: 'service-mesh:global',
+        channel_kind: 'shared',
+        outcome: 'connect',
+      }),
+    ]),
+    ownerSummary: expect.objectContaining({
+      active_connection_count: 1,
+    }),
+  }))
+})
+
 test('UI platform: /rbac restores selected mode and tab from URL-backed governance workspace state', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
