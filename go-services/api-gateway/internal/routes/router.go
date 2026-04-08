@@ -18,10 +18,9 @@ import (
 // serviceUnavailableHandler returns a handler that responds with 503 Service Unavailable
 func serviceUnavailableHandler(serviceName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.JSON(503, gin.H{
-			"error": fmt.Sprintf("%s service unavailable", serviceName),
-			"code":  "SERVICE_UNAVAILABLE",
-		})
+		c.JSON(503, middleware.CorrelatedErrorPayload(c, fmt.Sprintf("%s service unavailable", serviceName), gin.H{
+			"code": "SERVICE_UNAVAILABLE",
+		}))
 	}
 }
 

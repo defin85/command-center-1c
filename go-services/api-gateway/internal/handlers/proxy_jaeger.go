@@ -1,13 +1,14 @@
 package handlers
 
 import (
-	"io"
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -67,7 +68,17 @@ func NewJaegerProxyHandler(jaegerURL string) (*JaegerProxyHandler, error) {
 			zap.String("path", r.URL.Path),
 		)
 		w.WriteHeader(http.StatusBadGateway)
-		if _, writeErr := io.WriteString(w, `{"error": "Jaeger unavailable"}`); writeErr != nil {
+		payload, marshalErr := json.Marshal(middleware.CorrelatedErrorPayloadFromHTTP(
+			w,
+			r,
+			"Jaeger unavailable",
+			nil,
+		))
+		if marshalErr != nil {
+			logger.GetLogger().WithError(marshalErr).Warn("Failed to marshal Jaeger proxy error body")
+			return
+		}
+		if _, writeErr := w.Write(payload); writeErr != nil {
 			logger.GetLogger().WithError(writeErr).Warn("Failed to write Jaeger proxy error body")
 		}
 	}

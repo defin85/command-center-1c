@@ -25,6 +25,7 @@ from apps.api_v2.serializers.common import ErrorResponseSerializer, ProblemDetai
 from apps.api_v2.observability import (
     apply_correlation_headers,
     log_problem_response,
+    sanitize_error_payload,
     with_problem_correlation,
 )
 from apps.databases.models import Database
@@ -296,15 +297,16 @@ def _problem(
     type_uri: str = "about:blank",
     errors: Any | None = None,
 ) -> Response:
-    payload = with_problem_correlation({
+    payload: dict[str, Any] = {
         "type": type_uri,
         "title": title,
         "status": int(status_code),
         "detail": detail,
         "code": code,
-    })
+    }
     if errors is not None:
         payload["errors"] = errors
+    payload = with_problem_correlation(payload)
     log_problem_response(payload)
     response = Response(
         payload,
@@ -1173,7 +1175,7 @@ def _build_workflow_failure_problem_details(
     error_details = workflow_failure_context.get("error_details")
     if isinstance(error_details, dict) and error_details:
         payload["error_details"] = error_details
-    return payload
+    return sanitize_error_payload(payload)
 
 
 def _build_publication_step_problem_details(

@@ -103,7 +103,7 @@ type ActiveActionContext = {
   route: RouteSnapshot
   context: Record<string, PrimitiveValue>
   timeout_id: ReturnType<typeof setTimeout> | null
-  settle_timeout_id: ReturnType<typeof setTimeout> | null
+  settle_token: { canceled: boolean } | null
 }
 
 type ActiveHttpRequest = {
@@ -437,7 +437,8 @@ class UiActionJournal {
   private readonly recentChurnAnomalies: WebSocketEvent[] = []
   private currentRoute: RouteSnapshot = buildRouteSnapshot()
   private lastRouteSignature = ''
-  private activeAction: ActiveActionContext | null = null
+  private readonly activeActions: ActiveActionContext[] = []
+  private currentExecutionActionId: string | null = null
 
   constructor() {
     this.installWindowApi()
@@ -501,7 +502,7 @@ class UiActionJournal {
     const action = this.activateAction(meta)
 
     try {
-      const result = handler?.()
+      const result = this.runWithActionContext(action.ui_action_id, () => handler?.())
       if (isPromiseLike(result)) {
         return Promise.resolve(result)
           .finally(() => {
@@ -520,10 +521,11 @@ class UiActionJournal {
   }
 
   startHttpRequest(input: StartHttpRequestInput) {
+    const currentActionId = this.getCurrentContextActionId()
     if (!this.enabled) {
       return {
         requestId: generateRuntimeId('req'),
-        uiActionId: this.activeAction?.ui_action_id ?? generateRuntimeId('uia'),
+        uiActionId: currentActionId ?? generateRuntimeId('uia'),
       }
     }
 
@@ -534,7 +536,7 @@ class UiActionJournal {
     const path = normalizeRequestPath(input.path)
     const requestId = generateRuntimeId('req')
     const startedAt = nowIso()
-    const uiActionId = this.activeAction?.ui_action_id ?? generateRuntimeId('uia')
+    const uiActionId = currentActionId ?? generateRuntimeId('uia')
     const requestContext = {
       ...route.context,
       ...sanitizeContextRecord(input.context),
@@ -549,7 +551,7 @@ class UiActionJournal {
       route,
       context: requestContext,
     }
-    if (!this.activeAction) {
+    if (!currentActionId) {
       activeRequest.synthetic_action = this.createSyntheticRequestAction({
         method,
         path,
@@ -756,23 +758,14 @@ class UiActionJournal {
         ...sanitizeContextRecord(meta.context),
       },
       timeout_id: null,
-      settle_timeout_id: null,
-    }
-
-    if (this.activeAction?.timeout_id) {
-      clearTimeout(this.activeAction.timeout_id)
-    }
-    if (this.activeAction?.settle_timeout_id) {
-      clearTimeout(this.activeAction.settle_timeout_id)
+      settle_token: null,
     }
 
     action.timeout_id = setTimeout(() => {
-      if (this.activeAction?.ui_action_id === action.ui_action_id) {
-        this.activeAction = null
-      }
+      this.resolveAction(action.ui_action_id)
     }, ACTION_TTL_MS)
 
-    this.activeAction = action
+    this.activeActions.push(action)
     this.pushEvent({
       event_id: generateRuntimeId('evt'),
       event_type: 'ui.action',
@@ -788,30 +781,33 @@ class UiActionJournal {
   }
 
   private resolveAction(uiActionId: string) {
-    if (this.activeAction?.ui_action_id !== uiActionId) {
+    const index = this.activeActions.findIndex((action) => action.ui_action_id === uiActionId)
+    if (index < 0) {
       return
     }
-    if (this.activeAction.timeout_id) {
-      clearTimeout(this.activeAction.timeout_id)
-    }
-    if (this.activeAction.settle_timeout_id) {
-      clearTimeout(this.activeAction.settle_timeout_id)
-    }
-    this.activeAction = null
+    const [action] = this.activeActions.splice(index, 1)
+    this.clearActionTimers(action)
   }
 
   private deferActionResolution(uiActionId: string) {
-    if (this.activeAction?.ui_action_id !== uiActionId) {
+    const action = this.findActiveAction(uiActionId)
+    if (!action) {
       return
     }
-    if (this.activeAction.settle_timeout_id) {
-      clearTimeout(this.activeAction.settle_timeout_id)
+    if (action.settle_token) {
+      action.settle_token.canceled = true
     }
-    this.activeAction.settle_timeout_id = setTimeout(() => {
-      if (this.activeAction?.ui_action_id === uiActionId) {
-        this.resolveAction(uiActionId)
+    const settleToken = { canceled: false }
+    action.settle_token = settleToken
+    queueMicrotask(() => {
+      if (settleToken.canceled) {
+        return
       }
-    }, 0)
+      if (action.settle_token === settleToken) {
+        action.settle_token = null
+      }
+      this.resolveAction(uiActionId)
+    })
   }
 
   private createSyntheticRequestAction(input: {
@@ -873,7 +869,7 @@ class UiActionJournal {
       occurred_at: nowIso(),
       route: this.currentRoute,
       context: this.currentRoute.context,
-      ui_action_id: this.activeAction?.ui_action_id,
+      ui_action_id: this.getCurrentContextActionId() ?? undefined,
       outcome: 'error',
       error_name: normalized.name,
       error_message: normalized.message,
@@ -996,13 +992,10 @@ class UiActionJournal {
   }
 
   private reset() {
-    if (this.activeAction?.timeout_id) {
-      clearTimeout(this.activeAction.timeout_id)
+    for (const action of this.activeActions) {
+      this.clearActionTimers(action)
     }
-    if (this.activeAction?.settle_timeout_id) {
-      clearTimeout(this.activeAction.settle_timeout_id)
-    }
-    this.activeAction = null
+    this.activeActions.splice(0, this.activeActions.length)
     this.events.splice(0, this.events.length)
     this.activeRequests.clear()
     this.activeWebSockets.clear()
@@ -1011,6 +1004,49 @@ class UiActionJournal {
     this.sessionId = null
     this.currentRoute = buildRouteSnapshot()
     this.lastRouteSignature = ''
+    this.currentExecutionActionId = null
+  }
+
+  private getCurrentAction(): ActiveActionContext | null {
+    if (this.activeActions.length === 0) {
+      return null
+    }
+    return this.activeActions[this.activeActions.length - 1] ?? null
+  }
+
+  private findActiveAction(uiActionId: string): ActiveActionContext | undefined {
+    return this.activeActions.find((action) => action.ui_action_id === uiActionId)
+  }
+
+  private getCurrentContextAction(): ActiveActionContext | null {
+    if (this.currentExecutionActionId) {
+      return this.findActiveAction(this.currentExecutionActionId) ?? null
+    }
+    return this.getCurrentAction()
+  }
+
+  private getCurrentContextActionId(): string | null {
+    return this.currentExecutionActionId ?? this.getCurrentAction()?.ui_action_id ?? null
+  }
+
+  private runWithActionContext<T>(uiActionId: string | null, handler: () => T): T {
+    const previousActionId = this.currentExecutionActionId
+    this.currentExecutionActionId = uiActionId
+    try {
+      return handler()
+    } finally {
+      this.currentExecutionActionId = previousActionId
+    }
+  }
+
+  private clearActionTimers(action: ActiveActionContext) {
+    if (action.timeout_id) {
+      clearTimeout(action.timeout_id)
+    }
+    if (action.settle_token) {
+      action.settle_token.canceled = true
+      action.settle_token = null
+    }
   }
 
   private installWindowApi() {

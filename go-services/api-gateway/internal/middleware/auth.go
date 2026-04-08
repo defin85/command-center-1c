@@ -18,7 +18,7 @@ func APIKeyMiddleware(validAPIKey string) gin.HandlerFunc {
 		}
 
 		if apiKey != validAPIKey {
-			c.JSON(401, gin.H{"error": "Invalid API key"})
+			c.JSON(401, CorrelatedErrorPayload(c, "Invalid API key", nil))
 			c.Abort()
 			return
 		}

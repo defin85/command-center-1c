@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 
 from apps.api_v2 import observability
 from apps.api_v2.serializers.common import ErrorResponseSerializer
+from apps.api_v2.views import intercompany_pools
 from apps.api_v2.views.clusters.common import ClusterErrorResponseSerializer
 from apps.api_v2.views.databases.common import (
     DatabaseErrorResponseSerializer,
@@ -108,6 +109,130 @@ def test_request_correlation_middleware_enriches_legacy_json_error_payloads() ->
     assert payload["ui_action_id"] == "uia-legacy"
     assert response.headers["X-Request-ID"] == "req-ui-legacy"
     assert response.headers["X-UI-Action-ID"] == "uia-legacy"
+
+
+def test_request_correlation_middleware_redacts_sensitive_fields_in_legacy_json_error_payloads() -> None:
+    request = RequestFactory().get(
+        "/api/v2/legacy-json/",
+        HTTP_X_REQUEST_ID="req-ui-redacted",
+        HTTP_X_UI_ACTION_ID="uia-redacted",
+    )
+    middleware = observability.RequestCorrelationMiddleware(
+        lambda _request: JsonResponse(
+            {
+                "success": False,
+                "error": {
+                    "code": "LEGACY_FAILURE",
+                    "message": "token=super-secret password=hunter2",
+                },
+                "detail": "Authorization=BearerSecret token=session-123",
+                "details": {
+                    "password": "top-secret",
+                    "safe": "visible",
+                    "nested": {
+                        "api_key": "hidden",
+                        "reason": "token=nested-secret",
+                    },
+                },
+            },
+            status=503,
+        )
+    )
+
+    response = middleware(request)
+    payload = json.loads(response.content)
+    serialized = json.dumps(payload)
+
+    assert payload["error"]["message"] == "token=[redacted] password=[redacted]"
+    assert payload["detail"] == "Authorization=[redacted] token=[redacted]"
+    assert payload["details"] == {
+        "safe": "visible",
+        "nested": {
+            "reason": "token=[redacted]",
+        },
+    }
+    assert payload["request_id"] == "req-ui-redacted"
+    assert payload["ui_action_id"] == "uia-redacted"
+    assert "super-secret" not in serialized
+    assert "hunter2" not in serialized
+    assert "top-secret" not in serialized
+    assert "nested-secret" not in serialized
+
+
+def test_intercompany_pools_problem_helper_redacts_errors_after_payload_assembly() -> None:
+    request = RequestFactory().get(
+        "/api/v2/pools/runs/",
+        HTTP_X_REQUEST_ID="req-ui-problem",
+        HTTP_X_UI_ACTION_ID="uia-problem",
+    )
+    correlation = observability.ensure_request_correlation(request)
+    token = observability._current_request_correlation.set(correlation)
+
+    try:
+        response = intercompany_pools._problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail="token=top-level-secret",
+            status_code=400,
+            errors={
+                "password": ["top-secret"],
+                "nested": {
+                    "token": "hidden",
+                    "reason": "token=nested-secret",
+                    "safe": "visible",
+                },
+            },
+        )
+    finally:
+        observability._current_request_correlation.reset(token)
+
+    payload = response.data
+    serialized = json.dumps(payload)
+
+    assert payload["detail"] == "token=[redacted]"
+    assert payload["request_id"] == "req-ui-problem"
+    assert payload["ui_action_id"] == "uia-problem"
+    assert payload["errors"] == {
+        "nested": {
+            "reason": "token=[redacted]",
+            "safe": "visible",
+        },
+    }
+    assert "top-level-secret" not in serialized
+    assert "top-secret" not in serialized
+    assert "nested-secret" not in serialized
+
+
+def test_workflow_failure_problem_details_redact_nested_error_details() -> None:
+    payload = intercompany_pools._build_workflow_failure_problem_details(
+        workflow_status="failed",
+        projected_status="failed",
+        workflow_failure_context={
+            "error_code": "WORKFLOW_FAILED",
+            "error_message": "token=super-secret",
+            "error_details": {
+                "password": "top-secret",
+                "safe": "visible",
+                "nested": {
+                    "reason": "token=nested-secret",
+                },
+            },
+        },
+    )
+
+    assert payload == {
+        "type": "about:blank",
+        "title": "Workflow Execution Failed",
+        "status": 409,
+        "detail": "token=[redacted]",
+        "code": "WORKFLOW_FAILED",
+        "error_details": {
+            "safe": "visible",
+            "nested": {
+                "reason": "token=[redacted]",
+            },
+        },
+    }
 
 
 @pytest.mark.django_db

@@ -140,6 +140,7 @@ export const useWorkflowExecution = (
   const reconnectAttemptsRef = useRef<number>(0)
   const manualDisconnectRef = useRef<boolean>(false)
   const socketInstanceIdRef = useRef<string | null>(null)
+  const observedClosingSocketIdsRef = useRef<Set<string>>(new Set())
 
   const setReconnectAttemptsSafe = useCallback(
     (next: number | ((prev: number) => number)) => {
@@ -278,6 +279,9 @@ export const useWorkflowExecution = (
     // Close existing connection
     if (wsRef.current) {
       manualDisconnectRef.current = true
+      if (socketInstanceIdRef.current) {
+        observedClosingSocketIdsRef.current.add(socketInstanceIdRef.current)
+      }
       wsRef.current.close()
       wsRef.current = null
       manualDisconnectRef.current = false
@@ -334,14 +338,20 @@ export const useWorkflowExecution = (
       }
 
       ws.onclose = (event) => {
-        if (wsRef.current !== ws) {
+        const isCurrentSocket = wsRef.current === ws
+        const isTrackedClosingSocket = observedClosingSocketIdsRef.current.delete(socketInstanceId)
+        if (!isCurrentSocket && !isTrackedClosingSocket) {
           return
         }
 
         console.debug('WebSocket closed:', event.code, event.reason)
         setIsConnected(false)
-        wsRef.current = null
-        socketInstanceIdRef.current = null
+        if (isCurrentSocket) {
+          wsRef.current = null
+        }
+        if (socketInstanceIdRef.current === socketInstanceId) {
+          socketInstanceIdRef.current = null
+        }
         recordUiWebSocketLifecycle({
           owner: WORKFLOW_EXECUTION_OWNER,
           reuseKey: `workflow-execution:${executionId}`,
@@ -353,7 +363,7 @@ export const useWorkflowExecution = (
           reconnectAttempt: reconnectAttemptsRef.current || undefined,
         })
 
-        if (manualDisconnectRef.current) {
+        if (manualDisconnectRef.current || isTrackedClosingSocket) {
           return
         }
 
@@ -417,6 +427,9 @@ export const useWorkflowExecution = (
     }
 
     if (wsRef.current) {
+      if (socketInstanceIdRef.current) {
+        observedClosingSocketIdsRef.current.add(socketInstanceIdRef.current)
+      }
       wsRef.current.close()
       wsRef.current = null
     }

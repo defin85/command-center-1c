@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"io"
+	"encoding/json"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -29,7 +30,7 @@ func SSEOperationStreamProxy(c *gin.Context) {
 			zap.String("url", orchestratorURL),
 			zap.Error(err),
 		)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal configuration error"})
+		c.JSON(http.StatusInternalServerError, middleware.CorrelatedErrorPayload(c, "internal configuration error", nil))
 		return
 	}
 
@@ -84,7 +85,17 @@ func SSEOperationStreamProxy(c *gin.Context) {
 				zap.Error(err),
 			)
 			w.WriteHeader(http.StatusBadGateway)
-			if _, writeErr := io.WriteString(w, `{"error": "SSE upstream unavailable"}`); writeErr != nil {
+			payload, marshalErr := json.Marshal(middleware.CorrelatedErrorPayloadFromHTTP(
+				w,
+				r,
+				"SSE upstream unavailable",
+				nil,
+			))
+			if marshalErr != nil {
+				log.WithError(marshalErr).Warn("Failed to marshal SSE proxy error body")
+				return
+			}
+			if _, writeErr := w.Write(payload); writeErr != nil {
 				log.WithError(writeErr).Warn("Failed to write SSE proxy error body")
 			}
 		},

@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
+	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
 
@@ -42,7 +43,7 @@ func getWsOrchestratorURL() string {
 func WebSocketWorkflowProxy(c *gin.Context) {
 	executionID := c.Param("execution_id")
 	if executionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "execution_id is required"})
+		c.JSON(http.StatusBadRequest, middleware.CorrelatedErrorPayload(c, "execution_id is required", nil))
 		return
 	}
 	upstreamPath := fmt.Sprintf("/ws/workflow/%s/", executionID)
@@ -61,7 +62,7 @@ func proxyWebSocket(c *gin.Context, upstreamPath string) {
 	upstreamURL, err := buildUpstreamWsURL(upstreamPath, c.Request.URL.RawQuery)
 	if err != nil {
 		log.WithError(err).Error("Failed to build upstream URL")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		c.JSON(http.StatusInternalServerError, middleware.CorrelatedErrorPayload(c, "internal error", nil))
 		return
 	}
 

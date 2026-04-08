@@ -21,9 +21,29 @@ const responseHandlers = (apiClient.interceptors.response as unknown as {
   }>
 }).handlers ?? []
 
-const requestHandler = requestHandlers[0]!.fulfilled!
-const responseHandler = responseHandlers[0]!.fulfilled!
-const errorHandler = responseHandlers[0]!.rejected!
+const requestHandler = (() => {
+  const handler = requestHandlers[0]?.fulfilled
+  if (!handler) {
+    throw new Error('Missing request observability interceptor')
+  }
+  return handler
+})()
+
+const responseHandler = (() => {
+  const handler = responseHandlers[0]?.fulfilled
+  if (!handler) {
+    throw new Error('Missing response observability success interceptor')
+  }
+  return handler
+})()
+
+const errorHandler = (() => {
+  const handler = responseHandlers[0]?.rejected
+  if (!handler) {
+    throw new Error('Missing response observability error interceptor')
+  }
+  return handler
+})()
 
 function createConfig(url: string, method: 'get' | 'post'): InternalAxiosRequestConfig {
   return {
@@ -102,6 +122,42 @@ describe('apiClient observability interceptors', () => {
     })
     expect(deferredConfig.headers['X-UI-Action-ID']).toBe(
       operatorAction && 'ui_action_id' in operatorAction ? operatorAction.ui_action_id : undefined,
+    )
+
+    responseHandler(createResponse(deferredConfig, 200, { ok: true }))
+    expect(exportUiActionJournalBundle().active_http_requests).toHaveLength(0)
+  })
+
+  it('restores the parent ui_action_id after a nested action resolves before the deferred request starts', async () => {
+    let releaseParentAction: (() => void) | undefined
+
+    const deferredConfigPromise = trackUiAction({
+      actionKind: 'operator.action',
+      actionName: 'Create pool run',
+    }, async () => {
+      await new Promise<void>((resolve) => {
+        releaseParentAction = resolve
+      })
+      return requestHandler(createConfig('/api/v2/pools/runs', 'post'))
+    }) as Promise<InternalAxiosRequestConfig>
+
+    trackUiAction({
+      actionKind: 'modal.confirm',
+      actionName: 'Inspect details',
+    }, () => undefined)
+
+    releaseParentAction?.()
+    const deferredConfig = await deferredConfigPromise
+    const bundle = exportUiActionJournalBundle()
+    const actionEvents = bundle.events.filter((event) => event.event_type === 'ui.action')
+    const parentAction = actionEvents.find((event) => event.action_name === 'Create pool run')
+    const nestedAction = actionEvents.find((event) => event.action_name === 'Inspect details')
+
+    expect(deferredConfig.headers['X-UI-Action-ID']).toBe(
+      parentAction && 'ui_action_id' in parentAction ? parentAction.ui_action_id : undefined,
+    )
+    expect(deferredConfig.headers['X-UI-Action-ID']).not.toBe(
+      nestedAction && 'ui_action_id' in nestedAction ? nestedAction.ui_action_id : undefined,
     )
 
     responseHandler(createResponse(deferredConfig, 200, { ok: true }))

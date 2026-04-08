@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -23,7 +24,7 @@ func CreateOperation(c *gin.Context) {
 	// This will proxy to orchestrator service
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, middleware.CorrelatedErrorPayload(c, err.Error(), nil))
 		return
 	}
 

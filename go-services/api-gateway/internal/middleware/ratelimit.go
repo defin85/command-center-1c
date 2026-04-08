@@ -43,9 +43,7 @@ func RateLimitMiddleware(requestsPerWindow int, window time.Duration) gin.Handle
 		clientID := getClientID(c)
 
 		if !limiter.allow(clientID) {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "Rate limit exceeded",
-			})
+			c.JSON(http.StatusTooManyRequests, CorrelatedErrorPayload(c, "Rate limit exceeded", nil))
 			c.Abort()
 			return
 		}

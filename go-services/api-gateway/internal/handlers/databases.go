@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
 	"github.com/commandcenter1c/commandcenter/shared/httptrace"
 	"github.com/commandcenter1c/commandcenter/shared/logger"
 )
@@ -17,22 +18,7 @@ import (
 var orchestratorURL = getOrchestratorURL()
 
 func correlatedErrorPayload(c *gin.Context, message string) gin.H {
-	payload := gin.H{
-		"error":      message,
-		"request_id": c.Writer.Header().Get("X-Request-ID"),
-	}
-	if payload["request_id"] == "" {
-		payload["request_id"] = c.GetHeader("X-Request-ID")
-	}
-
-	uiActionID := c.Writer.Header().Get("X-UI-Action-ID")
-	if uiActionID == "" {
-		uiActionID = c.GetHeader("X-UI-Action-ID")
-	}
-	if uiActionID != "" {
-		payload["ui_action_id"] = uiActionID
-	}
-	return payload
+	return middleware.CorrelatedErrorPayload(c, message, nil)
 }
 
 func getOrchestratorURL() string {

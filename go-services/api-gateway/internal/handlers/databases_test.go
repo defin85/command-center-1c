@@ -42,3 +42,27 @@ func TestProxyToOrchestratorV2_ProxyFailureIncludesCorrelationPayload(t *testing
 	assert.Equal(t, "req-ui-1", payload["request_id"])
 	assert.Equal(t, "uia-1", payload["ui_action_id"])
 }
+
+func TestCorrelatedErrorPayload_RedactsSensitiveDiagnosticText(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(middleware.LoggerMiddleware())
+	router.GET("/api/v2/test", func(c *gin.Context) {
+		c.JSON(http.StatusBadGateway, correlatedErrorPayload(c, "token=super-secret password=hunter2"))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/test", nil)
+	req.Header.Set("X-Request-ID", "req-ui-2")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusBadGateway, w.Code)
+
+	var payload map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	assert.Equal(t, "token=[redacted] password=[redacted]", payload["error"])
+	assert.NotContains(t, payload["error"], "super-secret")
+	assert.NotContains(t, payload["error"], "hunter2")
+}

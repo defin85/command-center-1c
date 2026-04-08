@@ -14,6 +14,15 @@ HEADER_REQUEST_ID = "X-Request-ID"
 HEADER_UI_ACTION_ID = "X-UI-Action-ID"
 _JSON_CONTENT_TYPES = {"application/json", "application/problem+json"}
 _CORRELATION_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
+_SENSITIVE_KEY_PATTERN = re.compile(
+    r"(auth|authorization|cookie|csrf|passwd|password|secret|session|token|api[_-]?key|access[_-]?key|stdin)",
+    re.IGNORECASE,
+)
+_SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|pwd|token|authorization|secret|cookie|api[_-]?key|access[_-]?key)\b\s*[:=]\s*([^\s,;]+)"
+)
+_MAX_DIAGNOSTIC_VALUE_LENGTH = 512
+_OMIT = object()
 _current_request_correlation: ContextVar["RequestCorrelation | None"] = ContextVar(
     "api_v2_request_correlation",
     default=None,
@@ -32,6 +41,73 @@ def _normalize_correlation_value(value: Any) -> str | None:
     if not normalized or not _CORRELATION_VALUE_PATTERN.fullmatch(normalized):
         return None
     return normalized
+
+
+def _is_sensitive_key(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return False
+    if normalized.endswith("_password") or normalized.endswith("_pwd"):
+        return True
+    return _SENSITIVE_KEY_PATTERN.search(normalized) is not None
+
+
+def _sanitize_diagnostic_string(value: Any, *, max_length: int = _MAX_DIAGNOSTIC_VALUE_LENGTH) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    redacted = _SENSITIVE_VALUE_PATTERN.sub(r"\1=[redacted]", normalized)
+    if len(redacted) > max_length:
+        return f"{redacted[: max_length - 3]}..."
+    return redacted
+
+
+def _sanitize_error_value(value: Any, *, key: str | None = None) -> Any:
+    if key and _is_sensitive_key(key):
+        return _OMIT
+
+    if isinstance(value, dict):
+        sanitized: dict[str, Any] = {}
+        for child_key, child_value in value.items():
+            sanitized_value = _sanitize_error_value(child_value, key=str(child_key or ""))
+            if sanitized_value is _OMIT:
+                continue
+            sanitized[str(child_key)] = sanitized_value
+        return sanitized
+
+    if isinstance(value, list):
+        sanitized_list: list[Any] = []
+        for item in value:
+            sanitized_item = _sanitize_error_value(item)
+            if sanitized_item is _OMIT:
+                continue
+            sanitized_list.append(sanitized_item)
+        return sanitized_list
+
+    if isinstance(value, tuple):
+        sanitized_tuple: list[Any] = []
+        for item in value:
+            sanitized_item = _sanitize_error_value(item)
+            if sanitized_item is _OMIT:
+                continue
+            sanitized_tuple.append(sanitized_item)
+        return sanitized_tuple
+
+    if isinstance(value, str):
+        return _sanitize_diagnostic_string(value)
+
+    return value
+
+
+def _sanitize_error_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = _sanitize_error_value(payload)
+    if isinstance(sanitized, dict):
+        return sanitized
+    return {}
+
+
+def sanitize_error_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return _sanitize_error_payload(payload)
 
 
 def ensure_request_correlation(request) -> RequestCorrelation:
@@ -79,12 +155,15 @@ def with_problem_correlation(
 ) -> dict[str, Any]:
     correlation = correlation or get_request_correlation()
     if correlation is None:
-        return payload
+        return _sanitize_error_payload(payload)
 
-    enriched = dict(payload)
-    enriched.setdefault("request_id", correlation.request_id)
-    if correlation.ui_action_id:
-        enriched.setdefault("ui_action_id", correlation.ui_action_id)
+    enriched = _sanitize_error_payload(payload)
+    enriched["request_id"] = _normalize_correlation_value(enriched.get("request_id")) or correlation.request_id
+    ui_action_id = _normalize_correlation_value(enriched.get("ui_action_id")) or correlation.ui_action_id
+    if ui_action_id:
+        enriched["ui_action_id"] = ui_action_id
+    else:
+        enriched.pop("ui_action_id", None)
     return enriched
 
 
@@ -150,8 +229,8 @@ def log_problem_response(payload: dict[str, Any]) -> None:
         "api_problem_response request_id=%s ui_action_id=%s code=%s status=%s path=%s",
         correlation.request_id if correlation else "-",
         correlation.ui_action_id if correlation and correlation.ui_action_id else "-",
-        str(payload.get("code") or "-"),
-        str(payload.get("status") or "-"),
+        _sanitize_diagnostic_string(payload.get("code") or "-", max_length=120) or "-",
+        _sanitize_diagnostic_string(payload.get("status") or "-", max_length=32) or "-",
         correlation.path if correlation else "-",
     )
 
