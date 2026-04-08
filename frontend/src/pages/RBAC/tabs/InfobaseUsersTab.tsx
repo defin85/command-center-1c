@@ -6,6 +6,7 @@ import { useInfobaseUsers, useCreateInfobaseUser, useDeleteInfobaseUser, useRese
 import { useRbacRefDatabases, useRbacUsers } from '../../../api/queries/rbac'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { usePaginatedRefSelectOptions } from '../hooks/usePaginatedRefSelectOptions'
 
 const { Text } = Typography
@@ -153,7 +154,7 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
   }, [createInfobaseUser, editingIbUser, handleResetForm, ibUserForm, modal, updateInfobaseUser])
 
   const handleDelete = useCallback((record: InfobaseUserMapping) => {
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Удалить пользователя ИБ ${record.ib_username}?`,
       content: 'Запись будет удалена только в Command Center.',
       okText: 'Удалить',
@@ -181,7 +182,7 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
 
   const handlePasswordReset = useCallback(() => {
     if (!editingIbUser) return
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Сбросить пароль для ${editingIbUser.ib_username}?`,
       content: 'Пароль будет очищен.',
       okText: 'Сбросить',

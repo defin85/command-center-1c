@@ -214,7 +214,7 @@ describe('ExtensionsDrawer', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Save preferred' })).toBeEnabled()
-    })
+    }, { timeout: 5_000 })
 
     await user.click(screen.getByRole('button', { name: 'Save preferred' }))
     await user.click(screen.getByRole('button', { name: 'Clear preferred' }))

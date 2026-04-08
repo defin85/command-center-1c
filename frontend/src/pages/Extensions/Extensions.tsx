@@ -25,6 +25,7 @@ import { listOperationCatalogExposures } from '../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../components/ibcmd/ibcmdCliUiErrors'
 import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { useAuthz } from '../../authz/useAuthz'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
 import {
   ExtensionsBindingsTable,
   ExtensionsDriftTable,
@@ -395,7 +396,7 @@ export const Extensions = () => {
     if (adoptPending) return
 
     let reason = ''
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Adopt flags policy from database?',
       content: (
         <Space direction="vertical" size="small">
@@ -576,7 +577,7 @@ export const Extensions = () => {
         { title: 'Reason', dataIndex: 'reason', key: 'reason' },
       ]
 
-      modal.confirm({
+      confirmWithTracking(modal, {
         title: applyTitle,
         content: (
           <div>
@@ -674,7 +675,7 @@ export const Extensions = () => {
                   })
                   : []
 
-                modal.confirm({
+                confirmWithTracking(modal, {
                   title: 'State changed',
                   content: (
                     <div>

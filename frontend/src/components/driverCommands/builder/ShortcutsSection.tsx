@@ -8,6 +8,7 @@ import {
 } from '../../../api/queries'
 import type { DriverCommandV2 } from '../../../api/driverCommands'
 import type { DriverCommandShortcut } from '../../../api/commandShortcuts'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import type { DriverCommandBuilderMode, DriverCommandOperationConfig, IbcmdCliConnection, IbcmdDbmsAuth, IbcmdIbAuth } from './types'
 import { getSchemaAtPath, isRecord } from './utils'
 
@@ -204,7 +205,7 @@ export function ShortcutsSection({
     }
 
     if (hasMismatch || sanitized.dropped.length > 0) {
-      modal.confirm({
+      confirmWithTracking(modal, {
         title: 'Load shortcut',
         okText: 'Apply',
         cancelText: 'Cancel',
@@ -240,7 +241,7 @@ export function ShortcutsSection({
 
     let nextTitle = (selectedCommand?.label || commandId).trim()
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Save shortcut',
       okText: 'Save',
       cancelText: 'Cancel',
@@ -294,7 +295,7 @@ export function ShortcutsSection({
     const shortcut = shortcutsById[selectedShortcutId]
     const label = shortcut?.title || selectedShortcutId
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Delete shortcut?',
       okText: 'Delete',
       cancelText: 'Cancel',
@@ -350,4 +351,3 @@ export function ShortcutsSection({
     </Space>
   )
 }
-

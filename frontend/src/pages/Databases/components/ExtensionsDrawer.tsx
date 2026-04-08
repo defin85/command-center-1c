@@ -14,6 +14,7 @@ import {
 import { listOperationCatalogExposures } from '../../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
 import { DrawerFormShell } from '../../../components/platform'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { trackUiAction } from '../../../observability/uiActionJournal'
 
 const api = getV2()
@@ -405,7 +406,7 @@ export const ExtensionsDrawer = ({
       const previewText = formatExecutionPlan(plan.execution_plan)
       const bindings = extractBindings(plan.bindings)
 
-      modal.confirm({
+      confirmWithTracking(modal, {
         title: isSetFlagsOperation ? 'Apply selected flags?' : 'Launch extensions sync?',
         content: (
           <div>

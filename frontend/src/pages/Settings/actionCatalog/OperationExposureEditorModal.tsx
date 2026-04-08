@@ -11,6 +11,7 @@ import type { ActionContext, ActionFormValues, ExecutorKind } from '../actionCat
 import { isPlainObject, parseJson, safeText } from '../actionCatalogUtils'
 import { buildParamsTemplate, getCommandParamsFromSchema } from '../../../components/driverCommands/builder/utils'
 import { ParamField } from '../../../components/driverCommands/builder/ParamField'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { ActionCatalogCapabilityFixedSection } from './ActionCatalogCapabilityFixedSection'
 import { canonicalDriverForExecutorKind } from '../../../lib/commandConfigAdapter'
 
@@ -578,7 +579,7 @@ export function OperationExposureEditorModal({
       return
     }
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Overwrite params?',
       content: 'This will replace the current params JSON with a template built from the command schema.',
       okText: 'Overwrite',

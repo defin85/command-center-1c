@@ -15,6 +15,7 @@ import { ArtifactsCreateModal } from './ArtifactsCreateModal'
 import { ArtifactDetailsDrawer } from './ArtifactDetailsDrawer'
 import { ArtifactsPurgeModal } from './ArtifactsPurgeModal'
 import { useArtifactsColumns } from './useArtifactsColumns'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
 type ArtifactCatalogTab = 'active' | 'deleted'
 type ArtifactContext = 'inspect' | 'create' | 'purge'
@@ -81,7 +82,7 @@ export const ArtifactsPage = () => {
       message.error('Delete requires staff access')
       return
     }
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Delete artifact "${artifact.name}"?`,
       content: 'Artifact will be hidden from the catalog. Versions and aliases remain stored.',
       okText: 'Delete',
@@ -96,6 +97,13 @@ export const ArtifactsPage = () => {
           message.error('Failed to delete artifact')
         }
       },
+    }, {
+      actionKind: 'operator.action',
+      actionName: 'Delete artifact',
+      context: {
+        artifact_id: artifact.id,
+        artifact_name: artifact.name,
+      },
     })
   }, [deleteArtifactMutation, isStaff, message, modal, queryClient, updateSearchParams])
 
@@ -104,7 +112,7 @@ export const ArtifactsPage = () => {
       message.error('Restore requires staff access')
       return
     }
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Restore artifact "${artifact.name}"?`,
       content: 'Artifact will be returned to the active catalog.',
       okText: 'Restore',
@@ -117,6 +125,13 @@ export const ArtifactsPage = () => {
         } catch {
           message.error('Failed to restore artifact')
         }
+      },
+    }, {
+      actionKind: 'operator.action',
+      actionName: 'Restore artifact',
+      context: {
+        artifact_id: artifact.id,
+        artifact_name: artifact.name,
       },
     })
   }, [isStaff, message, modal, queryClient, restoreArtifactMutation, updateSearchParams])

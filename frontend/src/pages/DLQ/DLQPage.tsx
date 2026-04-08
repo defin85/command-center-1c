@@ -10,6 +10,7 @@ import { useAuthz } from '../../authz/useAuthz'
 import { DrawerSurfaceShell, PageHeader, RouteButton, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
 const { Text } = Typography
 
@@ -79,7 +80,7 @@ export function DLQPage() {
     const entries = (dlqQuery.data?.messages ?? []).filter((m) => selectedRowKeys.includes(m.dlq_message_id))
     if (entries.length === 0) return
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Retry selected DLQ messages?',
       content: `Re-enqueue ${entries.length} message(s) sequentially.`,
       okText: 'Retry',

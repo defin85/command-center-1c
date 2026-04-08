@@ -15,6 +15,7 @@ import {
   validateCommandSchemas,
 } from '../../../api/commandSchemas'
 import { getCommandSchemasEditorView } from '../../../api/commandSchemas'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { safeCatalogDriverSchema } from '../commandSchemasUtils'
 import { parseJsonObject, safeText, saveText, deepCopy, safeOverridesDriverSchema } from '../commandSchemasUtils'
 import type { CommandSchemasState } from './useCommandSchemasState'
@@ -28,7 +29,7 @@ export function useCommandSchemasActions(state: State) {
   const { message, modal } = App.useApp()
 
   const confirm = useCallback((config: ModalFuncProps) => {
-    modal.confirm(config)
+    confirmWithTracking(modal, config)
   }, [modal])
 
   const setCommandPatch = useCallback((commandId: string, updater: (patch: CommandSchemaCommandPatch) => void) => {
@@ -56,7 +57,7 @@ export function useCommandSchemasActions(state: State) {
   }, [state])
 
   const discardChanges = useCallback(() => {
-    modal.confirm({
+    confirm({
       title: 'Discard unsaved changes?',
       content: 'This will reset local overrides to the current active version.',
       okText: 'Discard',
@@ -70,7 +71,7 @@ export function useCommandSchemasActions(state: State) {
         message.success('Changes discarded')
       },
     })
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const requestDriverChange = useCallback((nextDriver: State['activeDriver']) => {
     if (nextDriver === state.activeDriver) return
@@ -85,7 +86,7 @@ export function useCommandSchemasActions(state: State) {
       return
     }
 
-    modal.confirm({
+    confirm({
       title: 'Unsaved changes',
       content: 'You have unsaved changes. Save or discard them before switching the driver.',
       okText: 'Discard and switch',
@@ -95,7 +96,7 @@ export function useCommandSchemasActions(state: State) {
         state.setActiveDriver(nextDriver)
       },
     })
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const requestRefreshView = useCallback(() => {
     if (state.saving || state.rollingBack) {
@@ -108,7 +109,7 @@ export function useCommandSchemasActions(state: State) {
       return
     }
 
-    modal.confirm({
+    confirm({
       title: 'Unsaved changes',
       content: 'Refresh will discard your local draft and reload the current active version.',
       okText: 'Discard and refresh',
@@ -118,7 +119,7 @@ export function useCommandSchemasActions(state: State) {
         void state.fetchView()
       },
     })
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const openImportIts = useCallback(() => {
     if (state.saving || state.rollbackLoading || state.rollingBack || state.loading) {
@@ -138,7 +139,7 @@ export function useCommandSchemasActions(state: State) {
       return
     }
 
-    modal.confirm({
+    confirm({
       title: 'Unsaved changes',
       content: 'Importing ITS will reload the editor and discard your local draft.',
       okText: 'Discard and continue',
@@ -146,7 +147,7 @@ export function useCommandSchemasActions(state: State) {
       cancelText: 'Cancel',
       onOk: open,
     })
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const handleImportItsFile = useCallback<BeforeUpload>((file) => {
     state.setImportItsFile(file)
@@ -201,7 +202,7 @@ export function useCommandSchemasActions(state: State) {
 
     if (!hasBlocks || (state.activeDriver === 'cli' && !hasCliCommandBlocks)) {
       const ok = await new Promise<boolean>((resolve) => {
-        modal.confirm({
+        confirm({
           title: 'ITS export quality warning',
           content: (
             <Space direction="vertical">
@@ -239,7 +240,7 @@ export function useCommandSchemasActions(state: State) {
     } finally {
       state.setImportingIts(false)
     }
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const openRollback = useCallback(async () => {
     state.setRollbackOpen(true)
@@ -333,7 +334,7 @@ export function useCommandSchemasActions(state: State) {
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) {
-        modal.confirm({
+        confirm({
           title: 'Conflict',
           content: 'Overrides changed since you opened the editor. Refresh to load the latest active version (local draft will be discarded).',
           okText: 'Refresh (discard local draft)',
@@ -350,7 +351,7 @@ export function useCommandSchemasActions(state: State) {
     } finally {
       state.setRollingBack(false)
     }
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const openSave = useCallback(() => {
     state.setSaveOpen(true)
@@ -380,7 +381,7 @@ export function useCommandSchemasActions(state: State) {
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) {
-        modal.confirm({
+        confirm({
           title: 'Conflict',
           content: 'Overrides changed since you opened the editor. Refresh to load the latest active version (local draft will be discarded).',
           okText: 'Refresh (discard local draft)',
@@ -397,7 +398,7 @@ export function useCommandSchemasActions(state: State) {
     } finally {
       state.setSaving(false)
     }
-  }, [message, modal, state])
+  }, [confirm, message, state])
 
   const loadDiff = useCallback(async () => {
     if (!state.selectedCommandId) return

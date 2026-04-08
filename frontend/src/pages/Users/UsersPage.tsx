@@ -8,6 +8,7 @@ import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { EntityDetails, ModalFormShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { useUser, useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary } from '../../api/queries'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
 const { Text } = Typography
 
@@ -89,7 +90,7 @@ export function UsersPage() {
   }, [passwordForm, updateSearchParams])
 
   const toggleActive = useCallback((user: UserSummary) => {
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: user.is_active ? 'Deactivate user?' : 'Activate user?',
       content: user.is_active
         ? 'User will not be able to log in.'
@@ -98,6 +99,13 @@ export function UsersPage() {
       cancelText: 'Cancel',
       okButtonProps: { danger: user.is_active },
       onOk: () => updateUser.mutate({ id: user.id, is_active: !user.is_active }),
+    }, {
+      actionKind: 'operator.action',
+      actionName: user.is_active ? 'Deactivate user' : 'Activate user',
+      context: {
+        user_id: user.id,
+        next_is_active: !user.is_active,
+      },
     })
   }, [modal, updateUser])
 

@@ -1,5 +1,6 @@
 import { Input } from 'antd'
 import { useCallback, type ReactNode } from 'react'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 
 type ModalRef = {
   update: (config: ModalUpdateConfig) => void
@@ -53,7 +54,7 @@ export function useConfirmReason(modal: ModalApi, message: MessageApi, labels?: 
       modalRef?.update({ okButtonProps: { disabled } })
     }
 
-    modalRef = modal.confirm({
+    modalRef = confirmWithTracking(modal, {
       title,
       content: (
         <Input.TextArea

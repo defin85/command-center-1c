@@ -38,6 +38,7 @@ import {
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { EntityDetails, EntityList, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
 const EMPTY_CLUSTERS: Cluster[] = []
 const EMPTY_DATABASES: Database[] = []
@@ -314,7 +315,7 @@ export const Databases = () => {
       return
     }
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Сбросить IBCMD profile базы?',
       content: 'Профиль подключения ibcmd будет удалён из metadata базы.',
       okText: 'Сбросить',
@@ -333,6 +334,12 @@ export const Databases = () => {
             },
           }
         )
+      },
+    }, {
+      actionKind: 'operator.action',
+      actionName: 'Reset IBCMD connection profile',
+      context: {
+        database_id: selectedDatabaseIdFromUrl,
       },
     })
   }
@@ -378,7 +385,7 @@ export const Databases = () => {
       return
     }
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Сбросить креды базы?',
       content: 'Логин и пароль будут очищены.',
       okText: 'Сбросить',
@@ -397,6 +404,12 @@ export const Databases = () => {
             },
           }
         )
+      },
+    }, {
+      actionKind: 'operator.action',
+      actionName: 'Reset database credentials',
+      context: {
+        database_id: selectedDatabaseIdFromUrl,
       },
     })
   }
@@ -443,7 +456,7 @@ export const Databases = () => {
       return
     }
 
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: 'Сбросить DBMS metadata базы?',
       content: 'Поля DBMS/DB server/DB name будут очищены.',
       okText: 'Сбросить',
@@ -462,6 +475,12 @@ export const Databases = () => {
             },
           }
         )
+      },
+    }, {
+      actionKind: 'operator.action',
+      actionName: 'Reset DBMS metadata',
+      context: {
+        database_id: selectedDatabaseIdFromUrl,
       },
     })
   }

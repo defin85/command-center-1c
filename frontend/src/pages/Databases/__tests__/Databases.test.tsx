@@ -8,9 +8,23 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Database } from '../../../api/generated/model/database'
 import { Databases } from '../Databases'
 
-const mockUseDatabases = vi.fn()
-const mockUseDatabase = vi.fn()
-const mockSetFilter = vi.fn()
+const {
+  mockUseDatabases,
+  mockUseDatabase,
+  mockSetFilter,
+  mockConfirmWithTracking,
+  mockUpdateDatabaseCredentialsMutate,
+  mockUpdateDatabaseDbmsMetadataMutate,
+  mockUpdateDatabaseIbcmdConnectionProfileMutate,
+} = vi.hoisted(() => ({
+  mockUseDatabases: vi.fn(),
+  mockUseDatabase: vi.fn(),
+  mockSetFilter: vi.fn(),
+  mockConfirmWithTracking: vi.fn((_: unknown, config: { onOk?: () => unknown }) => config.onOk?.()),
+  mockUpdateDatabaseCredentialsMutate: vi.fn(),
+  mockUpdateDatabaseDbmsMetadataMutate: vi.fn(),
+  mockUpdateDatabaseIbcmdConnectionProfileMutate: vi.fn(),
+}))
 
 function buildDatabase(overrides: Partial<Database> = {}): Database {
   return {
@@ -70,8 +84,8 @@ const databases = [
 ]
 
 vi.mock('../../../api/queries/databases', () => ({
-  useDatabases: (...args: unknown[]) => mockUseDatabases(...args),
-  useDatabase: (...args: unknown[]) => mockUseDatabase(...args),
+  useDatabases: mockUseDatabases,
+  useDatabase: mockUseDatabase,
   useExecuteRasOperation: () => ({
     mutate: vi.fn(),
     isPending: false,
@@ -89,15 +103,15 @@ vi.mock('../../../api/queries/databases', () => ({
     isPending: false,
   }),
   useUpdateDatabaseCredentials: () => ({
-    mutate: vi.fn(),
+    mutate: mockUpdateDatabaseCredentialsMutate,
     isPending: false,
   }),
   useUpdateDatabaseDbmsMetadata: () => ({
-    mutate: vi.fn(),
+    mutate: mockUpdateDatabaseDbmsMetadataMutate,
     isPending: false,
   }),
   useUpdateDatabaseIbcmdConnectionProfile: () => ({
-    mutate: vi.fn(),
+    mutate: mockUpdateDatabaseIbcmdConnectionProfileMutate,
     isPending: false,
   }),
   useDatabaseExtensionsSnapshot: () => ({
@@ -154,6 +168,10 @@ vi.mock('../../../components/table/hooks/useTableToolkit', () => ({
   }),
 }))
 
+vi.mock('../../../observability/confirmWithTracking', () => ({
+  confirmWithTracking: mockConfirmWithTracking,
+}))
+
 const toReactNode = (value: unknown): ReactNode => {
   if (isValidElement(value) || value == null) {
     return value
@@ -196,14 +214,19 @@ vi.mock('../components/DatabaseCredentialsModal', () => ({
     open,
     database,
     onCancel,
+    onReset,
   }: {
     open: boolean
     database: Database | null
     onCancel: () => void
+    onReset: () => void
   }) => (
     open ? (
       <div data-testid="database-credentials-modal">
         <div>Credentials {database?.name}</div>
+        <button type="button" onClick={onReset}>
+          Reset credentials
+        </button>
         <button type="button" onClick={onCancel}>
           Close credentials
         </button>
@@ -217,14 +240,19 @@ vi.mock('../components/DatabaseDbmsMetadataModal', () => ({
     open,
     database,
     onCancel,
+    onReset,
   }: {
     open: boolean
     database: Database | null
     onCancel: () => void
+    onReset: () => void
   }) => (
     open ? (
       <div data-testid="database-dbms-modal">
         <div>DBMS {database?.name}</div>
+        <button type="button" onClick={onReset}>
+          Reset DBMS metadata
+        </button>
         <button type="button" onClick={onCancel}>
           Close DBMS metadata
         </button>
@@ -238,14 +266,19 @@ vi.mock('../components/DatabaseIbcmdConnectionProfileModal', () => ({
     open,
     database,
     onCancel,
+    onReset,
   }: {
     open: boolean
     database: Database | null
     onCancel: () => void
+    onReset: () => void
   }) => (
     open ? (
       <div data-testid="database-ibcmd-modal">
         <div>IBCMD {database?.name}</div>
+        <button type="button" onClick={onReset}>
+          Reset IBCMD profile
+        </button>
         <button type="button" onClick={onCancel}>
           Close IBCMD profile
         </button>
@@ -324,6 +357,10 @@ function renderDatabasesPage(initialEntry = '/databases') {
 describe('Databases', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockConfirmWithTracking.mockClear()
+    mockUpdateDatabaseCredentialsMutate.mockReset()
+    mockUpdateDatabaseDbmsMetadataMutate.mockReset()
+    mockUpdateDatabaseIbcmdConnectionProfileMutate.mockReset()
     localStorage.setItem('active_tenant_id', 'tenant-1')
     mockUseDatabases.mockReturnValue({
       data: {
@@ -385,5 +422,65 @@ describe('Databases', () => {
       expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?database=db-1&context=inspect')
     })
     expect(screen.queryByTestId('database-credentials-modal')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    {
+      context: 'credentials',
+      modalTestId: 'database-credentials-modal',
+      resetLabel: 'Reset credentials',
+      actionName: 'Reset database credentials',
+      expectedPayload: { database_id: 'db-1', reset: true },
+      expectedMutate: mockUpdateDatabaseCredentialsMutate,
+    },
+    {
+      context: 'dbms',
+      modalTestId: 'database-dbms-modal',
+      resetLabel: 'Reset DBMS metadata',
+      actionName: 'Reset DBMS metadata',
+      expectedPayload: { database_id: 'db-1', reset: true },
+      expectedMutate: mockUpdateDatabaseDbmsMetadataMutate,
+    },
+    {
+      context: 'ibcmd',
+      modalTestId: 'database-ibcmd-modal',
+      resetLabel: 'Reset IBCMD profile',
+      actionName: 'Reset IBCMD connection profile',
+      expectedPayload: { database_id: 'db-1', reset: true },
+      expectedMutate: mockUpdateDatabaseIbcmdConnectionProfileMutate,
+    },
+  ])('tracks %s reset action through confirmWithTracking', async ({
+    context,
+    modalTestId,
+    resetLabel,
+    actionName,
+    expectedPayload,
+    expectedMutate,
+  }) => {
+    const user = userEvent.setup()
+
+    renderDatabasesPage(`/databases?database=db-1&context=${context}`)
+
+    expect(await screen.findByTestId(modalTestId)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: resetLabel }))
+
+    expect(mockConfirmWithTracking).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        okText: 'Сбросить',
+      }),
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName,
+        context: {
+          database_id: 'db-1',
+        },
+      }),
+    )
+    expect(expectedMutate).toHaveBeenCalledWith(
+      expectedPayload,
+      expect.any(Object),
+    )
   })
 })

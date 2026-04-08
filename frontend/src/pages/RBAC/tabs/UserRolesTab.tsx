@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table'
 
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { useRbacUsersWithRoles, useRoles, useSetUserRoles, type RbacRole, type UserWithRolesRef } from '../../../api/queries/rbac'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 
 const { Text } = Typography
 
@@ -393,7 +394,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                   const diff = computeDiff()
                   const isReplaceRemoveAll = mode === 'replace' && selectedRoleIds.length === 0 && currentRoleIds.length > 0
 
-                  modal.confirm({
+                  confirmWithTracking(modal, {
                     title: isReplaceRemoveAll ? 'Снять все роли у пользователя?' : 'Применить роли пользователю?',
                     okText: 'Применить',
                     cancelText: 'Отмена',

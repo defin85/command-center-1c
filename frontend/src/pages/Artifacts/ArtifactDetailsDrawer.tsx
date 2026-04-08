@@ -21,6 +21,8 @@ import type { Artifact, ArtifactAlias, ArtifactVersion } from '../../api/artifac
 import { downloadArtifactVersion } from '../../api/artifacts'
 import { useArtifactAliases, useArtifactVersions, useUpsertArtifactAlias } from '../../api/queries'
 import { DrawerSurfaceShell } from '../../components/platform'
+import { confirmWithTracking } from '../../observability/confirmWithTracking'
+import { trackUiAction } from '../../observability/uiActionJournal'
 import { aliasMenuItems, diffLines, formatBytes, KIND_LABELS, MAX_PREVIEW_BYTES, renderAutoPurge, renderPurgeBlockers } from './artifactsUtils'
 
 const { Text } = Typography
@@ -249,7 +251,16 @@ export function ArtifactDetailsDrawer({
       message.error('Alias update requires staff access')
       return
     }
-    const action = () => aliasMutation.mutate(
+    const actionMeta = {
+      actionKind: 'operator.action',
+      actionName: `Set artifact alias ${alias}`,
+      context: {
+        artifact_id: selectedArtifactId,
+        alias,
+        version: version.version,
+      },
+    } as const
+    const applyAliasUpdate = () => aliasMutation.mutate(
       { alias, version: version.version },
       {
         onSuccess: () => {
@@ -262,15 +273,15 @@ export function ArtifactDetailsDrawer({
     )
 
     if (alias === 'stable' || alias === 'approved') {
-      modal.confirm({
+      confirmWithTracking(modal, {
         title: `Set alias "${alias}"?`,
         content: `This will point ${alias} to ${version.version}.`,
-        onOk: action,
-      })
+        onOk: applyAliasUpdate,
+      }, actionMeta)
     } else {
-      action()
+      trackUiAction(actionMeta, applyAliasUpdate)
     }
-  }, [aliasMutation, isStaff, message, modal])
+  }, [aliasMutation, isStaff, message, modal, selectedArtifactId])
 
   const handleCustomAlias = useCallback(() => {
     if (!selectedVersion) return

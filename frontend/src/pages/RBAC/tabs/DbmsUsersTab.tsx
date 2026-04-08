@@ -7,6 +7,7 @@ import { useDbmsUsers, useCreateDbmsUser, useDeleteDbmsUser, useResetDbmsUserPas
 import { useRbacRefDatabases, useRbacUsers } from '../../../api/queries/rbac'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { usePaginatedRefSelectOptions } from '../hooks/usePaginatedRefSelectOptions'
 import { getDbmsAuthTypeLabel, getDbmsPasswordConfiguredLabel, validateDbmsUserId } from '../utils/dbmsUsers'
 
@@ -137,7 +138,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
   }, [createDbmsUser, dbmsUserForm, editingDbmsUser, handleResetForm, message, updateDbmsUser])
 
   const handleDelete = useCallback((record: DbmsUserMapping) => {
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Удалить DBMS mapping ${record.db_username}?`,
       content: 'Запись будет удалена только в Command Center.',
       okText: 'Удалить',
@@ -149,7 +150,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
 
   const handlePasswordSet = useCallback((record: DbmsUserMapping) => {
     let password = ''
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Установить пароль для ${record.db_username}?`,
       okText: 'Установить',
       cancelText: 'Отмена',
@@ -178,7 +179,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
   }, [message, modal, setDbmsUserPassword])
 
   const handlePasswordReset = useCallback((record: DbmsUserMapping) => {
-    modal.confirm({
+    confirmWithTracking(modal, {
       title: `Сбросить пароль для ${record.db_username}?`,
       content: 'Пароль будет очищен.',
       okText: 'Сбросить',

@@ -1,5 +1,6 @@
 import { App, Button, Card, Form, Input, Select, Space, Tabs, Typography } from 'antd'
 
+import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { parseIdListFromText } from '../utils/parseIdListFromText'
 
 type PermissionLevelCode = 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN'
@@ -97,7 +98,7 @@ export function RbacBulkClusterRolePermissions(props: {
                   }
 
                   const roleName = props.roleNameById.get(values.group_id) ?? String(values.group_id)
-                  modal.confirm({
+                  confirmWithTracking(modal, {
                     title: i18n.confirmGrantTitle ?? 'Confirm bulk grant (Clusters)',
                     okText: i18n.applyText ?? 'Apply',
                     cancelText: i18n.cancelText ?? 'Cancel',
@@ -178,7 +179,7 @@ export function RbacBulkClusterRolePermissions(props: {
                   }
 
                   const roleName = props.roleNameById.get(values.group_id) ?? String(values.group_id)
-                  modal.confirm({
+                  confirmWithTracking(modal, {
                     title: i18n.confirmRevokeTitle ?? 'Confirm bulk revoke (Clusters)',
                     okText: i18n.applyText ?? 'Apply',
                     cancelText: i18n.cancelText ?? 'Cancel',
