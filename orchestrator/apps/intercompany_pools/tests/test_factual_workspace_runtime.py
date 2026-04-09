@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone as dt_timezone
+from types import SimpleNamespace
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -260,3 +261,125 @@ def test_ensure_pool_factual_workspace_default_sync_force_refresh_uses_active_me
     assert checkpoint.metadata["freshness_target_seconds"] == 120
     start_workflow.assert_called_once()
     assert start_workflow.call_args.kwargs["activity"] == "active"
+
+
+@pytest.mark.django_db
+def test_ensure_pool_factual_workspace_default_sync_reconciles_stale_running_checkpoint_with_legacy_execution_contract_before_retry() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"factual-workspace-reconcile-{uuid4().hex[:6]}",
+        name="Factual Workspace Reconcile",
+    )
+    pool = _create_pool(tenant=tenant, suffix="reconcile")
+    database = _create_database(tenant=tenant, suffix="reconcile")
+    checkpoint = PoolFactualSyncCheckpoint.objects.create(
+        tenant=tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        workflow_status="running",
+        workflow_execution_id=UUID("11111111-1111-1111-1111-111111111111"),
+        operation_id=UUID("11111111-1111-1111-1111-111111111111"),
+        metadata={
+            "freshness_state": "stale",
+            "freshness_target_seconds": 120,
+        },
+    )
+    fixed_now = datetime(2026, 4, 14, 10, 0, tzinfo=dt_timezone.utc)
+    factual_scope = build_factual_sales_report_sync_scope(
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        organization_ids=("org-a",),
+        account_codes=("62.01", "90.01"),
+        movement_kinds=("credit", "debit"),
+    )
+    failed_execution = SimpleNamespace(
+        id=checkpoint.workflow_execution_id,
+        status="failed",
+        error_code="POOL_FACTUAL_SYNC_FAILED",
+        error_message="source unavailable",
+        input_context={
+            "contract_version": "pool_factual_sync_workflow.v1",
+            "checkpoint_id": str(checkpoint.id),
+            "tenant_id": str(tenant.id),
+            "pool_id": str(pool.id),
+            "database_id": str(database.id),
+            "quarter_start": "2026-04-01",
+            "quarter_end": "2026-06-30",
+            "organization_ids": "org-a",
+            "account_codes": "62.01,90.01",
+            "movement_kinds": "credit,debit",
+            "lane": PoolFactualLane.READ,
+            # Legacy executions in the contour can miss newer source-boundary fields.
+            "correlation_id": "corr-factual-workspace-reconcile",
+            "origin_system": "tests",
+            "origin_event_id": "evt-factual-workspace-reconcile",
+            "activity": "active",
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_scope",
+        return_value=PoolFactualScope(
+            organization_ids=("org-a",),
+            databases=(database,),
+            quarter_end=date(2026, 6, 30),
+            freeze_quarter=False,
+        ),
+    ), patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ), patch(
+        "apps.intercompany_pools.factual_workspace_runtime.WorkflowExecution.objects.filter",
+    ) as workflow_filter, patch(
+        "apps.intercompany_pools.factual_workspace_runtime.start_pool_factual_sync_workflow",
+    ) as start_workflow:
+        workflow_filter.return_value.first.return_value = failed_execution
+
+        def _fake_start(**kwargs):
+            refreshed = kwargs["checkpoint"]
+            assert refreshed.workflow_status == "failed"
+            assert refreshed.last_error_code == "POOL_FACTUAL_SYNC_FAILED"
+            refreshed.workflow_status = "running"
+            refreshed.workflow_execution_id = UUID("22222222-2222-2222-2222-222222222222")
+            refreshed.operation_id = UUID("22222222-2222-2222-2222-222222222222")
+            refreshed.last_error_code = ""
+            refreshed.last_error = ""
+            refreshed.save(
+                update_fields=[
+                    "workflow_status",
+                    "workflow_execution_id",
+                    "operation_id",
+                    "last_error_code",
+                    "last_error",
+                    "updated_at",
+                ]
+            )
+            return PoolFactualSyncWorkflowStartResult(
+                checkpoint=refreshed,
+                execution_id="22222222-2222-2222-2222-222222222222",
+                operation_id="22222222-2222-2222-2222-222222222222",
+                enqueue_success=True,
+                enqueue_status="running",
+                enqueue_error=None,
+                created_execution=False,
+            )
+
+        start_workflow.side_effect = _fake_start
+
+        checkpoints = ensure_pool_factual_workspace_default_sync(
+            pool=pool,
+            quarter_start=date(2026, 4, 1),
+            now=fixed_now,
+            requested_activity="active",
+            force_sync=False,
+        )
+
+    checkpoint.refresh_from_db()
+    assert len(checkpoints) == 1
+    assert checkpoints[0].id == checkpoint.id
+    assert checkpoint.workflow_status == "running"
+    assert checkpoint.workflow_execution_id == UUID("22222222-2222-2222-2222-222222222222")
+    workflow_filter.assert_called_once()
+    start_workflow.assert_called_once()

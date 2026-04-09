@@ -5,26 +5,22 @@ import {
   Button,
   Descriptions,
   Input,
-  Progress,
-  Segmented,
+  Pagination,
+  Select,
   Space,
-  Tooltip,
   Typography,
 } from 'antd'
 import {
   ApartmentOutlined,
-  EyeOutlined,
   ReloadOutlined,
-  StopOutlined,
 } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 
 import { getV2 } from '../../api/generated'
 import type { WorkflowExecutionList } from '../../api/generated/model'
 import {
   EntityDetails,
-  EntityTable,
+  EntityList,
   JsonBlock,
   MasterDetailShell,
   PageHeader,
@@ -79,16 +75,28 @@ const formatDateTime = (value: string | null | undefined) => {
   return new Date(value).toLocaleString()
 }
 
+const formatCompactDateTime = (value: string | null | undefined) => (
+  value ? new Date(value).toLocaleDateString() : '—'
+)
+
 const formatDurationSeconds = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return formatDuration(value * 1000)
 }
 
-const progressStatusFor = (status: ExecutionStatus) => {
-  if (status === 'failed') return 'exception'
-  if (status === 'completed') return 'success'
-  if (status === 'running') return 'active'
-  return 'normal'
+const formatShortId = (value: string | null | undefined) => (
+  value ? `${value.slice(0, 8)}...` : '—'
+)
+
+const truncateText = (value: string | null | undefined, maxLength = 96) => {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) {
+    return ''
+  }
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+  return `${normalized.slice(0, maxLength - 1)}…`
 }
 
 const buildExecutionStatusBadges = (execution: Pick<WorkflowExecutionList, 'status' | 'progress_percent'>) => (
@@ -103,6 +111,46 @@ const buildExecutionStatusBadges = (execution: Pick<WorkflowExecutionList, 'stat
     />
   </Space>
 )
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  width: '100%',
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
+
+const buildExecutionCatalogMeta = (execution: WorkflowExecutionList) => (
+  [
+    `Workflow ${formatShortId(execution.workflow_template)}`,
+    `Execution ${formatShortId(execution.id)}`,
+  ].join(' · ')
+)
+
+const buildExecutionCatalogTiming = (execution: WorkflowExecutionList) => {
+  const nodeSummary = execution.current_node_id
+    ? `Node ${execution.current_node_id}`
+    : 'No active node'
+  const startedSummary = execution.started_at
+    ? `Started ${formatCompactDateTime(execution.started_at)}`
+    : 'Not started yet'
+  return `${nodeSummary} · ${startedSummary}`
+}
+
+const buildExecutionCatalogOutcome = (execution: WorkflowExecutionList) => {
+  if (execution.error_message) {
+    return `Error: ${truncateText(execution.error_message)}`
+  }
+  if (execution.completed_at) {
+    return `Completed ${formatCompactDateTime(execution.completed_at)} · Duration ${formatDurationSeconds(execution.duration)}`
+  }
+  return `Duration ${formatDurationSeconds(execution.duration)}`
+}
 
 const WorkflowExecutions = () => {
   const navigate = useNavigate()
@@ -340,120 +388,6 @@ const WorkflowExecutions = () => {
     }
   }, [executionsQuery, message, selectedExecutionDetailQuery])
 
-  const columns: ColumnsType<WorkflowExecutionList> = useMemo(() => ([
-    {
-      title: 'Execution',
-      key: 'execution',
-      width: 320,
-      render: (_value, record) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <Space wrap size={8}>
-            <Text strong>{record.template_name || 'Untitled workflow'}</Text>
-            <StatusBadge status="unknown" label={`v${record.template_version}`} />
-          </Space>
-          <Text type="secondary" copyable={{ text: record.id }}>
-            {record.id}
-          </Text>
-        </div>
-      ),
-    },
-    {
-      title: 'Status',
-      key: 'status',
-      width: 240,
-      render: (_value, record) => (
-        <Space direction="vertical" size={6}>
-          {buildExecutionStatusBadges(record)}
-          {record.error_message ? (
-            <Text type="danger">{record.error_message}</Text>
-          ) : record.error_node_id ? (
-            <Text type="secondary">{`Error node: ${record.error_node_id}`}</Text>
-          ) : null}
-        </Space>
-      ),
-    },
-    {
-      title: 'Progress',
-      key: 'progress',
-      width: 220,
-      render: (_value, record) => {
-        const percent = parsePercent(record.progress_percent)
-        return (
-          <div style={{ minWidth: 180 }}>
-            <Progress
-              percent={percent}
-              size="small"
-              status={progressStatusFor(record.status)}
-              showInfo
-            />
-            <Text type="secondary">
-              {record.current_node_id ? `Node: ${record.current_node_id}` : 'No active node'}
-            </Text>
-          </div>
-        )
-      },
-    },
-    {
-      title: 'Timing',
-      key: 'timing',
-      width: 220,
-      render: (_value, record) => (
-        <Space direction="vertical" size={4}>
-          <Text type="secondary">Started: {formatDateTime(record.started_at)}</Text>
-          <Text type="secondary">Completed: {formatDateTime(record.completed_at)}</Text>
-          <Text type="secondary">Duration: {formatDurationSeconds(record.duration)}</Text>
-        </Space>
-      ),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 170,
-      render: (_value, record) => {
-        const canCancel = record.status === 'pending' || record.status === 'running'
-        return (
-          <Space size="small">
-            <Tooltip title="Open execution">
-              <Button
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openExecutionMonitor(record.id)
-                }}
-                aria-label="Open execution"
-              />
-            </Tooltip>
-            <Tooltip title="Open workflow">
-              <Button
-                size="small"
-                icon={<ApartmentOutlined />}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openWorkflowFromExecution(record.workflow_template, record.id)
-                }}
-                aria-label="Open workflow"
-              />
-            </Tooltip>
-            <Tooltip title={canCancel ? 'Cancel execution' : 'Only pending or running executions can be cancelled'}>
-              <Button
-                size="small"
-                danger
-                icon={<StopOutlined />}
-                disabled={!canCancel}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  void handleCancel(record.id)
-                }}
-                aria-label="Cancel execution"
-              />
-            </Tooltip>
-          </Space>
-        )
-      },
-    },
-  ]), [handleCancel, openExecutionMonitor, openWorkflowFromExecution])
-
   const detailLoading = Boolean(selectedExecutionId) && !selectedExecution && (executionsQuery.isLoading || selectedExecutionDetailQuery.isLoading)
   const detailError = selectedExecutionId && !selectedExecution && selectedExecutionDetailQuery.isError
     ? 'Failed to load the selected execution.'
@@ -492,80 +426,105 @@ const WorkflowExecutions = () => {
         }}
         detailDrawerTitle={selectedExecution?.template_name || 'Execution detail'}
         list={(
-          <EntityTable
-            title="Catalog"
-            error={executionsQuery.isError ? errorMessage : null}
-            loading={executionsQuery.isLoading}
-            emptyDescription="No workflow executions found."
-            dataSource={executions}
-            columns={columns}
-            rowKey="id"
-            onRow={(record) => ({
-              onClick: () => {
-                routeUpdateModeRef.current = 'push'
-                setSelectedExecutionId(record.id)
-                setIsDetailDrawerOpen(true)
-              },
-              style: { cursor: 'pointer' },
-            })}
-            rowClassName={(record) => (
-              record.id === selectedExecutionId ? 'ant-table-row-selected' : ''
-            )}
-            pagination={{
-              current: page,
-              pageSize,
-              total: totalExecutions,
-              showSizeChanger: true,
-              pageSizeOptions: [20, 50, 100, 200],
-              onChange: (nextPage, nextPageSize) => {
-                if (nextPageSize && nextPageSize !== pageSize) {
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <EntityList
+              title="Execution Catalog"
+              error={executionsQuery.isError ? errorMessage : null}
+              loading={executionsQuery.isLoading}
+              emptyDescription="No workflow executions found."
+              dataSource={executions}
+              toolbar={(
+                <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Space wrap size={[16, 12]} style={{ width: '100%' }}>
+                    <Space direction="vertical" size={4}>
+                      <Text type="secondary">Status</Text>
+                      <Select
+                        size="small"
+                        options={statusOptions}
+                        value={statusFilter}
+                        onChange={handleStatusChange}
+                        style={{ minWidth: 160 }}
+                      />
+                    </Space>
+                    <Space direction="vertical" size={4} style={{ minWidth: 320 }}>
+                      <Text type="secondary">Workflow ID</Text>
+                      <Space.Compact block>
+                        <Input
+                          allowClear
+                          placeholder="Workflow template UUID"
+                          value={workflowIdInput}
+                          onChange={handleWorkflowInputChange}
+                          onPressEnter={() => applyWorkflowFilter(workflowIdInput)}
+                          aria-label="Workflow ID filter"
+                        />
+                        <Button type="primary" onClick={() => applyWorkflowFilter(workflowIdInput)}>
+                          Apply
+                        </Button>
+                      </Space.Compact>
+                    </Space>
+                    <Button onClick={handleReset}>Reset filters</Button>
+                  </Space>
+                  <Space wrap size={[8, 8]}>
+                    <StatusBadge status="unknown" label={`Running ${statusCounts.running}`} />
+                    <StatusBadge status="unknown" label={`Pending ${statusCounts.pending}`} />
+                    <StatusBadge status="active" label={`Completed ${statusCounts.completed}`} />
+                    <StatusBadge status="error" label={`Failed ${statusCounts.failed}`} />
+                    <StatusBadge status="warning" label={`Cancelled ${statusCounts.cancelled}`} />
+                  </Space>
+                </Space>
+              )}
+              renderItem={(execution) => {
+                const selected = execution.id === selectedExecutionId
+                return (
+                  <Button
+                    key={execution.id}
+                    type="text"
+                    block
+                    data-testid={`workflow-executions-catalog-item-${execution.id}`}
+                    aria-label={`Open execution ${execution.template_name || execution.id}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      routeUpdateModeRef.current = 'push'
+                      setSelectedExecutionId(execution.id)
+                      setIsDetailDrawerOpen(true)
+                    }}
+                    style={buildCatalogButtonStyle(selected)}
+                  >
+                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                      <Space wrap size={[8, 8]}>
+                        <Text strong>{execution.template_name || 'Untitled workflow'}</Text>
+                        <StatusBadge status="unknown" label={`v${execution.template_version}`} />
+                      </Space>
+                      <Space wrap size={[8, 8]}>
+                        {buildExecutionStatusBadges(execution)}
+                      </Space>
+                      <Text type="secondary">{buildExecutionCatalogMeta(execution)}</Text>
+                      <Text type="secondary">{buildExecutionCatalogTiming(execution)}</Text>
+                      <Text type={execution.error_message ? 'danger' : 'secondary'}>
+                        {buildExecutionCatalogOutcome(execution)}
+                      </Text>
+                    </Space>
+                  </Button>
+                )
+              }}
+            />
+            <Pagination
+              size="small"
+              current={page}
+              pageSize={pageSize}
+              total={totalExecutions}
+              showSizeChanger
+              pageSizeOptions={[20, 50, 100, 200]}
+              onChange={(nextPage, nextPageSize) => {
+                if (nextPageSize !== pageSize) {
                   setPageSize(nextPageSize)
                   setPage(1)
                   return
                 }
                 setPage(nextPage)
-              },
-            }}
-            toolbar={(
-              <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                <Space wrap size={[16, 12]} style={{ width: '100%' }}>
-                  <Space direction="vertical" size={4}>
-                    <Text type="secondary">Status</Text>
-                    <Segmented
-                      size="small"
-                      options={statusOptions}
-                      value={statusFilter}
-                      onChange={handleStatusChange}
-                    />
-                  </Space>
-                  <Space direction="vertical" size={4} style={{ minWidth: 320 }}>
-                    <Text type="secondary">Workflow ID</Text>
-                    <Space.Compact block>
-                      <Input
-                        allowClear
-                        placeholder="Workflow template UUID"
-                        value={workflowIdInput}
-                        onChange={handleWorkflowInputChange}
-                        onPressEnter={() => applyWorkflowFilter(workflowIdInput)}
-                        aria-label="Workflow ID filter"
-                      />
-                      <Button type="primary" onClick={() => applyWorkflowFilter(workflowIdInput)}>
-                        Apply
-                      </Button>
-                    </Space.Compact>
-                  </Space>
-                  <Button onClick={handleReset}>Reset filters</Button>
-                </Space>
-                <Space wrap size={[8, 8]}>
-                  <StatusBadge status="unknown" label={`Running ${statusCounts.running}`} />
-                  <StatusBadge status="unknown" label={`Pending ${statusCounts.pending}`} />
-                  <StatusBadge status="active" label={`Completed ${statusCounts.completed}`} />
-                  <StatusBadge status="error" label={`Failed ${statusCounts.failed}`} />
-                  <StatusBadge status="warning" label={`Cancelled ${statusCounts.cancelled}`} />
-                </Space>
-              </Space>
-            )}
-          />
+              }}
+            />
+          </Space>
         )}
         detail={(
           <EntityDetails
@@ -666,6 +625,8 @@ const WorkflowExecutions = () => {
             ) : null}
           </EntityDetails>
         )}
+        listMinWidth={360}
+        listMaxWidth={520}
       />
     </WorkspacePage>
   )

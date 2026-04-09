@@ -3733,7 +3733,7 @@ test('UI platform: /workflows/executions keeps mobile catalog readable and opens
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 
-  await page.locator('tbody tr').filter({ hasText: WORKFLOW.name }).first().click()
+  await page.getByTestId(`workflow-executions-catalog-item-${WORKFLOW_EXECUTION_DETAIL.id}`).click()
 
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()

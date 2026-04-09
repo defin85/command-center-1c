@@ -128,6 +128,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Workflow executions master pane must stay a compact execution catalog; richer node telemetry, cancellation, and workflow handoff belong in the detail pane or execution monitor route.',
+    },
   },
   {
     routePath: '/workflows/new',

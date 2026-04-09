@@ -88,8 +88,30 @@ declare -ga SERVICE_STOP_ORDER=(
 # Порты сервисов для health check
 declare -gA SERVICE_PORTS=(
     ["orchestrator"]="${ORCHESTRATOR_PORT:-8200}"
+    ["worker"]="${WORKER_PORT:-9191}"
+    ["worker-workflows"]="${WORKER_WORKFLOWS_METRICS_PORT:-9092}"
     ["api-gateway"]="${API_GATEWAY_PORT:-8180}"
     ["frontend"]="${FRONTEND_PORT:-15173}"
+)
+
+# Health endpoints для readiness-check после старта.
+declare -gA SERVICE_HEALTH_URLS=(
+    ["orchestrator"]="http://localhost:${ORCHESTRATOR_PORT:-8200}/health"
+    ["worker"]="http://localhost:${WORKER_PORT:-9191}/health"
+    ["worker-workflows"]="http://localhost:${WORKER_WORKFLOWS_METRICS_PORT:-9092}/health"
+    ["api-gateway"]="http://localhost:${API_GATEWAY_PORT:-8180}/health"
+    ["frontend"]="http://localhost:${FRONTEND_PORT:-15173}"
+)
+
+# Таймаут готовности после старта (секунды).
+declare -gA SERVICE_START_TIMEOUT=(
+    ["orchestrator"]=20
+    ["worker"]=20
+    ["worker-workflows"]=20
+    ["api-gateway"]=20
+    ["frontend"]=30
+    ["event-subscriber"]=5
+    ["pool-outbox-dispatcher"]=5
 )
 
 # Таймаут остановки для сервисов (секунды)
@@ -232,21 +254,55 @@ start_service() {
     local pid_file="${PIDS_DIR:-pids}/${service_name}.pid"
     echo "$LAST_SERVICE_PID" > "$pid_file"
 
-    # Проверка что процесс запустился
-    sleep 2
-    if is_process_running "$LAST_SERVICE_PID"; then
-        log_success "$service_name запущен (PID: $LAST_SERVICE_PID)"
-        return 0
-    else
+    if ! _verify_service_startup "$service_name" "$LAST_SERVICE_PID"; then
         log_error "$service_name не удалось запустить"
         log_warning "Проверьте логи: $log_file"
-        rm -f "$pid_file"
+        if is_process_running "$LAST_SERVICE_PID"; then
+            stop_service "$service_name" >/dev/null 2>&1 || true
+        else
+            rm -f "$pid_file"
+        fi
         return 1
     fi
+
+    log_success "$service_name запущен (PID: $LAST_SERVICE_PID)"
+    return 0
 }
 
 # Глобальная переменная для хранения PID последнего запущенного процесса
 LAST_SERVICE_PID=""
+
+_verify_service_startup() {
+    local service_name=$1
+    local pid=$2
+    local health_url="${SERVICE_HEALTH_URLS[$service_name]:-}"
+    local timeout="${SERVICE_START_TIMEOUT[$service_name]:-10}"
+
+    if [[ -n "$health_url" ]]; then
+        if ! wait_for_service "$health_url" "$timeout" "$service_name"; then
+            if ! is_process_running "$pid"; then
+                log_error "$service_name завершился до readiness-check"
+            else
+                log_error "$service_name не прошёл readiness-check: $health_url"
+            fi
+            return 1
+        fi
+
+        if ! is_process_running "$pid"; then
+            log_error "$service_name завершился сразу после readiness-check"
+            return 1
+        fi
+        return 0
+    fi
+
+    sleep 2
+    if is_process_running "$pid"; then
+        return 0
+    fi
+
+    log_error "$service_name завершился во время запуска"
+    return 1
+}
 
 resolve_go_service_binary_target() {
     local service_name=$1
@@ -259,6 +315,19 @@ resolve_go_service_binary_target() {
             echo "$service_name"
             ;;
     esac
+}
+
+_launch_detached() {
+    local log_file=$1
+    shift
+
+    if command -v setsid >/dev/null 2>&1; then
+        nohup setsid "$@" </dev/null > "$log_file" 2>&1 &
+    else
+        nohup "$@" </dev/null > "$log_file" 2>&1 &
+    fi
+
+    LAST_SERVICE_PID=$!
 }
 
 ##############################################################################
@@ -287,12 +356,10 @@ _start_python_service() {
     case "$service_name" in
         orchestrator)
             local port="${ORCHESTRATOR_PORT:-8200}"
-            nohup daphne -b 0.0.0.0 -p "$port" config.asgi:application > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
+            _launch_detached "$log_file" daphne -b 0.0.0.0 -p "$port" config.asgi:application
             ;;
         event-subscriber)
-            nohup python manage.py run_event_subscriber > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
+            _launch_detached "$log_file" python manage.py run_event_subscriber
             ;;
         pool-outbox-dispatcher)
             local interval_seconds="${POOL_OUTBOX_DISPATCHER_INTERVAL_SECONDS:-2}"
@@ -301,13 +368,12 @@ _start_python_service() {
             local retry_base_seconds="${POOL_OUTBOX_DISPATCHER_RETRY_BASE_SECONDS:-5}"
             local retry_cap_seconds="${POOL_OUTBOX_DISPATCHER_RETRY_CAP_SECONDS:-120}"
 
-            nohup python manage.py run_pool_run_command_outbox_dispatcher \
+            _launch_detached "$log_file" python manage.py run_pool_run_command_outbox_dispatcher \
                 --interval-seconds "$interval_seconds" \
                 --heartbeat-ttl-seconds "$heartbeat_ttl_seconds" \
                 --batch-size "$batch_size" \
                 --retry-base-seconds "$retry_base_seconds" \
-                --retry-cap-seconds "$retry_cap_seconds" > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
+                --retry-cap-seconds "$retry_cap_seconds"
             ;;
         *)
             log_error "Неизвестный Python сервис: $service_name"
@@ -383,7 +449,7 @@ _start_go_service() {
         local poolops_route_rollout_percent="${WORKER_WORKFLOWS_POOLOPS_ROUTE_ROLLOUT_PERCENT:-${POOLOPS_ROUTE_ROLLOUT_PERCENT:-1.0}}"
         local publication_core_enabled="${WORKER_WORKFLOWS_ENABLE_POOL_PUBLICATION_ODATA_CORE:-${ENABLE_POOL_PUBLICATION_ODATA_CORE:-true}}"
         local publication_core_rollout_percent="${WORKER_WORKFLOWS_POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT:-${POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT:-1.0}}"
-        nohup env \
+        _launch_detached "$log_file" env \
             WORKER_ID="$worker_id" \
             WORKER_STREAM_NAME="$stream_name" \
             WORKER_CONSUMER_GROUP="$consumer_group" \
@@ -394,17 +460,16 @@ _start_go_service() {
             POOLOPS_ROUTE_ROLLOUT_PERCENT="$poolops_route_rollout_percent" \
             ENABLE_POOL_PUBLICATION_ODATA_CORE="$publication_core_enabled" \
             POOL_PUBLICATION_ODATA_CORE_ROLLOUT_PERCENT="$publication_core_rollout_percent" \
-            "$binary_path" > "$log_file" 2>&1 &
+            "$binary_path"
     elif [[ "$service_name" == "worker" ]]; then
         # Keep scheduler ownership on worker-workflows for local shell entrypoints.
         local scheduler_enabled="${WORKER_ENABLE_SCHEDULER:-false}"
-        nohup env \
+        _launch_detached "$log_file" env \
             ENABLE_GO_SCHEDULER="$scheduler_enabled" \
-            "$binary_path" > "$log_file" 2>&1 &
+            "$binary_path"
     else
-        nohup "$binary_path" > "$log_file" 2>&1 &
+        _launch_detached "$log_file" "$binary_path"
     fi
-    LAST_SERVICE_PID=$!
     return 0
 }
 
@@ -465,8 +530,7 @@ _start_frontend_service() {
         }
     fi
 
-    nohup npm run dev > "$log_file" 2>&1 &
-    LAST_SERVICE_PID=$!
+    _launch_detached "$log_file" npm run dev
 
     cd "$PROJECT_ROOT" || true
     return 0
@@ -528,8 +592,7 @@ _start_external_service() {
             local port="${RAS_PORT:-1645}"
             local ragent_host="${RAGENT_HOST:-127.0.0.1}"
             local ragent_port="${RAGENT_PORT:-1640}"
-            nohup "$ras_exe" cluster --port="$port" "${ragent_host}:${ragent_port}" > "$log_file" 2>&1 &
-            LAST_SERVICE_PID=$!
+            _launch_detached "$log_file" "$ras_exe" cluster --port="$port" "${ragent_host}:${ragent_port}"
             ;;
         *)
             log_error "Неизвестный внешний сервис: $service_name"

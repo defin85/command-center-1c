@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from django.db.models import Q
 from django.utils import timezone
 
+from apps.templates.workflow.models import WorkflowExecution
+
+from .factual_result_projection import sync_pool_factual_checkpoint_state_from_execution
 from .factual_scheduling import resolve_factual_polling_tier
 from .factual_scope_selection import (
     DEFAULT_FACTUAL_ACCOUNT_CODES,
@@ -33,6 +37,7 @@ from .models import (
 
 
 FACTUAL_WORKSPACE_ORIGIN_SYSTEM = "pools_factual_workspace"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,7 @@ def ensure_pool_factual_workspace_default_sync(
             default_entrypoint="pools_factual_workspace",
             extra_metadata=_build_activity_metadata(activity_decision=activity_decision),
         )
+        checkpoint = _reconcile_checkpoint_workflow_state(checkpoint=checkpoint)
         checkpoints.append(checkpoint)
         if not _checkpoint_requires_sync(checkpoint=checkpoint, now=timestamp, force_sync=force_sync):
             continue
@@ -157,6 +163,36 @@ def ensure_pool_factual_workspace_default_sync(
         checkpoints[-1] = result.checkpoint
 
     return tuple(checkpoints)
+
+
+def _reconcile_checkpoint_workflow_state(
+    *,
+    checkpoint: PoolFactualSyncCheckpoint,
+) -> PoolFactualSyncCheckpoint:
+    current_status = str(checkpoint.workflow_status or "").strip().lower()
+    if current_status not in {"pending", "running"} or not checkpoint.workflow_execution_id:
+        return checkpoint
+
+    execution = WorkflowExecution.objects.filter(id=checkpoint.workflow_execution_id).first()
+    if execution is None:
+        return checkpoint
+
+    execution_status = str(getattr(execution, "status", "") or "").strip().lower()
+    if execution_status in {"pending", "running"}:
+        return checkpoint
+
+    try:
+        sync_pool_factual_checkpoint_state_from_execution(execution=execution)
+    except Exception:  # pragma: no cover - defensive guard for malformed legacy executions
+        logger.warning(
+            "Failed to reconcile factual checkpoint %s from workflow execution %s",
+            checkpoint.id,
+            checkpoint.workflow_execution_id,
+            exc_info=True,
+        )
+        return checkpoint
+
+    return PoolFactualSyncCheckpoint.objects.get(id=checkpoint.id)
 
 
 def resolve_pool_factual_scope(

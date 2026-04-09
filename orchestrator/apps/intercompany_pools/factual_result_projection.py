@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -46,6 +47,7 @@ from .models import (
 
 FACTUAL_SYNC_RESULT_STEP = "factual_sync_source_slice"
 MONEY_QUANT = Decimal("0.01")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -98,14 +100,43 @@ def is_pool_factual_sync_execution(*, execution) -> bool:
     return str(input_context.get("contract_version") or "").strip() == POOL_FACTUAL_SYNC_WORKFLOW_CONTRACT
 
 
+def _resolve_factual_checkpoint_from_execution(*, execution) -> PoolFactualSyncCheckpoint | None:
+    try:
+        input_context = validate_pool_factual_sync_workflow_input_context(
+            input_context=execution.input_context or {}
+        )
+    except ValueError as exc:
+        checkpoint = (
+            PoolFactualSyncCheckpoint.objects
+            .filter(workflow_execution_id=execution.id)
+            .order_by("-updated_at")
+            .first()
+        )
+        if checkpoint is not None:
+            logger.warning(
+                "Falling back to checkpoint lookup by workflow_execution_id for factual execution %s: %s",
+                execution.id,
+                exc,
+            )
+        return checkpoint
+
+    checkpoint = PoolFactualSyncCheckpoint.objects.filter(id=input_context["checkpoint_id"]).first()
+    if checkpoint is not None:
+        return checkpoint
+
+    return (
+        PoolFactualSyncCheckpoint.objects
+        .filter(workflow_execution_id=execution.id)
+        .order_by("-updated_at")
+        .first()
+    )
+
+
 def sync_pool_factual_checkpoint_state_from_execution(*, execution) -> None:
     if not is_pool_factual_sync_execution(execution=execution):
         return
 
-    input_context = validate_pool_factual_sync_workflow_input_context(
-        input_context=execution.input_context or {}
-    )
-    checkpoint = PoolFactualSyncCheckpoint.objects.filter(id=input_context["checkpoint_id"]).first()
+    checkpoint = _resolve_factual_checkpoint_from_execution(execution=execution)
     if checkpoint is None:
         return
 
