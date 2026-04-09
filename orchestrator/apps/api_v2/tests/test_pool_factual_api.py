@@ -435,6 +435,8 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
     assert payload["summary"]["freshness_target_seconds"] == 120
     assert payload["summary"]["scope_contract"]["scope_fingerprint"] == "scope-fp-workspace"
     assert payload["summary"]["scope_contract"]["resolved_bindings"][0]["target_ref_key"] == "account-62"
+    assert len(payload["checkpoints"]) == 1
+    assert payload["checkpoints"][0]["database_name"] == database.name
     assert len(payload["settlements"]) == 2
     assert len(payload["edge_balances"]) == 1
     assert payload["review_queue"]["summary"] == {
@@ -443,6 +445,83 @@ def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_r
         "late_correction_total": 1,
         "attention_required_total": 1,
     }
+
+
+@pytest.mark.django_db
+def test_get_pool_factual_workspace_includes_failed_sync_checkpoint_diagnostics(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    pool, leaf, _edge, database = _create_pool_scope(tenant=default_tenant, suffix="workspace-sync-diagnostics")
+    factual_scope = _build_resolved_factual_scope(pool=pool, organization_ids=(str(leaf.id),))
+    ready_checkpoint = PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        workflow_status="",
+        last_synced_at=datetime(2026, 4, 9, 15, 3, 39, tzinfo=dt_timezone.utc),
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+    failed_checkpoint = PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=pool,
+        database=database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        workflow_status="failed",
+        workflow_execution_id=UUID("48d126f8-b2d0-47b6-853f-76cdebe9dcb9"),
+        operation_id=UUID("48d126f8-b2d0-47b6-853f-76cdebe9dcb9"),
+        last_error_code="POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING",
+        metadata={
+            "freshness_state": "stale",
+            "source_availability": "available",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.factual_workspace_runtime.ensure_pool_factual_workspace_default_sync",
+        return_value=(ready_checkpoint, failed_checkpoint),
+    ), patch(
+        "apps.intercompany_pools.factual_workspace_runtime.resolve_pool_factual_sync_scope_for_database",
+        return_value=factual_scope,
+    ):
+        response = authenticated_client.get(f"/api/v2/pools/factual/workspace/?pool_id={pool.id}&quarter_start=2026-04-01")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["checkpoints"]) == 2
+    assert payload["checkpoints"][0] == {
+        "checkpoint_id": str(failed_checkpoint.id),
+        "database_id": str(database.id),
+        "database_name": database.name,
+        "workflow_status": "failed",
+        "freshness_state": "stale",
+        "last_synced_at": None,
+        "last_error_code": "POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING",
+        "last_error": "",
+        "execution_id": "48d126f8-b2d0-47b6-853f-76cdebe9dcb9",
+        "operation_id": "48d126f8-b2d0-47b6-853f-76cdebe9dcb9",
+        "activity": "active",
+        "polling_tier": "active",
+        "poll_interval_seconds": 120,
+        "freshness_target_seconds": 120,
+    }
+    assert payload["checkpoints"][1]["checkpoint_id"] == str(ready_checkpoint.id)
 
 
 @pytest.mark.django_db

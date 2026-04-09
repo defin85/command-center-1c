@@ -203,12 +203,13 @@ export function PoolFactualWorkspacePage() {
       <Alert
         type="info"
         showIcon
-        message="Execution diagnostics stay in Pool Runs"
+        message="Run-local execution controls stay in Pool Runs"
         description={(
           <Space direction="vertical" size={8}>
             <Text>
               Use this workspace for factual summary, settlement handoff, and manual review. Create-run, approvals,
-              retry, lineage, and runtime diagnostics remain in the execution-centric Pool Runs surface.
+              retry, and run lineage remain in the execution-centric Pool Runs surface, while factual sync checkpoints
+              keep only secondary workflow and operations handoff here.
             </Text>
             <Space wrap>
               <RouteButton to={runWorkspaceHref}>Return to execution lineage</RouteButton>

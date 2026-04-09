@@ -7,6 +7,7 @@ import {
   type OrganizationPool,
   type PoolBatch,
   type PoolFactualEdgeBalance,
+  type PoolFactualRefreshCheckpoint,
   type PoolFactualRefreshResponse,
   type PoolFactualReviewQueue,
   type PoolFactualReviewQueueItem,
@@ -145,6 +146,36 @@ const getRefreshCopy = (refreshState: PoolFactualRefreshCardState | null) => {
   return `${refreshState.checkpointsRunning} running, ${refreshState.checkpointsPending} pending, ${refreshState.checkpointsFailed} failed, ${refreshState.checkpointsReady} ready checkpoint(s).`
 }
 
+const getSyncCheckpointTone = (checkpoint: PoolFactualRefreshCheckpoint) => {
+  switch (checkpoint.workflow_status) {
+    case 'running':
+    case 'pending':
+      return 'warning'
+    case 'failed':
+      return 'error'
+    case '':
+      return 'active'
+    default:
+      return 'unknown'
+  }
+}
+
+const getSyncCheckpointStatusLabel = (checkpoint: PoolFactualRefreshCheckpoint) => (
+  checkpoint.workflow_status.trim() || 'ready'
+)
+
+const getSyncCheckpointDatabaseLabel = (checkpoint: PoolFactualRefreshCheckpoint) => (
+  checkpoint.database_name?.trim() || `Database ${formatShortId(checkpoint.database_id)}`
+)
+
+const buildWorkflowExecutionDetailsHref = (executionId: string) => (
+  `/workflows/executions?execution=${encodeURIComponent(executionId)}&detail=1`
+)
+
+const buildOperationMonitorHref = (operationId: string) => (
+  `/operations?operation=${encodeURIComponent(operationId)}&tab=monitor`
+)
+
 const getCarryForwardSummary = (row: PoolBatch) => {
   const carryForward = row.settlement?.summary?.carry_forward
   if (!carryForward || typeof carryForward !== 'object') {
@@ -268,6 +299,7 @@ export function PoolFactualWorkspaceDetail({
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const [refreshingWorkspace, setRefreshingWorkspace] = useState(false)
   const [refreshState, setRefreshState] = useState<PoolFactualRefreshCardState | null>(null)
+  const [syncCheckpoints, setSyncCheckpoints] = useState<PoolFactualRefreshCheckpoint[]>([])
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [reviewActionError, setReviewActionError] = useState<string | null>(null)
   const [pendingReviewItemId, setPendingReviewItemId] = useState<string | null>(null)
@@ -275,6 +307,7 @@ export function PoolFactualWorkspaceDetail({
 
   useEffect(() => {
     setRefreshState(null)
+    setSyncCheckpoints([])
     setRefreshError(null)
   }, [quarterStart, selectedPool.id])
 
@@ -300,6 +333,7 @@ export function PoolFactualWorkspaceDetail({
           return
         }
         setWorkspace(data)
+        setSyncCheckpoints(data.checkpoints ?? [])
         setRefreshState((current) => {
           const next = buildRefreshStateFromSummary(
             data.summary,
@@ -314,6 +348,7 @@ export function PoolFactualWorkspaceDetail({
         const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
         setWorkspaceError(resolved.message)
         if (!background) {
+          setSyncCheckpoints([])
           setWorkspace(null)
         }
       } finally {
@@ -351,6 +386,7 @@ export function PoolFactualWorkspaceDetail({
             return
           }
           setWorkspace(data)
+          setSyncCheckpoints(data.checkpoints ?? [])
           setRefreshState((current) => {
             const next = buildRefreshStateFromSummary(
               data.summary,
@@ -379,6 +415,7 @@ export function PoolFactualWorkspaceDetail({
         pool_id: selectedPool.id,
         quarter_start: quarterStart ?? undefined,
       })
+      setSyncCheckpoints(response.checkpoints ?? [])
       setRefreshState(buildRefreshStateFromResponse(response))
     } catch (error) {
       const resolved = resolveApiError(error, 'Failed to refresh factual workspace sync.')
@@ -795,6 +832,83 @@ export function PoolFactualWorkspaceDetail({
           </div>
         </div>
       </div>
+
+      {syncCheckpoints.length > 0 ? (
+        <div
+          style={{
+            border: '1px solid #f0f0f0',
+            borderRadius: 12,
+            padding: 16,
+            background: '#fff',
+          }}
+        >
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Space direction="vertical" size={4}>
+              <Text strong>Sync diagnostics</Text>
+              <Text type="secondary">
+                Secondary workflow and operations handoff for factual sync checkpoints stays local to this workspace.
+              </Text>
+            </Space>
+
+            {syncCheckpoints.map((checkpoint) => (
+              <div
+                key={checkpoint.checkpoint_id}
+                style={{
+                  border: '1px solid #f0f0f0',
+                  borderRadius: 12,
+                  padding: 12,
+                  background: '#fafafa',
+                }}
+              >
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space wrap>
+                    <Text strong>{getSyncCheckpointDatabaseLabel(checkpoint)}</Text>
+                    <StatusBadge
+                      status={getSyncCheckpointTone(checkpoint)}
+                      label={getSyncCheckpointStatusLabel(checkpoint)}
+                    />
+                    <Text code>{formatShortId(checkpoint.checkpoint_id)}</Text>
+                  </Space>
+
+                  <Text type="secondary">
+                    {checkpoint.last_error_code
+                      ? `Error ${checkpoint.last_error_code}${checkpoint.last_error ? ` · ${checkpoint.last_error}` : ''}`
+                      : checkpoint.last_synced_at
+                        ? `Last sync ${formatTimestamp(checkpoint.last_synced_at)}`
+                        : 'No sync error recorded for this checkpoint.'}
+                  </Text>
+
+                  <Space wrap>
+                    {checkpoint.execution_id ? (
+                      <RouteButton
+                        size="small"
+                        aria-label={`Open workflow execution ${checkpoint.execution_id}`}
+                        to={buildWorkflowExecutionDetailsHref(checkpoint.execution_id)}
+                      >
+                        Workflow execution {formatShortId(checkpoint.execution_id)}
+                      </RouteButton>
+                    ) : (
+                      <Text type="secondary">No workflow execution linked.</Text>
+                    )}
+
+                    {checkpoint.operation_id ? (
+                      <RouteButton
+                        size="small"
+                        aria-label={`Open operation monitor ${checkpoint.operation_id}`}
+                        to={buildOperationMonitorHref(checkpoint.operation_id)}
+                      >
+                        Operation {formatShortId(checkpoint.operation_id)}
+                      </RouteButton>
+                    ) : (
+                      <Text type="secondary">No operation projection linked.</Text>
+                    )}
+                  </Space>
+                </Space>
+              </div>
+            ))}
+          </Space>
+        </div>
+      ) : null}
 
       <EntityTable
         title="Batch settlement"

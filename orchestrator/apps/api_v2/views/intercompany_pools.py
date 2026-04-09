@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from typing import Any
 from uuid import UUID, uuid4
 
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -2316,6 +2316,10 @@ def _serialize_pool_factual_balance_snapshot(snapshot: PoolFactualBalanceSnapsho
 
 def _serialize_pool_factual_refresh_checkpoint(checkpoint: PoolFactualSyncCheckpoint) -> dict[str, Any]:
     metadata = checkpoint.metadata if isinstance(checkpoint.metadata, dict) else {}
+    try:
+        database_name = str(getattr(checkpoint.database, "name", "") or "").strip()
+    except ObjectDoesNotExist:
+        database_name = ""
 
     def _coerce_positive_int(raw_value: object, *, default: int) -> int:
         try:
@@ -2327,6 +2331,7 @@ def _serialize_pool_factual_refresh_checkpoint(checkpoint: PoolFactualSyncCheckp
     return {
         "checkpoint_id": str(checkpoint.id),
         "database_id": str(checkpoint.database_id),
+        "database_name": database_name,
         "workflow_status": str(checkpoint.workflow_status or "").strip(),
         "freshness_state": str(metadata.get("freshness_state") or "").strip(),
         "last_synced_at": checkpoint.last_synced_at,
@@ -2347,6 +2352,30 @@ def _serialize_pool_factual_refresh_checkpoint(checkpoint: PoolFactualSyncCheckp
     }
 
 
+_POOL_FACTUAL_SYNC_DIAGNOSTICS_STATUS_ORDER = {
+    "running": 0,
+    "pending": 1,
+    "failed": 2,
+}
+
+
+def _serialize_pool_factual_sync_checkpoints(
+    checkpoints: list[PoolFactualSyncCheckpoint],
+) -> list[dict[str, Any]]:
+    ordered = sorted(checkpoints, key=_pool_factual_checkpoint_sort_key, reverse=True)
+    ordered = sorted(
+        ordered,
+        key=lambda checkpoint: _POOL_FACTUAL_SYNC_DIAGNOSTICS_STATUS_ORDER.get(
+            str(checkpoint.workflow_status or "").strip(),
+            3,
+        ),
+    )
+    return [
+        _serialize_pool_factual_refresh_checkpoint(checkpoint)
+        for checkpoint in ordered
+    ]
+
+
 def _build_pool_factual_refresh_response(
     *,
     pool: OrganizationPool,
@@ -2355,10 +2384,7 @@ def _build_pool_factual_refresh_response(
     activity_decision,
     checkpoints: list[PoolFactualSyncCheckpoint],
 ) -> dict[str, Any]:
-    serialized_checkpoints = [
-        _serialize_pool_factual_refresh_checkpoint(checkpoint)
-        for checkpoint in checkpoints
-    ]
+    serialized_checkpoints = _serialize_pool_factual_sync_checkpoints(checkpoints)
     sync_status = _summarize_pool_factual_sync_status(serialized_checkpoints=serialized_checkpoints)
     return {
         "pool_id": str(pool.id),
@@ -2498,10 +2524,7 @@ def _build_pool_factual_workspace_summary(
     if not isinstance(review_summary, dict):
         review_summary = {}
     read_summary = build_pool_factual_read_summary(checkpoints=checkpoints, now=timezone.now())
-    serialized_checkpoints = [
-        _serialize_pool_factual_refresh_checkpoint(checkpoint)
-        for checkpoint in checkpoints
-    ]
+    serialized_checkpoints = _serialize_pool_factual_sync_checkpoints(checkpoints)
     sync_status = _summarize_pool_factual_sync_status(serialized_checkpoints=serialized_checkpoints)
     review_attention_required_total = int(review_summary.get("attention_required_total") or 0)
     checkpoint_summary = _summarize_pool_factual_checkpoints(
@@ -3510,14 +3533,6 @@ class PoolFactualReviewQueueSerializer(serializers.Serializer):
     items = PoolFactualReviewQueueItemSerializer(many=True)
 
 
-class PoolFactualWorkspaceResponseSerializer(serializers.Serializer):
-    pool_id = serializers.UUIDField()
-    summary = PoolFactualSummarySerializer()
-    settlements = PoolBatchSerializer(many=True)
-    edge_balances = PoolFactualBalanceSnapshotSerializer(many=True)
-    review_queue = PoolFactualReviewQueueSerializer()
-
-
 class PoolFactualRefreshRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
     quarter_start = serializers.DateField(required=False, allow_null=True)
@@ -3534,6 +3549,7 @@ class PoolFactualRefreshRequestSerializer(serializers.Serializer):
 class PoolFactualRefreshCheckpointSerializer(serializers.Serializer):
     checkpoint_id = serializers.UUIDField()
     database_id = serializers.UUIDField()
+    database_name = serializers.CharField(required=False, allow_blank=True)
     workflow_status = serializers.CharField()
     freshness_state = serializers.CharField(required=False, allow_blank=True)
     last_synced_at = serializers.DateTimeField(required=False, allow_null=True)
@@ -3545,6 +3561,15 @@ class PoolFactualRefreshCheckpointSerializer(serializers.Serializer):
     polling_tier = serializers.CharField()
     poll_interval_seconds = serializers.IntegerField(min_value=1)
     freshness_target_seconds = serializers.IntegerField(min_value=1)
+
+
+class PoolFactualWorkspaceResponseSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    summary = PoolFactualSummarySerializer()
+    checkpoints = PoolFactualRefreshCheckpointSerializer(many=True)
+    settlements = PoolBatchSerializer(many=True)
+    edge_balances = PoolFactualBalanceSnapshotSerializer(many=True)
+    review_queue = PoolFactualReviewQueueSerializer()
 
 
 class PoolFactualRefreshResponseSerializer(serializers.Serializer):
@@ -6248,6 +6273,7 @@ def get_pool_factual_workspace(request):
             lane=PoolFactualLane.READ,
             quarter_start=quarter_start,
         )
+        .select_related("database")
         .order_by("-last_synced_at", "-updated_at")
     )
     review_items = list(
@@ -6268,6 +6294,7 @@ def get_pool_factual_workspace(request):
             checkpoints=checkpoints,
             review_queue=review_queue,
         ),
+        "checkpoints": _serialize_pool_factual_sync_checkpoints(checkpoints),
         "settlements": [_serialize_pool_batch(batch) for batch in batches],
         "edge_balances": [_serialize_pool_factual_balance_snapshot(snapshot) for snapshot in edge_balances],
         "review_queue": review_queue,

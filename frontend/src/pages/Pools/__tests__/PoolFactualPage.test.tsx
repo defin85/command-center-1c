@@ -100,6 +100,24 @@ function buildReviewQueue(items?: PoolFactualReviewQueueItem[]): PoolFactualRevi
 function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFactualWorkspace {
   const poolId = overrides.pool_id ?? '11111111-1111-1111-1111-111111111111'
   const reviewQueue = overrides.review_queue ?? buildReviewQueue()
+  const checkpoints = overrides.checkpoints ?? [
+    {
+      checkpoint_id: 'checkpoint-ready-1',
+      database_id: 'database-1',
+      database_name: 'Pool factual DB 1',
+      workflow_status: '',
+      freshness_state: 'fresh',
+      last_synced_at: '2026-03-27T10:00:00Z',
+      last_error_code: '',
+      last_error: '',
+      execution_id: null,
+      operation_id: null,
+      activity: 'active',
+      polling_tier: 'active',
+      poll_interval_seconds: 120,
+      freshness_target_seconds: 120,
+    },
+  ]
   const settlements = overrides.settlements ?? [
     {
       id: 'batch-receipt-1',
@@ -264,6 +282,7 @@ function buildWorkspace(overrides: Partial<PoolFactualWorkspace> = {}): PoolFact
       settlement_total: settlements.length,
       checkpoint_total: 1,
     },
+    checkpoints,
     settlements,
     edge_balances: [
       {
@@ -314,6 +333,7 @@ function buildRefreshResponse(
       {
         checkpoint_id: 'checkpoint-1',
         database_id: 'database-1',
+        database_name: 'Pool factual DB 1',
         workflow_status: 'running',
         freshness_state: 'stale',
         last_synced_at: '2026-03-27T10:00:00Z',
@@ -560,6 +580,47 @@ describe('PoolFactualPage', () => {
     expect(screen.getByRole('button', { name: 'Refresh factual sync' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create / Upsert Run' })).not.toBeInTheDocument()
     expect(screen.queryByText('Create Run')).not.toBeInTheDocument()
+  })
+
+  it('shows factual sync checkpoint diagnostics with workflow and operations handoff', async () => {
+    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
+      summary: {
+        ...buildWorkspace().summary,
+        sync_status: 'failed',
+        checkpoints_failed: 1,
+        checkpoints_ready: 0,
+        checkpoint_total: 1,
+        backlog_total: 1,
+        freshness_state: 'stale',
+      },
+      checkpoints: [
+        {
+          checkpoint_id: 'checkpoint-failed-1',
+          database_id: 'database-1',
+          database_name: 'Pool factual DB 1',
+          workflow_status: 'failed',
+          freshness_state: 'stale',
+          last_synced_at: null,
+          last_error_code: 'POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING',
+          last_error: '',
+          execution_id: 'execution-failed-1',
+          operation_id: 'operation-failed-1',
+          activity: 'active',
+          polling_tier: 'active',
+          poll_interval_seconds: 120,
+          freshness_target_seconds: 120,
+        },
+      ],
+    }))
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
+
+    await screen.findByText('Sync diagnostics')
+    expect(screen.getByText('Pool factual DB 1')).toBeInTheDocument()
+    expect(screen.getByText('Error POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open workflow execution execution-failed-1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open operation monitor operation-failed-1' })).toBeInTheDocument()
   })
 
   it('lets the operator trigger a shipped factual refresh path from the workspace', async () => {

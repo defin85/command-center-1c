@@ -752,6 +752,7 @@ export type PoolFactualReviewQueue = {
 export type PoolFactualWorkspace = {
   pool_id: string
   summary: PoolFactualSummary
+  checkpoints: PoolFactualRefreshCheckpoint[]
   settlements: PoolBatch[]
   edge_balances: PoolFactualEdgeBalance[]
   review_queue: PoolFactualReviewQueue
@@ -767,6 +768,7 @@ export type PoolFactualRefreshStatus = 'idle' | 'pending' | 'running' | 'success
 export type PoolFactualRefreshCheckpoint = {
   checkpoint_id: string
   database_id: string
+  database_name?: string
   workflow_status: string
   freshness_state?: string
   last_synced_at?: string | null
