@@ -1,5 +1,5 @@
-import { Grid, Modal, Space, Typography } from 'antd'
-import type { ReactNode } from 'react'
+import { Button, Grid, Modal, Space, Typography, type ButtonProps } from 'antd'
+import type { CSSProperties, ReactNode } from 'react'
 import { trackUiAction } from '../../observability/uiActionJournal'
 import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
@@ -14,10 +14,15 @@ type ModalFormShellProps = {
   title?: ReactNode
   subtitle?: ReactNode
   submitText?: ReactNode
+  cancelText?: ReactNode
   confirmLoading?: boolean
   width?: number
   submitButtonTestId?: string
   forceRender?: boolean
+  destroyOnHidden?: boolean
+  submitDisabled?: boolean
+  footerStart?: ReactNode
+  bodyStyle?: CSSProperties
   children: ReactNode
 }
 
@@ -28,10 +33,15 @@ export function ModalFormShell({
   title,
   subtitle,
   submitText = 'Save',
+  cancelText = 'Cancel',
   confirmLoading = false,
   width = 880,
   submitButtonTestId,
   forceRender = false,
+  destroyOnHidden = true,
+  submitDisabled = false,
+  footerStart,
+  bodyStyle,
   children,
 }: ModalFormShellProps) {
   const screens = useBreakpoint()
@@ -58,23 +68,56 @@ export function ModalFormShell({
     title,
     subtitle,
   ) ?? 'Modal submit'
+  const handleSubmit = onSubmit
+    ? () => trackUiAction({
+      actionKind: 'modal.submit',
+      actionName,
+    }, () => onSubmit())
+    : undefined
+  const okButtonProps: ButtonProps | undefined = submitButtonTestId || submitDisabled
+    ? {
+      ...(submitButtonTestId ? { 'data-testid': submitButtonTestId } : {}),
+      disabled: submitDisabled,
+    }
+    : undefined
+  const customFooter = footerStart ? (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <Space size="small" wrap>{footerStart}</Space>
+      <Space size="small" wrap>
+        <Button onClick={onClose}>{cancelText}</Button>
+        {onSubmit ? (
+          <Button
+            type="primary"
+            loading={confirmLoading}
+            disabled={submitDisabled}
+            onClick={() => {
+              void handleSubmit?.()
+            }}
+            data-testid={submitButtonTestId}
+          >
+            {submitText}
+          </Button>
+        ) : null}
+      </Space>
+    </div>
+  ) : undefined
 
   return (
     <Modal
       open={open}
       title={modalTitle}
       onCancel={onClose}
-      onOk={onSubmit ? () => trackUiAction({
-        actionKind: 'modal.submit',
-        actionName,
-      }, () => onSubmit()) : undefined}
+      onOk={customFooter ? undefined : handleSubmit}
       okText={submitText}
+      cancelText={cancelText}
       confirmLoading={confirmLoading}
       forceRender={forceRender}
-      destroyOnHidden
-      okButtonProps={submitButtonTestId ? { 'data-testid': submitButtonTestId } : undefined}
+      destroyOnHidden={destroyOnHidden}
+      footer={customFooter}
+      okButtonProps={okButtonProps}
       width={isNarrow ? 'calc(100vw - 24px)' : width}
       style={isNarrow ? { top: 12, paddingBottom: 12 } : undefined}
+      styles={bodyStyle ? { body: bodyStyle } : undefined}
     >
       {children}
     </Modal>

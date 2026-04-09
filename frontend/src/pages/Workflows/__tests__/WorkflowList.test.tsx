@@ -184,9 +184,9 @@ describe('WorkflowList', () => {
 
     renderPage('/workflows?database_id=22222222-2222-2222-2222-222222222222').renderDefault()
 
-    const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
-    expect(link).toHaveAttribute(
-      'href',
+    fireEvent.click(await screen.findByTestId('workflow-list-detail-open'))
+
+    expect(mockNavigate).toHaveBeenCalledWith(
       '/workflows/workflow-1?database_id=22222222-2222-2222-2222-222222222222&returnTo=%2Fworkflows%3Fdatabase_id%3D22222222-2222-2222-2222-222222222222%26workflow%3Dworkflow-1%26detail%3D1'
     )
   })
@@ -246,11 +246,7 @@ describe('WorkflowList', () => {
       }))
     })
 
-    const link = await screen.findByRole('link', { name: 'Decision-aware Workflow' })
-    expect(link).toHaveAttribute(
-      'href',
-      `/workflows/workflow-1?returnTo=${encodeURIComponent(`/workflows?${params.toString()}`)}`
-    )
+    expect(await screen.findByTestId('workflow-list-catalog-item-workflow-1')).toBeInTheDocument()
   })
 
   it('restores selected workflow detail from the route state', async () => {

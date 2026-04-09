@@ -361,15 +361,13 @@ export const buildExecutorKindOptionsForSurface = (
     })
 }
 
-export function OperationExposureEditorModal({
+export function useOperationExposureEditorSurface({
   open,
-  title,
   surface,
   form,
   initialValues,
   templateProvenance,
   backendValidationErrors,
-  onCancel,
   onApply,
   executorKindOptions,
 }: OperationExposureEditorModalProps) {
@@ -786,59 +784,38 @@ export function OperationExposureEditorModal({
     </Text>
   )
 
-  const footer = (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Space>
-        <Button size="small" onClick={handleOpenPreviewTab} data-testid="action-catalog-editor-open-preview-tab">
-          Preview
-        </Button>
-        <Button size="small" onClick={handleCopyPreviewJson} data-testid="action-catalog-editor-copy-json">
-          Copy JSON
-        </Button>
-        <Button size="small" onClick={handleResetForm} data-testid="action-catalog-editor-reset-form">
-          Reset
-        </Button>
-      </Space>
-      <Space>
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button
-          type="primary"
-          onClick={async () => {
-            try {
-              await form.validateFields()
-              setLocalValidationIssues([])
-              onApply()
-            } catch (error) {
-              const localIssues = extractLocalValidationIssues(error)
-              setLocalValidationIssues(localIssues)
-              const nextTab = resolveFirstErrorTab(error)
-              if (nextTab) {
-                setActiveTabKey(nextTab)
-                message.error('Fix validation errors before save')
-                return
-              }
-              message.error('Save failed')
-            }
-          }}
-          data-testid="action-catalog-editor-apply"
-          disabled={targetBindingMissingRequired}
-        >
-          Save
-        </Button>
-      </Space>
-    </div>
+  const footerStart = (
+    <>
+      <Button size="small" onClick={handleOpenPreviewTab} data-testid="action-catalog-editor-open-preview-tab">
+        Preview
+      </Button>
+      <Button size="small" onClick={handleCopyPreviewJson} data-testid="action-catalog-editor-copy-json">
+        Copy JSON
+      </Button>
+      <Button size="small" onClick={handleResetForm} data-testid="action-catalog-editor-reset-form">
+        Reset
+      </Button>
+    </>
   )
+  const handleSubmit = async () => {
+    try {
+      await form.validateFields()
+      setLocalValidationIssues([])
+      onApply()
+    } catch (error) {
+      const localIssues = extractLocalValidationIssues(error)
+      setLocalValidationIssues(localIssues)
+      const nextTab = resolveFirstErrorTab(error)
+      if (nextTab) {
+        setActiveTabKey(nextTab)
+        message.error('Fix validation errors before save')
+        return
+      }
+      message.error('Save failed')
+    }
+  }
 
-  return (
-    <Modal
-      title={title}
-      open={open}
-      onCancel={onCancel}
-      footer={footer}
-      destroyOnHidden={false}
-      forceRender
-      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
-    >
+  const content = (
       <Form<ActionFormValues>
         form={form}
         layout="vertical"
@@ -1658,6 +1635,48 @@ export function OperationExposureEditorModal({
           />
         )}
       </Form>
+  )
+
+  return {
+    content,
+    footerStart,
+    handleSubmit,
+    submitDisabled: targetBindingMissingRequired,
+  }
+}
+
+export function OperationExposureEditorModal(props: OperationExposureEditorModalProps) {
+  const surface = useOperationExposureEditorSurface(props)
+  const footer = (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Space>{surface.footerStart}</Space>
+      <Space>
+        <Button onClick={props.onCancel}>Cancel</Button>
+        <Button
+          type="primary"
+          onClick={() => {
+            void surface.handleSubmit()
+          }}
+          data-testid="action-catalog-editor-apply"
+          disabled={surface.submitDisabled}
+        >
+          Save
+        </Button>
+      </Space>
+    </div>
+  )
+
+  return (
+    <Modal
+      title={props.title}
+      open={props.open}
+      onCancel={props.onCancel}
+      footer={footer}
+      destroyOnHidden={false}
+      forceRender
+      styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+    >
+      {surface.content}
     </Modal>
   )
 }

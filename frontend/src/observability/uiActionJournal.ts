@@ -1018,13 +1018,6 @@ class UiActionJournal {
     return this.activeActions.find((action) => action.ui_action_id === uiActionId)
   }
 
-  private getCurrentContextAction(): ActiveActionContext | null {
-    if (this.currentExecutionActionId) {
-      return this.findActiveAction(this.currentExecutionActionId) ?? null
-    }
-    return this.getCurrentAction()
-  }
-
   private getCurrentContextActionId(): string | null {
     return this.currentExecutionActionId ?? this.getCurrentAction()?.ui_action_id ?? null
   }

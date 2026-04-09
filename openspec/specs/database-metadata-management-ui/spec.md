@@ -69,6 +69,8 @@ Route ДОЛЖЕН (SHALL) сохранять selected database и active manage
 
 Primary edit/inspection flows НЕ ДОЛЖНЫ (SHALL NOT) оставаться набором конкурирующих raw drawers/modals без общего platform shell. Для canonical management path должны использоваться `DrawerFormShell`, `ModalFormShell` или явный route handoff в canonical surface.
 
+Desktop master pane ДОЛЖЕН (SHALL) оставаться compact database catalog, где выбор базы возможен без wide multi-column grid как основного operator path. Rich operational density, bulk-edit heavy controls и metadata-rich tables ДОЛЖНЫ (SHALL) жить в detail/secondary surfaces или включаться по явному operator intent, а не как default master-pane canvas.
+
 #### Scenario: Оператор возвращается к выбранной ИБ и management context после reload
 - **GIVEN** оператор открыл конкретную ИБ и metadata management context на `/databases`
 - **WHEN** страница перезагружается или оператор использует browser back/forward
@@ -80,4 +82,10 @@ Primary edit/inspection flows НЕ ДОЛЖНЫ (SHALL NOT) оставаться
 - **WHEN** он открывает metadata management, DBMS metadata или connection profile flow
 - **THEN** UI использует единый canonical secondary surface pattern или явный handoff
 - **AND** оператор не сталкивается с несколькими конкурирующими page-level modal/drawer paradigms внутри одного route
+
+#### Scenario: Master pane остаётся компактным каталогом баз
+- **GIVEN** оператор открывает `/databases` на desktop viewport
+- **WHEN** он просматривает и выбирает ИБ в master pane
+- **THEN** master pane остаётся компактным catalog/selection surface
+- **AND** route не требует wide grid с горизонтальным скроллом как default способ выбора базы
 

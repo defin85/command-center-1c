@@ -115,6 +115,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Workflow library master pane must stay a compact workflow selection catalog; dense diagnostics and primary handoff actions belong in the detail pane or explicit route handoff.',
+    },
   },
   {
     routePath: '/workflows/executions',
@@ -160,6 +164,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    masterPaneGovernance: {
+      mode: 'compact-selection',
+      reason: 'Templates route master pane must stay a compact template catalog; provenance, publish posture, and richer execution contract belong in the detail pane or dedicated secondary surfaces.',
+    },
   },
   {
     routePath: '/decisions',
@@ -395,6 +403,12 @@ export const shellSurfaceGovernanceInventory = [
     tier: 'platform-governed',
     shellKinds: ['drawer'],
     ownerRoutes: ['/extensions'],
+  },
+  {
+    filePath: 'src/pages/Templates/TemplateOperationExposureEditorModal.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/templates'],
   },
   {
     filePath: 'src/pages/Pools/masterData/GLAccountsTab.tsx',

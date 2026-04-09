@@ -1,38 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   App,
   Alert,
   Button,
   Descriptions,
+  Input,
+  Pagination,
   Popconfirm,
   Space,
   Tag,
-  Tooltip,
   Typography,
 } from 'antd'
 import {
   ClockCircleOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getV2 } from '../../api/generated'
 import type { WorkflowTemplateDetail, WorkflowTemplateList } from '../../api/generated/model'
 import {
   EntityDetails,
+  EntityList,
   JsonBlock,
   MasterDetailShell,
   PageHeader,
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
-import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import type { TableFilters, TableSortState } from '../../components/table/types'
 import {
@@ -93,6 +89,23 @@ const countRawRouteFilterKeys = (rawValue: string | null): number => {
 const formatDateTime = (value: string | null | undefined) => (
   value ? new Date(value).toLocaleString() : '—'
 )
+
+const formatCompactDateTime = (value: string | null | undefined) => (
+  value ? new Date(value).toLocaleDateString() : '—'
+)
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  width: '100%',
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
 
 const buildWorkflowHref = (
   id: string,
@@ -286,122 +299,9 @@ const WorkflowList = () => {
     }))
   }, [buildWorkflowLibraryHref, decisionDatabaseId, navigate])
 
-  const columns: ColumnsType<WorkflowTemplateList> = useMemo(() => ([
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (name, record) => (
-        <Space wrap size={8}>
-          <Link to={buildWorkflowHref(record.id, {
-            isSystemManaged: record.is_system_managed,
-            databaseId: decisionDatabaseId,
-            returnTo: buildWorkflowLibraryHref({ workflowId: record.id, detailOpen: true }),
-          })}>
-            {name}
-          </Link>
-          {record.is_system_managed ? <Tag color="gold">System managed</Tag> : null}
-        </Space>
-      ),
-    },
-    {
-      title: 'Type',
-      dataIndex: 'workflow_type',
-      key: 'workflow_type',
-      render: (type) => <Tag color={workflowTypeColors[String(type)] || 'default'}>{String(type || 'unknown')}</Tag>,
-    },
-    {
-      title: 'Status',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (_value, record) => renderStatusSummary(record),
-    },
-    {
-      title: 'Nodes',
-      key: 'node_count',
-      dataIndex: 'node_count',
-      render: (count) => count ?? 0,
-    },
-    {
-      title: 'Updated',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      render: (date) => new Date(date).toLocaleDateString(),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_value, record) => (
-        <Space>
-          <Tooltip title={record.is_system_managed ? 'Inspect read-only runtime projection' : 'Edit'}>
-            <Button
-              icon={<EditOutlined />}
-              size="small"
-              aria-label={record.is_system_managed ? 'Inspect workflow' : 'Edit workflow'}
-              onClick={(event) => {
-                event.stopPropagation()
-                openWorkflow(record.id, record.is_system_managed)
-              }}
-            />
-          </Tooltip>
-          {!record.is_system_managed ? (
-            <>
-              <Tooltip title="Clone">
-                <Button
-                  icon={<CopyOutlined />}
-                  size="small"
-                  aria-label="Clone scheme"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void handleClone(record.id, record.name)
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title="Execute">
-                <Button
-                  icon={<PlayCircleOutlined />}
-                  size="small"
-                  aria-label="Execute workflow"
-                  disabled={!record.is_valid}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    navigate(buildWorkflowHref(record.id, {
-                      databaseId: decisionDatabaseId,
-                      execute: true,
-                      returnTo: buildWorkflowLibraryHref({ workflowId: record.id, detailOpen: true }),
-                    }))
-                  }}
-                />
-              </Tooltip>
-              <Popconfirm
-                title="Delete workflow?"
-                description="This action cannot be undone."
-                onConfirm={() => handleDelete(record.id)}
-                okText="Delete"
-                okButtonProps={{ danger: true }}
-              >
-                <Tooltip title="Delete">
-                  <Button
-                    icon={<DeleteOutlined />}
-                    size="small"
-                    danger
-                    aria-label="Delete workflow"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                    }}
-                  />
-                </Tooltip>
-              </Popconfirm>
-            </>
-          ) : null}
-        </Space>
-      ),
-    },
-  ]), [buildWorkflowLibraryHref, decisionDatabaseId, handleClone, handleDelete, navigate, openWorkflow])
-
   const table = useTableToolkit({
     tableId: 'workflows',
-    columns,
+    columns: [],
     fallbackColumns: fallbackColumnConfigs,
     initialSearch: searchFromUrl,
     initialFiltersRaw: rawFiltersFromUrl,
@@ -663,8 +563,46 @@ const WorkflowList = () => {
   const detailError = selectedWorkflowId && !selectedWorkflow && selectedWorkflowDetailQuery.isError
     ? 'Failed to load the selected workflow.'
     : null
+  const catalogError = workflowsQuery.isError
+    ? 'Failed to load workflow catalog.'
+    : null
   const selectedWorkflowNodeCount = resolveNodeCount(selectedWorkflowSummary, selectedWorkflowDetail)
   const selectedWorkflowExecutionCount = selectedWorkflowDetail?.execution_count ?? selectedWorkflowSummary?.execution_count ?? 0
+  const activeFilterSummaries = useMemo(() => (
+    table.filterConfigs.flatMap((config) => {
+      const value = table.filters[config.key]
+      if (!hasRouteFilterValue(value)) {
+        return []
+      }
+      return `${config.label}: ${Array.isArray(value) ? value.join(', ') : String(value)}`
+    })
+  ), [table.filterConfigs, table.filters])
+  const activeSortSummary = useMemo(() => {
+    if (!table.sort.key || !table.sort.order) {
+      return null
+    }
+    const config = table.columnConfigs.find((item) => item.key === table.sort.key)
+    const label = config?.label || table.sort.key
+    return `${label}: ${table.sort.order === 'asc' ? 'ascending' : 'descending'}`
+  }, [table.columnConfigs, table.sort.key, table.sort.order])
+  const catalogStateToolbar = activeFilterSummaries.length > 0 || activeSortSummary
+    ? (
+      <Alert
+        type="info"
+        showIcon
+        message="Route filters active"
+        description={(
+          <Space wrap size={[8, 8]}>
+            {activeFilterSummaries.map((summary) => (
+              <Tag key={summary}>{summary}</Tag>
+            ))}
+            {activeSortSummary ? <Tag color="blue">{activeSortSummary}</Tag> : null}
+          </Space>
+        )}
+        style={{ marginBottom: 16 }}
+      />
+    )
+    : null
 
   return (
     <WorkspacePage
@@ -765,30 +703,83 @@ const WorkflowList = () => {
         }}
         detailDrawerTitle={selectedWorkflow?.name || 'Workflow detail'}
         list={(
-          <EntityDetails title="Catalog">
-            <div style={{ width: '100%', minWidth: 0, overflowX: 'auto' }}>
-              <TableToolkit
-                table={table}
-                data={workflows}
-                total={totalWorkflows}
-                loading={workflowsQuery.isLoading}
-                rowKey="id"
-                columns={columns}
-                searchPlaceholder="Search workflow schemes"
-                onRow={(record) => ({
-                  onClick: () => {
-                    routeUpdateModeRef.current = 'push'
-                    setSelectedWorkflowId(record.id)
-                    setIsDetailDrawerOpen(true)
-                  },
-                  style: {
-                    cursor: 'pointer',
-                    background: record.id === selectedWorkflowId ? '#e6f4ff' : undefined,
-                  },
-                })}
-              />
-            </div>
-          </EntityDetails>
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <EntityList
+              title={isRuntimeDiagnosticsSurface ? 'Runtime Workflow Catalog' : 'Workflow Catalog'}
+              extra={(
+                <Input.Search
+                  aria-label="Search workflows"
+                  allowClear
+                  placeholder="Search workflow schemes"
+                  value={table.search}
+                  onChange={(event) => table.setSearch(event.target.value)}
+                  style={{ width: '100%', maxWidth: 260 }}
+                />
+              )}
+              toolbar={catalogStateToolbar}
+              error={catalogError}
+              loading={workflowsQuery.isLoading}
+              emptyDescription="No workflows match the current catalog state."
+              dataSource={workflows}
+              renderItem={(workflow) => {
+                const selected = workflow.id === selectedWorkflowId
+                const primarySummary = [
+                  workflow.category || 'uncategorized',
+                  workflow.workflow_type || 'unknown',
+                  `${workflow.node_count ?? 0} node(s)`,
+                ].join(' · ')
+                const secondarySummary = [
+                  `${workflow.execution_count ?? 0} execution(s)`,
+                  `Updated ${formatCompactDateTime(workflow.updated_at)}`,
+                  workflow.created_by_username || null,
+                ].filter(Boolean).join(' · ')
+
+                return (
+                  <Button
+                    key={workflow.id}
+                    type="text"
+                    block
+                    data-testid={`workflow-list-catalog-item-${workflow.id}`}
+                    aria-label={`Open workflow ${workflow.name}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      routeUpdateModeRef.current = 'push'
+                      setSelectedWorkflowId(workflow.id)
+                      setIsDetailDrawerOpen(true)
+                    }}
+                    style={buildCatalogButtonStyle(selected)}
+                  >
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Space wrap size={[8, 8]}>
+                        <Text strong>{workflow.name}</Text>
+                        {workflow.is_system_managed ? <Tag color="gold">System managed</Tag> : null}
+                      </Space>
+                      <Space wrap size={[8, 8]}>
+                        {renderStatusSummary(workflow)}
+                      </Space>
+                      <Text type="secondary">{primarySummary}</Text>
+                      <Text type="secondary">{secondarySummary}</Text>
+                    </Space>
+                  </Button>
+                )
+              }}
+            />
+            <Pagination
+              size="small"
+              current={table.pagination.page}
+              pageSize={table.pagination.pageSize}
+              total={totalWorkflows}
+              showSizeChanger
+              pageSizeOptions={[20, 50, 100]}
+              onChange={(page, pageSize) => {
+                if (pageSize !== table.pagination.pageSize) {
+                  table.setPageSize(pageSize)
+                  return
+                }
+                table.setPage(page)
+              }}
+            />
+          </Space>
         )}
         detail={(
           <EntityDetails

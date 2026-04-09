@@ -95,6 +95,10 @@ TBD - created by archiving change refactor-03-unify-platform-execution-runtime. 
 
 Primary inspect flow НЕ ДОЛЖЕН (SHALL NOT) зависеть от raw full-page modal как единственного пути просмотра детали. На узких viewport detail/timeline ДОЛЖНЫ (SHALL) открываться через mobile-safe secondary surface (`Drawer`, panel или эквивалентный route/state fallback) без page-wide horizontal overflow.
 
+Desktop master pane ДОЛЖЕН (SHALL) оставаться compact operation catalog, пригодным для быстрого выбора записи. Wide task grid, dense telemetry table и вторичные diagnostics widgets НЕ ДОЛЖНЫ (SHALL NOT) быть default master-pane path.
+
+Inspect surface ДОЛЖЕН (SHALL) различать completed flow и empty/zero-task diagnostics context. UI НЕ ДОЛЖЕН (SHALL NOT) показывать misleading completed progress state, если у execution отсутствуют tasks или runtime summary ещё не содержит исполнимой workset telemetry.
+
 #### Scenario: Выбранная операция восстанавливается из URL без повторного ручного выбора
 - **GIVEN** оператор открывает `/operations` с query state выбранной root operation
 - **WHEN** страница загружается заново или пользователь возвращается через browser back/forward
@@ -106,4 +110,10 @@ Primary inspect flow НЕ ДОЛЖЕН (SHALL NOT) зависеть от raw ful
 - **WHEN** он открывает detail или timeline выбранной операции
 - **THEN** secondary context открывается в mobile-safe fallback surface
 - **AND** основной list/action flow остаётся доступным без page-wide horizontal scroll
+
+#### Scenario: Zero-task execution не выглядит как completed workload
+- **GIVEN** оператор открыл inspect detail execution, у которого `total tasks = 0` или tasks ещё не сформированы
+- **WHEN** UI показывает progress и task summary
+- **THEN** страница явно показывает empty/no-task diagnostics state
+- **AND** не рисует misleading completed progress bar как будто workload уже успешно исполнен
 

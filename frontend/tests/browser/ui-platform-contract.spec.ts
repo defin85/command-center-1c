@@ -3605,6 +3605,43 @@ test('UI platform: /workflows restores selected workflow detail from URL-backed 
   await expect.poll(() => counts.bootstrap).toBe(1)
 })
 
+test('UI platform: /templates restores selected template detail from URL-backed workspace state', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, counts })
+
+  await page.goto('/templates?template=tpl-sync-extension&detail=1', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Operation Templates', level: 2 })).toBeVisible()
+  await expect(page.getByTestId('templates-selected-id')).toHaveText('tpl-sync-extension')
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expect.poll(() => counts.bootstrap).toBe(1)
+})
+
+test('UI platform: /templates keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+
+  await page.goto('/templates', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Operation Templates', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByTestId('templates-catalog-item-tpl-sync-extension').click()
+
+  const detailDrawer = page.getByRole('dialog')
+  await expect(detailDrawer).toBeVisible()
+  await expect(detailDrawer.getByTestId('templates-selected-id')).toHaveText('tpl-sync-extension')
+  await expect(detailDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+})
+
 test('UI platform: /workflows keeps mobile catalog readable and opens detail in a drawer', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -3617,7 +3654,7 @@ test('UI platform: /workflows keeps mobile catalog readable and opens detail in 
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expectNoHorizontalOverflow(page)
 
-  await page.locator('tbody tr').filter({ hasText: WORKFLOW.name }).first().click()
+  await page.getByTestId(`workflow-list-catalog-item-${WORKFLOW.id}`).click()
 
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()

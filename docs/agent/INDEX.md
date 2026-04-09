@@ -92,6 +92,7 @@ Legacy documents могут сохранять полезный историче
 - `runtime-debug` — `.agents/skills/runtime-debug/SKILL.md`
 - `pool-run-verification` — `.agents/skills/pool-run-verification/SKILL.md`
 - `openspec-change-delivery` — `.agents/skills/openspec-change-delivery/SKILL.md`
+- `ui-action-observability` — `.agents/skills/ui-action-observability/SKILL.md`
 
 ### Shared User-Level Skills
 

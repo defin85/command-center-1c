@@ -866,12 +866,10 @@ test('Templates: staff работает в templates-only shell без action su
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
 
-  const tableBody = page.locator('.ant-table-tbody:visible').first()
-
   await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
-  await expect(tableBody).toContainText('Template One')
-  await expect(tableBody).not.toContainText('extensions.list')
+  await expect(page.getByTestId('templates-catalog-item-tpl-one')).toContainText('Template One')
+  await expect(page.getByTestId('templates-catalog-item-tpl-one')).not.toContainText('extensions.list')
   await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
   await expect(page.getByTestId('templates-pool-runtime-registry')).toBeVisible()
 
@@ -897,12 +895,11 @@ test('Templates: staff deep-link на template остаётся в templates-onl
   })
 
   await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
-  const tableBody = page.locator('.ant-table-tbody:visible').first()
 
   await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
-  await expect(tableBody).toContainText('Template One')
-  await expect(tableBody).not.toContainText('extensions.list')
+  await expect(page.getByTestId('templates-catalog-item-tpl-one')).toContainText('Template One')
+  await expect(page.getByTestId('templates-catalog-item-tpl-one')).not.toContainText('extensions.list')
 
   expect(callCounters.operationCatalogActionExposuresGets ?? 0).toBe(0)
   expect(callCounters.operationCatalogExposuresWithDefinitionsGets ?? 0).toBe(0)
@@ -940,10 +937,8 @@ test('Templates: non-staff deep-link на template открывает templates-
 
   await page.goto('/templates?surface=template', { waitUntil: 'domcontentloaded' })
 
-  const tableBody = page.locator('.ant-table-tbody:visible').first()
-
   await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
-  await expect(tableBody).toContainText('Viewer Template')
+  await expect(page.getByTestId('templates-catalog-item-tpl-view')).toContainText('Viewer Template')
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
   await expect(page.getByRole('button', { name: 'New Template', exact: true })).toHaveCount(0)
   await expect(page.getByTestId('templates-pool-runtime-registry')).toHaveCount(0)
@@ -986,15 +981,14 @@ test('Templates: non-staff с MANAGE по templates получает template co
   })
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
-  const tableBody = page.locator('.ant-table-tbody:visible').first()
 
   await expect(page.getByRole('heading', { name: 'Operation Templates', exact: true })).toBeVisible()
   await expect.poll(() => new URL(page.url()).searchParams.get('surface')).toBeNull()
-  await expect(tableBody).toContainText('Template Manage')
+  await expect(page.getByTestId('templates-catalog-item-tpl-manage')).toContainText('Template Manage')
   await expect(page.getByRole('button', { name: 'New Template', exact: true })).toBeVisible()
   await expect(page.getByTestId('action-catalog-add')).toHaveCount(0)
 
-  await tableBody.getByRole('button', { name: 'Edit', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await expect(page.getByTestId('operation-exposure-editor-name')).toBeVisible()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByTestId('operation-exposure-editor-name')).toBeHidden()
@@ -1018,14 +1012,13 @@ test('Templates: system-managed pool runtime template блокирует edit/de
   })
 
   await page.goto('/templates', { waitUntil: 'domcontentloaded' })
-  const tableBody = page.locator('.ant-table-tbody:visible').first()
-  const row = tableBody.locator('tr').filter({ hasText: 'pool.prepare_input' }).first()
+  const catalogItem = page.getByTestId('templates-catalog-item-pool.prepare_input')
 
-  await expect(row).toBeVisible()
-  await expect(row).toContainText('system-managed')
-  await expect(row).toContainText('pool_runtime')
-  await expect(row.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
-  await expect(row.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
+  await expect(catalogItem).toBeVisible()
+  await expect(catalogItem).toContainText('system-managed')
+  await expect(page.getByTestId('templates-selected-id')).toHaveText('pool.prepare_input')
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeDisabled()
   expect(callCounters.poolRuntimeRegistryGets ?? 0).toBeGreaterThan(0)
 })
 
@@ -1066,7 +1059,10 @@ test('Templates: единый editor shell работает только для 
   await expect(page.getByTestId('operation-exposure-editor-field-origins')).toContainText('OperationDefinition.executor_payload.operation_type')
   await page.getByTestId('action-catalog-editor-apply').click()
 
-  await expect(page.locator('.ant-table-tbody:visible').first()).toContainText('Template via unified modal')
+  const createdAlias = `tpl-custom-${slugify('Template via unified modal')}`
+  await expect(page.getByTestId('templates-selected-name')).toHaveText('Template via unified modal')
+  await expect(page.getByTestId('templates-selected-id')).toHaveText(createdAlias)
+  await expect(page.getByTestId(`templates-catalog-item-${createdAlias}`)).toContainText('Template via unified modal')
 
   expect(callCounters.upsertCalls ?? 0).toBeGreaterThanOrEqual(1)
   expect(callCounters.operationExposureHintsGets ?? 0).toBeGreaterThanOrEqual(1)

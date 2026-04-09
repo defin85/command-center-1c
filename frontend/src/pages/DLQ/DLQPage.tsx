@@ -79,6 +79,10 @@ export function DLQPage() {
         manual_operation: 'dlq.retry_single',
       },
     }, () => retryEntry(entry))
+    if (!result) {
+      message.error(`Retry failed: ${entry.dlq_message_id}`)
+      return
+    }
     if (result.ok) {
       message.success(`Re-enqueued ${result.id}`)
     } else {

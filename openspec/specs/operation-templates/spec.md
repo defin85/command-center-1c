@@ -220,23 +220,6 @@ Runtime ДОЛЖЕН (SHALL) работать fail-closed: при неуспеш
 - **THEN** команда возвращает перечень планируемых изменений
 - **AND** workflow записи в БД не изменяются
 
-### Requirement: `/templates` list MUST прозрачно показывать provenance template binding
-Система ДОЛЖНА (SHALL) в таблице `/templates` показывать ключевые поля provenance для связи `OperationExposure -> OperationDefinition`, чтобы оператор видел, что именно будет исполняться и в каком состоянии публикации находится template.
-
-Минимально обязательные поля list-представления:
-- `template_id` (alias exposure),
-- `executor.kind`,
-- `executor.command_id`,
-- `template_exposure_id`,
-- `template_exposure_revision`,
-- publish/active status.
-
-#### Scenario: Оператор видит runtime provenance прямо в list без открытия raw JSON
-- **GIVEN** template exposure опубликован и связан с operation definition
-- **WHEN** пользователь открывает `/templates`
-- **THEN** строка template показывает alias, executor kind, command_id, exposure id и revision
-- **AND** статус publish/active виден без перехода в debug/raw режим
-
 ### Requirement: Template modal MUST обеспечивать guided usability и прозрачность «что будет выполнено»
 Система ДОЛЖНА (SHALL) предоставлять modal editor шаблона как guided flow с явным source-of-truth для `OperationDefinition` и понятным объяснением итогового execution payload.
 
@@ -348,11 +331,31 @@ Workflow editor ДОЛЖЕН (SHALL) использовать этот contract 
 - **AND** editor использует эти данные для валидации настройки шага
 
 ### Requirement: `/templates` MUST использовать canonical template management workspace
+
 Система ДОЛЖНА (SHALL) представлять `/templates` как template management workspace с route-addressable selected template/filter context и canonical authoring surfaces для create/edit/inspect flows.
 
+На desktop primary master pane ДОЛЖЕН (SHALL) оставаться compact template catalog, который помогает быстро выбрать template и увидеть короткий execution/publish summary. Wide provenance grid, много-колоночная table-first composition и horizontal overflow НЕ ДОЛЖНЫ (SHALL NOT) быть default primary path в master pane.
+
+Template provenance, publish/access state и richer execution contract ДОЛЖНЫ (SHALL) жить в detail pane или canonical secondary surfaces, чтобы detail surface объяснял "что именно будет выполнено" без перегрузки primary catalog.
+
 #### Scenario: Template workspace восстанавливает selected template context из URL
+
 - **GIVEN** оператор открывает `/templates` с query state, указывающим фильтры и выбранный template
 - **WHEN** страница перезагружается или открывается по deep-link
 - **THEN** workspace восстанавливает тот же template context
 - **AND** primary create/edit flow использует canonical secondary surface внутри platform workspace
+
+#### Scenario: Desktop template workspace показывает compact catalog вместо wide provenance table
+
+- **GIVEN** оператор открывает `/templates` на desktop viewport
+- **WHEN** route рендерит primary template catalog
+- **THEN** master pane остаётся compact selection surface с коротким publish/executor summary
+- **AND** primary catalog не превращается в wide provenance table с horizontal overflow
+
+#### Scenario: Provenance и publish actions живут в detail surface
+
+- **GIVEN** оператор выбрал template в catalog
+- **WHEN** он inspect-ит execution contract, publish/access posture или provenance binding
+- **THEN** detail surface показывает эти данные и связанные primary actions
+- **AND** оператору не требуется читать wide master-pane grid как единственный источник этой информации
 

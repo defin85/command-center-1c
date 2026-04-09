@@ -8,13 +8,14 @@ import {
   Descriptions,
   Form,
   Grid,
+  Input,
+  Pagination,
   Popconfirm,
   Space,
   Switch,
   Tag,
   Typography,
 } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
 
 import {
   type OperationCatalogExposure,
@@ -30,7 +31,6 @@ import {
   useSyncTemplatesFromRegistry,
   useUpdateTemplate,
 } from '../../api/queries/templates'
-import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import {
   areRouteTableFiltersEqual,
@@ -44,6 +44,7 @@ import { isPlainObject } from '../Settings/actionCatalogUtils'
 import type { ActionFormValues } from '../Settings/actionCatalogTypes'
 import {
   EntityDetails,
+  EntityList,
   JsonBlock,
   MasterDetailShell,
   PageHeader,
@@ -51,10 +52,10 @@ import {
   WorkspacePage,
 } from '../../components/platform'
 import {
-  OperationExposureEditorModal,
   type ModalValidationIssue,
   type TemplateModalProvenance,
 } from '../Settings/actionCatalog/OperationExposureEditorModal'
+import { TemplateOperationExposureEditorModal } from './TemplateOperationExposureEditorModal'
 import { buildTemplateEditorValues, buildTemplateWritePayloadFromEditor } from './templateEditorAdapter'
 
 const { Text } = Typography
@@ -89,6 +90,19 @@ const normalizeText = (value: unknown): string => (
   typeof value === 'string' ? value.trim() : ''
 )
 
+const hasRouteFilterValue = (value: unknown): boolean => {
+  if (value === null || value === undefined) {
+    return false
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+}
+
 const normalizeRouteParam = (value: string | null): string | null => {
   const normalized = value?.trim() ?? ''
   return normalized.length > 0 ? normalized : null
@@ -104,6 +118,23 @@ const parseComposeMode = (value: string | null): TemplateComposeMode => {
 const formatDateTime = (value?: string | null) => (
   value ? new Date(value).toLocaleString() : '—'
 )
+
+const formatCompactDateTime = (value?: string | null) => (
+  value ? new Date(value).toLocaleDateString() : '—'
+)
+
+const buildCatalogButtonStyle = (selected: boolean) => ({
+  width: '100%',
+  justifyContent: 'flex-start',
+  height: 'auto',
+  paddingBlock: 12,
+  paddingInline: 12,
+  borderRadius: 8,
+  border: selected ? '1px solid #91caff' : '1px solid #f0f0f0',
+  borderInlineStart: selected ? '4px solid #1677ff' : '4px solid transparent',
+  background: selected ? '#e6f4ff' : '#fff',
+  boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
+})
 
 const renderCellText = (
   value: string | null | undefined,
@@ -386,177 +417,9 @@ function OperationTemplateListShell({
     }
   }, [deleteMutation, message, selectedTemplateId])
 
-  const columns: ColumnsType<TemplateRow> = useMemo(() => ([
-    {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      width: 300,
-      render: (value: string, record) => (
-        <div style={{ minWidth: 0 }}>
-          <Text strong ellipsis={{ tooltip: value }} style={{ maxWidth: 260, display: 'block' }}>
-            {value}
-          </Text>
-          {renderCellText(record.id, { secondary: true, maxWidth: 260 })}
-        </div>
-      ),
-    },
-    {
-      title: 'Managed',
-      dataIndex: 'system_managed',
-      key: 'system_managed',
-      width: 190,
-      render: (_value, record) => {
-        if (isSystemManagedPoolRuntimeTemplate(record)) {
-          return (
-            <Space size={6}>
-              <Tag color="gold">system-managed</Tag>
-              {renderCellText(record.domain || 'pool_runtime', { code: true, maxWidth: 120 })}
-            </Space>
-          )
-        }
-        return <Tag>user-managed</Tag>
-      },
-    },
-    {
-      title: 'Operation Type',
-      dataIndex: 'operation_type',
-      key: 'operation_type',
-      width: 160,
-      render: (value: string | undefined) => renderCellText(value, { maxWidth: 140 }),
-    },
-    {
-      title: 'Executor Kind',
-      dataIndex: 'executor_kind',
-      key: 'executor_kind',
-      width: 220,
-      render: (value: string | undefined, record) => {
-        if (!isWorkflowExecutorTemplate(record)) {
-          return renderCellText(value, { maxWidth: 130 })
-        }
-        return (
-          <Space size={6} wrap>
-            <Tag color="orange" data-testid="templates-executor-kind-compatibility-tag">
-              compatibility
-            </Tag>
-            {renderCellText(value, { code: true, maxWidth: 110 })}
-          </Space>
-        )
-      },
-    },
-    {
-      title: 'Command ID',
-      dataIndex: 'executor_command_id',
-      key: 'executor_command_id',
-      width: 220,
-      render: (value: string | undefined | null) => renderCellText(value, { code: true, maxWidth: 200 }),
-    },
-    {
-      title: 'Target',
-      dataIndex: 'target_entity',
-      key: 'target_entity',
-      width: 140,
-      render: (value: string | undefined) => renderCellText(value, { maxWidth: 120 }),
-    },
-    {
-      title: 'Exposure ID',
-      dataIndex: 'template_exposure_id',
-      key: 'template_exposure_id',
-      width: 240,
-      render: (value: string | undefined) => renderCellText(value, { code: true, maxWidth: 220 }),
-    },
-    {
-      title: 'Revision',
-      dataIndex: 'template_exposure_revision',
-      key: 'template_exposure_revision',
-      width: 110,
-      render: (value: number | undefined) => (
-        typeof value === 'number' && Number.isFinite(value)
-          ? String(value)
-          : <Text type="secondary">—</Text>
-      ),
-    },
-    {
-      title: 'Capability',
-      dataIndex: 'capability',
-      key: 'capability',
-      width: 220,
-      render: (value: string | undefined) => renderCellText(value, { code: true, maxWidth: 200 }),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      width: 130,
-    },
-    {
-      title: 'Active',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      width: 90,
-      render: (value: boolean) => (value ? 'yes' : 'no'),
-    },
-    {
-      title: 'Updated',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
-      width: 180,
-      render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 180,
-      render: (_value, record) => {
-        const readOnlySystemTemplate = isSystemManagedPoolRuntimeTemplate(record)
-        const canMutateTemplate = canManageTemplate(record.id) && !readOnlySystemTemplate
-        const disabledReason = readOnlySystemTemplate
-          ? 'System-managed pool runtime template is read-only'
-          : undefined
-
-        return (
-          <Space>
-            <Button
-              size="small"
-              title={disabledReason}
-              disabled={!canMutateTemplate}
-              onClick={(event) => {
-                event.stopPropagation()
-                openEditTemplateModal(record)
-              }}
-            >
-              Edit
-            </Button>
-            <Popconfirm
-              title="Delete template?"
-              okText="Delete"
-              cancelText="Cancel"
-              onConfirm={() => {
-                void handleDeleteTemplate(record)
-              }}
-              disabled={!canMutateTemplate}
-            >
-              <Button
-                size="small"
-                danger
-                title={disabledReason}
-                disabled={!canMutateTemplate}
-                onClick={(event) => {
-                  event.stopPropagation()
-                }}
-              >
-                Delete
-              </Button>
-            </Popconfirm>
-          </Space>
-        )
-      },
-    },
-  ]), [canManageTemplate, handleDeleteTemplate, openEditTemplateModal])
-
   const table = useTableToolkit<TemplateRow>({
     tableId: 'operation-templates',
-    columns,
+    columns: [],
     fallbackColumns: fallbackColumnConfigs,
     initialPageSize: 50,
     disableServerMetadata: true,
@@ -985,6 +848,44 @@ function OperationTemplateListShell({
   const detailError = selectedTemplateId && !selectedTemplate && selectedTemplateQuery.isError
     ? 'Failed to load the selected template.'
     : null
+  const catalogError = !showAccessWarning && exposuresQuery.isError
+    ? 'Failed to load templates catalog.'
+    : null
+  const activeFilterSummaries = useMemo(() => (
+    table.filterConfigs.flatMap((config) => {
+      const value = table.filters[config.key]
+      if (!hasRouteFilterValue(value)) {
+        return []
+      }
+      return `${config.label}: ${Array.isArray(value) ? value.join(', ') : String(value)}`
+    })
+  ), [table.filterConfigs, table.filters])
+  const activeSortSummary = useMemo(() => {
+    if (!table.sort.key || !table.sort.order) {
+      return null
+    }
+    const config = table.columnConfigs.find((item) => item.key === table.sort.key)
+    const label = config?.label || table.sort.key
+    return `${label}: ${table.sort.order === 'asc' ? 'ascending' : 'descending'}`
+  }, [table.columnConfigs, table.sort.key, table.sort.order])
+  const catalogStateToolbar = activeFilterSummaries.length > 0 || activeSortSummary
+    ? (
+      <Alert
+        type="info"
+        showIcon
+        message="Route filters active"
+        description={(
+          <Space wrap size={[8, 8]}>
+            {activeFilterSummaries.map((summary) => (
+              <Tag key={summary}>{summary}</Tag>
+            ))}
+            {activeSortSummary ? <Tag color="blue">{activeSortSummary}</Tag> : null}
+          </Space>
+        )}
+        style={{ marginBottom: 16 }}
+      />
+    )
+    : null
 
   return (
     <WorkspacePage
@@ -1061,29 +962,94 @@ function OperationTemplateListShell({
         }}
         detailDrawerTitle={selectedTemplate?.name || 'Template detail'}
         list={(
-          <EntityDetails title="Catalog">
-            <TableToolkit
-              table={table}
-              data={pagedRows.rows}
-              total={pagedRows.total}
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <EntityList
+              title="Template Catalog"
+              extra={(
+                <Input.Search
+                  aria-label="Search templates"
+                  allowClear
+                  placeholder="Search templates"
+                  value={table.search}
+                  onChange={(event) => table.setSearch(event.target.value)}
+                  style={{ width: '100%', maxWidth: 260 }}
+                />
+              )}
+              toolbar={catalogStateToolbar}
+              error={catalogError}
               loading={exposuresQuery.isLoading}
-              rowKey={(row) => row.id}
-              columns={columns}
-              searchPlaceholder="Search templates"
-              scroll={{ x: Math.max(1400, table.totalColumnsWidth + 120) }}
-              onRow={(record) => ({
-                onClick: () => {
-                  routeUpdateModeRef.current = 'push'
-                  setSelectedTemplateId(record.id)
-                  setIsDetailDrawerOpen(true)
-                },
-                style: {
-                  cursor: 'pointer',
-                  background: record.id === selectedTemplateId ? '#e6f4ff' : undefined,
-                },
-              })}
+              emptyDescription="No templates match the current catalog state."
+              dataSource={pagedRows.rows}
+              renderItem={(template) => {
+                const selected = template.id === selectedTemplateId
+                const readOnlySystemTemplate = isSystemManagedPoolRuntimeTemplate(template)
+                const executionSummary = [
+                  normalizeText(template.executor_kind) || normalizeText(template.operation_type) || 'unknown executor',
+                  normalizeText(template.executor_command_id) || normalizeText(template.capability) || 'no command binding',
+                ].join(' · ')
+                const provenanceSummary = [
+                  template.template_exposure_revision ? `Revision ${template.template_exposure_revision}` : null,
+                  template.target_entity ? `Target ${template.target_entity}` : null,
+                  template.updated_at ? `Updated ${formatCompactDateTime(template.updated_at)}` : null,
+                ].filter(Boolean).join(' · ')
+
+                return (
+                  <Button
+                    key={template.id}
+                    type="text"
+                    block
+                    data-testid={`templates-catalog-item-${template.id}`}
+                    aria-label={`Open template ${template.name}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      routeUpdateModeRef.current = 'push'
+                      setSelectedTemplateId(template.id)
+                      setIsDetailDrawerOpen(true)
+                    }}
+                    style={buildCatalogButtonStyle(selected)}
+                  >
+                    <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                      <Space wrap size={[8, 8]}>
+                        <Text strong>{template.name}</Text>
+                        <StatusBadge
+                          status={template.status === 'published' ? 'published' : 'inactive'}
+                          label={template.status}
+                        />
+                        <StatusBadge
+                          status={template.is_active ? 'active' : 'inactive'}
+                          label={template.is_active ? 'Active' : 'Inactive'}
+                        />
+                        {readOnlySystemTemplate ? <Tag color="gold">system-managed</Tag> : null}
+                        {isWorkflowExecutorTemplate(template) ? (
+                          <Tag color="orange" data-testid="templates-executor-kind-compatibility-tag">
+                            compatibility
+                          </Tag>
+                        ) : null}
+                      </Space>
+                      {renderCellText(template.id, { code: true, secondary: true, maxWidth: 360 })}
+                      <Text type="secondary">{executionSummary}</Text>
+                      <Text type="secondary">{provenanceSummary || 'No provenance summary'}</Text>
+                    </Space>
+                  </Button>
+                )
+              }}
             />
-          </EntityDetails>
+            <Pagination
+              size="small"
+              current={table.pagination.page}
+              pageSize={table.pagination.pageSize}
+              total={pagedRows.total}
+              showSizeChanger
+              pageSizeOptions={[20, 50, 100]}
+              onChange={(page, pageSize) => {
+                if (pageSize !== table.pagination.pageSize) {
+                  table.setPageSize(pageSize)
+                  return
+                }
+                table.setPage(page)
+              }}
+            />
+          </Space>
         )}
         detail={(
           <EntityDetails
@@ -1220,7 +1186,7 @@ function OperationTemplateListShell({
       />
 
       {modalOpen && editorValues ? (
-        <OperationExposureEditorModal
+        <TemplateOperationExposureEditorModal
           open={modalOpen}
           title={modalTitle}
           surface="template"

@@ -40,6 +40,7 @@
 - Skill routing:
   - для frontend/UI/UX/browser tasks proactively выбирай минимальный релевантный набор shared UI skills из `/home/egor/.agents/skills/` по [ui-skills.md](./ui-skills.md)
   - при live-runtime debugging или restart flows дополнительно подключай repo-local `.agents/skills/runtime-debug/SKILL.md`
+  - если задача про UI incident correlation, `trackUiAction`, `request_id` / `ui_action_id`, export bundle или WebSocket churn diagnostics, подключай repo-local `.agents/skills/ui-action-observability/SKILL.md`
 - Первые проверки:
   - `cd frontend && npm run generate:api`
   - `cd frontend && npm run lint`
@@ -111,6 +112,7 @@
   - [RUNBOOK.md](./RUNBOOK.md)
   - [DEBUG.md](../../DEBUG.md)
   - `.agents/skills/runtime-debug/SKILL.md`
+  - `.agents/skills/ui-action-observability/SKILL.md`, если инцидент завязан на frontend action journal, correlation headers или export bundle
 - Первые code entry points:
   - `debug/`
   - `scripts/dev/`
