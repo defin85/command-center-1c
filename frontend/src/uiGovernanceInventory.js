@@ -481,6 +481,12 @@ export const shellSurfaceGovernanceInventory = [
     ownerRoutes: ['/settings/runtime'],
   },
   {
+    filePath: 'src/pages/SystemStatus/SystemStatus.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['modal'],
+    ownerRoutes: ['/system-status'],
+  },
+  {
     filePath: 'src/pages/Settings/TimelineSettingsPage.tsx',
     tier: 'platform-governed',
     shellKinds: ['drawer'],

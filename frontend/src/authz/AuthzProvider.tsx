@@ -10,6 +10,7 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
 
   const isStaff = Boolean(shellBootstrapQuery.data?.me.is_staff)
   const isLoading = Boolean(hasToken && shellBootstrapQuery.isLoading)
+  const canManageRuntimeControls = Boolean(shellBootstrapQuery.data?.capabilities.can_manage_runtime_controls)
 
   const { databaseLevels, clusterLevels, templateLevels } = useMemo(() => {
     const dbLevels = new Map<string, AccessLevel>()
@@ -105,6 +106,7 @@ export const AuthzProvider = ({ children }: { children: ReactNode }) => {
   const value: AuthzContextValue = {
     isStaff,
     isLoading,
+    canManageRuntimeControls,
     canDatabase,
     canCluster,
     canTemplate,

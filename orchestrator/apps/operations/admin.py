@@ -10,6 +10,7 @@ from .models import (
     CompensationAuditLog,
     AdminActionAuditLog,
     FailedEvent,
+    RuntimeActionRun,
     SchedulerJobRun,
     TaskExecutionLog,
 )
@@ -325,6 +326,77 @@ class SchedulerJobRunAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(RuntimeActionRun)
+class RuntimeActionRunAdmin(admin.ModelAdmin):
+    """Read-only runtime-control action journal."""
+
+    list_display = [
+        "requested_at",
+        "runtime_name",
+        "action_type",
+        "status_badge",
+        "requested_by_username",
+        "target_job_name",
+    ]
+    list_filter = ["runtime_name", "action_type", "status", "requested_at"]
+    search_fields = [
+        "runtime_name",
+        "runtime_id",
+        "requested_by_username",
+        "reason",
+        "target_job_name",
+        "error_message",
+        "result_excerpt",
+    ]
+    readonly_fields = [
+        "id",
+        "provider",
+        "runtime_id",
+        "runtime_name",
+        "action_type",
+        "target_job_name",
+        "status",
+        "requested_by",
+        "requested_by_username",
+        "reason",
+        "request_payload",
+        "result_payload",
+        "result_excerpt",
+        "error_message",
+        "scheduler_job_run",
+        "requested_at",
+        "started_at",
+        "finished_at",
+    ]
+    raw_id_fields = ["requested_by", "scheduler_job_run"]
+    date_hierarchy = "requested_at"
+
+    def status_badge(self, obj):
+        colors = {
+            "accepted": "gray",
+            "running": "blue",
+            "success": "green",
+            "failed": "red",
+        }
+        color = colors.get(obj.status, "gray")
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">●</span> {}',
+            color,
+            obj.get_status_display(),
+        )
+
+    status_badge.short_description = "Status"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 

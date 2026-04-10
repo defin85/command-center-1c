@@ -11,6 +11,7 @@ import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text } = Typography
+const RUNTIME_CONTROL_SETTING_PREFIX = 'runtime.scheduler.'
 
 type RuntimeSettingRow = RuntimeSetting & { draftValue: unknown }
 
@@ -26,9 +27,10 @@ const toNumber = (value: unknown): number | null => {
 }
 
 const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
+const isRuntimeControlSetting = (key: string) => key.startsWith(RUNTIME_CONTROL_SETTING_PREFIX)
 
 export function RuntimeSettingsPage() {
-  const { isStaff } = useAuthz()
+  const { isStaff, canManageRuntimeControls } = useAuthz()
   const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -86,7 +88,15 @@ export function RuntimeSettingsPage() {
     )
   }, [])
 
+  const canEditSetting = useCallback((setting: RuntimeSettingRow) => (
+    canEdit && (!isRuntimeControlSetting(setting.key) || canManageRuntimeControls)
+  ), [canEdit, canManageRuntimeControls])
+
   const saveSetting = useCallback(async (setting: RuntimeSettingRow) => {
+    if (!canEditSetting(setting)) {
+      setError('Настройка runtime-control требует отдельной capability.')
+      return
+    }
     try {
       const updated = await updateRuntimeSetting(setting.key, setting.draftValue)
       setSettings((current) =>
@@ -99,7 +109,7 @@ export function RuntimeSettingsPage() {
     } catch (_err) {
       setError('Не удалось сохранить настройку')
     }
-  }, [])
+  }, [canEditSetting])
 
   const fallbackColumnConfigs = useMemo(() => [
     { key: 'key', label: 'Key', sortable: true, groupKey: 'core', groupLabel: 'Core' },
@@ -159,13 +169,14 @@ export function RuntimeSettingsPage() {
         <Button
           size="small"
           type="primary"
+          disabled={!canEditSetting(record)}
           onClick={() => updateSearchParams({ setting: record.key, context: 'setting' })}
         >
           Edit
         </Button>
       ),
     },
-  ]), [updateSearchParams])
+  ]), [canEditSetting, updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'runtime_settings',
@@ -270,6 +281,7 @@ export function RuntimeSettingsPage() {
   const selectedSetting = selectedSettingKey
     ? sortedSettings.find((item) => item.key === selectedSettingKey) ?? null
     : null
+  const selectedSettingLocked = selectedSetting ? !canEditSetting(selectedSetting) : false
 
   const renderSettingEditor = (setting: RuntimeSettingRow) => {
     if (setting.value_type === 'int') {
@@ -279,7 +291,7 @@ export function RuntimeSettingsPage() {
           max={setting.max_value ?? undefined}
           value={toNumber(setting.draftValue) ?? undefined}
           onChange={(next) => updateDraft(setting.key, next ?? 0)}
-          disabled={!canEdit}
+          disabled={!canEditSetting(setting)}
           style={{ width: '100%' }}
         />
       )
@@ -289,7 +301,7 @@ export function RuntimeSettingsPage() {
         <Switch
           checked={isBool(setting.draftValue) ? setting.draftValue : Boolean(setting.draftValue)}
           onChange={(next) => updateDraft(setting.key, next)}
-          disabled={!canEdit}
+          disabled={!canEditSetting(setting)}
         />
       )
     }
@@ -317,6 +329,14 @@ export function RuntimeSettingsPage() {
           description="Доступ только для staff пользователей."
         />
       )}
+
+      {isStaff && !canManageRuntimeControls && settings.some((item) => isRuntimeControlSetting(item.key)) ? (
+        <Alert
+          type="info"
+          showIcon
+          message="Runtime-control keys остаются read-only без отдельной runtime-control capability."
+        />
+      ) : null}
 
       {error && (
         <Alert type="error" message={error} />
@@ -347,7 +367,7 @@ export function RuntimeSettingsPage() {
         extra={selectedSetting ? (
           <Button
             type="primary"
-            disabled={!canEdit || selectedSetting.draftValue === selectedSetting.value}
+            disabled={!canEditSetting(selectedSetting) || selectedSetting.draftValue === selectedSetting.value}
             onClick={() => {
               void trackUiAction({
                 actionKind: 'drawer.submit',
@@ -365,6 +385,13 @@ export function RuntimeSettingsPage() {
       >
         {selectedSetting ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {selectedSettingLocked ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="Эта настройка требует runtime-control capability для изменения."
+              />
+            ) : null}
             <Text><strong>Current:</strong> {String(selectedSetting.value ?? '—')}</Text>
             <Text><strong>Default:</strong> {String(selectedSetting.default ?? '—')}</Text>
             <Text><strong>Range:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? '—' : `${selectedSetting.min_value ?? '-'}..${selectedSetting.max_value ?? '-'}`}</Text>

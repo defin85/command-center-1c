@@ -1,7 +1,8 @@
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from rest_framework.test import APIClient
 
+from apps.core import permission_codes as perms
 from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
 from apps.tenancy.models import Tenant
@@ -10,6 +11,11 @@ from apps.tenancy.models import Tenant
 RUNTIME_SCHEDULER_ENABLED_KEY = "runtime.scheduler.enabled"
 RUNTIME_POOL_FACTUAL_ACTIVE_SYNC_ENABLED_KEY = "runtime.scheduler.job.pool_factual_active_sync.enabled"
 TENANT_OVERRIDE_KEY = "pools.master_data.sync.enabled"
+
+
+def _permission_by_code(code: str) -> Permission:
+    app_label, codename = code.split(".", 1)
+    return Permission.objects.get(content_type__app_label=app_label, codename=codename)
 
 
 @pytest.fixture
@@ -90,3 +96,33 @@ def test_effective_runtime_setting_ignores_tenant_override_for_global_only_key(t
 
     assert effective.value is False
     assert effective.source == "global"
+
+
+@pytest.mark.django_db
+def test_update_runtime_setting_requires_runtime_control_permission_for_scheduler_keys(staff_client):
+    response = staff_client.patch(
+        "/api/v2/settings/runtime/runtime.scheduler.enabled/",
+        {"value": False},
+        format="json",
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "PERMISSION_DENIED"
+    assert not RuntimeSetting.objects.filter(key=RUNTIME_SCHEDULER_ENABLED_KEY).exists()
+
+
+@pytest.mark.django_db
+def test_update_runtime_setting_allows_runtime_control_permission_for_scheduler_keys(staff_user):
+    staff_user.user_permissions.add(_permission_by_code(perms.PERM_OPERATIONS_MANAGE_RUNTIME_CONTROLS))
+    client = APIClient()
+    client.force_authenticate(user=staff_user)
+
+    response = client.patch(
+        "/api/v2/settings/runtime/runtime.scheduler.enabled/",
+        {"value": False},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["key"] == RUNTIME_SCHEDULER_ENABLED_KEY
+    assert RuntimeSetting.objects.get(key=RUNTIME_SCHEDULER_ENABLED_KEY).value is False

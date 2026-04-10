@@ -37,6 +37,7 @@ vi.mock('../../../api/queries/templates', () => ({
 const authzValue: AuthzContextValue = {
   isStaff: false,
   isLoading: false,
+  canManageRuntimeControls: false,
   canDatabase: () => false,
   canCluster: () => false,
   canTemplate: () => false,

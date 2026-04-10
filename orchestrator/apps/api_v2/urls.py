@@ -17,6 +17,7 @@ from .views import (
     operations,
     workflows,
     system,
+    runtime_control,
     service_mesh,
     audit,
     events,
@@ -54,6 +55,41 @@ urlpatterns = [
     path('system/config/', system.system_config, name='system-config'),
     path('system/me/', system.system_me, name='system-me'),
     path('system/bootstrap/', system.system_bootstrap, name='system-bootstrap'),
+    path(
+        'system/runtime-control/catalog/',
+        runtime_control.list_runtime_control_catalog,
+        name='system-runtime-control-catalog',
+    ),
+    path(
+        'system/runtime-control/runtimes/<str:runtime_id>/',
+        runtime_control.get_runtime_control_runtime,
+        name='system-runtime-control-runtime',
+    ),
+    path(
+        'system/runtime-control/runtimes/<str:runtime_id>/actions/',
+        runtime_control.list_runtime_control_actions,
+        name='system-runtime-control-actions',
+    ),
+    path(
+        'system/runtime-control/runtimes/<str:runtime_id>/desired-state/',
+        runtime_control.patch_runtime_control_desired_state,
+        name='system-runtime-control-desired-state',
+    ),
+    path(
+        'system/runtime-control/actions/',
+        runtime_control.create_runtime_control_action,
+        name='system-runtime-control-action-create',
+    ),
+    path(
+        'system/runtime-control/actions/<str:action_id>/',
+        runtime_control.get_runtime_control_action,
+        name='system-runtime-control-action',
+    ),
+    path(
+        'system/runtime-control/scheduler/jobs/',
+        runtime_control.list_runtime_control_scheduler_jobs,
+        name='system-runtime-control-scheduler-jobs',
+    ),
 
     # ========================================================================
     # UI Metadata

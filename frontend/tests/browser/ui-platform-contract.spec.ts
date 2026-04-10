@@ -2039,6 +2039,126 @@ const RUNTIME_SETTINGS_RESPONSE = {
   ],
 }
 
+const RUNTIME_CONTROL_CATALOG_RESPONSE = {
+  runtimes: [
+    {
+      runtime_id: 'local:localhost:orchestrator',
+      runtime_name: 'orchestrator',
+      display_name: 'orchestrator',
+      provider: { key: 'local_scripts', host: 'localhost' },
+      observed_state: {
+        status: 'degraded',
+        process_status: 'up(pid=4201)',
+        http_status: 'up(http=200)',
+        raw_probe: 'orchestrator proc=up(pid=4201) http=up(http=200)',
+        command_status: 'success',
+      },
+      type: 'django',
+      stack: 'python',
+      entrypoint: './debug/restart-runtime.sh orchestrator',
+      health: 'http://orchestrator.local/health',
+      supported_actions: ['probe', 'restart', 'tail_logs'],
+      logs_available: true,
+      scheduler_supported: false,
+    },
+    {
+      runtime_id: 'local:localhost:worker-workflows',
+      runtime_name: 'worker-workflows',
+      display_name: 'worker-workflows',
+      provider: { key: 'local_scripts', host: 'localhost' },
+      observed_state: {
+        status: 'online',
+        process_status: 'up(pid=4310)',
+        http_status: 'up(http=200)',
+        raw_probe: 'worker-workflows proc=up(pid=4310) http=up(http=200)',
+        command_status: 'success',
+      },
+      type: 'go-service',
+      stack: 'go',
+      entrypoint: './debug/restart-runtime.sh worker-workflows',
+      health: 'http://worker-workflows.local/health',
+      supported_actions: ['probe', 'restart', 'tail_logs', 'trigger_now'],
+      logs_available: true,
+      scheduler_supported: true,
+      desired_state: {
+        scheduler_enabled: true,
+        jobs: [
+          {
+            job_name: 'pool_factual_active_sync',
+            runtime_id: 'local:localhost:worker-workflows',
+            runtime_name: 'worker-workflows',
+            display_name: 'Pool factual active sync',
+            description: 'Scans active pools and refreshes factual checkpoint windows for the current quarter.',
+            enabled: true,
+            schedule: '@every 120s',
+            schedule_apply_mode: 'controlled_restart',
+            enablement_apply_mode: 'live',
+            latest_run_id: 4101,
+            latest_run_status: 'success',
+            latest_run_started_at: NOW,
+          },
+          {
+            job_name: 'pool_factual_closed_quarter_reconcile',
+            runtime_id: 'local:localhost:worker-workflows',
+            runtime_name: 'worker-workflows',
+            display_name: 'Pool factual closed-quarter reconcile',
+            description: 'Creates and advances reconcile checkpoints for closed-quarter factual scopes.',
+            enabled: true,
+            schedule: '0 2 * * *',
+            schedule_apply_mode: 'controlled_restart',
+            enablement_apply_mode: 'live',
+            latest_run_id: 4102,
+            latest_run_status: 'success',
+            latest_run_started_at: NOW,
+          },
+        ],
+      },
+    },
+  ],
+}
+
+const RUNTIME_CONTROL_DETAILS = {
+  'local:localhost:orchestrator': {
+    ...RUNTIME_CONTROL_CATALOG_RESPONSE.runtimes[0],
+    logs_excerpt: {
+      available: true,
+      excerpt: 'orchestrator\nqueue_lag=12\nsecret=[REDACTED]',
+      path: '/logs/orchestrator.log',
+      updated_at: NOW,
+    },
+    recent_actions: [
+      {
+        id: 'runtime-action-orchestrator-1',
+        provider: 'local_scripts',
+        runtime_id: 'local:localhost:orchestrator',
+        runtime_name: 'orchestrator',
+        action_type: 'probe',
+        target_job_name: '',
+        status: 'success',
+        reason: '',
+        requested_by_username: 'ui-platform',
+        requested_at: NOW,
+        started_at: NOW,
+        finished_at: NOW,
+        result_excerpt: 'orchestrator proc=up(pid=4201) http=up(http=200)',
+        result_payload: { command_status: 'success' },
+        error_message: '',
+        scheduler_job_run_id: null,
+      },
+    ],
+  },
+  'local:localhost:worker-workflows': {
+    ...RUNTIME_CONTROL_CATALOG_RESPONSE.runtimes[1],
+    logs_excerpt: {
+      available: true,
+      excerpt: 'worker-workflows\nlast_tick=2026-03-10T12:00:00Z',
+      path: '/logs/worker-workflows.log',
+      updated_at: NOW,
+    },
+    recent_actions: [],
+  },
+}
+
 const COMMAND_SCHEMAS_EDITOR_VIEW = {
   driver: 'ibcmd',
   etag: 'command-schemas-etag-1',
@@ -2171,6 +2291,10 @@ type RequestCounts = {
   clusterDetails: number
   databaseLists: number
   systemHealthReads: number
+  runtimeControlCatalogReads: number
+  runtimeControlRuntimeReads: number
+  runtimeControlActionWrites: number
+  runtimeControlDesiredStateWrites: number
   serviceHistoryReads: number
   metadataManagementReads: number
   decisionsScoped: number
@@ -2210,6 +2334,10 @@ function createRequestCounts(): RequestCounts {
     clusterDetails: 0,
     databaseLists: 0,
     systemHealthReads: 0,
+    runtimeControlCatalogReads: 0,
+    runtimeControlRuntimeReads: 0,
+    runtimeControlActionWrites: 0,
+    runtimeControlDesiredStateWrites: 0,
     serviceHistoryReads: 0,
     metadataManagementReads: 0,
     decisionsScoped: 0,
@@ -2368,6 +2496,7 @@ async function setupUiPlatformMocks(
   page: Page,
   options?: {
     isStaff?: boolean
+    canManageRuntimeControls?: boolean
     counts?: RequestCounts
     clusterAccessLevel?: 'VIEW' | 'OPERATE' | 'MANAGE' | 'ADMIN' | null
     clusterDetailDelayMs?: number
@@ -2378,6 +2507,7 @@ async function setupUiPlatformMocks(
 ) {
   const counts = options?.counts
   const isStaff = options?.isStaff ?? false
+  const canManageRuntimeControls = options?.canManageRuntimeControls ?? false
   const clusterAccessLevel = options?.clusterAccessLevel ?? null
   const clusterDetailDelayMs = options?.clusterDetailDelayMs ?? 0
   const selectedUserOutsideCatalogSlice = options?.selectedUserOutsideCatalogSlice ?? false
@@ -2413,6 +2543,25 @@ async function setupUiPlatformMocks(
   const masterDataTaxProfiles = JSON.parse(JSON.stringify(MASTER_DATA_TAX_PROFILES)) as typeof MASTER_DATA_TAX_PROFILES
   const masterDataGlAccounts = JSON.parse(JSON.stringify(MASTER_DATA_GL_ACCOUNTS)) as typeof MASTER_DATA_GL_ACCOUNTS
   const workflowBindings = JSON.parse(JSON.stringify(POOL_WITH_ATTACHMENT.workflow_bindings))
+  const systemHealthResponse = JSON.parse(JSON.stringify(SYSTEM_HEALTH_RESPONSE)) as typeof SYSTEM_HEALTH_RESPONSE
+  const runtimeControlCatalog = JSON.parse(JSON.stringify(RUNTIME_CONTROL_CATALOG_RESPONSE)) as typeof RUNTIME_CONTROL_CATALOG_RESPONSE
+  const runtimeControlDetails = JSON.parse(JSON.stringify(RUNTIME_CONTROL_DETAILS)) as typeof RUNTIME_CONTROL_DETAILS
+
+  if (canManageRuntimeControls) {
+    systemHealthResponse.services.push({
+      name: 'worker-workflows',
+      type: 'go-service',
+      url: 'http://worker-workflows.local/health',
+      status: 'online',
+      response_time_ms: 29,
+      last_check: NOW,
+      details: {
+        scheduler: 'active',
+      },
+    })
+    systemHealthResponse.statistics.total = systemHealthResponse.services.length
+    systemHealthResponse.statistics.online = 3
+  }
 
   const buildPagedResponse = <T,>(items: T[], key: string, url: URL) => ({
     [key]: items,
@@ -2446,7 +2595,7 @@ async function setupUiPlatformMocks(
         capabilities: {
           can_manage_rbac: isStaff,
           can_manage_driver_catalogs: isStaff,
-          can_manage_runtime_controls: false,
+          can_manage_runtime_controls: canManageRuntimeControls,
         },
       })
     }
@@ -2748,7 +2897,122 @@ async function setupUiPlatformMocks(
       if (counts) {
         counts.systemHealthReads += 1
       }
-      return fulfillJson(route, SYSTEM_HEALTH_RESPONSE)
+      return fulfillJson(route, systemHealthResponse)
+    }
+
+    if (method === 'GET' && path === '/api/v2/system/runtime-control/catalog/') {
+      if (counts) {
+        counts.runtimeControlCatalogReads += 1
+      }
+      if (!canManageRuntimeControls) {
+        return fulfillJson(route, { success: false, error: { code: 'PERMISSION_DENIED' } }, 403)
+      }
+      return fulfillJson(route, runtimeControlCatalog)
+    }
+
+    const runtimeControlDesiredStateMatch = path.match(/^\/api\/v2\/system\/runtime-control\/runtimes\/(.+)\/desired-state\/$/)
+    if (method === 'PATCH' && runtimeControlDesiredStateMatch) {
+      if (counts) {
+        counts.runtimeControlDesiredStateWrites += 1
+      }
+      const runtimeId = decodeURIComponent(runtimeControlDesiredStateMatch[1] ?? '')
+      const detail = runtimeControlDetails[runtimeId as keyof typeof runtimeControlDetails]
+      if (!detail || !detail.desired_state) {
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND' } }, 404)
+      }
+      const payload = request.postDataJSON() as {
+        scheduler_enabled?: boolean
+        jobs?: Array<{ job_name: string; enabled?: boolean; schedule?: string }>
+      } | null
+      if (typeof payload?.scheduler_enabled === 'boolean') {
+        detail.desired_state.scheduler_enabled = payload.scheduler_enabled
+      }
+      for (const jobPatch of payload?.jobs ?? []) {
+        const job = detail.desired_state.jobs.find((item) => item.job_name === jobPatch.job_name)
+        if (!job) continue
+        if (typeof jobPatch.enabled === 'boolean') {
+          job.enabled = jobPatch.enabled
+        }
+        if (typeof jobPatch.schedule === 'string') {
+          job.schedule = jobPatch.schedule
+        }
+      }
+      const catalogRuntime = runtimeControlCatalog.runtimes.find((item) => item.runtime_id === runtimeId)
+      if (catalogRuntime) {
+        catalogRuntime.desired_state = JSON.parse(JSON.stringify(detail.desired_state))
+      }
+      return fulfillJson(route, { runtime_id: runtimeId, desired_state: detail.desired_state })
+    }
+
+    const runtimeControlRuntimeActionsMatch = path.match(/^\/api\/v2\/system\/runtime-control\/runtimes\/(.+)\/actions\/$/)
+    if (method === 'GET' && runtimeControlRuntimeActionsMatch) {
+      const runtimeId = decodeURIComponent(runtimeControlRuntimeActionsMatch[1] ?? '')
+      const detail = runtimeControlDetails[runtimeId as keyof typeof runtimeControlDetails]
+      return fulfillJson(route, { actions: detail?.recent_actions ?? [] })
+    }
+
+    const runtimeControlRuntimeMatch = path.match(/^\/api\/v2\/system\/runtime-control\/runtimes\/(.+)\/$/)
+    if (method === 'GET' && runtimeControlRuntimeMatch) {
+      if (counts) {
+        counts.runtimeControlRuntimeReads += 1
+      }
+      if (!canManageRuntimeControls) {
+        return fulfillJson(route, { success: false, error: { code: 'PERMISSION_DENIED' } }, 403)
+      }
+      const runtimeId = decodeURIComponent(runtimeControlRuntimeMatch[1] ?? '')
+      const detail = runtimeControlDetails[runtimeId as keyof typeof runtimeControlDetails]
+      if (!detail) {
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND' } }, 404)
+      }
+      return fulfillJson(route, { runtime: detail })
+    }
+
+    if (method === 'POST' && path === '/api/v2/system/runtime-control/actions/') {
+      if (counts) {
+        counts.runtimeControlActionWrites += 1
+      }
+      const payload = request.postDataJSON() as {
+        runtime_id?: string
+        action_type?: 'probe' | 'restart' | 'tail_logs' | 'trigger_now'
+        reason?: string
+        target_job_name?: string
+      } | null
+      const runtimeId = String(payload?.runtime_id || '')
+      const detail = runtimeControlDetails[runtimeId as keyof typeof runtimeControlDetails]
+      if (!detail) {
+        return fulfillJson(route, { success: false, error: { code: 'NOT_FOUND' } }, 404)
+      }
+      const action = {
+        id: `runtime-action-${detail.recent_actions.length + 1}`,
+        provider: 'local_scripts',
+        runtime_id: runtimeId,
+        runtime_name: detail.runtime_name,
+        action_type: payload?.action_type ?? 'probe',
+        target_job_name: payload?.target_job_name ?? '',
+        status: 'accepted',
+        reason: payload?.reason ?? '',
+        requested_by_username: 'ui-platform',
+        requested_at: NOW,
+        started_at: null,
+        finished_at: null,
+        result_excerpt: '',
+        result_payload: {},
+        error_message: '',
+        scheduler_job_run_id: payload?.action_type === 'trigger_now' ? 6001 : null,
+      }
+      detail.recent_actions = [action, ...detail.recent_actions].slice(0, 10)
+      if (payload?.action_type === 'tail_logs' && detail.logs_excerpt) {
+        detail.logs_excerpt.updated_at = NOW
+      }
+      if (payload?.action_type === 'trigger_now' && detail.desired_state) {
+        const job = detail.desired_state.jobs.find((item) => item.job_name === payload.target_job_name)
+        if (job) {
+          job.latest_run_status = 'success'
+          job.latest_run_started_at = NOW
+          job.latest_run_id = (job.latest_run_id ?? 7000) + 1
+        }
+      }
+      return fulfillJson(route, { action }, 202)
     }
 
     if (method === 'GET' && path === '/api/v2/service-mesh/get-history/') {
@@ -4460,6 +4724,65 @@ test('Runtime contract: /system-status ignores same-route menu re-entry and keep
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.systemHealthReads).toBe(initialSystemHealthReads)
   await expect(page.getByText('Request Error')).toHaveCount(0)
+})
+
+test('Runtime control: /system-status exposes scheduler controls for worker-workflows and hands off cadence editing to runtime settings', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: true, counts })
+
+  await page.goto('/system-status?service=worker-workflows&tab=scheduler&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Global scheduler enablement')).toBeVisible()
+  await expect(page.getByText('Pool factual active sync')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Trigger now' }).first()).toBeVisible()
+  await expect.poll(() => counts.runtimeControlCatalogReads).toBeGreaterThan(0)
+  await expect.poll(() => counts.runtimeControlRuntimeReads).toBeGreaterThan(0)
+
+  await page.getByRole('button', { name: 'Open cadence' }).first().click()
+
+  await expect(page).toHaveURL(/\/settings\/runtime\?setting=runtime\.scheduler\.job\.pool_factual_active_sync\.schedule$/)
+  await expect(page.getByRole('heading', { name: 'Runtime Settings', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect.poll(() => counts.runtimeSettingsReads).toBeGreaterThan(0)
+})
+
+test('Runtime control: /system-status restart action uses a reason-gated modal flow inside diagnostics workspace', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: true, counts })
+
+  await page.goto('/system-status?service=orchestrator&tab=controls&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByRole('button', { name: 'Restart runtime' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Restart runtime' }).click()
+
+  const restartDialog = page.getByRole('dialog')
+  await expect(restartDialog).toContainText('Restart is a dangerous action and requires an explicit operator reason.')
+  await expect(restartDialog.getByRole('button', { name: 'Restart' })).toBeDisabled()
+
+  await restartDialog.getByPlaceholder('Explain why this runtime needs a restart').fill('Rotate runtime after factual scheduler drift')
+  await expect(restartDialog.getByRole('button', { name: 'Restart' })).toBeEnabled()
+  await restartDialog.getByRole('button', { name: 'Restart' }).click()
+
+  await expect(restartDialog).toHaveCount(0)
+  await expect.poll(() => counts.runtimeControlActionWrites).toBeGreaterThan(0)
 })
 
 test('UI platform: /service-mesh restores selected service context in a mobile-safe drawer', async ({ page }) => {

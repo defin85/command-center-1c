@@ -7,6 +7,7 @@ from .admin_action_audit_log import AdminActionAuditLog
 from .driver_command_shortcut import DriverCommandShortcut
 from .failed_event import FailedEvent
 from .scheduler_job_run import SchedulerJobRun
+from .runtime_action_run import RuntimeActionRun
 from .stream_message_receipt import StreamMessageReceipt
 from .task_execution_log import TaskExecutionLog
 from .command_result_snapshot import CommandResultSnapshot
@@ -21,6 +22,7 @@ __all__ = [
     'DriverCommandShortcut',
     'FailedEvent',
     'SchedulerJobRun',
+    'RuntimeActionRun',
     'StreamMessageReceipt',
     'TaskExecutionLog',
     'CommandResultSnapshot',

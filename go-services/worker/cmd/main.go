@@ -203,6 +203,7 @@ func main() {
 	timelineCfg.DropOnFull = cfg.TimelineDropOnFull
 	timeline := tracing.NewRedisTimeline(redisClient, timelineCfg)
 	var timelineSyncer *workerRuntimeSettings.TimelineSettingsSyncer
+	var schedulerSyncer *workerRuntimeSettings.SchedulerSettingsSyncer
 	if rt, ok := timeline.(*tracing.RedisTimeline); ok {
 		runtimeClient, err := orchestrator.NewClientWithConfig(orchestrator.ClientConfig{
 			BaseURL: cfg.OrchestratorURL,
@@ -466,6 +467,15 @@ func main() {
 				log.WithError(err).Error("failed to start scheduler")
 			} else {
 				log.WithField("registered_jobs", sched.GetRegisteredJobs()).Info("scheduler started successfully")
+				if orchestratorClient != nil {
+					schedulerSyncer = workerRuntimeSettings.NewSchedulerSettingsSyncer(
+						orchestratorClient,
+						sched,
+						zapLog,
+						time.Minute,
+					)
+					go schedulerSyncer.Start(ctx)
+				}
 			}
 		}
 	} else {

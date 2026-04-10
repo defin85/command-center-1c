@@ -29,8 +29,9 @@ type Scheduler struct {
 	workerID string
 
 	// Registered jobs
-	jobs   map[string]Job
-	jobsMu sync.RWMutex
+	jobs       map[string]Job
+	jobEnabled map[string]bool
+	jobsMu     sync.RWMutex
 
 	// Lifecycle management
 	ctx    context.Context
@@ -65,6 +66,7 @@ func New(redis redis.Cmdable, workerID string, logger *zap.Logger) *Scheduler {
 		logger:   logger.With(zap.String("component", "scheduler")),
 		workerID: workerID,
 		jobs:     make(map[string]Job),
+		jobEnabled: make(map[string]bool),
 	}
 }
 
@@ -91,6 +93,7 @@ func (s *Scheduler) RegisterJob(cronExpr string, job Job) error {
 		return fmt.Errorf("job %s already registered", job.Name())
 	}
 	s.jobs[job.Name()] = job
+	s.jobEnabled[job.Name()] = true
 	s.jobsMu.Unlock()
 
 	// Create wrapper that handles locking and metrics
@@ -123,8 +126,16 @@ func (s *Scheduler) createJobWrapper(job Job) func() {
 		jobName := job.Name()
 
 		// Check if scheduler is enabled (feature flag)
-		if !s.config.Enabled {
+		if !s.IsEnabled() {
 			s.logger.Debug("scheduler disabled, skipping job",
+				zap.String("job", jobName),
+			)
+			s.metrics.RecordJobExecution(jobName, JobStatusSkipped, 0)
+			return
+		}
+
+		if !s.IsJobEnabled(jobName) {
+			s.logger.Debug("job disabled by desired state, skipping job",
 				zap.String("job", jobName),
 			)
 			s.metrics.RecordJobExecution(jobName, JobStatusSkipped, 0)
@@ -298,7 +309,17 @@ func (s *Scheduler) Stop() error {
 
 // IsEnabled returns whether the scheduler is enabled
 func (s *Scheduler) IsEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.config.Enabled
+}
+
+// SetEnabled updates scheduler desired enabled state without restarting the process.
+func (s *Scheduler) SetEnabled(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config.Enabled = enabled
+	s.metrics.SetSchedulerEnabled(enabled)
 }
 
 // GetConfig returns the current scheduler configuration
@@ -316,6 +337,30 @@ func (s *Scheduler) GetRegisteredJobs() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// SetJobEnabled updates desired state for a registered job.
+func (s *Scheduler) SetJobEnabled(jobName string, enabled bool) error {
+	s.jobsMu.Lock()
+	defer s.jobsMu.Unlock()
+
+	if _, exists := s.jobs[jobName]; !exists {
+		return fmt.Errorf("job %s not found", jobName)
+	}
+	s.jobEnabled[jobName] = enabled
+	return nil
+}
+
+// IsJobEnabled reports whether a registered job should execute.
+func (s *Scheduler) IsJobEnabled(jobName string) bool {
+	s.jobsMu.RLock()
+	defer s.jobsMu.RUnlock()
+
+	enabled, exists := s.jobEnabled[jobName]
+	if !exists {
+		return true
+	}
+	return enabled
 }
 
 // RunJobNow triggers immediate execution of a job (for testing/debugging)

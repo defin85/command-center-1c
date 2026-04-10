@@ -25,6 +25,7 @@ export const hasLevel = (current: AccessLevel | null | undefined, required: Acce
 export type AuthzContextValue = {
   isStaff: boolean
   isLoading: boolean
+  canManageRuntimeControls: boolean
   canDatabase: (databaseId: string | null | undefined, required: AccessLevel) => boolean
   canCluster: (clusterId: string | null | undefined, required: AccessLevel) => boolean
   canTemplate: (templateId: string | null | undefined, required: AccessLevel) => boolean

@@ -21,6 +21,7 @@ function AuthzProbe() {
         authz.getDatabaseLevel('db-1') ?? 'none',
         authz.getClusterLevel('cluster-1') ?? 'none',
         authz.getTemplateLevel('template-1') ?? 'none',
+        String(authz.canManageRuntimeControls),
         String(authz.canDatabase('db-1', 'VIEW')),
         String(authz.canAnyTemplate('VIEW')),
       ].join('|')}
@@ -89,7 +90,7 @@ describe('AuthzProvider', () => {
     )
 
     expect(screen.getByTestId('authz-summary')).toHaveTextContent(
-      'ready|nonstaff|MANAGE|VIEW|OPERATE|true|true'
+      'ready|nonstaff|MANAGE|VIEW|OPERATE|false|true|true'
     )
   })
 })

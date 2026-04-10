@@ -178,11 +178,25 @@ RUNTIME_SETTINGS = {
         description="Enable scheduler launches for the pool factual active sync job.",
         tenant_override_allowed=False,
     ),
+    "runtime.scheduler.job.pool_factual_active_sync.schedule": RuntimeSettingDefinition(
+        key="runtime.scheduler.job.pool_factual_active_sync.schedule",
+        value_type="string",
+        default="@every 120s",
+        description="Declarative cadence for the pool factual active sync job.",
+        tenant_override_allowed=False,
+    ),
     "runtime.scheduler.job.pool_factual_closed_quarter_reconcile.enabled": RuntimeSettingDefinition(
         key="runtime.scheduler.job.pool_factual_closed_quarter_reconcile.enabled",
         value_type="bool",
         default=True,
         description="Enable scheduler launches for the pool factual closed-quarter reconcile job.",
+        tenant_override_allowed=False,
+    ),
+    "runtime.scheduler.job.pool_factual_closed_quarter_reconcile.schedule": RuntimeSettingDefinition(
+        key="runtime.scheduler.job.pool_factual_closed_quarter_reconcile.schedule",
+        value_type="string",
+        default="0 2 * * *",
+        description="Declarative cadence for the pool factual closed-quarter reconcile job.",
         tenant_override_allowed=False,
     ),
 }

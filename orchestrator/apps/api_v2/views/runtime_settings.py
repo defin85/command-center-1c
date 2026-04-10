@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
+from apps.core import permission_codes as perms
 from apps.runtime_settings.models import RuntimeSetting
 from apps.runtime_settings.registry import RUNTIME_SETTINGS, runtime_setting_allows_tenant_override
 from apps.runtime_settings.effective import get_effective_runtime_setting
@@ -17,6 +18,7 @@ from apps.tenancy.authentication import TENANT_HEADER
 from apps.tenancy.models import TenantMember
 
 logger = logging.getLogger(__name__)
+RUNTIME_CONTROL_SETTING_PREFIX = "runtime.scheduler."
 
 
 class RuntimeSettingSerializer(serializers.Serializer):
@@ -85,6 +87,12 @@ def _resolve_request_tenant_id(request) -> str | None:
         raw = request._request.META.get(TENANT_HEADER)
     raw_value = str(raw or "").strip()
     return raw_value or None
+
+
+def _has_runtime_control_permission(user) -> bool:
+    if getattr(user, "is_superuser", False):
+        return True
+    return perms.PERM_OPERATIONS_MANAGE_RUNTIME_CONTROLS in user.get_all_permissions()
 
 
 @extend_schema(
@@ -332,6 +340,17 @@ def update_runtime_setting(request, key: str):
         return Response(
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
+        )
+    if definition.key.startswith(RUNTIME_CONTROL_SETTING_PREFIX) and not _has_runtime_control_permission(request.user):
+        return Response(
+            {
+                'success': False,
+                'error': {
+                    'code': 'PERMISSION_DENIED',
+                    'message': 'Runtime-control settings require explicit runtime-control permission',
+                },
+            },
+            status=status.HTTP_403_FORBIDDEN,
         )
 
     serializer = RuntimeSettingUpdateSerializer(data=request.data)

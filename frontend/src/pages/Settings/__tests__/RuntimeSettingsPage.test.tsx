@@ -9,10 +9,15 @@ const {
   mockGetRuntimeSettings,
   mockUpdateRuntimeSetting,
   mockTrackUiAction,
+  mockUseAuthz,
 } = vi.hoisted(() => ({
   mockGetRuntimeSettings: vi.fn(),
   mockUpdateRuntimeSetting: vi.fn(),
   mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
+  mockUseAuthz: vi.fn(() => ({
+    isStaff: true,
+    canManageRuntimeControls: true,
+  })),
 }))
 
 vi.mock('../../../api/runtimeSettings', () => ({
@@ -21,9 +26,7 @@ vi.mock('../../../api/runtimeSettings', () => ({
 }))
 
 vi.mock('../../../authz/useAuthz', () => ({
-  useAuthz: () => ({
-    isStaff: true,
-  }),
+  useAuthz: (...args: unknown[]) => mockUseAuthz(...args),
 }))
 
 vi.mock('../../../observability/uiActionJournal', () => ({
@@ -90,6 +93,11 @@ describe('RuntimeSettingsPage observability', () => {
     mockGetRuntimeSettings.mockReset()
     mockUpdateRuntimeSetting.mockReset()
     mockTrackUiAction.mockClear()
+    mockUseAuthz.mockReset()
+    mockUseAuthz.mockReturnValue({
+      isStaff: true,
+      canManageRuntimeControls: true,
+    })
   })
 
   it('tracks save actions for the selected runtime setting drawer', async () => {
@@ -144,5 +152,36 @@ describe('RuntimeSettingsPage observability', () => {
       )
     })
     expect(mockUpdateRuntimeSetting).toHaveBeenCalledWith('operations.feature_enabled', false)
+  })
+
+  it('keeps runtime-control keys read-only without runtime-control capability', async () => {
+    mockUseAuthz.mockReturnValue({
+      isStaff: true,
+      canManageRuntimeControls: false,
+    })
+    mockGetRuntimeSettings.mockResolvedValue([{
+      key: 'runtime.scheduler.enabled',
+      value: true,
+      value_type: 'bool',
+      description: 'Enable scheduler control plane.',
+      default: true,
+      min_value: null,
+      max_value: null,
+    }])
+
+    render(
+      <MemoryRouter initialEntries={['/settings/runtime?setting=runtime.scheduler.enabled&context=setting']}>
+        <AntApp>
+          <Routes>
+            <Route path="/settings/runtime" element={<RuntimeSettingsPage />} />
+          </Routes>
+        </AntApp>
+      </MemoryRouter>,
+    )
+
+    await screen.findByText('runtime.scheduler.enabled')
+    expect(screen.getByText('Runtime-control keys остаются read-only без отдельной runtime-control capability.')).toBeInTheDocument()
+    expect(screen.getByText('Эта настройка требует runtime-control capability для изменения.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 })
