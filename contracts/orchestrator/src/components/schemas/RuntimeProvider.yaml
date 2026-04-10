@@ -1,0 +1,9 @@
+type: object
+properties:
+  key:
+    type: string
+  host:
+    type: string
+required:
+  - host
+  - key

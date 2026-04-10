@@ -1,0 +1,51 @@
+post:
+  operationId: v2_system_runtime_control_action_run_create
+  description: Create an asynchronous runtime-control action run.
+  summary: Create runtime action
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RuntimeActionCreate.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/RuntimeActionCreate.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/RuntimeActionCreate.yaml
+  responses:
+    '202':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/RuntimeActionResponse.yaml
+      description: Accepted
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: Validation error
+    '401':
+      description: Unauthorized
+    '403':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: Forbidden
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

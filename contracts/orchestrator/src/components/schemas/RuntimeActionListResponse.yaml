@@ -1,0 +1,8 @@
+type: object
+properties:
+  actions:
+    type: array
+    items:
+      $ref: ./RuntimeActionRun.yaml
+required:
+  - actions

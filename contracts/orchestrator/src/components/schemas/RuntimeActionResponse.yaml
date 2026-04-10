@@ -1,0 +1,6 @@
+type: object
+properties:
+  action:
+    $ref: ./RuntimeActionRun.yaml
+required:
+  - action

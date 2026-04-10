@@ -2548,8 +2548,12 @@ async function setupUiPlatformMocks(
   const runtimeControlDetails = JSON.parse(JSON.stringify(RUNTIME_CONTROL_DETAILS)) as typeof RUNTIME_CONTROL_DETAILS
 
   if (canManageRuntimeControls) {
+    const orchestratorService = systemHealthResponse.services.find((service) => service.name === 'orchestrator')
+    if (orchestratorService) {
+      orchestratorService.name = 'Orchestrator'
+    }
     systemHealthResponse.services.push({
-      name: 'worker-workflows',
+      name: 'Worker Workflows',
       type: 'go-service',
       url: 'http://worker-workflows.local/health',
       status: 'online',
@@ -4755,6 +4759,31 @@ test('Runtime control: /system-status exposes scheduler controls for worker-work
   await expect.poll(() => counts.runtimeSettingsReads).toBeGreaterThan(0)
 })
 
+test('Runtime control: /system-status restores selected scheduler job context from a deep-link', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: true, counts })
+
+  await page.goto('/system-status?service=worker-workflows&tab=scheduler&job=pool_factual_closed_quarter_reconcile&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const selectedJob = page.getByTestId('system-status-selected-scheduler-job')
+  await expect(selectedJob).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(selectedJob).toContainText('Pool factual closed-quarter reconcile')
+  await expect(selectedJob).toContainText('0 2 * * *')
+  await expect.poll(() => counts.runtimeControlCatalogReads).toBeGreaterThan(0)
+  await expect.poll(() => counts.runtimeControlRuntimeReads).toBeGreaterThan(0)
+
+  await selectedJob.getByRole('button', { name: 'Open cadence' }).click()
+
+  await expect(page).toHaveURL(/\/settings\/runtime\?setting=runtime\.scheduler\.job\.pool_factual_closed_quarter_reconcile\.schedule$/)
+})
+
 test('Runtime control: /system-status restart action uses a reason-gated modal flow inside diagnostics workspace', async ({ page }) => {
   const counts = createRequestCounts()
 
@@ -4783,6 +4812,76 @@ test('Runtime control: /system-status restart action uses a reason-gated modal f
 
   await expect(restartDialog).toHaveCount(0)
   await expect.poll(() => counts.runtimeControlActionWrites).toBeGreaterThan(0)
+})
+
+test('Runtime control: /system-status hands off to /service-mesh with canonical runtime keys even when diagnostics labels are title-cased', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: true, counts })
+
+  await page.goto('/system-status?service=orchestrator&tab=controls&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByRole('button', { name: 'Restart runtime' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open service mesh' }).click()
+
+  await expect(page).toHaveURL(/\/service-mesh\?service=orchestrator$/)
+  await expect(page.getByRole('heading', { name: 'Service mesh', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByTestId('service-mesh-service-drawer')).toBeVisible()
+  await expect.poll(() => counts.serviceHistoryReads).toBeGreaterThan(0)
+})
+
+test('Runtime control: /system-status surfaces scheduler run correlation in runtime action history', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: true, counts })
+
+  await page.goto('/system-status?service=worker-workflows&tab=scheduler&job=pool_factual_active_sync&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  const selectedJob = page.getByTestId('system-status-selected-scheduler-job')
+  await expect(selectedJob).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await selectedJob.getByRole('button', { name: 'Trigger now' }).click()
+  await expect.poll(() => counts.runtimeControlActionWrites).toBeGreaterThan(0)
+
+  await page.getByText('Controls', { exact: true }).click()
+  await expect(page.getByText('Scheduler run: #6001')).toBeVisible()
+  await expect(page.getByText('pool_factual_active_sync')).toBeVisible()
+})
+
+test('Runtime control: /system-status keeps diagnostics-only workspace without runtime-control capability', async ({ page }) => {
+  const counts = createRequestCounts()
+
+  await setupAuth(page)
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { isStaff: true, canManageRuntimeControls: false, counts })
+
+  await page.goto('/system-status?service=orchestrator&tab=controls&poll=paused', {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(page.getByRole('heading', { name: 'System status', level: 2 })).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  })
+  await expect(page.getByText('Delayed queue drain')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Controls' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Restart runtime' })).toHaveCount(0)
+  await expect(page.getByText('Runtime control summary')).toHaveCount(0)
+  await expect.poll(() => counts.systemHealthReads).toBeGreaterThan(0)
 })
 
 test('UI platform: /service-mesh restores selected service context in a mobile-safe drawer', async ({ page }) => {

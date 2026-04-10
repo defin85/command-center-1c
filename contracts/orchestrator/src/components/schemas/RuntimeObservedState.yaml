@@ -1,0 +1,17 @@
+type: object
+properties:
+  status:
+    type: string
+  process_status:
+    type: string
+  http_status:
+    type: string
+  raw_probe:
+    type: string
+  command_status:
+    type: string
+required:
+  - http_status
+  - process_status
+  - raw_probe
+  - status

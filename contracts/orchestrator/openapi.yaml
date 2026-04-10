@@ -12048,6 +12048,303 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/system/runtime-control/catalog/:
+    get:
+      operationId: v2_system_runtime_control_catalog_list
+      description: List allowlisted runtime-control catalog entries for privileged operators.
+      summary: List runtime-control catalog
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeControlCatalogResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/:
+    get:
+      operationId: v2_system_runtime_control_runtime_retrieve
+      description: Get runtime-control detail for one allowlisted runtime instance.
+      summary: Get runtime-control detail
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: runtime_id
+          schema:
+            type: string
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeControlRuntimeResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/actions/:
+    get:
+      operationId: v2_system_runtime_control_runtime_action_history_retrieve
+      description: List recent runtime-control action history for one runtime instance.
+      summary: List runtime action history
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: runtime_id
+          schema:
+            type: string
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeActionListResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/desired-state/:
+    patch:
+      operationId: v2_system_runtime_control_desired_state_partial_update
+      description: Update desired scheduler state for a runtime-control target.
+      summary: Patch runtime desired state
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: runtime_id
+          schema:
+            type: string
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeDesiredStatePatch'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RuntimeDesiredStatePatch'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RuntimeDesiredStatePatch'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeDesiredStateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+  /api/v2/system/runtime-control/actions/:
+    post:
+      operationId: v2_system_runtime_control_action_run_create
+      description: Create an asynchronous runtime-control action run.
+      summary: Create runtime action
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeActionCreate'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RuntimeActionCreate'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RuntimeActionCreate'
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeActionResponse'
+          description: Accepted
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+  /api/v2/system/runtime-control/actions/{action_id}/:
+    get:
+      operationId: v2_system_runtime_control_action_run_retrieve
+      description: Retrieve one asynchronous runtime-control action run by id.
+      summary: Get runtime action
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: action_id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeActionResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+  /api/v2/system/runtime-control/scheduler/jobs/:
+    get:
+      operationId: v2_system_runtime_control_scheduler_job_list
+      description: List allowlisted scheduler jobs and effective desired state.
+      summary: List runtime scheduler jobs
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSchedulerJobsResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
   /api/v2/system/me/:
     get:
       operationId: v2_system_me_retrieve
@@ -25858,6 +26155,325 @@ components:
         - capabilities
         - me
         - tenant_context
+    RuntimeProvider:
+      type: object
+      properties:
+        key:
+          type: string
+        host:
+          type: string
+      required:
+        - host
+        - key
+    RuntimeObservedState:
+      type: object
+      properties:
+        status:
+          type: string
+        process_status:
+          type: string
+        http_status:
+          type: string
+        raw_probe:
+          type: string
+        command_status:
+          type: string
+      required:
+        - http_status
+        - process_status
+        - raw_probe
+        - status
+    RuntimeSchedulerJob:
+      type: object
+      properties:
+        job_name:
+          type: string
+        runtime_id:
+          type: string
+        runtime_name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        schedule:
+          type: string
+        schedule_apply_mode:
+          type: string
+        enablement_apply_mode:
+          type: string
+        latest_run_id:
+          type: integer
+          nullable: true
+        latest_run_status:
+          type: string
+          nullable: true
+        latest_run_started_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - description
+        - display_name
+        - enablement_apply_mode
+        - enabled
+        - job_name
+        - latest_run_id
+        - latest_run_started_at
+        - latest_run_status
+        - runtime_id
+        - runtime_name
+        - schedule
+        - schedule_apply_mode
+    RuntimeDesiredState:
+      type: object
+      properties:
+        scheduler_enabled:
+          type: boolean
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeSchedulerJob'
+      required:
+        - jobs
+        - scheduler_enabled
+    RuntimeLogsExcerpt:
+      type: object
+      properties:
+        available:
+          type: boolean
+        excerpt:
+          type: string
+        path:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - available
+        - excerpt
+        - path
+    RuntimeActionRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        runtime_id:
+          type: string
+        runtime_name:
+          type: string
+        action_type:
+          type: string
+          enum:
+            - probe
+            - restart
+            - tail_logs
+            - trigger_now
+        target_job_name:
+          type: string
+        status:
+          type: string
+          enum:
+            - accepted
+            - running
+            - success
+            - failed
+        reason:
+          type: string
+        requested_by_username:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
+          nullable: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_excerpt:
+          type: string
+        result_payload:
+          type: object
+          additionalProperties: true
+        error_message:
+          type: string
+        scheduler_job_run_id:
+          type: integer
+          nullable: true
+      required:
+        - action_type
+        - error_message
+        - finished_at
+        - id
+        - provider
+        - reason
+        - requested_at
+        - requested_by_username
+        - result_excerpt
+        - result_payload
+        - runtime_id
+        - runtime_name
+        - scheduler_job_run_id
+        - started_at
+        - status
+        - target_job_name
+    RuntimeInstance:
+      type: object
+      properties:
+        runtime_id:
+          type: string
+        runtime_name:
+          type: string
+        display_name:
+          type: string
+        provider:
+          $ref: '#/components/schemas/RuntimeProvider'
+        observed_state:
+          $ref: '#/components/schemas/RuntimeObservedState'
+        type:
+          type: string
+          nullable: true
+        stack:
+          type: string
+          nullable: true
+        entrypoint:
+          type: string
+          nullable: true
+        health:
+          type: string
+          nullable: true
+        supported_actions:
+          type: array
+          items:
+            type: string
+            enum:
+              - probe
+              - restart
+              - tail_logs
+              - trigger_now
+        logs_available:
+          type: boolean
+        scheduler_supported:
+          type: boolean
+        desired_state:
+          $ref: '#/components/schemas/RuntimeDesiredState'
+        logs_excerpt:
+          $ref: '#/components/schemas/RuntimeLogsExcerpt'
+        recent_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeActionRun'
+      required:
+        - display_name
+        - logs_available
+        - observed_state
+        - provider
+        - runtime_id
+        - runtime_name
+        - scheduler_supported
+        - supported_actions
+    RuntimeControlCatalogResponse:
+      type: object
+      properties:
+        runtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeInstance'
+      required:
+        - runtimes
+    RuntimeControlRuntimeResponse:
+      type: object
+      properties:
+        runtime:
+          $ref: '#/components/schemas/RuntimeInstance'
+      required:
+        - runtime
+    RuntimeActionListResponse:
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeActionRun'
+      required:
+        - actions
+    RuntimeDesiredStateJobPatch:
+      type: object
+      properties:
+        job_name:
+          type: string
+        enabled:
+          type: boolean
+        schedule:
+          type: string
+      required:
+        - job_name
+    RuntimeDesiredStatePatch:
+      type: object
+      properties:
+        scheduler_enabled:
+          type: boolean
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeDesiredStateJobPatch'
+    RuntimeDesiredStateResponse:
+      type: object
+      properties:
+        runtime_id:
+          type: string
+        desired_state:
+          $ref: '#/components/schemas/RuntimeDesiredState'
+      required:
+        - desired_state
+        - runtime_id
+    RuntimeActionCreate:
+      type: object
+      properties:
+        runtime_id:
+          type: string
+        action_type:
+          type: string
+          enum:
+            - probe
+            - restart
+            - tail_logs
+            - trigger_now
+        reason:
+          type: string
+        target_job_name:
+          type: string
+      required:
+        - action_type
+        - runtime_id
+    RuntimeActionResponse:
+      type: object
+      properties:
+        action:
+          $ref: '#/components/schemas/RuntimeActionRun'
+      required:
+        - action
+    RuntimeSchedulerJobsResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeSchedulerJob'
+        desired_state:
+          $ref: '#/components/schemas/RuntimeDesiredState'
+      required:
+        - desired_state
+        - jobs
     OperationTemplateSyncRequest:
       type: object
       properties:

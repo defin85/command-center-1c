@@ -1,0 +1,43 @@
+type: object
+properties:
+  job_name:
+    type: string
+  runtime_id:
+    type: string
+  runtime_name:
+    type: string
+  display_name:
+    type: string
+  description:
+    type: string
+  enabled:
+    type: boolean
+  schedule:
+    type: string
+  schedule_apply_mode:
+    type: string
+  enablement_apply_mode:
+    type: string
+  latest_run_id:
+    type: integer
+    nullable: true
+  latest_run_status:
+    type: string
+    nullable: true
+  latest_run_started_at:
+    type: string
+    format: date-time
+    nullable: true
+required:
+  - description
+  - display_name
+  - enablement_apply_mode
+  - enabled
+  - job_name
+  - latest_run_id
+  - latest_run_started_at
+  - latest_run_status
+  - runtime_id
+  - runtime_name
+  - schedule
+  - schedule_apply_mode

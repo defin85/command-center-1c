@@ -1,7 +1,8 @@
 # runtime-control-plane Specification
 
 ## Purpose
-TBD - created by archiving change add-runtime-control-plane. Update Purpose after archive.
+Определяет bounded runtime control plane для allowlisted runtime instances, async control actions,
+desired scheduler state, privileged `/system-status` drill-down и global-only runtime-control policy keys.
 ## Requirements
 ### Requirement: Runtime control catalog MUST expose only allowlisted runtimes and capabilities
 Система ДОЛЖНА (SHALL) предоставлять runtime control catalog только для allowlisted runtime instances.
@@ -129,4 +130,3 @@ Managed providers МОГУТ (MAY) использовать service-manager inte
 - **WHEN** он использует bounded action `Refresh factual sync`
 - **THEN** система выполняет domain-specific refresh для этого workspace context
 - **AND** это действие не маскируется под global scheduler `trigger_now` для всего job window
-

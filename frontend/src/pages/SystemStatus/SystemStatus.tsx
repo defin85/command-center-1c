@@ -113,6 +113,13 @@ const formatSupportedActions = (actions: RuntimeInstance['supported_actions']) =
   actions.map((action) => formatActionType(action)).join(', ') || '—'
 )
 
+const normalizeRouteServiceKey = (value: string | null | undefined) => (
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+)
+
 export const SystemStatus = () => {
   const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -134,6 +141,7 @@ export const SystemStatus = () => {
 
   const selectedServiceName = (searchParams.get('service') || '').trim() || null
   const selectedDetailTab = parseDetailTab(searchParams.get('tab'))
+  const selectedSchedulerJobName = (searchParams.get('job') || '').trim() || null
   const pollMode = parsePollMode(searchParams.get('poll'))
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -313,13 +321,24 @@ export const SystemStatus = () => {
 
   const selectedService = useMemo<ServiceHealth | null>(() => {
     if (!selectedServiceName) return null
-    return servicesSorted.find((service) => service.name === selectedServiceName) ?? null
+    const normalizedSelectedServiceKey = normalizeRouteServiceKey(selectedServiceName)
+    return servicesSorted.find((service) => (
+      service.name === selectedServiceName
+      || normalizeRouteServiceKey(service.name) === normalizedSelectedServiceKey
+    )) ?? null
   }, [selectedServiceName, servicesSorted])
 
   const selectedRuntimeSummary = useMemo<RuntimeInstance | null>(() => {
     if (!selectedServiceName || !canManageRuntimeControls) return null
-    return runtimeCatalog.find((runtime) => runtime.runtime_name === selectedServiceName) ?? null
-  }, [canManageRuntimeControls, runtimeCatalog, selectedServiceName])
+    const candidateKeys = new Set([
+      normalizeRouteServiceKey(selectedServiceName),
+      normalizeRouteServiceKey(selectedService?.name),
+    ].filter(Boolean))
+    return runtimeCatalog.find((runtime) => (
+      candidateKeys.has(normalizeRouteServiceKey(runtime.runtime_name))
+      || candidateKeys.has(normalizeRouteServiceKey(runtime.display_name))
+    )) ?? null
+  }, [canManageRuntimeControls, runtimeCatalog, selectedService?.name, selectedServiceName])
 
   const selectedRuntime = runtimeDetail && selectedRuntimeSummary && runtimeDetail.runtime_id === selectedRuntimeSummary.runtime_id
     ? runtimeDetail
@@ -346,6 +365,7 @@ export const SystemStatus = () => {
   const detailError = selectedServiceName && !selectedService && !loading
     ? 'Selected diagnostics context is outside the current system status snapshot.'
     : null
+  const selectedServiceRouteKey = selectedRuntimeSummary?.runtime_name ?? selectedService?.name ?? null
 
   const headerSubtitle = [
     pollMode === 'paused' ? 'Auto-refresh paused.' : `Auto-refresh every ${POLL_INTERVAL_MS / 1000}s.`,
@@ -375,6 +395,9 @@ export const SystemStatus = () => {
     if (!selectedRuntimeSummary) {
       return
     }
+    if (targetJobName) {
+      updateSearchParams({ job: targetJobName })
+    }
     const actionKey = actionType === 'trigger_now' ? `trigger_now:${targetJobName}` : actionType
     try {
       setRuntimeMutating(actionKey)
@@ -403,7 +426,7 @@ export const SystemStatus = () => {
     } finally {
       setRuntimeMutating(null)
     }
-  }, [fetchRuntimeDetail, message, scheduleRuntimeDetailRefresh, selectedRuntimeSummary])
+  }, [fetchRuntimeDetail, message, scheduleRuntimeDetailRefresh, selectedRuntimeSummary, updateSearchParams])
 
   const handleSchedulerToggle = useCallback(async (nextEnabled: boolean) => {
     if (!selectedRuntimeSummary) {
@@ -430,6 +453,7 @@ export const SystemStatus = () => {
     if (!selectedRuntimeSummary) {
       return
     }
+    updateSearchParams({ job: jobName })
     try {
       setRuntimeMutating(`job:${jobName}`)
       setRuntimeError(null)
@@ -445,7 +469,26 @@ export const SystemStatus = () => {
     } finally {
       setRuntimeMutating(null)
     }
-  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState])
+  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState, updateSearchParams])
+
+  const schedulerJobs = useMemo(
+    () => selectedRuntime?.desired_state?.jobs ?? [],
+    [selectedRuntime?.desired_state?.jobs],
+  )
+  const selectedSchedulerJob = useMemo(
+    () => schedulerJobs.find((job) => job.job_name === selectedSchedulerJobName) ?? null,
+    [schedulerJobs, selectedSchedulerJobName],
+  )
+  const orderedSchedulerJobs = useMemo(() => {
+    if (!selectedSchedulerJobName) {
+      return schedulerJobs
+    }
+    return [...schedulerJobs].sort((left, right) => {
+      const leftRank = left.job_name === selectedSchedulerJobName ? 0 : 1
+      const rightRank = right.job_name === selectedSchedulerJobName ? 0 : 1
+      return leftRank - rightRank
+    })
+  }, [schedulerJobs, selectedSchedulerJobName])
 
   const overviewTabContent = selectedService ? (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -548,6 +591,9 @@ export const SystemStatus = () => {
                   <Text type="secondary">Requested: {formatTimestamp(action.requested_at)}</Text>
                   <Text type="secondary">Finished: {formatTimestamp(action.finished_at)}</Text>
                   <Text type="secondary">Actor: {action.requested_by_username || 'system'}</Text>
+                  {action.scheduler_job_run_id != null ? (
+                    <Text type="secondary">Scheduler run: #{action.scheduler_job_run_id}</Text>
+                  ) : null}
                 </Space>
                 {action.reason ? (
                   <Text type="secondary">Reason: {action.reason}</Text>
@@ -608,16 +654,61 @@ export const SystemStatus = () => {
         </RouteButton>
       ) : null}
 
-      {selectedRuntime.desired_state.jobs.map((job) => {
+      {selectedSchedulerJob ? (
+        <Alert
+          type="success"
+          showIcon
+          data-testid="system-status-selected-scheduler-job"
+          message={`Selected job: ${selectedSchedulerJob.display_name}`}
+          description={(
+            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+              <Space direction="vertical" size={4}>
+                <Text type="secondary">Job key: {selectedSchedulerJob.job_name}</Text>
+                <Text type="secondary">Cadence: {selectedSchedulerJob.schedule}</Text>
+                <Text type="secondary">
+                  Last run: {formatTimestamp(selectedSchedulerJob.latest_run_started_at)}
+                  {selectedSchedulerJob.latest_run_id != null ? ` (#${selectedSchedulerJob.latest_run_id})` : ''}
+                </Text>
+              </Space>
+              <Space wrap>
+                <Button
+                  onClick={() => {
+                    void handleRuntimeAction({
+                      actionType: 'trigger_now',
+                      targetJobName: selectedSchedulerJob.job_name,
+                    })
+                  }}
+                  loading={runtimeMutating === `trigger_now:${selectedSchedulerJob.job_name}`}
+                >
+                  Trigger now
+                </Button>
+                {isStaff && SCHEDULER_SETTING_KEYS[selectedSchedulerJob.job_name] ? (
+                  <RouteButton
+                    to={`/settings/runtime?setting=${encodeURIComponent(SCHEDULER_SETTING_KEYS[selectedSchedulerJob.job_name].schedule)}`}
+                  >
+                    Open cadence
+                  </RouteButton>
+                ) : null}
+              </Space>
+            </Space>
+          )}
+        />
+      ) : null}
+
+      {orderedSchedulerJobs.map((job) => {
         const settingKeys = SCHEDULER_SETTING_KEYS[job.job_name]
+        const isSelectedJob = job.job_name === selectedSchedulerJobName
         return (
           <Alert
             key={job.job_name}
-            type="info"
+            type={isSelectedJob ? 'success' : 'info'}
             showIcon={false}
             message={(
               <Space wrap size={[8, 8]}>
                 <Text strong>{job.display_name}</Text>
+                {isSelectedJob ? (
+                  <StatusBadge status="active" label="selected" />
+                ) : null}
                 <StatusBadge
                   status={runtimeStatusBadge(job.enabled ? 'enabled' : 'disabled')}
                   label={job.enabled ? 'enabled' : 'disabled'}
@@ -641,18 +732,26 @@ export const SystemStatus = () => {
                   </Text>
                 </Space>
                 <Space wrap>
+                  <Button
+                    onClick={() => updateSearchParams({ job: job.job_name })}
+                    disabled={isSelectedJob}
+                  >
+                    {isSelectedJob ? 'Focused' : 'Focus job'}
+                  </Button>
                   <Space size="small">
                     <Text>Enabled</Text>
                     <Switch
                       checked={job.enabled}
                       loading={runtimeMutating === `job:${job.job_name}`}
                       onChange={(checked) => {
+                        updateSearchParams({ job: job.job_name })
                         void handleSchedulerJobToggle(job.job_name, checked)
                       }}
                     />
                   </Space>
                   <Button
                     onClick={() => {
+                      updateSearchParams({ job: job.job_name })
                       void handleRuntimeAction({ actionType: 'trigger_now', targetJobName: job.job_name })
                     }}
                     loading={runtimeMutating === `trigger_now:${job.job_name}`}
@@ -757,7 +856,7 @@ export const SystemStatus = () => {
               >
                 Refresh
               </Button>
-              <RouteButton to={selectedService ? `/service-mesh?service=${encodeURIComponent(selectedService.name)}` : '/service-mesh'}>
+              <RouteButton to={selectedServiceRouteKey ? `/service-mesh?service=${encodeURIComponent(selectedServiceRouteKey)}` : '/service-mesh'}>
                 Open service mesh
               </RouteButton>
             </Space>
@@ -767,7 +866,7 @@ export const SystemStatus = () => {
     >
       <MasterDetailShell
         detailOpen={Boolean(selectedServiceName)}
-        onCloseDetail={() => updateSearchParams({ service: null, tab: null })}
+        onCloseDetail={() => updateSearchParams({ service: null, tab: null, job: null })}
         detailDrawerTitle={selectedService ? selectedService.name : 'System diagnostics'}
         list={(
           <EntityList
@@ -777,7 +876,7 @@ export const SystemStatus = () => {
             emptyDescription="No services reported by /api/v2/system/health/."
             dataSource={servicesSorted}
             renderItem={(service) => {
-              const selected = service.name === selectedServiceName
+              const selected = selectedService?.name === service.name
               return (
                 <List.Item key={service.name}>
                   <Button

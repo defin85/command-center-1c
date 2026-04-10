@@ -1,0 +1,18 @@
+type: object
+properties:
+  runtime_id:
+    type: string
+  action_type:
+    type: string
+    enum:
+      - probe
+      - restart
+      - tail_logs
+      - trigger_now
+  reason:
+    type: string
+  target_job_name:
+    type: string
+required:
+  - action_type
+  - runtime_id

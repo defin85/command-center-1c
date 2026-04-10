@@ -1,0 +1,10 @@
+type: object
+properties:
+  job_name:
+    type: string
+  enabled:
+    type: boolean
+  schedule:
+    type: string
+required:
+  - job_name

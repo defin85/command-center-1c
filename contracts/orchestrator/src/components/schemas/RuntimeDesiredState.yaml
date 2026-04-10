@@ -1,0 +1,11 @@
+type: object
+properties:
+  scheduler_enabled:
+    type: boolean
+  jobs:
+    type: array
+    items:
+      $ref: ./RuntimeSchedulerJob.yaml
+required:
+  - jobs
+  - scheduler_enabled

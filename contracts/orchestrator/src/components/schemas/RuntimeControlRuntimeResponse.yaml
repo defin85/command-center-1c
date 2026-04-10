@@ -1,0 +1,6 @@
+type: object
+properties:
+  runtime:
+    $ref: ./RuntimeInstance.yaml
+required:
+  - runtime

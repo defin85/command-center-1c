@@ -1,0 +1,70 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  provider:
+    type: string
+  runtime_id:
+    type: string
+  runtime_name:
+    type: string
+  action_type:
+    type: string
+    enum:
+      - probe
+      - restart
+      - tail_logs
+      - trigger_now
+  target_job_name:
+    type: string
+  status:
+    type: string
+    enum:
+      - accepted
+      - running
+      - success
+      - failed
+  reason:
+    type: string
+  requested_by_username:
+    type: string
+  requested_at:
+    type: string
+    format: date-time
+    nullable: true
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  finished_at:
+    type: string
+    format: date-time
+    nullable: true
+  result_excerpt:
+    type: string
+  result_payload:
+    type: object
+    additionalProperties: true
+  error_message:
+    type: string
+  scheduler_job_run_id:
+    type: integer
+    nullable: true
+required:
+  - action_type
+  - error_message
+  - finished_at
+  - id
+  - provider
+  - reason
+  - requested_at
+  - requested_by_username
+  - result_excerpt
+  - result_payload
+  - runtime_id
+  - runtime_name
+  - scheduler_job_run_id
+  - started_at
+  - status
+  - target_job_name

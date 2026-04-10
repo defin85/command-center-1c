@@ -1,0 +1,8 @@
+type: object
+properties:
+  scheduler_enabled:
+    type: boolean
+  jobs:
+    type: array
+    items:
+      $ref: ./RuntimeDesiredStateJobPatch.yaml

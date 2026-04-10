@@ -26,7 +26,7 @@ vi.mock('../../../api/runtimeSettings', () => ({
 }))
 
 vi.mock('../../../authz/useAuthz', () => ({
-  useAuthz: (...args: unknown[]) => mockUseAuthz(...args),
+  useAuthz: () => mockUseAuthz(),
 }))
 
 vi.mock('../../../observability/uiActionJournal', () => ({

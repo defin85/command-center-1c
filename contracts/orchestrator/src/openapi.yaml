@@ -494,6 +494,20 @@ paths:
     $ref: paths/api_v2_system_health_.yaml
   /api/v2/system/bootstrap/:
     $ref: paths/api_v2_system_bootstrap_.yaml
+  /api/v2/system/runtime-control/catalog/:
+    $ref: paths/api_v2_system_runtime-control_catalog_.yaml
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/:
+    $ref: paths/api_v2_system_runtime-control_runtimes_{runtime_id}_.yaml
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/actions/:
+    $ref: paths/api_v2_system_runtime-control_runtimes_{runtime_id}_actions_.yaml
+  /api/v2/system/runtime-control/runtimes/{runtime_id}/desired-state/:
+    $ref: paths/api_v2_system_runtime-control_runtimes_{runtime_id}_desired-state_.yaml
+  /api/v2/system/runtime-control/actions/:
+    $ref: paths/api_v2_system_runtime-control_actions_.yaml
+  /api/v2/system/runtime-control/actions/{action_id}/:
+    $ref: paths/api_v2_system_runtime-control_actions_{action_id}_.yaml
+  /api/v2/system/runtime-control/scheduler/jobs/:
+    $ref: paths/api_v2_system_runtime-control_scheduler_jobs_.yaml
   /api/v2/system/me/:
     $ref: paths/api_v2_system_me_.yaml
   /api/v2/templates/sync-from-registry/:

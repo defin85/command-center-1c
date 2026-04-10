@@ -1,0 +1,45 @@
+get:
+  operationId: v2_system_runtime_control_runtime_action_history_retrieve
+  description: List recent runtime-control action history for one runtime instance.
+  summary: List runtime action history
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  parameters:
+    - in: path
+      name: runtime_id
+      schema:
+        type: string
+      required: true
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/RuntimeActionListResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: Forbidden
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ErrorResponse.yaml
+      description: Not found

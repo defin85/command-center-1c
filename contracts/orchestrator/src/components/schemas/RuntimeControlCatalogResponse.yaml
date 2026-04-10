@@ -1,0 +1,8 @@
+type: object
+properties:
+  runtimes:
+    type: array
+    items:
+      $ref: ./RuntimeInstance.yaml
+required:
+  - runtimes

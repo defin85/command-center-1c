@@ -1,0 +1,15 @@
+type: object
+properties:
+  available:
+    type: boolean
+  excerpt:
+    type: string
+  path:
+    type: string
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - available
+  - excerpt
+  - path

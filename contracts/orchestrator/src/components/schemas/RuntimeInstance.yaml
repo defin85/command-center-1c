@@ -1,0 +1,54 @@
+type: object
+properties:
+  runtime_id:
+    type: string
+  runtime_name:
+    type: string
+  display_name:
+    type: string
+  provider:
+    $ref: ./RuntimeProvider.yaml
+  observed_state:
+    $ref: ./RuntimeObservedState.yaml
+  type:
+    type: string
+    nullable: true
+  stack:
+    type: string
+    nullable: true
+  entrypoint:
+    type: string
+    nullable: true
+  health:
+    type: string
+    nullable: true
+  supported_actions:
+    type: array
+    items:
+      type: string
+      enum:
+        - probe
+        - restart
+        - tail_logs
+        - trigger_now
+  logs_available:
+    type: boolean
+  scheduler_supported:
+    type: boolean
+  desired_state:
+    $ref: ./RuntimeDesiredState.yaml
+  logs_excerpt:
+    $ref: ./RuntimeLogsExcerpt.yaml
+  recent_actions:
+    type: array
+    items:
+      $ref: ./RuntimeActionRun.yaml
+required:
+  - display_name
+  - logs_available
+  - observed_state
+  - provider
+  - runtime_id
+  - runtime_name
+  - scheduler_supported
+  - supported_actions

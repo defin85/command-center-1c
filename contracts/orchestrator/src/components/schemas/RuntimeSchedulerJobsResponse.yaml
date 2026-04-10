@@ -1,0 +1,11 @@
+type: object
+properties:
+  jobs:
+    type: array
+    items:
+      $ref: ./RuntimeSchedulerJob.yaml
+  desired_state:
+    $ref: ./RuntimeDesiredState.yaml
+required:
+  - desired_state
+  - jobs

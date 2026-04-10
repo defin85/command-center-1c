@@ -1,0 +1,9 @@
+type: object
+properties:
+  runtime_id:
+    type: string
+  desired_state:
+    $ref: ./RuntimeDesiredState.yaml
+required:
+  - desired_state
+  - runtime_id
