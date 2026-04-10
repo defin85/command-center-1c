@@ -1,5 +1,8 @@
 .PHONY: help dev test build deploy-staging deploy-prod logs stop clean
 .PHONY: file-sizes
+.PHONY: codex-onboard agent-verify validate-feature feature-start feature-baseline feature-iteration feature-holdout feature-revert feature-ci-replay
+
+PYTHON ?= python3
 
 # Default target
 .DEFAULT_GOAL := help
@@ -16,6 +19,65 @@ help:
 	@echo ""
 	@grep -E '^##' Makefile | sed 's/##/  $(GREEN)/' | sed 's/:/$(NC):/'
 	@echo ""
+
+## codex-onboard: Показать canonical onboarding surface и feature packs для agent loop
+codex-onboard:
+	@./scripts/qa/codex-onboard.sh
+
+## agent-verify: Проверить agent-facing docs и portable autoresearch surface
+agent-verify:
+	@./scripts/qa/agent-verify.sh
+
+## validate-feature: Проверить manifest feature pack
+validate-feature:
+	@test -n "$(FEATURE)" || { echo 'FEATURE is required'; exit 2; }
+	@$(PYTHON) scripts/validate_dataset.py \
+		--dev "ai/features/$(FEATURE)/dev.jsonl" \
+		--holdout "ai/features/$(FEATURE)/holdout.jsonl"
+
+## feature-start: Создать новый run для feature pack
+feature-start:
+	@test -n "$(FEATURE)" || { echo 'FEATURE is required'; exit 2; }
+	@$(PYTHON) scripts/start_run.py --name "$(FEATURE)" --feature-dir "ai/features/$(FEATURE)"
+
+## feature-baseline: Зафиксировать baseline для feature pack
+feature-baseline:
+	@test -n "$(FEATURE)" || { echo 'FEATURE is required'; exit 2; }
+	@test -n "$(RUN_ID)" || { echo 'RUN_ID is required'; exit 2; }
+	@$(PYTHON) scripts/feature_loop.py baseline \
+		--run-id "$(RUN_ID)" \
+		--dev "ai/features/$(FEATURE)/dev.jsonl" \
+		--holdout "ai/features/$(FEATURE)/holdout.jsonl"
+
+## feature-iteration: Прогнать одну итерацию и откатить при отсутствии выигрыша
+feature-iteration:
+	@test -n "$(FEATURE)" || { echo 'FEATURE is required'; exit 2; }
+	@test -n "$(RUN_ID)" || { echo 'RUN_ID is required'; exit 2; }
+	@$(PYTHON) scripts/feature_loop.py iteration \
+		--run-id "$(RUN_ID)" \
+		--dev "ai/features/$(FEATURE)/dev.jsonl" \
+		--holdout "ai/features/$(FEATURE)/holdout.jsonl" \
+		--auto-revert
+
+## feature-holdout: Подтвердить лучший кандидат на holdout
+feature-holdout:
+	@test -n "$(FEATURE)" || { echo 'FEATURE is required'; exit 2; }
+	@test -n "$(RUN_ID)" || { echo 'RUN_ID is required'; exit 2; }
+	@$(PYTHON) scripts/feature_loop.py holdout \
+		--run-id "$(RUN_ID)" \
+		--holdout "ai/features/$(FEATURE)/holdout.jsonl"
+
+## feature-revert: Вручную восстановить последний kept snapshot
+feature-revert:
+	@test -n "$(RUN_ID)" || { echo 'RUN_ID is required'; exit 2; }
+	@$(PYTHON) scripts/feature_loop.py revert --run-id "$(RUN_ID)" --verify
+
+## feature-ci-replay: Воспроизвести лучший kept state в чистой копии
+feature-ci-replay:
+	@test -n "$(RUN_ID)" || { echo 'RUN_ID is required'; exit 2; }
+	@$(PYTHON) scripts/feature_loop.py ci-replay \
+		--run-id "$(RUN_ID)" \
+		--phase "$(or $(PHASE),both)"
 
 ## dev: Запустить все сервисы в dev режиме
 dev:

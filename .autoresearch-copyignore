@@ -1,0 +1,13 @@
+# Repo-local replay copy exclusions for portable autoresearch runs.
+# Keep this list limited to local runtime noise and heavy generated artifacts
+# that are not needed for agent-surface verification.
+
+.bootstrap/
+.ruff_cache/
+bin/
+node_modules/
+progress_debug.log
+rust_lsp_server.log
+Gemini_Generated_Image_3g6ish3g6ish3g6i.png
+orchestrator/.coverage
+orchestrator/celerybeat-schedule.db
