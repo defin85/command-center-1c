@@ -665,6 +665,7 @@ async function setupApiMocks(page: Page, state: AcceptanceState) {
         capabilities: {
           can_manage_rbac: false,
           can_manage_driver_catalogs: false,
+          can_manage_runtime_controls: false,
         },
       })
     }

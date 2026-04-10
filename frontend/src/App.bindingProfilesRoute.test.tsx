@@ -92,6 +92,7 @@ describe('App pools binding profiles route', () => {
         capabilities: {
           can_manage_rbac: true,
           can_manage_driver_catalogs: false,
+          can_manage_runtime_controls: false,
         },
       },
       isLoading: false,
@@ -150,6 +151,7 @@ describe('App pools binding profiles route', () => {
         capabilities: {
           can_manage_rbac: true,
           can_manage_driver_catalogs: false,
+          can_manage_runtime_controls: false,
         },
       },
       isLoading: false,

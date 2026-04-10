@@ -51,6 +51,7 @@ function createBootstrapPayload(isStaff: boolean) {
     capabilities: {
       can_manage_rbac: isStaff,
       can_manage_driver_catalogs: false,
+      can_manage_runtime_controls: false,
     },
   }
 }

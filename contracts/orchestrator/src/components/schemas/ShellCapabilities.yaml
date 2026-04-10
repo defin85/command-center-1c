@@ -4,6 +4,9 @@ properties:
     type: boolean
   can_manage_driver_catalogs:
     type: boolean
+  can_manage_runtime_controls:
+    type: boolean
 required:
   - can_manage_driver_catalogs
+  - can_manage_runtime_controls
   - can_manage_rbac

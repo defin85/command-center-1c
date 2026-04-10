@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from apps.runtime_settings.models import RuntimeSetting
-from apps.runtime_settings.registry import RUNTIME_SETTINGS
+from apps.runtime_settings.registry import RUNTIME_SETTINGS, runtime_setting_allows_tenant_override
 from apps.runtime_settings.effective import get_effective_runtime_setting
 from apps.runtime_settings.models import TenantRuntimeSettingOverride
 from apps.tenancy.authentication import TENANT_HEADER
@@ -203,7 +203,11 @@ def list_runtime_setting_overrides(request):
             status=status.HTTP_403_FORBIDDEN
         )
 
-    supported_keys = list(RUNTIME_SETTINGS.keys())
+    supported_keys = [
+        definition.key
+        for definition in RUNTIME_SETTINGS.values()
+        if runtime_setting_allows_tenant_override(definition.key)
+    ]
     rows = (
         TenantRuntimeSettingOverride.objects
         .filter(tenant_id=tenant_id, key__in=supported_keys)
@@ -248,6 +252,17 @@ def update_runtime_setting_override(request, key: str):
         return Response(
             {'success': False, 'error': {'code': 'NOT_FOUND', 'message': 'Setting not found'}},
             status=status.HTTP_404_NOT_FOUND
+        )
+    if not runtime_setting_allows_tenant_override(definition.key):
+        return Response(
+            {
+                'success': False,
+                'error': {
+                    'code': 'GLOBAL_ONLY_SETTING',
+                    'message': 'Setting is global-only and cannot be overridden per tenant',
+                },
+            },
+            status=status.HTTP_400_BAD_REQUEST
         )
 
     serializer = RuntimeSettingOverrideUpdateSerializer(data=request.data)

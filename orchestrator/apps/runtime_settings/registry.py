@@ -11,6 +11,7 @@ class RuntimeSettingDefinition:
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     env_default_setting: Optional[str] = None
+    tenant_override_allowed: bool = True
 
 
 RUNTIME_SETTINGS = {
@@ -163,4 +164,32 @@ RUNTIME_SETTINGS = {
         description="Maximum retry backoff for master-data sync outbox dispatcher.",
         env_default_setting="POOL_RUNTIME_MASTER_DATA_SYNC_MAX_RETRY_BACKOFF_SECONDS",
     ),
+    "runtime.scheduler.enabled": RuntimeSettingDefinition(
+        key="runtime.scheduler.enabled",
+        value_type="bool",
+        default=True,
+        description="Global operator-facing desired state for the scheduler control plane.",
+        tenant_override_allowed=False,
+    ),
+    "runtime.scheduler.job.pool_factual_active_sync.enabled": RuntimeSettingDefinition(
+        key="runtime.scheduler.job.pool_factual_active_sync.enabled",
+        value_type="bool",
+        default=True,
+        description="Enable scheduler launches for the pool factual active sync job.",
+        tenant_override_allowed=False,
+    ),
+    "runtime.scheduler.job.pool_factual_closed_quarter_reconcile.enabled": RuntimeSettingDefinition(
+        key="runtime.scheduler.job.pool_factual_closed_quarter_reconcile.enabled",
+        value_type="bool",
+        default=True,
+        description="Enable scheduler launches for the pool factual closed-quarter reconcile job.",
+        tenant_override_allowed=False,
+    ),
 }
+
+
+def runtime_setting_allows_tenant_override(key: str) -> bool:
+    definition = RUNTIME_SETTINGS.get(key)
+    if definition is None:
+        return True
+    return bool(definition.tenant_override_allowed)

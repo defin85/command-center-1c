@@ -135,6 +135,7 @@ class BatchOperation(models.Model):
             ("cancel_operation", "Can cancel operations"),
             ("view_operation_logs", "Can view operation logs"),
             ("manage_driver_catalogs", "Can manage driver catalogs"),
+            ("manage_runtime_controls", "Can manage runtime controls"),
         )
 
     def __str__(self):

@@ -115,6 +115,7 @@ class CurrentUserSerializer(serializers.Serializer):
 class ShellCapabilitiesSerializer(serializers.Serializer):
     can_manage_rbac = serializers.BooleanField()
     can_manage_driver_catalogs = serializers.BooleanField()
+    can_manage_runtime_controls = serializers.BooleanField()
 
 
 class SystemBootstrapResponseSerializer(serializers.Serializer):
@@ -132,10 +133,25 @@ def build_current_user_payload(*, user) -> dict[str, object]:
     }
 
 
+def _has_explicit_shell_capability(*, user, permission_code: str) -> bool:
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return permission_code in user.get_all_permissions()
+
+
 def build_shell_capabilities_payload(*, user) -> dict[str, bool]:
     return {
-        'can_manage_rbac': bool(user.has_perm(perms.PERM_DATABASES_MANAGE_RBAC)),
-        'can_manage_driver_catalogs': bool(user.has_perm(perms.PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS)),
+        'can_manage_rbac': _has_explicit_shell_capability(user=user, permission_code=perms.PERM_DATABASES_MANAGE_RBAC),
+        'can_manage_driver_catalogs': _has_explicit_shell_capability(
+            user=user,
+            permission_code=perms.PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS,
+        ),
+        'can_manage_runtime_controls': _has_explicit_shell_capability(
+            user=user,
+            permission_code=perms.PERM_OPERATIONS_MANAGE_RUNTIME_CONTROLS,
+        ),
     }
 
 

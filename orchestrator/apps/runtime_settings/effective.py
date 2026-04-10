@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from django.conf import settings
 
 from apps.runtime_settings.models import RuntimeSetting, TenantRuntimeSettingOverride
-from apps.runtime_settings.registry import RUNTIME_SETTINGS
+from apps.runtime_settings.registry import RUNTIME_SETTINGS, runtime_setting_allows_tenant_override
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ def get_effective_runtime_setting(key: str, tenant_id: str | None) -> EffectiveR
     definition = RUNTIME_SETTINGS.get(key)
     default_value = definition.default if definition else {}
 
-    if tenant_id:
+    if tenant_id and runtime_setting_allows_tenant_override(key):
         override = (
             TenantRuntimeSettingOverride.objects.filter(tenant_id=tenant_id, key=key, status=TenantRuntimeSettingOverride.STATUS_PUBLISHED)
             .values_list("value", flat=True)

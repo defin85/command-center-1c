@@ -54,6 +54,7 @@ async function setupCommonApiMocks(page: Page, opts: {
         capabilities: {
           can_manage_rbac: opts.isStaff,
           can_manage_driver_catalogs: false,
+          can_manage_runtime_controls: false,
         },
       })
     }

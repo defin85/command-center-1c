@@ -59,3 +59,4 @@ PERM_OPERATIONS_USE_SERVICE_DBMS_AUTH: Final[str] = "operations.use_service_dbms
 PERM_OPERATIONS_CANCEL_OPERATION: Final[str] = "operations.cancel_operation"
 PERM_OPERATIONS_VIEW_OPERATION_LOGS: Final[str] = "operations.view_operation_logs"
 PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS: Final[str] = "operations.manage_driver_catalogs"
+PERM_OPERATIONS_MANAGE_RUNTIME_CONTROLS: Final[str] = "operations.manage_runtime_controls"

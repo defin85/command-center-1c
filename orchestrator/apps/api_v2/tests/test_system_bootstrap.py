@@ -16,6 +16,7 @@ def staff_user():
     user = User.objects.create_user(username="shell_bootstrap_staff", password="pass", is_staff=True)
     user.user_permissions.add(_permission_by_code(perms.PERM_DATABASES_MANAGE_RBAC))
     user.user_permissions.add(_permission_by_code(perms.PERM_OPERATIONS_MANAGE_DRIVER_CATALOGS))
+    user.user_permissions.add(_permission_by_code(perms.PERM_OPERATIONS_MANAGE_RUNTIME_CONTROLS))
     return user
 
 
@@ -51,7 +52,24 @@ def test_system_bootstrap_returns_shell_context(staff_client, staff_user):
     assert payload["capabilities"] == {
       "can_manage_rbac": True,
       "can_manage_driver_catalogs": True,
+      "can_manage_runtime_controls": True,
     }
     assert payload["access"]["user"]["id"] == staff_user.id
     assert payload["access"]["clusters"] == []
     assert payload["access"]["databases"] == []
+
+
+@pytest.mark.django_db
+def test_system_bootstrap_runtime_control_capability_is_permission_backed():
+    user = User.objects.create_user(username="shell_bootstrap_runtime_view", password="pass", is_staff=True)
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get("/api/v2/system/bootstrap/")
+
+    assert response.status_code == 200
+    assert response.json()["capabilities"] == {
+        "can_manage_rbac": False,
+        "can_manage_driver_catalogs": False,
+        "can_manage_runtime_controls": False,
+    }
