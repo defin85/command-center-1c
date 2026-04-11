@@ -10,7 +10,10 @@ from django.db.models import F, Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
-from .master_data_registry import normalize_pool_master_data_bootstrap_entity_type
+from .master_data_registry import (
+    normalize_pool_master_data_bootstrap_entity_type,
+    normalize_pool_master_data_entity_type,
+)
 from django_fsm import FSMField, transition
 
 
@@ -490,6 +493,27 @@ class PoolMasterDataBootstrapCollectionItemStatus(models.TextChoices):
     COMPLETED = "completed", "Completed"
 
 
+class PoolMasterDataDedupeClusterStatus(models.TextChoices):
+    RESOLVED_AUTO = "resolved_auto", "Resolved Auto"
+    RESOLVED_MANUAL = "resolved_manual", "Resolved Manual"
+    PENDING_REVIEW = "pending_review", "Pending Review"
+    SUPERSEDED = "superseded", "Superseded"
+
+
+class PoolMasterDataDedupeReviewStatus(models.TextChoices):
+    PENDING = "pending_review", "Pending Review"
+    RESOLVED_AUTO = "resolved_auto", "Resolved Auto"
+    RESOLVED_MANUAL = "resolved_manual", "Resolved Manual"
+    SUPERSEDED = "superseded", "Superseded"
+
+
+class PoolMasterDataSourceRecordResolutionStatus(models.TextChoices):
+    INGESTED = "ingested", "Ingested"
+    RESOLVED_AUTO = "resolved_auto", "Resolved Auto"
+    RESOLVED_MANUAL = "resolved_manual", "Resolved Manual"
+    PENDING_REVIEW = "pending_review", "Pending Review"
+
+
 class PoolMasterDataSyncJob(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -706,6 +730,200 @@ class PoolMasterDataSyncConflict(models.Model):
     def clean(self) -> None:
         if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
             raise ValidationError({"database": "Sync conflict database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataDedupeCluster(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_dedupe_clusters",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    dedupe_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    canonical_id = models.CharField(max_length=128, null=True, blank=True, db_index=True)
+    status = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataDedupeClusterStatus.choices,
+        default=PoolMasterDataDedupeClusterStatus.RESOLVED_AUTO,
+        db_index=True,
+    )
+    rollout_eligible = models.BooleanField(default=False)
+    reason_code = models.CharField(max_length=64, blank=True, default="")
+    reason_detail = models.TextField(blank=True, default="")
+    normalized_signals = models.JSONField(default=dict, blank=True)
+    conflicting_fields = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_pool_master_data_dedupe_clusters",
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_dedupe_clusters"
+        indexes = [
+            models.Index(fields=["tenant", "entity_type", "status"]),
+            models.Index(fields=["tenant", "entity_type", "dedupe_key"]),
+            models.Index(fields=["tenant", "entity_type", "canonical_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "entity_type", "canonical_id"],
+                condition=Q(canonical_id__isnull=False),
+                name="uniq_pool_md_dedupe_cluster_canonical",
+            ),
+        ]
+
+    def clean(self) -> None:
+        self.entity_type = normalize_pool_master_data_entity_type(self.entity_type)
+        if self.resolved_by_id and self.resolved_by_id == "":
+            self.resolved_by_id = None
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSourceRecord(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_source_records",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    source_database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pool_master_data_source_records",
+    )
+    cluster = models.ForeignKey(
+        PoolMasterDataDedupeCluster,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_records",
+    )
+    source_ref = models.CharField(max_length=255)
+    source_fingerprint = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    source_canonical_id = models.CharField(max_length=128, blank=True, default="")
+    canonical_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    origin_kind = models.CharField(max_length=32, blank=True, default="bootstrap_import")
+    origin_ref = models.CharField(max_length=128, blank=True, default="")
+    resolution_status = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataSourceRecordResolutionStatus.choices,
+        default=PoolMasterDataSourceRecordResolutionStatus.INGESTED,
+        db_index=True,
+    )
+    resolution_reason = models.CharField(max_length=64, blank=True, default="")
+    normalized_signals = models.JSONField(default=dict, blank=True)
+    payload_snapshot = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_source_records"
+        indexes = [
+            models.Index(fields=["tenant", "entity_type", "resolution_status"]),
+            models.Index(fields=["tenant", "entity_type", "canonical_id"]),
+            models.Index(fields=["tenant", "entity_type", "source_fingerprint"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "entity_type", "source_database", "source_ref"],
+                condition=Q(source_database__isnull=False),
+                name="uniq_pool_md_source_record_db_ref",
+            ),
+        ]
+
+    def clean(self) -> None:
+        self.entity_type = normalize_pool_master_data_entity_type(self.entity_type)
+        if self.source_database_id and self.tenant_id and self.source_database.tenant_id != self.tenant_id:
+            raise ValidationError({"source_database": "Source database must belong to the same tenant."})
+        if self.cluster_id and self.cluster.tenant_id != self.tenant_id:
+            raise ValidationError({"cluster": "Source record cluster must belong to the same tenant."})
+        if not str(self.source_ref or "").strip():
+            raise ValidationError({"source_ref": "Source record reference is required."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataDedupeReviewItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_dedupe_review_items",
+    )
+    cluster = models.OneToOneField(
+        PoolMasterDataDedupeCluster,
+        on_delete=models.CASCADE,
+        related_name="review_item",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    status = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataDedupeReviewStatus.choices,
+        default=PoolMasterDataDedupeReviewStatus.PENDING,
+        db_index=True,
+    )
+    reason_code = models.CharField(max_length=64)
+    conflicting_fields = models.JSONField(default=list, blank=True)
+    source_snapshot = models.JSONField(default=list, blank=True)
+    proposed_survivor_source_record = models.ForeignKey(
+        PoolMasterDataSourceRecord,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="proposed_dedupe_review_items",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_pool_master_data_dedupe_review_items",
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_dedupe_review_items"
+        indexes = [
+            models.Index(fields=["tenant", "entity_type", "status"]),
+            models.Index(fields=["tenant", "reason_code", "-created_at"]),
+        ]
+
+    def clean(self) -> None:
+        self.entity_type = normalize_pool_master_data_entity_type(self.entity_type)
+        if self.cluster_id and self.cluster.tenant_id != self.tenant_id:
+            raise ValidationError({"cluster": "Review cluster must belong to the same tenant."})
+        if self.proposed_survivor_source_record_id and (
+            self.proposed_survivor_source_record.tenant_id != self.tenant_id
+        ):
+            raise ValidationError(
+                {"proposed_survivor_source_record": "Proposed survivor must belong to the same tenant."}
+            )
+        if not str(self.reason_code or "").strip():
+            raise ValidationError({"reason_code": "Review item reason_code is required."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

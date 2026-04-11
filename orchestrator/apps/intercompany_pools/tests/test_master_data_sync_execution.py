@@ -6,7 +6,9 @@ from uuid import uuid4
 import pytest
 
 from apps.databases.models import Database
+from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.master_data_sync_conflicts import (
+    MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
     MASTER_DATA_SYNC_CONFLICT_APPLY,
     MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
     MasterDataSyncConflictError,
@@ -21,6 +23,7 @@ from apps.intercompany_pools.master_data_sync_execution import (
     MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED,
     MASTER_DATA_SYNC_INBOUND_DISABLED,
     MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED,
+    MASTER_DATA_SYNC_DEDUPE_REVIEW_REQUIRED,
     MASTER_DATA_SYNC_OUTBOUND_DISABLED,
     MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED,
     configure_pool_master_data_sync_inbound_callbacks,
@@ -89,6 +92,43 @@ def _set_runtime(
         key=POOL_MASTER_DATA_SYNC_DEFAULT_POLICY_RUNTIME_KEY,
         value=default_policy,
     )
+
+
+def _create_pending_item_dedupe(*, tenant: Tenant, database_a: Database, database_b: Database) -> str:
+    first = ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        source_database=database_a,
+        source_ref="item-a",
+        source_canonical_id="item-a",
+        canonical_payload={
+            "name": "Item Base",
+            "sku": "SKU-001",
+            "unit": "pcs",
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-a",
+        origin_event_id="evt-item-a",
+    )
+    blocked = ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        source_database=database_b,
+        source_ref="item-b",
+        source_canonical_id="item-b",
+        canonical_payload={
+            "name": "Item Conflicted",
+            "sku": "SKU-001",
+            "unit": "pcs",
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-b",
+        origin_event_id="evt-item-b",
+    )
+    assert blocked.blocked is True
+    return str(first.canonical_id)
 
 
 @pytest.mark.django_db
@@ -219,6 +259,34 @@ def test_trigger_outbound_sync_skips_when_registry_disables_outbound_capability(
     assert result.skipped is True
     assert result.skip_reason == MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED
     assert PoolMasterDataSyncJob.objects.filter(tenant=tenant).count() == 0
+
+
+@pytest.mark.django_db
+def test_trigger_outbound_sync_skips_when_dedupe_review_is_pending() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-dedupe-{uuid4().hex[:6]}", name="Sync Exec Dedupe")
+    database_a = _create_database(tenant=tenant, suffix="dedupe-a")
+    database_b = _create_database(tenant=tenant, suffix="dedupe-b")
+    _set_runtime(enabled=True, outbound_enabled=True)
+    canonical_id = _create_pending_item_dedupe(tenant=tenant, database_a=database_a, database_b=database_b)
+
+    result = trigger_pool_master_data_outbound_sync_job(
+        tenant_id=str(tenant.id),
+        database_id=str(database_a.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        canonical_id=canonical_id,
+        origin_system="cc",
+        origin_event_id="evt-dedupe-blocked",
+    )
+
+    assert result.skipped is True
+    assert result.skip_reason == MASTER_DATA_SYNC_DEDUPE_REVIEW_REQUIRED
+    assert PoolMasterDataSyncJob.objects.filter(tenant=tenant).count() == 0
+    conflict = PoolMasterDataSyncConflict.objects.get(
+        tenant=tenant,
+        database=database_a,
+        entity_type=PoolMasterDataEntityType.ITEM,
+    )
+    assert conflict.conflict_code == MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED
 
 
 @pytest.mark.django_db

@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
 from apps.databases.models import Database
+from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
     PoolMasterDataSyncJob,
@@ -65,6 +66,50 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         username="user",
         password="pass",
     )
+
+
+def _create_pending_dedupe_review(*, tenant: Tenant) -> tuple[Database, Database, str]:
+    database_a = _create_database(tenant=tenant, name=f"mdm-dedupe-db-a-{uuid4().hex[:8]}")
+    database_b = _create_database(tenant=tenant, name=f"mdm-dedupe-db-b-{uuid4().hex[:8]}")
+    ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.PARTY,
+        source_database=database_a,
+        source_ref="party-a",
+        source_canonical_id="party-a",
+        canonical_payload={
+            "name": "ООО Спорная",
+            "full_name": "ООО Спорная",
+            "inn": "7703003003",
+            "kpp": "770301001",
+            "is_counterparty": True,
+            "is_our_organization": False,
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-a",
+        origin_event_id="evt-party-a",
+    )
+    blocked = ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.PARTY,
+        source_database=database_b,
+        source_ref="party-b",
+        source_canonical_id="party-b",
+        canonical_payload={
+            "name": "ООО Спорная Компания",
+            "full_name": "ООО Спорная Компания",
+            "inn": "7703003003",
+            "kpp": "770301001",
+            "is_counterparty": True,
+            "is_our_organization": False,
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-b",
+        origin_event_id="evt-party-b",
+    )
+    return database_a, database_b, str(blocked.review_item.id)
 
 
 @pytest.mark.django_db
@@ -154,6 +199,54 @@ def test_master_data_registry_inspect_returns_shared_capability_contract(
     assert gl_account_entry["binding_scope_fields"] == ["canonical_id", "database_id", "chart_identity"]
     gl_account_set_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account_set")
     assert gl_account_set_entry["capabilities"]["direct_binding"] is False
+
+
+@pytest.mark.django_db
+def test_master_data_dedupe_review_list_get_and_action_roundtrip(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    _, _, review_item_id = _create_pending_dedupe_review(tenant=default_tenant)
+
+    list_response = authenticated_client.get("/api/v2/pools/master-data/dedupe-review/?status=pending_review")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["count"] == 1
+    assert list_payload["items"][0]["id"] == review_item_id
+    assert list_payload["items"][0]["status"] == "pending_review"
+
+    get_response = authenticated_client.get(f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/")
+    assert get_response.status_code == 200
+    assert get_response.json()["review_item"]["id"] == review_item_id
+
+    action_response = authenticated_client.post(
+        f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/actions/",
+        {
+            "action": "choose_survivor",
+            "note": "operator approved survivor",
+        },
+        format="json",
+    )
+    assert action_response.status_code == 200
+    action_payload = action_response.json()
+    assert action_payload["review_item"]["status"] == "resolved_manual"
+    assert action_payload["review_item"]["cluster"]["status"] == "resolved_manual"
+
+
+@pytest.mark.django_db
+def test_master_data_dedupe_review_action_validates_unknown_action(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    _, _, review_item_id = _create_pending_dedupe_review(tenant=default_tenant)
+
+    response = authenticated_client.post(
+        f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/actions/",
+        {"action": "bad_action"},
+        format="json",
+    )
+
+    _assert_problem_details_response(response, status_code=400, code="VALIDATION_ERROR")
 
 
 @pytest.mark.django_db

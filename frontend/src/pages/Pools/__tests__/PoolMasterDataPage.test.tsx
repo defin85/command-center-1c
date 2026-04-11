@@ -43,6 +43,9 @@ const mockListPoolMasterDataBootstrapImportJobs = vi.fn()
 const mockGetPoolMasterDataBootstrapImportJob = vi.fn()
 const mockCancelPoolMasterDataBootstrapImportJob = vi.fn()
 const mockRetryFailedPoolMasterDataBootstrapImportChunks = vi.fn()
+const mockListPoolMasterDataDedupeReviewItems = vi.fn()
+const mockGetPoolMasterDataDedupeReviewItem = vi.fn()
+const mockApplyPoolMasterDataDedupeReviewAction = vi.fn()
 
 const buildBootstrapJob = (overrides: Record<string, unknown> = {}) => ({
   id: 'job-1',
@@ -142,6 +145,101 @@ const buildBootstrapCollection = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+const buildDedupeReviewItem = (overrides: Record<string, unknown> = {}) => ({
+  id: 'review-1',
+  tenant_id: 'tenant-1',
+  cluster_id: 'cluster-review-1',
+  entity_type: 'party',
+  status: 'pending_review',
+  reason_code: 'MASTER_DATA_DEDUPE_AMBIGUOUS_FIELDS',
+  conflicting_fields: ['name'],
+  source_snapshot: [],
+  proposed_survivor_source_record_id: 'source-1',
+  cluster: {
+    id: 'cluster-review-1',
+    entity_type: 'party',
+    canonical_id: 'party-001',
+    dedupe_key: 'party:7701001001:770101001',
+    status: 'pending_review',
+    rollout_eligible: false,
+    reason_code: 'MASTER_DATA_DEDUPE_AMBIGUOUS_FIELDS',
+    reason_detail: 'Source record conflicts with an existing canonical cluster and requires operator review.',
+    normalized_signals: {
+      dedupe_key: 'party:7701001001:770101001',
+      inn: '7701001001',
+      kpp: '770101001',
+    },
+    conflicting_fields: ['name'],
+    resolved_at: null,
+    resolved_by_id: null,
+  },
+  source_records: [
+    {
+      id: 'source-1',
+      tenant_id: 'tenant-1',
+      entity_type: 'party',
+      cluster_id: 'cluster-review-1',
+      source_database_id: 'db-1',
+      source_database_name: 'Main DB',
+      source_ref: 'Ref_A',
+      source_fingerprint: 'fp-a',
+      source_canonical_id: 'party-a',
+      canonical_id: 'party-001',
+      origin_kind: 'bootstrap_import',
+      origin_ref: 'job-a',
+      resolution_status: 'pending_review',
+      resolution_reason: 'MASTER_DATA_DEDUPE_AMBIGUOUS_FIELDS',
+      normalized_signals: {
+        dedupe_key: 'party:7701001001:770101001',
+        name: 'ooo romashka',
+      },
+      payload_snapshot: {
+        name: 'ООО Ромашка',
+        inn: '7701001001',
+      },
+      metadata: {},
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: 'source-2',
+      tenant_id: 'tenant-1',
+      entity_type: 'party',
+      cluster_id: 'cluster-review-1',
+      source_database_id: 'db-2',
+      source_database_name: 'Replica DB',
+      source_ref: 'Ref_B',
+      source_fingerprint: 'fp-b',
+      source_canonical_id: 'party-b',
+      canonical_id: 'party-001',
+      origin_kind: 'bootstrap_import',
+      origin_ref: 'job-b',
+      resolution_status: 'pending_review',
+      resolution_reason: 'MASTER_DATA_DEDUPE_AMBIGUOUS_FIELDS',
+      normalized_signals: {
+        dedupe_key: 'party:7701001001:770101001',
+        name: 'ooo romashka kompaniya',
+      },
+      payload_snapshot: {
+        name: 'ООО Ромашка Компания',
+        inn: '7701001001',
+      },
+      metadata: {},
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
+  resolved_at: null,
+  resolved_by_id: null,
+  resolved_by_username: '',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  metadata: {
+    detail: 'Source record conflicts with an existing canonical cluster and requires operator review.',
+  },
+  ...overrides,
+})
+
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
   Background: () => null,
@@ -190,6 +288,9 @@ vi.mock('../../../api/intercompanyPools', () => ({
   cancelPoolMasterDataBootstrapImportJob: (...args: unknown[]) => mockCancelPoolMasterDataBootstrapImportJob(...args),
   retryFailedPoolMasterDataBootstrapImportChunks: (...args: unknown[]) =>
     mockRetryFailedPoolMasterDataBootstrapImportChunks(...args),
+  listPoolMasterDataDedupeReviewItems: (...args: unknown[]) => mockListPoolMasterDataDedupeReviewItems(...args),
+  getPoolMasterDataDedupeReviewItem: (...args: unknown[]) => mockGetPoolMasterDataDedupeReviewItem(...args),
+  applyPoolMasterDataDedupeReviewAction: (...args: unknown[]) => mockApplyPoolMasterDataDedupeReviewAction(...args),
 }))
 
 function renderPage(path = '/pools/master-data') {
@@ -255,6 +356,9 @@ describe('PoolMasterDataPage', () => {
     mockGetPoolMasterDataBootstrapImportJob.mockReset()
     mockCancelPoolMasterDataBootstrapImportJob.mockReset()
     mockRetryFailedPoolMasterDataBootstrapImportChunks.mockReset()
+    mockListPoolMasterDataDedupeReviewItems.mockReset()
+    mockGetPoolMasterDataDedupeReviewItem.mockReset()
+    mockApplyPoolMasterDataDedupeReviewAction.mockReset()
 
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -693,6 +797,17 @@ describe('PoolMasterDataPage', () => {
     mockRetryFailedPoolMasterDataBootstrapImportChunks.mockResolvedValue({
       job: buildBootstrapJob(),
     })
+    mockListPoolMasterDataDedupeReviewItems.mockResolvedValue({
+      items: [],
+      count: 0,
+      meta: { limit: 50, offset: 0, total: 0 },
+    })
+    mockGetPoolMasterDataDedupeReviewItem.mockResolvedValue({
+      review_item: buildDedupeReviewItem(),
+    })
+    mockApplyPoolMasterDataDedupeReviewAction.mockResolvedValue({
+      review_item: buildDedupeReviewItem({ status: 'resolved_manual', resolved_at: '2026-01-01T00:03:00Z' }),
+    })
   })
 
   it('renders workspace zones and loads default Party zone list', async () => {
@@ -758,6 +873,48 @@ describe('PoolMasterDataPage', () => {
       'role=organization'
     )
   })
+
+  it('renders Dedupe Review tab and applies choose survivor action', async () => {
+    const user = userEvent.setup()
+    const pendingReview = buildDedupeReviewItem()
+    const resolvedReview = buildDedupeReviewItem({
+      status: 'resolved_manual',
+      resolved_at: '2026-01-01T00:03:00Z',
+      resolved_by_username: 'admin',
+    })
+    mockListPoolMasterDataDedupeReviewItems.mockResolvedValue({
+      items: [pendingReview],
+      count: 1,
+      meta: { limit: 50, offset: 0, total: 1 },
+    })
+    mockGetPoolMasterDataDedupeReviewItem.mockResolvedValue({
+      review_item: pendingReview,
+    })
+    mockApplyPoolMasterDataDedupeReviewAction.mockResolvedValue({
+      review_item: resolvedReview,
+    })
+
+    renderPage('/pools/master-data?tab=dedupe-review&reviewItemId=review-1&clusterId=cluster-review-1&entityType=party&databaseId=db-1')
+
+    expect(await screen.findByText('Review Queue')).toBeInTheDocument()
+    expect(await screen.findByText('Review Detail')).toBeInTheDocument()
+    expect((await screen.findAllByText('MASTER_DATA_DEDUPE_AMBIGUOUS_FIELDS')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('pool-master-data-remediation-context')).toHaveTextContent(
+      'cluster_id=cluster-review-1 review_item_id=review-1'
+    )
+
+    await user.click(screen.getByLabelText('Use Ref_B as survivor'))
+    await user.click(screen.getByRole('button', { name: 'Choose Survivor' }))
+
+    await waitFor(() =>
+      expect(mockApplyPoolMasterDataDedupeReviewAction).toHaveBeenCalledWith('review-1', {
+        action: 'choose_survivor',
+        source_record_id: 'source-2',
+        note: 'Manual choose survivor from Dedupe Review UI',
+        metadata: { source: 'ui' },
+      })
+    )
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('blocks Party save when no role is selected', async () => {
     const user = userEvent.setup()

@@ -25,6 +25,7 @@ from apps.intercompany_pools.document_policy_contract import (
     POOL_DOCUMENT_POLICY_CHAIN_INVALID,
     POOL_DOCUMENT_POLICY_MAPPING_INVALID,
 )
+from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.master_data_feature_flags import MasterDataGateConfigInvalidError
 from apps.intercompany_pools.models import (
     Organization,
@@ -2111,34 +2112,35 @@ def test_master_data_gate_collects_generic_master_data_readiness_blockers_before
     execution.refresh_from_db(fields=["input_context"])
     readiness_blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
     assert isinstance(readiness_blockers, list)
-    assert readiness_blockers == [
-        {
-            "code": "MASTER_DATA_BINDING_CONFLICT",
-            "detail": "Canonical master-data entity does not provide ib_ref_key for the target database binding scope.",
-            "kind": "binding_source_missing",
-            "entity_name": "party",
-            "field_or_table_path": "party-without-refs",
-            "database_id": str(left_database.id),
-            "diagnostic": {
-                "canonical_id": "party-without-refs",
-                "token": "master_data.party.party-without-refs.counterparty.ref",
-                "scope_hint": "counterparty",
-            },
+    assert len(readiness_blockers) == 2
+    assert readiness_blockers[0] == {
+        "code": "MASTER_DATA_BINDING_CONFLICT",
+        "detail": "Canonical master-data entity does not provide ib_ref_key for the target database binding scope.",
+        "kind": "binding_source_missing",
+        "entity_name": "party",
+        "field_or_table_path": "field_mapping.Контрагент",
+        "database_id": str(left_database.id),
+        "diagnostic": {
+            "canonical_id": "party-without-refs",
+            "token": "master_data.party.party-without-refs.counterparty.ref",
+            "scope_hint": "counterparty",
+            "mapping_path": "field_mapping.Контрагент",
         },
-        {
-            "code": "MASTER_DATA_ENTITY_NOT_FOUND",
-            "detail": "Canonical master-data entity is missing for the publication target binding scope.",
-            "kind": "canonical_entity_missing",
-            "entity_name": "party",
-            "field_or_table_path": "missing-party",
-            "database_id": str(right_database.id),
-            "diagnostic": {
-                "canonical_id": "missing-party",
-                "token": "master_data.party.missing-party.counterparty.ref",
-                "scope_hint": "counterparty",
-            },
+    }
+    assert readiness_blockers[1] == {
+        "code": "MASTER_DATA_ENTITY_NOT_FOUND",
+        "detail": "Canonical master-data entity is missing for the publication target binding scope.",
+        "kind": "canonical_entity_missing",
+        "entity_name": "party",
+        "field_or_table_path": "field_mapping.Контрагент",
+        "database_id": str(right_database.id),
+        "diagnostic": {
+            "canonical_id": "missing-party",
+            "token": "master_data.party.missing-party.counterparty.ref",
+            "scope_hint": "counterparty",
+            "mapping_path": "field_mapping.Контрагент",
         },
-    ]
+    }
 
 
 @pytest.mark.django_db
@@ -2366,18 +2368,118 @@ def test_master_data_gate_resolves_party_token_and_persists_binding_artifact() -
     execution.refresh_from_db(fields=["input_context"])
     publication_payload = execution.input_context.get("pool_runtime_publication_payload")
     assert isinstance(publication_payload, dict)
+
+
+@pytest.mark.django_db
+def test_master_data_gate_blocks_publication_when_dedupe_review_is_pending() -> None:
+    run = _create_pool_run(mode=PoolRunMode.UNSAFE)
+    database_a = _create_database(tenant=run.tenant, suffix="gate-dedupe-a")
+    database_b = _create_database(tenant=run.tenant, suffix="gate-dedupe-b")
+    first = ingest_pool_master_data_source_record(
+        tenant_id=str(run.tenant_id),
+        entity_type="party",
+        source_database=database_a,
+        source_ref="party-a",
+        source_canonical_id="party-a",
+        canonical_payload={
+            "name": "ООО Спорная",
+            "full_name": "ООО Спорная",
+            "inn": "7704004004",
+            "kpp": "770401001",
+            "is_counterparty": True,
+            "is_our_organization": False,
+            "metadata": {
+                "ib_ref_keys": {
+                    str(database_a.id): {"counterparty": "ref-counterparty-a"},
+                    str(database_b.id): {"counterparty": "ref-counterparty-b"},
+                }
+            },
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-a",
+        origin_event_id="evt-party-a",
+    )
+    blocked = ingest_pool_master_data_source_record(
+        tenant_id=str(run.tenant_id),
+        entity_type="party",
+        source_database=database_b,
+        source_ref="party-b",
+        source_canonical_id="party-b",
+        canonical_payload={
+            "name": "ООО Спорная Компания",
+            "full_name": "ООО Спорная Компания",
+            "inn": "7704004004",
+            "kpp": "770401001",
+            "is_counterparty": True,
+            "is_our_organization": False,
+            "metadata": {
+                "ib_ref_keys": {
+                    str(database_a.id): {"counterparty": "ref-counterparty-a"},
+                    str(database_b.id): {"counterparty": "ref-counterparty-b"},
+                }
+            },
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-b",
+        origin_event_id="evt-party-b",
+    )
+    assert blocked.blocked is True
+
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            "master_data_snapshot_ref": "master_data_snapshot.v1:test",
+            "master_data_binding_artifact_ref": "master_data_binding_artifact.v1:test",
+            "pool_runtime_publication_payload": {
+                "pool_runtime": {
+                    "document_chains_by_database": {
+                        str(database_a.id): [
+                            {
+                                "chain_id": "sale-chain",
+                                "documents": [
+                                    {
+                                        "document_id": "sale",
+                                        "field_mapping": {
+                                            "Контрагент": f"master_data.party.{first.canonical_id}.counterparty.ref"
+                                        },
+                                        "table_parts_mapping": {},
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.pool_domain_steps.is_pool_master_data_gate_enabled",
+        return_value=True,
+    ):
+        with pytest.raises(ValueError, match="MASTER_DATA_DEDUPE_REVIEW_REQUIRED"):
+            execute_pool_runtime_step(
+                operation_type="pool.master_data_gate",
+                rendered_data={"pool_runtime": {"step_id": "master_data_gate"}},
+                context={"pool_run_id": str(run.id)},
+                execution=execution,
+            )
+
+    execution.refresh_from_db(fields=["input_context"])
+    blockers = execution.input_context.get(POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY)
+    assert isinstance(blockers, list)
+    assert blockers[0]["code"] == "MASTER_DATA_DEDUPE_REVIEW_REQUIRED"
+    publication_payload = execution.input_context.get("pool_runtime_publication_payload")
+    assert isinstance(publication_payload, dict)
     pool_runtime_payload = publication_payload.get("pool_runtime")
     assert isinstance(pool_runtime_payload, dict)
-    chains = pool_runtime_payload["document_chains_by_database"][str(database.id)]
+    chains = pool_runtime_payload["document_chains_by_database"][str(database_a.id)]
     resolved_master_data_refs = chains[0]["documents"][0].get("resolved_master_data_refs")
-    assert resolved_master_data_refs == {
-        "master_data.party.party-001.counterparty.ref": "ref-counterparty-001"
-    }
+    assert resolved_master_data_refs is None
 
     binding_artifact = execution.input_context.get(POOL_RUNTIME_MASTER_DATA_BINDING_ARTIFACT_CONTEXT_KEY)
-    assert isinstance(binding_artifact, dict)
-    assert binding_artifact.get("binding_artifact_ref") == "master_data_binding_artifact.v1:test"
-    assert binding_artifact.get("mode") == "resolve+upsert"
+    assert binding_artifact is None
 
 
 @pytest.mark.django_db

@@ -2112,6 +2112,98 @@ export type ResolveMasterDataSyncConflictPayload = {
   metadata?: Record<string, unknown>
 }
 
+export type PoolMasterDataDedupeReviewStatus =
+  | 'pending_review'
+  | 'resolved_auto'
+  | 'resolved_manual'
+  | 'superseded'
+
+export type PoolMasterDataDedupeClusterStatus =
+  | 'pending_review'
+  | 'resolved_auto'
+  | 'resolved_manual'
+  | 'superseded'
+
+export type PoolMasterDataSourceRecordResolutionStatus =
+  | 'ingested'
+  | 'resolved_auto'
+  | 'resolved_manual'
+  | 'pending_review'
+
+export type PoolMasterDataDedupeCluster = {
+  id: string
+  entity_type: string
+  canonical_id: string
+  dedupe_key: string
+  status: PoolMasterDataDedupeClusterStatus
+  rollout_eligible: boolean
+  reason_code: string
+  reason_detail: string
+  normalized_signals: Record<string, unknown>
+  conflicting_fields: string[]
+  resolved_at: string | null
+  resolved_by_id: string | null
+}
+
+export type PoolMasterDataSourceRecord = {
+  id: string
+  tenant_id: string
+  entity_type: string
+  cluster_id: string | null
+  source_database_id: string | null
+  source_database_name: string
+  source_ref: string
+  source_fingerprint: string
+  source_canonical_id: string
+  canonical_id: string
+  origin_kind: string
+  origin_ref: string
+  resolution_status: PoolMasterDataSourceRecordResolutionStatus
+  resolution_reason: string
+  normalized_signals: Record<string, unknown>
+  payload_snapshot: Record<string, unknown>
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataDedupeReviewItem = {
+  id: string
+  tenant_id: string
+  cluster_id: string
+  entity_type: string
+  status: PoolMasterDataDedupeReviewStatus
+  reason_code: string
+  conflicting_fields: string[]
+  source_snapshot: unknown[]
+  proposed_survivor_source_record_id: string | null
+  cluster: PoolMasterDataDedupeCluster
+  source_records: PoolMasterDataSourceRecord[]
+  resolved_at: string | null
+  resolved_by_id: string | null
+  resolved_by_username: string
+  created_at: string
+  updated_at: string
+  metadata: Record<string, unknown>
+}
+
+export type ListPoolMasterDataDedupeReviewItemsParams = {
+  status?: PoolMasterDataDedupeReviewStatus
+  entity_type?: string
+  reason_code?: string
+  cluster_id?: string
+  database_id?: string
+  limit?: number
+  offset?: number
+}
+
+export type ApplyPoolMasterDataDedupeReviewActionPayload = {
+  action: 'accept_merge' | 'choose_survivor' | 'mark_distinct'
+  source_record_id?: string
+  note?: string
+  metadata?: Record<string, unknown>
+}
+
 export type MasterDataListMeta = {
   count: number
   limit: number
@@ -2485,6 +2577,50 @@ export async function resolveMasterDataSyncConflict(
 ): Promise<{ conflict: PoolMasterDataSyncConflict }> {
   const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
     `/api/v2/pools/master-data/sync-conflicts/${conflictId}/resolve/`,
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolMasterDataDedupeReviewItems(
+  params: ListPoolMasterDataDedupeReviewItemsParams = {}
+): Promise<{ items: PoolMasterDataDedupeReviewItem[]; count: number; meta: MasterDataListMeta }> {
+  const response = await apiClient.get<{
+    items: PoolMasterDataDedupeReviewItem[]
+    count: number
+    meta?: Partial<MasterDataListMeta>
+  }>('/api/v2/pools/master-data/dedupe-review/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    items: response.data.items ?? [],
+    count: response.data.count ?? 0,
+    meta: {
+      count: response.data.count ?? 0,
+      limit: response.data.meta?.limit ?? (params.limit ?? 50),
+      offset: response.data.meta?.offset ?? (params.offset ?? 0),
+    },
+  }
+}
+
+export async function getPoolMasterDataDedupeReviewItem(
+  reviewItemId: string
+): Promise<{ review_item: PoolMasterDataDedupeReviewItem }> {
+  const response = await apiClient.get<{ review_item: PoolMasterDataDedupeReviewItem }>(
+    `/api/v2/pools/master-data/dedupe-review/${reviewItemId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function applyPoolMasterDataDedupeReviewAction(
+  reviewItemId: string,
+  payload: ApplyPoolMasterDataDedupeReviewActionPayload
+): Promise<{ review_item: PoolMasterDataDedupeReviewItem }> {
+  const response = await apiClient.post<{ review_item: PoolMasterDataDedupeReviewItem }>(
+    `/api/v2/pools/master-data/dedupe-review/${reviewItemId}/actions/`,
     payload,
     { skipGlobalError: true }
   )

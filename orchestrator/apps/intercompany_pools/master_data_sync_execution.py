@@ -7,6 +7,7 @@ from uuid import uuid4
 from django.db import transaction
 from django.utils import timezone
 
+from .master_data_dedupe import MasterDataDedupeReviewRequiredError, require_pool_master_data_dedupe_resolved
 from .master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
     POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
@@ -15,6 +16,7 @@ from .master_data_registry import (
     supports_pool_master_data_capability,
 )
 from .master_data_sync_conflicts import (
+    MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
     MASTER_DATA_SYNC_CONFLICT_APPLY,
     MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
     enqueue_master_data_sync_conflict,
@@ -48,6 +50,7 @@ MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED = "MASTER_DATA_SYNC_INBOUND_CAPABIL
 MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED = "MASTER_DATA_SYNC_RECONCILE_CAPABILITY_DISABLED"
 MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED = "MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED"
 SYNC_LEGACY_INBOUND_ROUTE_DISABLED = "SYNC_LEGACY_INBOUND_ROUTE_DISABLED"
+MASTER_DATA_SYNC_DEDUPE_REVIEW_REQUIRED = "MASTER_DATA_DEDUPE_REVIEW_REQUIRED"
 
 
 class LegacyInboundRouteDisabledError(RuntimeError):
@@ -172,6 +175,35 @@ def trigger_pool_master_data_outbound_sync_job(
             started_workflow=False,
             skipped=True,
             skip_reason=MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED,
+            policy=None,
+            policy_source=None,
+            start_result=None,
+        )
+
+    try:
+        require_pool_master_data_dedupe_resolved(
+            tenant_id=normalized_tenant_id,
+            entity_type=normalized_entity_type,
+            canonical_id=normalized_canonical_id,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        enqueue_master_data_sync_conflict(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
+            canonical_id=normalized_canonical_id,
+            origin_system=normalized_origin_system,
+            origin_event_id=normalized_origin_event_id,
+            diagnostics=exc.to_diagnostic(),
+            metadata={"runtime_gate": "dedupe_review_required"},
+        )
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=None,
+            created_job=False,
+            started_workflow=False,
+            skipped=True,
+            skip_reason=MASTER_DATA_SYNC_DEDUPE_REVIEW_REQUIRED,
             policy=None,
             policy_source=None,
             start_result=None,

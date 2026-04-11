@@ -13,6 +13,7 @@ import {
 import { BindingsTab } from './masterData/BindingsTab'
 import { BootstrapImportTab } from './masterData/BootstrapImportTab'
 import { ContractsTab } from './masterData/ContractsTab'
+import { DedupeReviewTab } from './masterData/DedupeReviewTab'
 import { GLAccountsTab } from './masterData/GLAccountsTab'
 import { GLAccountSetsTab } from './masterData/GLAccountSetsTab'
 import { ItemsTab } from './masterData/ItemsTab'
@@ -33,6 +34,7 @@ const MASTER_DATA_TAB_KEYS = [
   'bindings',
   'sync',
   'bootstrap-import',
+  'dedupe-review',
 ] as const
 
 type MasterDataTabKey = typeof MASTER_DATA_TAB_KEYS[number]
@@ -98,6 +100,12 @@ const MASTER_DATA_ZONES: MasterDataZoneDefinition[] = [
     label: 'Bootstrap Import',
     description: 'Bootstrap-capable import flows for supported reusable entities.',
     render: (registryEntries) => <BootstrapImportTab registryEntries={registryEntries} />,
+  },
+  {
+    key: 'dedupe-review',
+    label: 'Dedupe Review',
+    description: 'Cross-infobase dedupe queue, provenance detail, and manual survivor actions.',
+    render: (registryEntries) => <DedupeReviewTab registryEntries={registryEntries} />,
   },
 ]
 
@@ -167,12 +175,17 @@ export function PoolMasterDataPage() {
     const entityType = searchParams.get('entityType')?.trim() ?? ''
     const canonicalId = searchParams.get('canonicalId')?.trim() ?? ''
     const databaseId = searchParams.get('databaseId')?.trim() ?? ''
+    const clusterId = searchParams.get('clusterId')?.trim() ?? ''
+    const reviewItemId = searchParams.get('reviewItemId')?.trim() ?? ''
     const role = searchParams.get('role')?.trim() ?? ''
 
     if (entityType || canonicalId || databaseId) {
       lines.push(
         `entity_type=${entityType || '-'} canonical_id=${canonicalId || '-'} database_id=${databaseId || '-'}`
       )
+    }
+    if (clusterId || reviewItemId) {
+      lines.push(`cluster_id=${clusterId || '-'} review_item_id=${reviewItemId || '-'}`)
     }
     if (role) {
       lines.push(`role=${role}`)

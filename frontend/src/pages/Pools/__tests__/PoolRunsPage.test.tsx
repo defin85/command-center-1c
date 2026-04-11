@@ -1510,6 +1510,41 @@ describe('PoolRunsPage', () => {
     })
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('routes unresolved dedupe blocker to the Dedupe Review workspace', async () => {
+    const user = userEvent.setup()
+    const dedupeBlocker = {
+      code: 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED',
+      detail: 'Canonical party is blocked by unresolved cross-infobase dedupe review.',
+      diagnostic: {
+        entity_type: 'party',
+        canonical_id: 'party-1',
+        target_database_id: 'db-1',
+        dedupe_cluster_id: 'cluster-review-1',
+        dedupe_review_item_id: 'review-1',
+      },
+    } as PoolRunReadinessBlocker
+    const run = buildRun({
+      readiness_blockers: [dedupeBlocker],
+      readiness_checklist: buildReadinessChecklist({
+        status: 'not_ready',
+        readinessBlockers: [dedupeBlocker],
+      }),
+    })
+    mockListPoolRuns.mockResolvedValue([run])
+    mockGetPoolRunReport.mockResolvedValue(buildReport(run))
+
+    renderPage()
+
+    await openRunsStage(user, 'Inspect')
+    const reviewLink = await screen.findByRole('button', { name: 'Open Dedupe Review' }, { timeout: 10000 })
+    await user.click(reviewLink)
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
+        '/pools/master-data?tab=dedupe-review&entityType=party&canonicalId=party-1&databaseId=db-1&clusterId=cluster-review-1&reviewItemId=review-1'
+      )
+    })
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('renders topology-aware readiness blockers with edge context and remediation routing', async () => {
     const user = userEvent.setup()
     const roleMissingBlocker = {

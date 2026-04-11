@@ -13,6 +13,7 @@ from .master_data_artifact_contract import (
     validate_master_data_binding_artifact_v1,
 )
 from .master_data_bindings import upsert_pool_master_data_binding
+from .master_data_dedupe import MasterDataDedupeReviewRequiredError, require_pool_master_data_dedupe_resolved
 from .master_data_errors import (
     MASTER_DATA_BINDING_AMBIGUOUS,
     MASTER_DATA_BINDING_CONFLICT,
@@ -780,6 +781,21 @@ def _load_canonical_entity(
             canonical_id=requirement.canonical_id,
             target_database_id=requirement.database_id,
         )
+    try:
+        require_pool_master_data_dedupe_resolved(
+            tenant_id=str(run.tenant_id),
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        raise MasterDataResolveError(
+            code=exc.code,
+            detail=exc.detail,
+            entity_type=requirement.entity_type,
+            canonical_id=requirement.canonical_id,
+            target_database_id=requirement.database_id,
+            errors=[exc.to_diagnostic()],
+        ) from exc
     return entity
 
 

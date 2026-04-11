@@ -283,6 +283,9 @@ const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
   MASTER_DATA_BINDING_CONFLICT: (
     'Проверьте token scope, owner qualifier и ib_ref_key для target database.'
   ),
+  MASTER_DATA_DEDUPE_REVIEW_REQUIRED: (
+    'Откройте Dedupe Review, разрешите cross-infobase conflict и только потом повторите rollout или publication.'
+  ),
   POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: (
     'Исправьте topology-aware alias в document policy: допустимы только parent/child participant aliases.'
   ),
@@ -297,6 +300,7 @@ const MASTER_DATA_WORKSPACE_TAB_LABELS: Record<string, string> = {
   contract: 'Contract',
   'tax-profile': 'TaxProfile',
   bindings: 'Bindings',
+  'dedupe-review': 'Dedupe Review',
 }
 
 const DEFAULT_STAGE: PoolRunsStage = 'create'
@@ -844,12 +848,16 @@ const buildMasterDataWorkspaceHref = ({
   canonicalId,
   databaseId,
   role,
+  clusterId,
+  reviewItemId,
 }: {
   tab: string
   entityType?: string
   canonicalId?: string
   databaseId?: string
   role?: string
+  clusterId?: string
+  reviewItemId?: string
 }): string => {
   const params = new URLSearchParams()
   params.set('tab', tab)
@@ -864,6 +872,12 @@ const buildMasterDataWorkspaceHref = ({
   }
   if (role) {
     params.set('role', role)
+  }
+  if (clusterId) {
+    params.set('clusterId', clusterId)
+  }
+  if (reviewItemId) {
+    params.set('reviewItemId', reviewItemId)
   }
   return `/pools/master-data?${params.toString()}`
 }
@@ -907,6 +921,8 @@ const resolveMasterDataRemediationTarget = ({
   const entityType = typeof payload.entity_type === 'string' ? payload.entity_type.trim() : ''
   const canonicalId = typeof payload.canonical_id === 'string' ? payload.canonical_id.trim() : ''
   const databaseId = typeof payload.target_database_id === 'string' ? payload.target_database_id.trim() : ''
+  const clusterId = typeof payload.dedupe_cluster_id === 'string' ? payload.dedupe_cluster_id.trim() : ''
+  const reviewItemId = typeof payload.dedupe_review_item_id === 'string' ? payload.dedupe_review_item_id.trim() : ''
 
   if (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING' || code === 'MASTER_DATA_PARTY_ROLE_MISSING') {
     return {
@@ -929,6 +945,20 @@ const resolveMasterDataRemediationTarget = ({
         entityType: normalizeMasterDataBindingEntityType(entityType),
         canonicalId,
         databaseId,
+      }),
+    }
+  }
+
+  if (code === 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED') {
+    return {
+      label: 'Open Dedupe Review',
+      href: buildMasterDataWorkspaceHref({
+        tab: 'dedupe-review',
+        entityType,
+        canonicalId,
+        databaseId,
+        clusterId,
+        reviewItemId,
       }),
     }
   }

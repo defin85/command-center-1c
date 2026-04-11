@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 _SAFE_TOKEN_KEYS = frozenset(
     {
@@ -66,9 +69,17 @@ def sanitize_master_data_sync_value(value: Any) -> Any:
     if isinstance(value, list):
         return [sanitize_master_data_sync_value(item) for item in value]
     if isinstance(value, tuple):
-        return tuple(sanitize_master_data_sync_value(item) for item in value)
+        return [sanitize_master_data_sync_value(item) for item in value]
     if isinstance(value, str):
         return sanitize_master_data_sync_text(value)
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
     return value
 
 

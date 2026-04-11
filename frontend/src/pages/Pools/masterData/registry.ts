@@ -42,6 +42,11 @@ const normalizeRegistryEntityType = (value: string | undefined): string | null =
   return normalized ? normalized : null
 }
 
+const hasRegistryCapability = (
+  entry: PoolMasterDataRegistryEntry,
+  capability: string
+): boolean => Boolean((entry.capabilities as unknown as Record<string, unknown>)[capability])
+
 export function getRegistryEntryLabel(entry: PoolMasterDataRegistryEntry | null | undefined): string {
   const label = String(entry?.label ?? '').trim()
   if (label) {
@@ -96,6 +101,15 @@ export function getSyncEntityOptions(
     entries.filter(
       (entry) => entry.capabilities.sync_outbound || entry.capabilities.sync_inbound || entry.capabilities.sync_reconcile
     )
+    )
+    .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))
+}
+
+export function getDedupeEntityOptions(
+  entries: PoolMasterDataRegistryEntry[]
+): Array<PoolMasterDataRegistryOption<string>> {
+  return sortByDisplayOrder(
+    entries.filter((entry) => hasRegistryCapability(entry, 'cross_infobase_dedupe'))
   )
     .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))
 }

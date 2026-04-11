@@ -16,11 +16,6 @@ from apps.tenancy.models import Tenant
 
 from .business_configuration_profile import get_business_configuration_profile
 from .master_data_canonical_upsert import MasterDataCanonicalUpsertError
-from .master_data_canonical_upsert import upsert_pool_master_data_contract
-from .master_data_canonical_upsert import upsert_pool_master_data_gl_account
-from .master_data_canonical_upsert import upsert_pool_master_data_item
-from .master_data_canonical_upsert import upsert_pool_master_data_party
-from .master_data_canonical_upsert import upsert_pool_master_data_tax_profile
 from .master_data_bindings import upsert_pool_master_data_binding
 from .master_data_bootstrap_import_dependency_order import (
     BOOTSTRAP_DEPENDENCY_DECISION_DEFERRED,
@@ -53,6 +48,11 @@ from .master_data_bootstrap_import_source_adapter import (
 from .master_data_bootstrap_import_runtime import (
     start_pool_master_data_bootstrap_import_job_execution,
 )
+from .master_data_dedupe import (
+    MASTER_DATA_DEDUPE_REVIEW_REQUIRED,
+    MasterDataDedupeReviewRequiredError,
+    ingest_pool_master_data_source_record,
+)
 from .master_data_sync_redaction import sanitize_master_data_sync_text, sanitize_master_data_sync_value
 from .models import (
     PoolMasterBindingSyncStatus,
@@ -60,6 +60,7 @@ from .models import (
     PoolMasterDataBootstrapImportChunk,
     PoolMasterDataBootstrapImportChunkStatus,
     PoolMasterDataBootstrapImportEntityType,
+    PoolMasterDataEntityType,
     PoolMasterDataBootstrapImportJob,
     PoolMasterDataBootstrapImportJobStatus,
     PoolMasterDataBootstrapImportReport,
@@ -98,8 +99,10 @@ _TERMINAL_JOB_STATUSES = {
 class BootstrapRowOutcome:
     action: str
     canonical_id: str = ""
+    source_canonical_id: str = ""
     error_code: str = ""
     detail: str = ""
+    review_item_id: str = ""
 
 
 class _BootstrapExecutionCanceled(RuntimeError):
@@ -729,6 +732,7 @@ def _execute_chunks(
     )
     chunk_size = int(_safe_chunk_size((job.metadata or {}).get("chunk_size")))
     resolved_ids = _load_resolved_canonical_ids(job=job)
+    resolved_aliases = _load_resolved_canonical_aliases()
     ordered_scope = resolve_bootstrap_import_dependency_order(selected_scope=list(job.entity_scope or []))
 
     for entity_type in ordered_scope:
@@ -753,6 +757,7 @@ def _execute_chunks(
                 chunk=chunk,
                 rows=chunk_rows,
                 resolved_ids=resolved_ids,
+                resolved_aliases=resolved_aliases,
                 actor_id=actor_id,
             )
         if retry_failed_only:
@@ -780,6 +785,7 @@ def _execute_chunk(
     chunk: PoolMasterDataBootstrapImportChunk,
     rows: list[dict[str, Any]],
     resolved_ids: dict[str, set[str]],
+    resolved_aliases: dict[str, dict[str, str]],
     actor_id: str,
 ) -> None:
     _raise_if_job_canceled(job_id=str(chunk.job_id))
@@ -882,12 +888,19 @@ def _execute_chunk(
                 row_index=row_index,
                 chunk_index=int(chunk.chunk_index),
                 resolved_ids=resolved_ids,
+                resolved_aliases=resolved_aliases,
             )
             if outcome.action == "created":
                 chunk.records_created += 1
                 _mark_resolved_id(
                     resolved_ids=resolved_ids,
                     entity_type=str(chunk.entity_type),
+                    canonical_id=outcome.canonical_id,
+                )
+                _mark_resolved_alias(
+                    resolved_aliases=resolved_aliases,
+                    entity_type=str(chunk.entity_type),
+                    source_canonical_id=outcome.source_canonical_id,
                     canonical_id=outcome.canonical_id,
                 )
                 continue
@@ -898,12 +911,24 @@ def _execute_chunk(
                     entity_type=str(chunk.entity_type),
                     canonical_id=outcome.canonical_id,
                 )
+                _mark_resolved_alias(
+                    resolved_aliases=resolved_aliases,
+                    entity_type=str(chunk.entity_type),
+                    source_canonical_id=outcome.source_canonical_id,
+                    canonical_id=outcome.canonical_id,
+                )
                 continue
             if outcome.action == "skipped":
                 chunk.records_skipped += 1
                 _mark_resolved_id(
                     resolved_ids=resolved_ids,
                     entity_type=str(chunk.entity_type),
+                    canonical_id=outcome.canonical_id,
+                )
+                _mark_resolved_alias(
+                    resolved_aliases=resolved_aliases,
+                    entity_type=str(chunk.entity_type),
+                    source_canonical_id=outcome.source_canonical_id,
                     canonical_id=outcome.canonical_id,
                 )
                 continue
@@ -917,6 +942,7 @@ def _execute_chunk(
                         str(outcome.detail or "Bootstrap row apply failed.")
                     ),
                     "action": str(outcome.action),
+                    "review_item_id": str(outcome.review_item_id or ""),
                 }
             )
     except _BootstrapExecutionCanceled:
@@ -969,6 +995,7 @@ def _apply_row(
     row_index: int,
     chunk_index: int,
     resolved_ids: dict[str, set[str]],
+    resolved_aliases: dict[str, dict[str, str]],
 ) -> BootstrapRowOutcome:
     origin_event_id = _build_origin_event_id(
         job_id=str(job.id),
@@ -1011,6 +1038,7 @@ def _apply_row(
             tenant=job.tenant,
             row=row,
             resolved_party_ids=resolved_ids[PoolMasterDataBootstrapImportEntityType.PARTY],
+            resolved_party_aliases=resolved_aliases[PoolMasterDataBootstrapImportEntityType.PARTY],
             origin_event_id=origin_event_id,
             job_id=str(job.id),
         )
@@ -1020,6 +1048,7 @@ def _apply_row(
             database=job.database,
             row=row,
             resolved_ids=resolved_ids,
+            resolved_aliases=resolved_aliases,
             origin_event_id=origin_event_id,
             job_id=str(job.id),
         )
@@ -1062,28 +1091,44 @@ def _apply_party_row(
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
     try:
-        result = upsert_pool_master_data_party(
+        result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
-            canonical_id=canonical_id,
-            name=str(payload["name"]),
-            full_name=str(payload.get("full_name") or ""),
-            inn=str(payload.get("inn") or ""),
-            kpp=str(payload.get("kpp") or ""),
-            is_our_organization=bool(payload.get("is_our_organization")),
-            is_counterparty=bool(payload.get("is_counterparty")),
-            metadata=dict(payload.get("metadata") or {}),
-            origin_system="ib",
+            entity_type=PoolMasterDataEntityType.PARTY,
+            source_database=None,
+            source_ref=_read_source_ref(row=row, fallback=canonical_id),
+            source_canonical_id=canonical_id,
+            canonical_payload=payload,
+            origin_kind="bootstrap_import",
+            origin_ref=str(job_id),
             origin_event_id=origin_event_id,
+            metadata={"bootstrap_job_id": str(job_id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
-        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+        return BootstrapRowOutcome(
+            action="failed",
+            source_canonical_id=canonical_id,
+            error_code=error_code,
+            detail=detail,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        return BootstrapRowOutcome(
+            action="failed",
+            canonical_id=str(exc.canonical_id or ""),
+            source_canonical_id=canonical_id,
+            error_code=exc.code,
+            detail=exc.detail,
+            review_item_id=str(exc.review_item_id or ""),
+        )
 
-    if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
-    if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
-    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(
+        action=str(result.action),
+        canonical_id=str(result.canonical_id or ""),
+        source_canonical_id=canonical_id,
+        error_code=MASTER_DATA_DEDUPE_REVIEW_REQUIRED if result.blocked else "",
+        detail=str(result.detail or ""),
+        review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+    )
 
 
 def _apply_item_row(
@@ -1115,25 +1160,44 @@ def _apply_item_row(
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
     try:
-        result = upsert_pool_master_data_item(
+        result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
-            canonical_id=canonical_id,
-            name=str(payload["name"]),
-            sku=str(payload.get("sku") or ""),
-            unit=str(payload.get("unit") or ""),
-            metadata=dict(payload.get("metadata") or {}),
-            origin_system="ib",
+            entity_type=PoolMasterDataEntityType.ITEM,
+            source_database=None,
+            source_ref=_read_source_ref(row=row, fallback=canonical_id),
+            source_canonical_id=canonical_id,
+            canonical_payload=payload,
+            origin_kind="bootstrap_import",
+            origin_ref=str(job_id),
             origin_event_id=origin_event_id,
+            metadata={"bootstrap_job_id": str(job_id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
-        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+        return BootstrapRowOutcome(
+            action="failed",
+            source_canonical_id=canonical_id,
+            error_code=error_code,
+            detail=detail,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        return BootstrapRowOutcome(
+            action="failed",
+            canonical_id=str(exc.canonical_id or ""),
+            source_canonical_id=canonical_id,
+            error_code=exc.code,
+            detail=exc.detail,
+            review_item_id=str(exc.review_item_id or ""),
+        )
 
-    if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
-    if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
-    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(
+        action=str(result.action),
+        canonical_id=str(result.canonical_id or ""),
+        source_canonical_id=canonical_id,
+        error_code=MASTER_DATA_DEDUPE_REVIEW_REQUIRED if result.blocked else "",
+        detail=str(result.detail or ""),
+        review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+    )
 
 
 def _apply_tax_profile_row(
@@ -1167,25 +1231,44 @@ def _apply_tax_profile_row(
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
     try:
-        result = upsert_pool_master_data_tax_profile(
+        result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
-            canonical_id=canonical_id,
-            vat_rate=vat_rate,
-            vat_included=bool(payload.get("vat_included")),
-            vat_code=str(payload.get("vat_code") or ""),
-            metadata=dict(payload.get("metadata") or {}),
-            origin_system="ib",
+            entity_type=PoolMasterDataEntityType.TAX_PROFILE,
+            source_database=None,
+            source_ref=_read_source_ref(row=row, fallback=canonical_id),
+            source_canonical_id=canonical_id,
+            canonical_payload=payload,
+            origin_kind="bootstrap_import",
+            origin_ref=str(job_id),
             origin_event_id=origin_event_id,
+            metadata={"bootstrap_job_id": str(job_id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
-        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+        return BootstrapRowOutcome(
+            action="failed",
+            source_canonical_id=canonical_id,
+            error_code=error_code,
+            detail=detail,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        return BootstrapRowOutcome(
+            action="failed",
+            canonical_id=str(exc.canonical_id or ""),
+            source_canonical_id=canonical_id,
+            error_code=exc.code,
+            detail=exc.detail,
+            review_item_id=str(exc.review_item_id or ""),
+        )
 
-    if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
-    if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
-    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(
+        action=str(result.action),
+        canonical_id=str(result.canonical_id or ""),
+        source_canonical_id=canonical_id,
+        error_code=MASTER_DATA_DEDUPE_REVIEW_REQUIRED if result.blocked else "",
+        detail=str(result.detail or ""),
+        review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+    )
 
 
 def _apply_gl_account_row(
@@ -1240,27 +1323,51 @@ def _apply_gl_account_row(
 
     metadata = _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id)
     try:
-        result = upsert_pool_master_data_gl_account(
+        result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
-            canonical_id=canonical_id,
-            code=code,
-            name=name,
-            chart_identity=chart_identity,
-            config_name=config_name,
-            config_version=config_version,
-            metadata=metadata,
-            origin_system="ib",
+            entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+            source_database=database,
+            source_ref=_read_source_ref(row=row, fallback=canonical_id),
+            source_canonical_id=canonical_id,
+            canonical_payload={
+                "code": code,
+                "name": name,
+                "chart_identity": chart_identity,
+                "config_name": config_name,
+                "config_version": config_version,
+                "metadata": metadata,
+            },
+            origin_kind="bootstrap_import",
+            origin_ref=str(job_id),
             origin_event_id=origin_event_id,
+            metadata={"bootstrap_job_id": str(job_id), "database_id": str(database.id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
-        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+        return BootstrapRowOutcome(
+            action="failed",
+            source_canonical_id=canonical_id,
+            error_code=error_code,
+            detail=detail,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        return BootstrapRowOutcome(
+            action="failed",
+            canonical_id=str(exc.canonical_id or ""),
+            source_canonical_id=canonical_id,
+            error_code=exc.code,
+            detail=exc.detail,
+            review_item_id=str(exc.review_item_id or ""),
+        )
 
-    if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
-    if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
-    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(
+        action=str(result.action),
+        canonical_id=str(result.canonical_id or ""),
+        source_canonical_id=canonical_id,
+        error_code=MASTER_DATA_DEDUPE_REVIEW_REQUIRED if result.blocked else "",
+        detail=str(result.detail or ""),
+        review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+    )
 
 
 def _apply_contract_row(
@@ -1268,6 +1375,7 @@ def _apply_contract_row(
     tenant: Tenant,
     row: Mapping[str, Any],
     resolved_party_ids: set[str],
+    resolved_party_aliases: dict[str, str],
     origin_event_id: str,
     job_id: str,
 ) -> BootstrapRowOutcome:
@@ -1285,7 +1393,10 @@ def _apply_contract_row(
             error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
             detail=f"Contract '{canonical_id}' requires name.",
         )
-    owner_counterparty_canonical_id = _read_required_token(row, "owner_counterparty_canonical_id")
+    owner_counterparty_source_id = _read_required_token(row, "owner_counterparty_canonical_id")
+    owner_counterparty_canonical_id = str(
+        resolved_party_aliases.get(owner_counterparty_source_id, owner_counterparty_source_id)
+    ).strip()
     decision = evaluate_contract_dependency(
         owner_counterparty_canonical_id=owner_counterparty_canonical_id,
         resolved_party_canonical_ids=resolved_party_ids,
@@ -1319,32 +1430,50 @@ def _apply_contract_row(
     normalized_date = _to_date(raw_date)
     payload = {
         "name": name,
-        "owner_counterparty": owner_counterparty,
+        "owner_counterparty_canonical_id": str(owner_counterparty.canonical_id),
         "number": _read_token(row, "number"),
         "date": normalized_date,
         "metadata": _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id),
     }
     try:
-        result = upsert_pool_master_data_contract(
+        result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
-            canonical_id=canonical_id,
-            name=str(payload["name"]),
-            owner_counterparty=owner_counterparty,
-            number=str(payload.get("number") or ""),
-            date=payload.get("date"),
-            metadata=dict(payload.get("metadata") or {}),
-            origin_system="ib",
+            entity_type=PoolMasterDataEntityType.CONTRACT,
+            source_database=None,
+            source_ref=_read_source_ref(row=row, fallback=canonical_id),
+            source_canonical_id=canonical_id,
+            canonical_payload=payload,
+            origin_kind="bootstrap_import",
+            origin_ref=str(job_id),
             origin_event_id=origin_event_id,
+            metadata={"bootstrap_job_id": str(job_id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
-        return BootstrapRowOutcome(action="failed", error_code=error_code, detail=detail)
+        return BootstrapRowOutcome(
+            action="failed",
+            source_canonical_id=canonical_id,
+            error_code=error_code,
+            detail=detail,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        return BootstrapRowOutcome(
+            action="failed",
+            canonical_id=str(exc.canonical_id or ""),
+            source_canonical_id=canonical_id,
+            error_code=exc.code,
+            detail=exc.detail,
+            review_item_id=str(exc.review_item_id or ""),
+        )
 
-    if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=str(result.entity.canonical_id))
-    if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=str(result.entity.canonical_id))
-    return BootstrapRowOutcome(action="skipped", canonical_id=str(result.entity.canonical_id))
+    return BootstrapRowOutcome(
+        action=str(result.action),
+        canonical_id=str(result.canonical_id or ""),
+        source_canonical_id=canonical_id,
+        error_code=MASTER_DATA_DEDUPE_REVIEW_REQUIRED if result.blocked else "",
+        detail=str(result.detail or ""),
+        review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+    )
 
 
 def _apply_binding_row(
@@ -1353,12 +1482,13 @@ def _apply_binding_row(
     database: Database,
     row: Mapping[str, Any],
     resolved_ids: dict[str, set[str]],
+    resolved_aliases: dict[str, dict[str, str]],
     origin_event_id: str,
     job_id: str,
 ) -> BootstrapRowOutcome:
     target_entity_type = _read_required_token(row, "entity_type")
-    canonical_id = _read_required_token(row, "canonical_id")
-    if not target_entity_type or not canonical_id:
+    source_canonical_id = _read_required_token(row, "canonical_id")
+    if not target_entity_type or not source_canonical_id:
         return BootstrapRowOutcome(
             action="failed",
             error_code=BOOTSTRAP_IMPORT_ROW_REQUIRED_FIELD,
@@ -1374,6 +1504,9 @@ def _apply_binding_row(
             detail=f"Unsupported binding target entity_type '{target_entity_type}'.",
         )
 
+    canonical_id = str(
+        resolved_aliases.get(target_entity_type, {}).get(source_canonical_id, source_canonical_id)
+    ).strip()
     decision = evaluate_binding_dependency(
         target_entity_type=target_entity_type,
         canonical_id=canonical_id,
@@ -1402,7 +1535,13 @@ def _apply_binding_row(
         )
 
     ib_catalog_kind = _read_token(row, "ib_catalog_kind")
-    owner_counterparty_canonical_id = _read_token(row, "owner_counterparty_canonical_id")
+    owner_counterparty_source_id = _read_token(row, "owner_counterparty_canonical_id")
+    owner_counterparty_canonical_id = str(
+        resolved_aliases.get(PoolMasterDataBootstrapImportEntityType.PARTY, {}).get(
+            owner_counterparty_source_id,
+            owner_counterparty_source_id,
+        )
+    ).strip()
     chart_identity = _read_token(row, "chart_identity")
     binding_metadata = _merge_row_metadata(row=row, job_id=job_id, origin_event_id=origin_event_id)
     result = upsert_pool_master_data_binding(
@@ -1420,10 +1559,22 @@ def _apply_binding_row(
         origin_event_id=origin_event_id,
     )
     if result.created:
-        return BootstrapRowOutcome(action="created", canonical_id=canonical_id)
+        return BootstrapRowOutcome(
+            action="created",
+            canonical_id=canonical_id,
+            source_canonical_id=source_canonical_id,
+        )
     if result.changed:
-        return BootstrapRowOutcome(action="updated", canonical_id=canonical_id)
-    return BootstrapRowOutcome(action="skipped", canonical_id=canonical_id)
+        return BootstrapRowOutcome(
+            action="updated",
+            canonical_id=canonical_id,
+            source_canonical_id=source_canonical_id,
+        )
+    return BootstrapRowOutcome(
+        action="skipped",
+        canonical_id=canonical_id,
+        source_canonical_id=source_canonical_id,
+    )
 
 
 def _load_resolved_canonical_ids(job: PoolMasterDataBootstrapImportJob) -> dict[str, set[str]]:
@@ -1448,6 +1599,17 @@ def _load_resolved_canonical_ids(job: PoolMasterDataBootstrapImportJob) -> dict[
     return {key: {str(value or "").strip() for value in values} for key, values in resolved.items()}
 
 
+def _load_resolved_canonical_aliases() -> dict[str, dict[str, str]]:
+    return {
+        PoolMasterDataBootstrapImportEntityType.PARTY: {},
+        PoolMasterDataBootstrapImportEntityType.ITEM: {},
+        PoolMasterDataBootstrapImportEntityType.TAX_PROFILE: {},
+        PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT: {},
+        PoolMasterDataBootstrapImportEntityType.CONTRACT: {},
+        PoolMasterDataBootstrapImportEntityType.BINDING: {},
+    }
+
+
 def _mark_resolved_id(
     *,
     resolved_ids: dict[str, set[str]],
@@ -1459,6 +1621,21 @@ def _mark_resolved_id(
     if not normalized_id:
         return
     resolved_ids.setdefault(normalized_entity, set()).add(normalized_id)
+
+
+def _mark_resolved_alias(
+    *,
+    resolved_aliases: dict[str, dict[str, str]],
+    entity_type: str,
+    source_canonical_id: str,
+    canonical_id: str,
+) -> None:
+    normalized_entity = str(entity_type or "").strip()
+    normalized_source_id = str(source_canonical_id or "").strip()
+    normalized_canonical_id = str(canonical_id or "").strip()
+    if not normalized_source_id or not normalized_canonical_id:
+        return
+    resolved_aliases.setdefault(normalized_entity, {})[normalized_source_id] = normalized_canonical_id
 
 
 def _raise_if_job_canceled(*, job_id: str) -> None:
@@ -1802,6 +1979,11 @@ def _resolve_canonical_upsert_error(exc: Exception) -> tuple[str, str]:
 def _read_token(row: Mapping[str, Any], key: str) -> str:
     value = row.get(key)
     return str(value or "").strip()
+
+
+def _read_source_ref(*, row: Mapping[str, Any], fallback: str) -> str:
+    candidate = _read_token(row, "source_ref") or _read_token(row, "ib_ref_key") or str(fallback or "").strip()
+    return candidate
 
 
 def _read_required_token(row: Mapping[str, Any], key: str) -> str:

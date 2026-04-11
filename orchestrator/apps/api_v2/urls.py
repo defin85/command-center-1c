@@ -41,6 +41,7 @@ from .views import (
     intercompany_pools_binding_profiles,
     intercompany_pools_topology_templates,
     intercompany_pools_master_data,
+    intercompany_pools_master_data_dedupe,
     intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
 )
@@ -342,6 +343,21 @@ urlpatterns = [
         'pools/master-data/bindings/upsert/',
         intercompany_pools_master_data.upsert_master_data_binding,
         name='pools-master-data-bindings-upsert',
+    ),
+    path(
+        'pools/master-data/dedupe-review/',
+        intercompany_pools_master_data_dedupe.list_master_data_dedupe_review_items,
+        name='pools-master-data-dedupe-review-list',
+    ),
+    path(
+        'pools/master-data/dedupe-review/<uuid:id>/',
+        intercompany_pools_master_data_dedupe.get_master_data_dedupe_review_item,
+        name='pools-master-data-dedupe-review-get',
+    ),
+    path(
+        'pools/master-data/dedupe-review/<uuid:id>/actions/',
+        intercompany_pools_master_data_dedupe.apply_master_data_dedupe_review_action_endpoint,
+        name='pools-master-data-dedupe-review-action',
     ),
     path(
         'pools/master-data/sync-status/',

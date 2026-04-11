@@ -11,7 +11,9 @@ from django.db import transaction
 
 from apps.databases.models import Database
 
+from .master_data_dedupe import MasterDataDedupeReviewRequiredError, require_pool_master_data_dedupe_resolved
 from .master_data_registry import POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT, supports_pool_master_data_capability
+from .master_data_sync_conflicts import enqueue_master_data_sync_conflict, MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED
 from .master_data_sync_execution import trigger_pool_master_data_outbound_sync_job
 from .master_data_sync_origin import (
     MASTER_DATA_SYNC_ORIGIN_IB,
@@ -77,6 +79,39 @@ def enqueue_canonical_mutation_outbox_intents(
         entity_type=entity_type,
         capability=POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
     ):
+        return
+
+    try:
+        require_pool_master_data_dedupe_resolved(
+            tenant_id=str(tenant_id),
+            entity_type=entity_type,
+            canonical_id=canonical_id,
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        database_ids = list(
+            Database.objects.filter(tenant_id=tenant_id).values_list("id", flat=True)
+        )
+        for database_id in database_ids:
+            enqueue_master_data_sync_conflict(
+                tenant_id=str(tenant_id),
+                database_id=str(database_id),
+                entity_type=entity_type,
+                conflict_code=MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
+                canonical_id=canonical_id,
+                origin_system=origin.origin_system,
+                origin_event_id=origin.origin_event_id,
+                diagnostics=exc.to_diagnostic(),
+                metadata={"runtime_gate": "dedupe_review_required"},
+            )
+        logger.info(
+            "Skipped outbound master-data fan-out because dedupe review is still pending",
+            extra={
+                "tenant_id": str(tenant_id),
+                "entity_type": entity_type,
+                "canonical_id": canonical_id,
+                "dedupe_review_item_id": exc.review_item_id,
+            },
+        )
         return
 
     database_ids = list(

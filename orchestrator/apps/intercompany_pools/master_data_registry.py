@@ -17,6 +17,7 @@ POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT = "outbox_fanout"
 POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND = "sync_outbound"
 POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND = "sync_inbound"
 POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE = "sync_reconcile"
+POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE = "cross_infobase_dedupe"
 
 POOL_MASTER_DATA_CAPABILITIES: tuple[str, ...] = (
     POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
@@ -26,6 +27,7 @@ POOL_MASTER_DATA_CAPABILITIES: tuple[str, ...] = (
     POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
     POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
     POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+    POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
 )
 
 POOL_MASTER_DATA_TOKEN_QUALIFIER_KIND_NONE = "none"
@@ -48,6 +50,16 @@ class PoolMasterDataRegistryBootstrapContract:
 
 
 @dataclass(frozen=True)
+class PoolMasterDataRegistryDedupeContract:
+    enabled: bool
+    rollout_eligible: bool = False
+    identity_signals: tuple[str, ...] = ()
+    normalization_rules: tuple[str, ...] = ()
+    survivor_precedence: tuple[str, ...] = ()
+    review_required_conditions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class PoolMasterDataRegistryEntry:
     entity_type: str
     label: str
@@ -57,6 +69,7 @@ class PoolMasterDataRegistryEntry:
     capabilities: frozenset[str]
     token_contract: PoolMasterDataRegistryTokenContract
     bootstrap_contract: PoolMasterDataRegistryBootstrapContract
+    dedupe_contract: PoolMasterDataRegistryDedupeContract
     runtime_consumers: tuple[str, ...]
 
 
@@ -70,6 +83,7 @@ def _entry(
     capabilities: tuple[str, ...],
     token_contract: PoolMasterDataRegistryTokenContract,
     bootstrap_contract: PoolMasterDataRegistryBootstrapContract,
+    dedupe_contract: PoolMasterDataRegistryDedupeContract,
     runtime_consumers: tuple[str, ...],
 ) -> PoolMasterDataRegistryEntry:
     return PoolMasterDataRegistryEntry(
@@ -81,6 +95,7 @@ def _entry(
         capabilities=frozenset(str(capability).strip() for capability in capabilities),
         token_contract=token_contract,
         bootstrap_contract=bootstrap_contract,
+        dedupe_contract=dedupe_contract,
         runtime_consumers=tuple(str(item).strip() for item in runtime_consumers),
     )
 
@@ -100,6 +115,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+            POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
         ),
         token_contract=PoolMasterDataRegistryTokenContract(
             enabled=True,
@@ -108,6 +124,19 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             qualifier_options=("organization", "counterparty"),
         ),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=10),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(
+            enabled=True,
+            rollout_eligible=True,
+            identity_signals=("inn", "kpp", "name"),
+            normalization_rules=("trim", "collapse_spaces", "name_slug", "digits_only:inn", "digits_only:kpp"),
+            survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
+            review_required_conditions=(
+                "missing_identity_signals",
+                "name_conflict",
+                "role_conflict",
+                "multiple_active_clusters",
+            ),
+        ),
         runtime_consumers=("bindings", "bootstrap_import", "sync", "token_catalog", "token_parser"),
     ),
     _entry(
@@ -124,9 +153,18 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+            POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
         ),
         token_contract=PoolMasterDataRegistryTokenContract(enabled=True),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=20),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(
+            enabled=True,
+            rollout_eligible=True,
+            identity_signals=("sku", "unit", "name"),
+            normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:sku", "lower:unit"),
+            survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
+            review_required_conditions=("missing_identity_signals", "unit_conflict", "name_conflict", "multiple_active_clusters"),
+        ),
         runtime_consumers=("bindings", "bootstrap_import", "sync", "token_catalog", "token_parser"),
     ),
     _entry(
@@ -143,6 +181,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+            POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
         ),
         token_contract=PoolMasterDataRegistryTokenContract(
             enabled=True,
@@ -150,6 +189,19 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             qualifier_required=True,
         ),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=40),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(
+            enabled=True,
+            rollout_eligible=True,
+            identity_signals=("owner_counterparty_canonical_id", "number", "date", "name"),
+            normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:number", "iso_date:date"),
+            survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
+            review_required_conditions=(
+                "owner_scope_conflict",
+                "number_conflict",
+                "date_conflict",
+                "multiple_active_clusters",
+            ),
+        ),
         runtime_consumers=("bindings", "bootstrap_import", "sync", "token_catalog", "token_parser"),
     ),
     _entry(
@@ -166,9 +218,18 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
             POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
+            POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
         ),
         token_contract=PoolMasterDataRegistryTokenContract(enabled=True),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=30),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(
+            enabled=True,
+            rollout_eligible=True,
+            identity_signals=("vat_code", "vat_rate", "vat_included"),
+            normalization_rules=("trim", "upper:vat_code", "decimal:vat_rate", "bool:vat_included"),
+            survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
+            review_required_conditions=("structural_conflict", "multiple_active_clusters"),
+        ),
         runtime_consumers=("bindings", "bootstrap_import", "sync", "token_catalog", "token_parser"),
     ),
     _entry(
@@ -181,9 +242,18 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
             POOL_MASTER_DATA_CAPABILITY_TOKEN_EXPOSURE,
             POOL_MASTER_DATA_CAPABILITY_BOOTSTRAP_IMPORT,
+            POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
         ),
         token_contract=PoolMasterDataRegistryTokenContract(enabled=True),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=35),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(
+            enabled=True,
+            rollout_eligible=True,
+            identity_signals=("chart_identity", "code", "name"),
+            normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:code", "lower:chart_identity"),
+            survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
+            review_required_conditions=("chart_conflict", "name_conflict", "multiple_active_clusters"),
+        ),
         runtime_consumers=("bindings", "bootstrap_import", "token_catalog", "token_parser"),
     ),
     _entry(
@@ -195,6 +265,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
         capabilities=(),
         token_contract=PoolMasterDataRegistryTokenContract(enabled=False),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=False, dependency_order=None),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(enabled=False, rollout_eligible=False),
         runtime_consumers=("profile_store", "revision_catalog"),
     ),
     _entry(
@@ -206,6 +277,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
         capabilities=(POOL_MASTER_DATA_CAPABILITY_BOOTSTRAP_IMPORT,),
         token_contract=PoolMasterDataRegistryTokenContract(enabled=False),
         bootstrap_contract=PoolMasterDataRegistryBootstrapContract(enabled=True, dependency_order=50),
+        dedupe_contract=PoolMasterDataRegistryDedupeContract(enabled=False, rollout_eligible=False),
         runtime_consumers=("bootstrap_import",),
     ),
 )
@@ -339,6 +411,14 @@ def serialize_pool_master_data_registry_entry(
         "bootstrap_contract": {
             "enabled": bool(entry.bootstrap_contract.enabled),
             "dependency_order": entry.bootstrap_contract.dependency_order,
+        },
+        "dedupe_contract": {
+            "enabled": bool(entry.dedupe_contract.enabled),
+            "rollout_eligible": bool(entry.dedupe_contract.rollout_eligible),
+            "identity_signals": list(entry.dedupe_contract.identity_signals),
+            "normalization_rules": list(entry.dedupe_contract.normalization_rules),
+            "survivor_precedence": list(entry.dedupe_contract.survivor_precedence),
+            "review_required_conditions": list(entry.dedupe_contract.review_required_conditions),
         },
         "runtime_consumers": list(entry.runtime_consumers),
     }

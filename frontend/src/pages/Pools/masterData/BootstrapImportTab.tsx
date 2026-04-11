@@ -98,6 +98,27 @@ const COLLECTION_ITEM_STATUS_COLOR: Record<string, string> = {
   completed: 'success',
 }
 
+const buildBootstrapDedupeReviewHref = (job: PoolMasterDataBootstrapImportJob | null): string | null => {
+  const errors = Array.isArray(job?.report?.diagnostics?.errors)
+    ? job?.report?.diagnostics?.errors as Array<Record<string, unknown>>
+    : []
+  const matched = errors.find((item) => {
+    const reviewItemId = typeof item.review_item_id === 'string' ? item.review_item_id.trim() : ''
+    return reviewItemId.length > 0
+  })
+  if (!matched) {
+    return null
+  }
+  const reviewItemId = String(matched.review_item_id || '').trim()
+  if (!reviewItemId) {
+    return null
+  }
+  const params = new URLSearchParams()
+  params.set('tab', 'dedupe-review')
+  params.set('reviewItemId', reviewItemId)
+  return `/pools/master-data?${params.toString()}`
+}
+
 type BootstrapImportTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
@@ -991,6 +1012,19 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               <Empty description="No bootstrap job selected." />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {buildBootstrapDedupeReviewHref(selectedJob) ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="Bootstrap import encountered unresolved cross-infobase dedupe."
+                    action={(
+                      <Button type="link" href={buildBootstrapDedupeReviewHref(selectedJob) || undefined}>
+                        Open Review
+                      </Button>
+                    )}
+                  />
+                ) : null}
+
                 <Space>
                   <Tag color={STATUS_COLOR[selectedJob.status] || 'default'}>{selectedJob.status}</Tag>
                   <Text type="secondary">Started: {formatDateTime(selectedJob.started_at)}</Text>

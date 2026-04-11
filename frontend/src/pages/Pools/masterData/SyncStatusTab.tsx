@@ -57,6 +57,47 @@ const DEADLINE_STATE_COLORS: Record<PoolMasterDataSyncDeadlineState, string> = {
   missed: 'error',
 }
 
+const buildDedupeReviewHref = (conflict: PoolMasterDataSyncConflict): string | null => {
+  if (conflict.conflict_code !== 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED') {
+    return null
+  }
+  const diagnostics = conflict.diagnostics ?? {}
+  const reviewItemId = typeof diagnostics.dedupe_review_item_id === 'string'
+    ? diagnostics.dedupe_review_item_id.trim()
+    : ''
+  const clusterId = typeof diagnostics.dedupe_cluster_id === 'string'
+    ? diagnostics.dedupe_cluster_id.trim()
+    : ''
+  const entityType = typeof diagnostics.entity_type === 'string'
+    ? diagnostics.entity_type.trim()
+    : conflict.entity_type
+  const canonicalId = typeof diagnostics.canonical_id === 'string'
+    ? diagnostics.canonical_id.trim()
+    : conflict.canonical_id
+
+  if (!reviewItemId && !clusterId) {
+    return null
+  }
+  const params = new URLSearchParams()
+  params.set('tab', 'dedupe-review')
+  if (reviewItemId) {
+    params.set('reviewItemId', reviewItemId)
+  }
+  if (clusterId) {
+    params.set('clusterId', clusterId)
+  }
+  if (entityType) {
+    params.set('entityType', entityType)
+  }
+  if (canonicalId) {
+    params.set('canonicalId', canonicalId)
+  }
+  if (conflict.database_id) {
+    params.set('databaseId', conflict.database_id)
+  }
+  return `/pools/master-data?${params.toString()}`
+}
+
 type SyncStatusTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
@@ -295,6 +336,15 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       width: 300,
       render: (_, row) => (
         <Space>
+          {buildDedupeReviewHref(row) ? (
+            <Button
+              size="small"
+              type="link"
+              href={buildDedupeReviewHref(row) || undefined}
+            >
+              Open Review
+            </Button>
+          ) : null}
           {canRunConflictWorkflowAction(row) && (
             <Button
               size="small"

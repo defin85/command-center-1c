@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from apps.intercompany_pools.master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_BOOTSTRAP_IMPORT,
+    POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE,
     POOL_MASTER_DATA_CAPABILITY_DIRECT_BINDING,
     POOL_MASTER_DATA_CAPABILITY_OUTBOX_FANOUT,
     POOL_MASTER_DATA_CAPABILITY_TOKEN_EXPOSURE,
@@ -103,7 +104,12 @@ def test_registry_inspect_payload_contains_capability_matrix() -> None:
     assert gl_account_entry["capabilities"]["bootstrap_import"] is True
     assert gl_account_entry["capabilities"]["outbox_fanout"] is False
     assert gl_account_entry["capabilities"]["sync_outbound"] is False
+    assert gl_account_entry["capabilities"][POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE] is True
+    assert gl_account_entry["dedupe_contract"]["enabled"] is True
+    assert gl_account_entry["dedupe_contract"]["identity_signals"] == ["chart_identity", "code", "name"]
     gl_account_set_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account_set")
     assert gl_account_set_entry["binding_scope_fields"] == []
     assert gl_account_set_entry["capabilities"]["direct_binding"] is False
     assert gl_account_set_entry["capabilities"]["bootstrap_import"] is False
+    assert gl_account_set_entry["capabilities"][POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE] is False
+    assert gl_account_set_entry["dedupe_contract"]["enabled"] is False
