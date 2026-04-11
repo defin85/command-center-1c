@@ -5703,6 +5703,240 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
+  /api/v2/pools/master-data/bootstrap-collections/preflight/:
+    post:
+      operationId: v2_pools_master_data_bootstrap_collections_preflight
+      summary: Run bootstrap collection preflight
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionScopeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionScopeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionScopeRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionPreflightResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/bootstrap-collections/:
+    get:
+      operationId: v2_pools_master_data_bootstrap_collections_list
+      summary: List bootstrap collection requests
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+    post:
+      operationId: v2_pools_master_data_bootstrap_collections_create
+      summary: Create bootstrap collection request
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionCreateRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/bootstrap-collections/{id}/:
+    get:
+      operationId: v2_pools_master_data_bootstrap_collections_get
+      summary: Get bootstrap collection request
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/master-data/bootstrap-import/preflight/:
     post:
       operationId: v2_pools_master_data_bootstrap_import_preflight
@@ -19809,26 +20043,35 @@ components:
       required:
         - binding
         - created
-    PoolMasterDataBootstrapImportScopeRequest:
+    PoolMasterDataBootstrapCollectionScopeRequest:
       type: object
       properties:
-        database_id:
+        target_mode:
+          type: string
+          enum:
+            - cluster_all
+            - database_set
+        cluster_id:
           type: string
           format: uuid
+          nullable: true
+        database_ids:
+          type: array
+          items:
+            type: string
         entity_scope:
           type: array
-          minItems: 1
           items:
             type: string
             enum:
               - party
               - item
               - tax_profile
-              - gl_account
               - contract
               - binding
+              - gl_account
       required:
-        - database_id
+        - target_mode
         - entity_scope
     PoolMasterDataBootstrapImportPreflightResult:
       type: object
@@ -19858,6 +20101,316 @@ components:
         - credential_strategy
         - errors
         - diagnostics
+    PoolMasterDataBootstrapCollectionPreflightDatabase:
+      type: object
+      properties:
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        ok:
+          type: boolean
+        preflight_result:
+          $ref: '#/components/schemas/PoolMasterDataBootstrapImportPreflightResult'
+      required:
+        - database_id
+        - database_name
+        - cluster_id
+        - ok
+        - preflight_result
+    PoolMasterDataBootstrapCollectionPreflight:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        target_mode:
+          type: string
+          enum:
+            - cluster_all
+            - database_set
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        database_ids:
+          type: array
+          items:
+            type: string
+        database_count:
+          type: integer
+          minimum: 0
+        entity_scope:
+          type: array
+          items:
+            type: string
+            enum:
+              - party
+              - item
+              - tax_profile
+              - contract
+              - binding
+              - gl_account
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionPreflightDatabase'
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        generated_at:
+          type: string
+          format: date-time
+      required:
+        - ok
+        - target_mode
+        - cluster_id
+        - database_ids
+        - database_count
+        - entity_scope
+        - databases
+        - errors
+        - generated_at
+    PoolMasterDataBootstrapCollectionPreflightResponse:
+      type: object
+      properties:
+        preflight:
+          $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionPreflight'
+      required:
+        - preflight
+    PoolMasterDataBootstrapCollectionItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum:
+            - scheduled
+            - coalesced
+            - skipped
+            - failed
+            - completed
+        reason_code:
+          type: string
+        reason_detail:
+          type: string
+        child_job_id:
+          type: string
+          format: uuid
+          nullable: true
+        child_job_status:
+          type: string
+        preflight_result:
+          type: object
+          additionalProperties: true
+        dry_run_summary:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - database_id
+        - database_name
+        - cluster_id
+        - status
+        - reason_code
+        - reason_detail
+        - child_job_id
+        - child_job_status
+        - preflight_result
+        - dry_run_summary
+        - created_at
+        - updated_at
+    PoolMasterDataBootstrapCollection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        target_mode:
+          type: string
+          enum:
+            - cluster_all
+            - database_set
+        mode:
+          type: string
+          enum:
+            - dry_run
+            - execute
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        database_ids:
+          type: array
+          items:
+            type: string
+        entity_scope:
+          type: array
+          items:
+            type: string
+            enum:
+              - party
+              - item
+              - tax_profile
+              - contract
+              - binding
+              - gl_account
+        status:
+          type: string
+          enum:
+            - dry_run_completed
+            - execute_running
+            - finalized
+            - failed
+        requested_by_id:
+          type: integer
+          nullable: true
+        requested_by_username:
+          type: string
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        aggregate_counters:
+          type: object
+          additionalProperties:
+            type: integer
+        progress:
+          type: object
+          additionalProperties:
+            type: number
+        child_job_status_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        aggregate_dry_run_summary:
+          type: object
+          additionalProperties: true
+        audit_trail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - target_mode
+        - mode
+        - cluster_id
+        - database_ids
+        - entity_scope
+        - status
+        - requested_by_id
+        - requested_by_username
+        - last_error_code
+        - last_error
+        - aggregate_counters
+        - progress
+        - child_job_status_counts
+        - aggregate_dry_run_summary
+        - audit_trail
+        - created_at
+        - updated_at
+    PoolMasterDataBootstrapCollectionListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        collections:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataBootstrapCollection'
+      required:
+        - count
+        - limit
+        - offset
+        - collections
+    PoolMasterDataBootstrapCollectionCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionScopeRequest'
+        - type: object
+          properties:
+            mode:
+              type: string
+              enum:
+                - dry_run
+                - execute
+            chunk_size:
+              type: integer
+              minimum: 1
+              maximum: 1000
+              default: 200
+          required:
+            - mode
+    PoolMasterDataBootstrapCollectionResponse:
+      type: object
+      properties:
+        collection:
+          $ref: '#/components/schemas/PoolMasterDataBootstrapCollection'
+      required:
+        - collection
+    PoolMasterDataBootstrapImportScopeRequest:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        entity_scope:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - party
+              - item
+              - tax_profile
+              - gl_account
+              - contract
+              - binding
+      required:
+        - database_id
+        - entity_scope
     PoolMasterDataBootstrapImportPreflightResponse:
       type: object
       properties:

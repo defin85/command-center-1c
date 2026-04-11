@@ -6,6 +6,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 
+from apps.databases.models import Cluster
 from apps.databases.models import Database
 from apps.intercompany_pools.master_data_bootstrap_import_feature_flags import (
     POOL_MASTER_DATA_BOOTSTRAP_IMPORT_RUNTIME_KEY,
@@ -18,6 +19,8 @@ from apps.intercompany_pools.master_data_bootstrap_import_source_adapter import 
     configure_pool_master_data_bootstrap_source_callbacks,
     reset_pool_master_data_bootstrap_source_callbacks,
 )
+from apps.intercompany_pools.models import PoolMasterDataBootstrapCollectionRequest
+from apps.intercompany_pools.models import PoolMasterDataBootstrapCollectionItem
 from apps.intercompany_pools.models import PoolMasterParty
 from apps.intercompany_pools.models import PoolMasterContract
 from apps.intercompany_pools.models import PoolMasterDataBootstrapImportJob
@@ -113,7 +116,16 @@ def bootstrap_feature_flag_enabled(default_tenant: Tenant) -> None:
     )
 
 
-def _create_database(*, tenant: Tenant, name: str) -> Database:
+def _create_cluster(*, tenant: Tenant, name: str) -> Cluster:
+    return Cluster.objects.create(
+        tenant=tenant,
+        name=name,
+        ras_server=f"{name.lower().replace(' ', '-')}:1545",
+        cluster_service_url=f"http://{name.lower().replace(' ', '-')}.local",
+    )
+
+
+def _create_database(*, tenant: Tenant, name: str, cluster: Cluster | None = None) -> Database:
     return Database.objects.create(
         tenant=tenant,
         name=name,
@@ -121,6 +133,7 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         odata_url="http://localhost/odata/bootstrap.odata",
         username="user",
         password="pass",
+        cluster=cluster,
     )
 
 
@@ -637,3 +650,218 @@ def test_bootstrap_mutating_actions_require_tenant_admin_or_staff(
         format="json",
     )
     _assert_problem_details_response(forbidden_retry, status_code=403, code="FORBIDDEN")
+
+
+@pytest.mark.django_db
+def test_bootstrap_collection_preflight_cluster_all_returns_snapshot(
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    cluster = _create_cluster(tenant=default_tenant, name=f"Bootstrap Cluster {uuid4().hex[:6]}")
+    database_a = _create_database(tenant=default_tenant, cluster=cluster, name=f"A DB {uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, cluster=cluster, name=f"B DB {uuid4().hex[:6]}")
+    _configure_source_callbacks(rows_by_entity={"party": []})
+
+    response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/preflight/",
+        {
+            "target_mode": "cluster_all",
+            "cluster_id": str(cluster.id),
+            "entity_scope": ["party"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["preflight"]
+    assert payload["ok"] is True
+    assert payload["target_mode"] == "cluster_all"
+    assert payload["cluster_id"] == str(cluster.id)
+    assert payload["database_count"] == 2
+    assert payload["database_ids"] == [str(database_a.id), str(database_b.id)]
+    assert [entry["database_id"] for entry in payload["databases"]] == [str(database_a.id), str(database_b.id)]
+
+
+@pytest.mark.django_db
+def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot_order(
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database_a = _create_database(tenant=default_tenant, name=f"Dry Run A {uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"Dry Run B {uuid4().hex[:6]}")
+
+    def _preflight(*, entity_scope: list[str], **_kwargs) -> PoolMasterDataBootstrapSourcePreflightResult:
+        return PoolMasterDataBootstrapSourcePreflightResult(
+            ok=True,
+            source_kind="ib_odata",
+            coverage={entity: True for entity in entity_scope},
+            credential_strategy="service",
+            errors=[],
+            diagnostics={"source": "test"},
+        )
+
+    def _fetch_rows(*, database: Database, entity_type: str, **_kwargs) -> list[dict]:
+        if str(database.id) == str(database_b.id) and entity_type == "party":
+            return [{"canonical_id": "party-b", "name": "Party B"}]
+        if str(database.id) == str(database_a.id) and entity_type == "party":
+            return [{"canonical_id": "party-a", "name": "Party A"}]
+        if str(database.id) == str(database_b.id) and entity_type == "item":
+            return [{"canonical_id": "item-b", "name": "Item B", "sku": "B"}]
+        return []
+
+    configure_pool_master_data_bootstrap_source_callbacks(
+        preflight=_preflight,
+        fetch_rows=_fetch_rows,
+    )
+
+    create_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "target_mode": "database_set",
+            "database_ids": [str(database_b.id), str(database_a.id)],
+            "entity_scope": ["item", "party"],
+            "mode": "dry_run",
+        },
+        format="json",
+    )
+    assert create_response.status_code == 201
+    collection = create_response.json()["collection"]
+    assert collection["status"] == "dry_run_completed"
+    assert collection["database_ids"] == [str(database_b.id), str(database_a.id)]
+    assert collection["aggregate_counters"]["completed"] == 2
+    assert collection["aggregate_counters"]["failed"] == 0
+    assert collection["aggregate_dry_run_summary"]["rows_total"] == 3
+
+    stored = PoolMasterDataBootstrapCollectionRequest.objects.get(id=collection["id"])
+    assert stored.database_ids == [str(database_b.id), str(database_a.id)]
+    assert PoolMasterDataBootstrapCollectionItem.objects.filter(collection=stored).count() == 2
+
+    list_response = admin_client.get("/api/v2/pools/master-data/bootstrap-collections/?limit=20&offset=0")
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] >= 1
+
+    detail_response = admin_client.get(
+        f"/api/v2/pools/master-data/bootstrap-collections/{collection['id']}/"
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["collection"]
+    assert [item["database_id"] for item in detail["items"]] == [str(database_a.id), str(database_b.id)]
+    assert all(item["status"] == "completed" for item in detail["items"])
+
+
+@pytest.mark.django_db
+def test_bootstrap_collection_execute_mixed_outcomes_coalesce_and_finalize(
+    admin_client: APIClient,
+    admin_user: User,
+    default_tenant: Tenant,
+) -> None:
+    database_coalesced = _create_database(tenant=default_tenant, name=f"Coalesced DB {uuid4().hex[:6]}")
+    database_scheduled = _create_database(tenant=default_tenant, name=f"Scheduled DB {uuid4().hex[:6]}")
+    database_failed = _create_database(tenant=default_tenant, name=f"Failed DB {uuid4().hex[:6]}")
+
+    def _preflight(*, database: Database, entity_scope: list[str], **_kwargs) -> PoolMasterDataBootstrapSourcePreflightResult:
+        if str(database.id) == str(database_failed.id):
+            return PoolMasterDataBootstrapSourcePreflightResult(
+                ok=False,
+                source_kind="ib_odata",
+                coverage={entity: False for entity in entity_scope},
+                credential_strategy="service",
+                errors=[
+                    {
+                        "code": "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING",
+                        "detail": "Source auth mapping is missing.",
+                    }
+                ],
+                diagnostics={"database_id": str(database.id)},
+            )
+        return PoolMasterDataBootstrapSourcePreflightResult(
+            ok=True,
+            source_kind="ib_odata",
+            coverage={entity: True for entity in entity_scope},
+            credential_strategy="service",
+            errors=[],
+            diagnostics={"database_id": str(database.id)},
+        )
+
+    def _fetch_rows(*, database: Database, entity_type: str, **_kwargs) -> list[dict]:
+        if entity_type != "party":
+            return []
+        return [
+            {
+                "canonical_id": f"party-{database.id}",
+                "name": f"Party {database.name}",
+                "is_counterparty": True,
+            }
+        ]
+
+    configure_pool_master_data_bootstrap_source_callbacks(
+        preflight=_preflight,
+        fetch_rows=_fetch_rows,
+    )
+
+    existing_job_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-import/jobs/",
+        {
+            "database_id": str(database_coalesced.id),
+            "entity_scope": ["party"],
+            "mode": "execute",
+        },
+        format="json",
+    )
+    assert existing_job_response.status_code == 201
+    existing_job_id = existing_job_response.json()["job"]["id"]
+
+    collection_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "target_mode": "database_set",
+            "database_ids": [
+                str(database_coalesced.id),
+                str(database_scheduled.id),
+                str(database_failed.id),
+            ],
+            "entity_scope": ["party"],
+            "mode": "execute",
+        },
+        format="json",
+    )
+    assert collection_response.status_code == 201
+    collection = collection_response.json()["collection"]
+    assert collection["status"] == "execute_running"
+    assert collection["aggregate_counters"]["coalesced"] == 1
+    assert collection["aggregate_counters"]["scheduled"] == 1
+    assert collection["aggregate_counters"]["failed"] == 1
+
+    detail_response = admin_client.get(
+        f"/api/v2/pools/master-data/bootstrap-collections/{collection['id']}/"
+    )
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["collection"]
+    items_by_database = {item["database_id"]: item for item in detail["items"]}
+    assert items_by_database[str(database_coalesced.id)]["status"] == "coalesced"
+    assert items_by_database[str(database_coalesced.id)]["child_job_id"] == existing_job_id
+    assert items_by_database[str(database_failed.id)]["status"] == "failed"
+    assert items_by_database[str(database_failed.id)]["reason_code"] == "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING"
+
+    scheduled_child_job_id = items_by_database[str(database_scheduled.id)]["child_job_id"]
+    assert items_by_database[str(database_scheduled.id)]["status"] == "scheduled"
+    assert scheduled_child_job_id
+
+    run_pool_master_data_bootstrap_import_job_execution(
+        job_id=scheduled_child_job_id,
+        actor_id=str(admin_user.id),
+        retry_failed_only=False,
+    )
+
+    refreshed_detail_response = admin_client.get(
+        f"/api/v2/pools/master-data/bootstrap-collections/{collection['id']}/"
+    )
+    assert refreshed_detail_response.status_code == 200
+    refreshed_detail = refreshed_detail_response.json()["collection"]
+    refreshed_items_by_database = {item["database_id"]: item for item in refreshed_detail["items"]}
+    assert refreshed_detail["status"] == "finalized"
+    assert refreshed_items_by_database[str(database_scheduled.id)]["status"] == "completed"
+    assert PoolMasterParty.objects.filter(
+        tenant=default_tenant,
+        canonical_id=f"party-{database_scheduled.id}",
+    ).exists()

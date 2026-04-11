@@ -137,6 +137,27 @@ def run_pool_master_data_bootstrap_preflight_preview(
     return _serialize_preflight_result(preflight=preflight, entity_scope=normalized_scope)
 
 
+def run_pool_master_data_bootstrap_dry_run_preview(
+    *,
+    tenant_id: str,
+    database: Database,
+    entity_scope: list[str],
+    actor_id: str = "",
+    chunk_size: int = 200,
+) -> dict[str, Any]:
+    normalized_scope = _normalize_entity_scope(entity_scope)
+    rows_by_entity = _fetch_rows_for_scope(
+        tenant_id=tenant_id,
+        database=database,
+        entity_scope=normalized_scope,
+        actor_id=actor_id,
+    )
+    return _build_dry_run_summary(
+        rows_by_entity=rows_by_entity,
+        chunk_size=int(_safe_chunk_size(chunk_size)),
+    )
+
+
 def create_pool_master_data_bootstrap_import_job(
     *,
     tenant: Tenant,
@@ -1887,6 +1908,7 @@ __all__ = [
     "get_pool_master_data_bootstrap_import_job",
     "list_pool_master_data_bootstrap_import_jobs",
     "run_pool_master_data_bootstrap_import_job_execution",
+    "run_pool_master_data_bootstrap_dry_run_preview",
     "retry_failed_pool_master_data_bootstrap_import_chunks",
     "run_pool_master_data_bootstrap_preflight_preview",
     "serialize_pool_master_data_bootstrap_import_job",

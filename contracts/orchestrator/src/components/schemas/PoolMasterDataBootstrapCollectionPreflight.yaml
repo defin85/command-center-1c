@@ -1,0 +1,53 @@
+type: object
+properties:
+  ok:
+    type: boolean
+  target_mode:
+    type: string
+    enum:
+      - cluster_all
+      - database_set
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  database_ids:
+    type: array
+    items:
+      type: string
+  database_count:
+    type: integer
+    minimum: 0
+  entity_scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - tax_profile
+        - contract
+        - binding
+        - gl_account
+  databases:
+    type: array
+    items:
+      $ref: ./PoolMasterDataBootstrapCollectionPreflightDatabase.yaml
+  errors:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  generated_at:
+    type: string
+    format: date-time
+required:
+  - ok
+  - target_mode
+  - cluster_id
+  - database_ids
+  - database_count
+  - entity_scope
+  - databases
+  - errors
+  - generated_at

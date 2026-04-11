@@ -349,6 +349,21 @@ urlpatterns = [
         name='pools-master-data-sync-status-list',
     ),
     path(
+        'pools/master-data/bootstrap-collections/preflight/',
+        intercompany_pools_master_data_bootstrap.preflight_pool_master_data_bootstrap_collection,
+        name='pools-master-data-bootstrap-collections-preflight',
+    ),
+    path(
+        'pools/master-data/bootstrap-collections/',
+        intercompany_pools_master_data_bootstrap.pool_master_data_bootstrap_collections_endpoint,
+        name='pools-master-data-bootstrap-collections',
+    ),
+    path(
+        'pools/master-data/bootstrap-collections/<uuid:id>/',
+        intercompany_pools_master_data_bootstrap.get_pool_master_data_bootstrap_collection_endpoint,
+        name='pools-master-data-bootstrap-collections-get',
+    ),
+    path(
         'pools/master-data/bootstrap-import/preflight/',
         intercompany_pools_master_data_bootstrap.preflight_pool_master_data_bootstrap_import,
         name='pools-master-data-bootstrap-import-preflight',

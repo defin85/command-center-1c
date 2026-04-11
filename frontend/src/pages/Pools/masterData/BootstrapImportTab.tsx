@@ -8,6 +8,7 @@ import {
   Empty,
   Form,
   Progress,
+  Segmented,
   Select,
   Space,
   Steps,
@@ -19,17 +20,26 @@ import type { ColumnsType } from 'antd/es/table'
 
 import {
   cancelPoolMasterDataBootstrapImportJob,
+  createPoolMasterDataBootstrapCollection,
   createPoolMasterDataBootstrapImportJob,
+  getPoolMasterDataBootstrapCollection,
   getPoolMasterDataBootstrapImportJob,
+  listPoolMasterDataBootstrapCollections,
   listPoolMasterDataBootstrapImportJobs,
+  listPoolTargetClusters,
   listPoolTargetDatabases,
   retryFailedPoolMasterDataBootstrapImportChunks,
+  runPoolMasterDataBootstrapCollectionPreflight,
   runPoolMasterDataBootstrapImportPreflight,
+  type PoolMasterDataBootstrapCollection,
+  type PoolMasterDataBootstrapCollectionItem,
+  type PoolMasterDataBootstrapCollectionPreflightResult,
   type PoolMasterDataBootstrapImportChunk,
   type PoolMasterDataBootstrapImportEntityType,
   type PoolMasterDataBootstrapImportJob,
   type PoolMasterDataBootstrapImportPreflightResult,
   type PoolMasterDataRegistryEntry,
+  type SimpleClusterRef,
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
 import { resolveApiError } from './errorUtils'
@@ -38,12 +48,28 @@ import { getBootstrapEntityOptions, getDefaultBootstrapScope } from './registry'
 
 const { Text } = Typography
 
+type BootstrapLauncherMode = 'single' | 'batch'
+
 type BootstrapScopeFormValues = {
-  database_id: string
+  database_id?: string
+  target_mode?: 'cluster_all' | 'database_set'
+  cluster_id?: string
+  database_ids?: string[]
   entity_scope: PoolMasterDataBootstrapImportEntityType[]
 }
 
+type PreflightState =
+  | { kind: 'single'; result: PoolMasterDataBootstrapImportPreflightResult }
+  | { kind: 'batch'; result: PoolMasterDataBootstrapCollectionPreflightResult }
+  | null
+
+type DryRunState =
+  | { kind: 'single'; summary: Record<string, unknown> }
+  | { kind: 'batch'; summary: Record<string, unknown> }
+  | null
+
 const TERMINAL_JOB_STATUSES = new Set(['finalized', 'failed', 'canceled'])
+const TERMINAL_COLLECTION_STATUSES = new Set(['finalized', 'failed'])
 
 const STATUS_COLOR: Record<string, string> = {
   preflight_pending: 'processing',
@@ -57,6 +83,21 @@ const STATUS_COLOR: Record<string, string> = {
   canceled: 'default',
 }
 
+const COLLECTION_STATUS_COLOR: Record<string, string> = {
+  dry_run_completed: 'processing',
+  execute_running: 'processing',
+  finalized: 'success',
+  failed: 'error',
+}
+
+const COLLECTION_ITEM_STATUS_COLOR: Record<string, string> = {
+  scheduled: 'processing',
+  coalesced: 'default',
+  skipped: 'default',
+  failed: 'error',
+  completed: 'success',
+}
+
 type BootstrapImportTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
@@ -64,20 +105,28 @@ type BootstrapImportTabProps = {
 export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps) {
   const { message } = AntApp.useApp()
   const [form] = Form.useForm<BootstrapScopeFormValues>()
+  const [launcherMode, setLauncherMode] = useState<BootstrapLauncherMode>('single')
+  const [clusters, setClusters] = useState<SimpleClusterRef[]>([])
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [jobs, setJobs] = useState<PoolMasterDataBootstrapImportJob[]>([])
+  const [collections, setCollections] = useState<PoolMasterDataBootstrapCollection[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<PoolMasterDataBootstrapImportJob | null>(null)
-  const [preflightResult, setPreflightResult] = useState<PoolMasterDataBootstrapImportPreflightResult | null>(null)
-  const [dryRunSummary, setDryRunSummary] = useState<Record<string, unknown> | null>(null)
-  const [loadingDatabases, setLoadingDatabases] = useState(false)
+  const [selectedCollection, setSelectedCollection] = useState<PoolMasterDataBootstrapCollection | null>(null)
+  const [preflightState, setPreflightState] = useState<PreflightState>(null)
+  const [dryRunState, setDryRunState] = useState<DryRunState>(null)
+  const [loadingTargets, setLoadingTargets] = useState(false)
   const [loadingJobs, setLoadingJobs] = useState(false)
+  const [loadingCollections, setLoadingCollections] = useState(false)
   const [loadingJobDetail, setLoadingJobDetail] = useState(false)
+  const [loadingCollectionDetail, setLoadingCollectionDetail] = useState(false)
   const [runningPreflight, setRunningPreflight] = useState(false)
   const [runningDryRun, setRunningDryRun] = useState(false)
   const [runningExecute, setRunningExecute] = useState(false)
   const [runningJobAction, setRunningJobAction] = useState(false)
-  const [jobActionError, setJobActionError] = useState('')
+  const [actionError, setActionError] = useState('')
+
   const entityScopeOptions = useMemo(
     () => getBootstrapEntityOptions(registryEntries),
     [registryEntries]
@@ -86,17 +135,45 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     () => getDefaultBootstrapScope(registryEntries),
     [registryEntries]
   )
+  const clusterNameById = useMemo(
+    () =>
+      new Map(
+        clusters.map((cluster) => [cluster.id, cluster.name])
+      ),
+    [clusters]
+  )
 
-  const loadDatabases = useCallback(async () => {
-    setLoadingDatabases(true)
+  const singlePreflightResult = preflightState?.kind === 'single' ? preflightState.result : null
+  const batchPreflightResult = preflightState?.kind === 'batch' ? preflightState.result : null
+  const singleDryRunSummary = dryRunState?.kind === 'single' ? dryRunState.summary : null
+  const batchDryRunSummary = dryRunState?.kind === 'batch' ? dryRunState.summary : null
+  const watchedTargetMode = Form.useWatch('target_mode', form) as
+    | 'cluster_all'
+    | 'database_set'
+    | undefined
+
+  const formatDatabaseLabel = useCallback(
+    (database: SimpleDatabaseRef) => {
+      const clusterName = database.cluster_id ? clusterNameById.get(database.cluster_id) : ''
+      return clusterName ? `${database.name} · ${clusterName}` : database.name
+    },
+    [clusterNameById]
+  )
+
+  const loadTargets = useCallback(async () => {
+    setLoadingTargets(true)
     try {
-      const response = await listPoolTargetDatabases()
-      setDatabases(response)
+      const [clustersResponse, databasesResponse] = await Promise.all([
+        listPoolTargetClusters(),
+        listPoolTargetDatabases(),
+      ])
+      setClusters(clustersResponse)
+      setDatabases(databasesResponse)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить список баз для bootstrap import.')
+      const resolved = resolveApiError(error, 'Не удалось загрузить кластеры и базы для bootstrap import.')
       message.error(resolved.message)
     } finally {
-      setLoadingDatabases(false)
+      setLoadingTargets(false)
     }
   }, [message])
 
@@ -123,6 +200,25 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     [message, selectedJobId]
   )
 
+  const loadCollections = useCallback(async () => {
+    setLoadingCollections(true)
+    try {
+      const response = await listPoolMasterDataBootstrapCollections({
+        limit: 20,
+        offset: 0,
+      })
+      setCollections(response.collections)
+      if (!selectedCollectionId && response.collections.length > 0) {
+        setSelectedCollectionId(response.collections[0].id)
+      }
+    } catch (error) {
+      const resolved = resolveApiError(error, 'Не удалось загрузить batch collection requests.')
+      message.error(resolved.message)
+    } finally {
+      setLoadingCollections(false)
+    }
+  }, [message, selectedCollectionId])
+
   const loadJobDetail = useCallback(
     async (jobId: string, silent = false) => {
       if (!silent) {
@@ -145,17 +241,43 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     [message]
   )
 
+  const loadCollectionDetail = useCallback(
+    async (collectionId: string, silent = false) => {
+      if (!silent) {
+        setLoadingCollectionDetail(true)
+      }
+      try {
+        const response = await getPoolMasterDataBootstrapCollection(collectionId)
+        setSelectedCollection(response.collection)
+      } catch (error) {
+        if (!silent) {
+          const resolved = resolveApiError(error, 'Не удалось загрузить детали batch collection.')
+          message.error(resolved.message)
+        }
+      } finally {
+        if (!silent) {
+          setLoadingCollectionDetail(false)
+        }
+      }
+    },
+    [message]
+  )
+
   useEffect(() => {
-    void loadDatabases()
+    void loadTargets()
     void loadJobs()
-  }, [loadDatabases, loadJobs])
+    void loadCollections()
+  }, [loadCollections, loadJobs, loadTargets])
 
   useEffect(() => {
     const currentScope = form.getFieldValue('entity_scope') as PoolMasterDataBootstrapImportEntityType[] | undefined
     if ((currentScope?.length ?? 0) > 0 || defaultScope.length === 0) {
       return
     }
-    form.setFieldsValue({ entity_scope: defaultScope })
+    form.setFieldsValue({
+      entity_scope: defaultScope,
+      target_mode: 'database_set',
+    })
   }, [defaultScope, form])
 
   useEffect(() => {
@@ -167,6 +289,14 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
   }, [loadJobDetail, selectedJobId])
 
   useEffect(() => {
+    if (!selectedCollectionId) {
+      setSelectedCollection(null)
+      return
+    }
+    void loadCollectionDetail(selectedCollectionId)
+  }, [loadCollectionDetail, selectedCollectionId])
+
+  useEffect(() => {
     if (!selectedJobId || !selectedJob || TERMINAL_JOB_STATUSES.has(selectedJob.status)) {
       return
     }
@@ -176,24 +306,59 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     return () => window.clearInterval(timer)
   }, [loadJobDetail, selectedJob, selectedJobId])
 
+  useEffect(() => {
+    if (
+      !selectedCollectionId ||
+      !selectedCollection ||
+      TERMINAL_COLLECTION_STATUSES.has(selectedCollection.status)
+    ) {
+      return
+    }
+    const timer = window.setInterval(() => {
+      void loadCollectionDetail(selectedCollectionId, true)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [loadCollectionDetail, selectedCollection, selectedCollectionId])
+
   const currentWizardStep = useMemo(() => {
-    if (selectedJob?.status === 'finalized') {
+    if (launcherMode === 'single') {
+      if (selectedJob?.status === 'finalized') {
+        return 3
+      }
+      if (singleDryRunSummary) {
+        return 2
+      }
+      if (singlePreflightResult?.ok) {
+        return 1
+      }
+      return 0
+    }
+    if (selectedCollection && selectedCollection.mode === 'execute') {
       return 3
     }
-    if (dryRunSummary) {
+    if (batchDryRunSummary || selectedCollection?.mode === 'dry_run') {
       return 2
     }
-    if (preflightResult?.ok) {
+    if (batchPreflightResult?.ok) {
       return 1
     }
     return 0
-  }, [dryRunSummary, preflightResult, selectedJob])
+  }, [
+    batchDryRunSummary,
+    batchPreflightResult,
+    launcherMode,
+    selectedCollection,
+    selectedJob,
+    singleDryRunSummary,
+    singlePreflightResult,
+  ])
 
-  const executeAllowed = Boolean(preflightResult?.ok && dryRunSummary)
+  const executeAllowed =
+    launcherMode === 'single'
+      ? Boolean(singlePreflightResult?.ok && singleDryRunSummary)
+      : Boolean(batchPreflightResult?.ok && batchDryRunSummary)
 
-  const setFieldErrorsFromProblem = (
-    fieldErrors: Record<string, string[]>
-  ) => {
+  const setFieldErrorsFromProblem = (fieldErrors: Record<string, string[]>) => {
     if (Object.keys(fieldErrors).length === 0) {
       return
     }
@@ -202,11 +367,37 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     )
   }
 
-  const resolveScopePayload = async (): Promise<BootstrapScopeFormValues> => {
-    const values = await form.validateFields()
+  const resolveSingleScopePayload = async () => {
+    const values = await form.validateFields(['database_id', 'entity_scope'])
     return {
-      database_id: values.database_id,
-      entity_scope: values.entity_scope,
+      database_id: values.database_id as string,
+      entity_scope: values.entity_scope as PoolMasterDataBootstrapImportEntityType[],
+    }
+  }
+
+  const resolveBatchScopePayload = async () => {
+    const values = await form.validateFields(['target_mode', 'cluster_id', 'database_ids', 'entity_scope'])
+    const targetMode = values.target_mode as 'cluster_all' | 'database_set'
+    if (targetMode === 'cluster_all') {
+      if (!values.cluster_id) {
+        form.setFields([{ name: 'cluster_id', errors: ['Выберите cluster.'] }] as never)
+        throw new Error('VALIDATION_ERROR')
+      }
+      return {
+        target_mode: targetMode,
+        cluster_id: values.cluster_id as string,
+        entity_scope: values.entity_scope as PoolMasterDataBootstrapImportEntityType[],
+      }
+    }
+    const databaseIds = (values.database_ids as string[] | undefined) ?? []
+    if (databaseIds.length === 0) {
+      form.setFields([{ name: 'database_ids', errors: ['Выберите минимум одну базу.'] }] as never)
+      throw new Error('VALIDATION_ERROR')
+    }
+    return {
+      target_mode: targetMode,
+      database_ids: databaseIds,
+      entity_scope: values.entity_scope as PoolMasterDataBootstrapImportEntityType[],
     }
   }
 
@@ -216,18 +407,34 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
   }
 
   const handleRunPreflight = async () => {
-    setJobActionError('')
+    setActionError('')
     setRunningPreflight(true)
     try {
-      const payload = await resolveScopePayload()
-      const response = await runPoolMasterDataBootstrapImportPreflight(payload)
-      setPreflightResult(response.preflight)
-      setDryRunSummary(null)
-      message.success(response.preflight.ok ? 'Preflight успешно пройден.' : 'Preflight завершён с ошибками.')
+      if (launcherMode === 'single') {
+        const payload = await resolveSingleScopePayload()
+        const response = await runPoolMasterDataBootstrapImportPreflight(payload)
+        setPreflightState({ kind: 'single', result: response.preflight })
+        setDryRunState(null)
+        message.success(response.preflight.ok ? 'Preflight успешно пройден.' : 'Preflight завершён с ошибками.')
+        return
+      }
+
+      const payload = await resolveBatchScopePayload()
+      const response = await runPoolMasterDataBootstrapCollectionPreflight(payload)
+      setPreflightState({ kind: 'batch', result: response.preflight })
+      setDryRunState(null)
+      message.success(
+        response.preflight.ok
+          ? `Aggregate preflight успешно пройден для ${response.preflight.database_count} ИБ.`
+          : 'Aggregate preflight завершён с ошибками.'
+      )
     } catch (error) {
+      if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
+        return
+      }
       const resolved = resolveApiError(error, 'Не удалось выполнить preflight.')
       setFieldErrorsFromProblem(resolved.fieldErrors)
-      setJobActionError(resolved.message)
+      setActionError(resolved.message)
       message.error(resolved.message)
     } finally {
       setRunningPreflight(false)
@@ -235,27 +442,51 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
   }
 
   const handleCreateDryRun = async () => {
-    if (!preflightResult?.ok) {
+    if (launcherMode === 'single' && !singlePreflightResult?.ok) {
       message.error('Сначала выполните успешный preflight.')
       return
     }
+    if (launcherMode === 'batch' && !batchPreflightResult?.ok) {
+      message.error('Сначала выполните успешный aggregate preflight.')
+      return
+    }
 
-    setJobActionError('')
+    setActionError('')
     setRunningDryRun(true)
     try {
-      const payload = await resolveScopePayload()
-      const response = await createPoolMasterDataBootstrapImportJob({
+      if (launcherMode === 'single') {
+        const payload = await resolveSingleScopePayload()
+        const response = await createPoolMasterDataBootstrapImportJob({
+          ...payload,
+          mode: 'dry_run',
+        })
+        setDryRunState({ kind: 'single', summary: response.job.dry_run_summary || {} })
+        setSelectedJobId(response.job.id)
+        await refreshJobsForCurrentDatabase()
+        message.success('Dry-run завершён.')
+        return
+      }
+
+      const payload = await resolveBatchScopePayload()
+      const response = await createPoolMasterDataBootstrapCollection({
         ...payload,
         mode: 'dry_run',
       })
-      setDryRunSummary(response.job.dry_run_summary || {})
-      setSelectedJobId(response.job.id)
-      await refreshJobsForCurrentDatabase()
-      message.success('Dry-run завершён.')
+      setDryRunState({
+        kind: 'batch',
+        summary: response.collection.aggregate_dry_run_summary || {},
+      })
+      setSelectedCollectionId(response.collection.id)
+      setSelectedCollection(response.collection)
+      await loadCollections()
+      message.success('Batch dry-run завершён.')
     } catch (error) {
+      if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
+        return
+      }
       const resolved = resolveApiError(error, 'Не удалось выполнить dry-run.')
       setFieldErrorsFromProblem(resolved.fieldErrors)
-      setJobActionError(resolved.message)
+      setActionError(resolved.message)
       message.error(resolved.message)
     } finally {
       setRunningDryRun(false)
@@ -264,39 +495,57 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
 
   const handleCreateExecute = async () => {
     if (!executeAllowed) {
-      message.error('Execute доступен только после успешных preflight и dry-run.')
+      message.error(
+        launcherMode === 'single'
+          ? 'Execute доступен только после успешных preflight и dry-run.'
+          : 'Batch execute доступен только после успешных preflight и dry-run.'
+      )
       return
     }
 
-    setJobActionError('')
+    setActionError('')
     setRunningExecute(true)
     try {
-      const payload = await resolveScopePayload()
-      const response = await createPoolMasterDataBootstrapImportJob({
+      if (launcherMode === 'single') {
+        const payload = await resolveSingleScopePayload()
+        const response = await createPoolMasterDataBootstrapImportJob({
+          ...payload,
+          mode: 'execute',
+        })
+        setSelectedJobId(response.job.id)
+        await refreshJobsForCurrentDatabase()
+        message.success('Execute запущен.')
+        return
+      }
+
+      const payload = await resolveBatchScopePayload()
+      const response = await createPoolMasterDataBootstrapCollection({
         ...payload,
         mode: 'execute',
       })
-      setSelectedJobId(response.job.id)
-      await refreshJobsForCurrentDatabase()
-      message.success('Execute запущен.')
+      setSelectedCollectionId(response.collection.id)
+      setSelectedCollection(response.collection)
+      await loadCollections()
+      message.success('Batch execute запущен.')
     } catch (error) {
+      if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
+        return
+      }
       const resolved = resolveApiError(error, 'Не удалось запустить execute.')
       setFieldErrorsFromProblem(resolved.fieldErrors)
-      setJobActionError(resolved.message)
+      setActionError(resolved.message)
       message.error(resolved.message)
     } finally {
       setRunningExecute(false)
     }
   }
 
-  const runJobAction = async (
-    action: 'cancel' | 'retry_failed_chunks'
-  ) => {
+  const runJobAction = async (action: 'cancel' | 'retry_failed_chunks') => {
     if (!selectedJob) {
       return
     }
     setRunningJobAction(true)
-    setJobActionError('')
+    setActionError('')
     try {
       const response =
         action === 'cancel'
@@ -307,18 +556,32 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       message.success(action === 'cancel' ? 'Job отменён.' : 'Retry failed chunks выполнен.')
     } catch (error) {
       const resolved = resolveApiError(error, 'Не удалось выполнить действие над bootstrap job.')
-      setJobActionError(resolved.message)
+      setActionError(resolved.message)
       message.error(resolved.message)
     } finally {
       setRunningJobAction(false)
     }
   }
 
-  const rowsTotal =
-    Number(dryRunSummary?.rows_total || selectedJob?.dry_run_summary?.rows_total || 0) || 0
-  const completionPercent = Math.min(
+  const openChildJob = (jobId: string) => {
+    setLauncherMode('single')
+    setSelectedJobId(jobId)
+    void loadJobDetail(jobId)
+  }
+
+  const currentTargetMode = watchedTargetMode ?? 'database_set'
+
+  const currentSingleRowsTotal =
+    Number(singleDryRunSummary?.rows_total || selectedJob?.dry_run_summary?.rows_total || 0) || 0
+  const currentSingleCompletionPercent = Math.min(
     100,
     Math.max(0, Math.round(Number(selectedJob?.progress?.completion_ratio || 0) * 100))
+  )
+  const currentCollectionRowsTotal =
+    Number(batchDryRunSummary?.rows_total || selectedCollection?.aggregate_dry_run_summary?.rows_total || 0) || 0
+  const currentCollectionCompletionPercent = Math.min(
+    100,
+    Math.max(0, Math.round(Number(selectedCollection?.progress?.completion_ratio || 0) * 100))
   )
 
   const jobColumns: ColumnsType<PoolMasterDataBootstrapImportJob> = [
@@ -339,7 +602,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     {
       title: 'Scope',
       key: 'scope',
-      width: 300,
+      width: 280,
       render: (_, row) => row.entity_scope.join(', '),
     },
     {
@@ -380,188 +643,474 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     },
   ]
 
+  const collectionColumns: ColumnsType<PoolMasterDataBootstrapCollection> = [
+    {
+      title: 'Created',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 220,
+      render: (value: string) => formatDateTime(value),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 170,
+      render: (value: string) => <Tag color={COLLECTION_STATUS_COLOR[value] || 'default'}>{value}</Tag>,
+    },
+    {
+      title: 'Targets',
+      key: 'targets',
+      width: 280,
+      render: (_, row) =>
+        row.target_mode === 'cluster_all'
+          ? clusterNameById.get(row.cluster_id || '') || `Cluster ${row.cluster_id || '-'}`
+          : `${row.database_ids.length} databases`,
+    },
+    {
+      title: 'Scope',
+      key: 'scope',
+      width: 260,
+      render: (_, row) => row.entity_scope.join(', '),
+    },
+    {
+      title: 'Outcomes',
+      key: 'outcomes',
+      width: 220,
+      render: (_, row) =>
+        `${row.aggregate_counters.completed || 0}/${row.aggregate_counters.coalesced || 0}/${row.aggregate_counters.failed || 0}`,
+    },
+  ]
+
+  const collectionItemColumns: ColumnsType<PoolMasterDataBootstrapCollectionItem> = [
+    {
+      title: 'Database',
+      dataIndex: 'database_name',
+      key: 'database_name',
+      width: 260,
+      render: (_value: string, row) => {
+        const clusterName = row.cluster_id ? clusterNameById.get(row.cluster_id) : ''
+        return clusterName ? `${row.database_name} · ${clusterName}` : row.database_name
+      },
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 140,
+      render: (value: string) => (
+        <Tag color={COLLECTION_ITEM_STATUS_COLOR[value] || 'default'}>{value}</Tag>
+      ),
+    },
+    {
+      title: 'Rows',
+      key: 'rows',
+      width: 90,
+      render: (_, row) => Number(row.dry_run_summary?.rows_total || 0),
+    },
+    {
+      title: 'Child Job',
+      key: 'child_job_id',
+      width: 180,
+      render: (_, row) =>
+        row.child_job_id ? (
+          <Button
+            type="link"
+            size="small"
+            onClick={(event) => {
+              event.stopPropagation()
+              openChildJob(row.child_job_id as string)
+            }}
+          >
+            Open Job
+          </Button>
+        ) : (
+          <Text type="secondary">-</Text>
+        ),
+    },
+    {
+      title: 'Reason',
+      key: 'reason_code',
+      width: 280,
+      render: (_, row) =>
+        row.reason_code ? <Tag color="error">{row.reason_code}</Tag> : <Text type="secondary">-</Text>,
+    },
+  ]
+
+  const batchDatabaseOptions = useMemo(
+    () =>
+      databases.map((database) => ({
+        value: database.id,
+        label: formatDatabaseLabel(database),
+      })),
+    [databases, formatDatabaseLabel]
+  )
+  const singleDatabaseOptions = useMemo(
+    () =>
+      databases.map((database) => ({
+        value: database.id,
+        label: database.name,
+      })),
+    [databases]
+  )
+
+  const clusterOptions = useMemo(
+    () =>
+      clusters.map((cluster) => ({
+        value: cluster.id,
+        label: cluster.name,
+      })),
+    [clusters]
+  )
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card>
-        <Steps
-          current={currentWizardStep}
-          items={[
-            { title: 'Scope' },
-            { title: 'Preflight' },
-            { title: 'Dry-run' },
-            { title: 'Execute' },
-          ]}
-          style={{ marginBottom: 16 }}
-        />
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Segmented<BootstrapLauncherMode>
+            value={launcherMode}
+            options={[
+              { label: 'Single Database', value: 'single' },
+              { label: 'Batch Collection', value: 'batch' },
+            ]}
+            onChange={(value) => setLauncherMode(value)}
+          />
 
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ entity_scope: defaultScope }}
-        >
-          <Space wrap align="start">
-            <Form.Item
-              name="database_id"
-              label="Database"
-              rules={[{ required: true, message: 'Выберите базу.' }]}
-              style={{ minWidth: 320, marginBottom: 8 }}
+          <Steps
+            current={currentWizardStep}
+            items={[
+              { title: 'Scope' },
+              { title: 'Preflight' },
+              { title: 'Dry-run' },
+              { title: 'Execute' },
+            ]}
+          />
+
+          <Form
+            form={form}
+            layout="vertical"
+            initialValues={{ entity_scope: defaultScope, target_mode: 'database_set' }}
+          >
+            {launcherMode === 'single' ? (
+              <Space wrap align="start">
+                <Form.Item
+                  name="database_id"
+                  label="Database"
+                  rules={[{ required: true, message: 'Выберите базу.' }]}
+                  style={{ minWidth: 320, marginBottom: 8 }}
+                >
+                  <Select
+                    data-testid="bootstrap-import-database-select"
+                    loading={loadingTargets}
+                    placeholder="Select database"
+                    options={singleDatabaseOptions}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="entity_scope"
+                  label="Entity scope"
+                  rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну сущность.' }]}
+                  style={{ minWidth: 360, marginBottom: 8 }}
+                >
+                  <Select
+                    data-testid="bootstrap-import-entity-scope-select"
+                    mode="multiple"
+                    allowClear
+                    placeholder="Select entities"
+                    options={entityScopeOptions}
+                  />
+                </Form.Item>
+              </Space>
+            ) : (
+              <Space wrap align="start">
+                <Form.Item
+                  name="target_mode"
+                  label="Target mode"
+                  rules={[{ required: true, message: 'Выберите target mode.' }]}
+                  style={{ minWidth: 220, marginBottom: 8 }}
+                >
+                  <Select
+                    data-testid="bootstrap-collection-target-mode-select"
+                    options={[
+                      { value: 'cluster_all', label: 'All databases in cluster' },
+                      { value: 'database_set', label: 'Selected databases' },
+                    ]}
+                  />
+                </Form.Item>
+                {currentTargetMode === 'cluster_all' ? (
+                  <Form.Item
+                    name="cluster_id"
+                    label="Cluster"
+                    rules={[{ required: true, message: 'Выберите cluster.' }]}
+                    style={{ minWidth: 320, marginBottom: 8 }}
+                  >
+                    <Select
+                      data-testid="bootstrap-collection-cluster-select"
+                      loading={loadingTargets}
+                      placeholder="Select cluster"
+                      options={clusterOptions}
+                    />
+                  </Form.Item>
+                ) : (
+                  <Form.Item
+                    name="database_ids"
+                    label="Databases"
+                    rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну базу.' }]}
+                    style={{ minWidth: 420, marginBottom: 8 }}
+                  >
+                    <Select
+                      data-testid="bootstrap-collection-databases-select"
+                      mode="multiple"
+                      allowClear
+                      loading={loadingTargets}
+                      placeholder="Select databases"
+                      options={batchDatabaseOptions}
+                    />
+                  </Form.Item>
+                )}
+                <Form.Item
+                  name="entity_scope"
+                  label="Entity scope"
+                  rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну сущность.' }]}
+                  style={{ minWidth: 360, marginBottom: 8 }}
+                >
+                  <Select
+                    data-testid="bootstrap-collection-entity-scope-select"
+                    mode="multiple"
+                    allowClear
+                    placeholder="Select entities"
+                    options={entityScopeOptions}
+                  />
+                </Form.Item>
+              </Space>
+            )}
+          </Form>
+
+          <Space wrap>
+            <Button
+              data-testid={launcherMode === 'single' ? 'bootstrap-import-run-preflight' : 'bootstrap-collection-run-preflight'}
+              onClick={() => void handleRunPreflight()}
+              loading={runningPreflight}
             >
-              <Select
-                data-testid="bootstrap-import-database-select"
-                loading={loadingDatabases}
-                placeholder="Select database"
-                options={databases.map((database) => ({ value: database.id, label: database.name }))}
-              />
-            </Form.Item>
-            <Form.Item
-              name="entity_scope"
-              label="Entity scope"
-              rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну сущность.' }]}
-              style={{ minWidth: 360, marginBottom: 8 }}
+              Run Preflight
+            </Button>
+            <Button
+              data-testid={launcherMode === 'single' ? 'bootstrap-import-run-dry-run' : 'bootstrap-collection-run-dry-run'}
+              onClick={() => void handleCreateDryRun()}
+              loading={runningDryRun}
+              disabled={launcherMode === 'single' ? !singlePreflightResult?.ok : !batchPreflightResult?.ok}
             >
-              <Select
-                data-testid="bootstrap-import-entity-scope-select"
-                mode="multiple"
-                allowClear
-                placeholder="Select entities"
-                options={entityScopeOptions}
-              />
-            </Form.Item>
+              Run Dry-run
+            </Button>
+            <Button
+              data-testid={launcherMode === 'single' ? 'bootstrap-import-run-execute' : 'bootstrap-collection-run-execute'}
+              type="primary"
+              onClick={() => void handleCreateExecute()}
+              loading={runningExecute}
+              disabled={!executeAllowed}
+            >
+              Execute
+            </Button>
+            <Button
+              data-testid={launcherMode === 'single' ? 'bootstrap-import-refresh' : 'bootstrap-collection-refresh'}
+              onClick={() =>
+                void (launcherMode === 'single' ? refreshJobsForCurrentDatabase() : loadCollections())
+              }
+              loading={launcherMode === 'single' ? loadingJobs : loadingCollections}
+            >
+              Refresh
+            </Button>
           </Space>
-        </Form>
 
-        <Space wrap style={{ marginBottom: 12 }}>
-          <Button
-            data-testid="bootstrap-import-run-preflight"
-            onClick={() => void handleRunPreflight()}
-            loading={runningPreflight}
-          >
-            Run Preflight
-          </Button>
-          <Button
-            data-testid="bootstrap-import-run-dry-run"
-            onClick={() => void handleCreateDryRun()}
-            loading={runningDryRun}
-            disabled={!preflightResult?.ok}
-          >
-            Run Dry-run
-          </Button>
-          <Button
-            data-testid="bootstrap-import-run-execute"
-            type="primary"
-            onClick={() => void handleCreateExecute()}
-            loading={runningExecute}
-            disabled={!executeAllowed}
-          >
-            Execute
-          </Button>
-          <Button
-            data-testid="bootstrap-import-refresh"
-            onClick={() => void refreshJobsForCurrentDatabase()}
-            loading={loadingJobs}
-          >
-            Refresh Jobs
-          </Button>
+          {!!actionError && (
+            <Alert
+              type="error"
+              showIcon
+              message={actionError}
+            />
+          )}
+
+          {launcherMode === 'single' && singlePreflightResult && (
+            <Alert
+              type={singlePreflightResult.ok ? 'success' : 'warning'}
+              showIcon
+              message={singlePreflightResult.ok ? 'Preflight passed.' : 'Preflight failed.'}
+              description={
+                singlePreflightResult.errors.length > 0
+                  ? singlePreflightResult.errors.map((item) => item.detail || item.code).join('; ')
+                  : 'Source and coverage checks are valid.'
+              }
+            />
+          )}
+
+          {launcherMode === 'batch' && batchPreflightResult && (
+            <Alert
+              type={batchPreflightResult.ok ? 'success' : 'warning'}
+              showIcon
+              message={batchPreflightResult.ok ? 'Aggregate preflight passed.' : 'Aggregate preflight failed.'}
+              description={
+                batchPreflightResult.ok
+                  ? `${batchPreflightResult.database_count} databases are ready for bootstrap collection.`
+                  : batchPreflightResult.errors
+                      .map((item) => String(item.detail || item.code || 'Preflight failed'))
+                      .join('; ')
+              }
+            />
+          )}
         </Space>
-
-        {!!jobActionError && (
-          <Alert
-            type="error"
-            showIcon
-            message={jobActionError}
-            style={{ marginBottom: 12 }}
-          />
-        )}
-
-        {preflightResult && (
-          <Alert
-            type={preflightResult.ok ? 'success' : 'warning'}
-            showIcon
-            message={preflightResult.ok ? 'Preflight passed.' : 'Preflight failed.'}
-            description={
-              preflightResult.errors.length > 0
-                ? preflightResult.errors.map((item) => item.detail || item.code).join('; ')
-                : 'Source and coverage checks are valid.'
-            }
-          />
-        )}
       </Card>
 
-      <Card
-        title="Current Job"
-        extra={
-          <Space>
-            <Button
-              data-testid="bootstrap-import-cancel-job"
-              onClick={() => void runJobAction('cancel')}
-              loading={runningJobAction}
-              disabled={!selectedJob || TERMINAL_JOB_STATUSES.has(selectedJob.status)}
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="bootstrap-import-retry-failed"
-              onClick={() => void runJobAction('retry_failed_chunks')}
-              loading={runningJobAction}
-              disabled={!selectedJob || (selectedJob.report.failed_count + selectedJob.report.deferred_count) === 0}
-            >
-              Retry Failed Chunks
-            </Button>
-          </Space>
-        }
-      >
-        {!selectedJob ? (
-          <Empty description="No bootstrap job selected." />
-        ) : (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
-            <Space>
-              <Tag color={STATUS_COLOR[selectedJob.status] || 'default'}>{selectedJob.status}</Tag>
-              <Text type="secondary">Started: {formatDateTime(selectedJob.started_at)}</Text>
-              <Text type="secondary">Finished: {formatDateTime(selectedJob.finished_at)}</Text>
-            </Space>
+      {launcherMode === 'single' ? (
+        <>
+          <Card
+            title="Current Job"
+            extra={
+              <Space>
+                <Button
+                  data-testid="bootstrap-import-cancel-job"
+                  onClick={() => void runJobAction('cancel')}
+                  loading={runningJobAction}
+                  disabled={!selectedJob || TERMINAL_JOB_STATUSES.has(selectedJob.status)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  data-testid="bootstrap-import-retry-failed"
+                  onClick={() => void runJobAction('retry_failed_chunks')}
+                  loading={runningJobAction}
+                  disabled={
+                    !selectedJob || (selectedJob.report.failed_count + selectedJob.report.deferred_count) === 0
+                  }
+                >
+                  Retry Failed Chunks
+                </Button>
+              </Space>
+            }
+          >
+            {!selectedJob ? (
+              <Empty description="No bootstrap job selected." />
+            ) : (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space>
+                  <Tag color={STATUS_COLOR[selectedJob.status] || 'default'}>{selectedJob.status}</Tag>
+                  <Text type="secondary">Started: {formatDateTime(selectedJob.started_at)}</Text>
+                  <Text type="secondary">Finished: {formatDateTime(selectedJob.finished_at)}</Text>
+                </Space>
 
-            <Progress
-              data-testid="bootstrap-import-progress"
-              percent={completionPercent}
-              status={selectedJob.status === 'failed' ? 'exception' : 'active'}
-            />
+                <Progress
+                  data-testid="bootstrap-import-progress"
+                  percent={currentSingleCompletionPercent}
+                  status={selectedJob.status === 'failed' ? 'exception' : 'active'}
+                />
 
-            <Descriptions size="small" bordered column={3}>
-              <Descriptions.Item label="Rows (dry-run)">{rowsTotal}</Descriptions.Item>
-              <Descriptions.Item label="Created">{selectedJob.report.created_count}</Descriptions.Item>
-              <Descriptions.Item label="Updated">{selectedJob.report.updated_count}</Descriptions.Item>
-              <Descriptions.Item label="Skipped">{selectedJob.report.skipped_count}</Descriptions.Item>
-              <Descriptions.Item label="Failed">{selectedJob.report.failed_count}</Descriptions.Item>
-              <Descriptions.Item label="Deferred">{selectedJob.report.deferred_count}</Descriptions.Item>
-            </Descriptions>
+                <Descriptions size="small" bordered column={3}>
+                  <Descriptions.Item label="Rows (dry-run)">{currentSingleRowsTotal}</Descriptions.Item>
+                  <Descriptions.Item label="Created">{selectedJob.report.created_count}</Descriptions.Item>
+                  <Descriptions.Item label="Updated">{selectedJob.report.updated_count}</Descriptions.Item>
+                  <Descriptions.Item label="Skipped">{selectedJob.report.skipped_count}</Descriptions.Item>
+                  <Descriptions.Item label="Failed">{selectedJob.report.failed_count}</Descriptions.Item>
+                  <Descriptions.Item label="Deferred">{selectedJob.report.deferred_count}</Descriptions.Item>
+                </Descriptions>
 
+                <Table
+                  rowKey="id"
+                  loading={loadingJobDetail}
+                  columns={chunkColumns}
+                  dataSource={selectedJob.chunks || []}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: 1200 }}
+                />
+              </Space>
+            )}
+          </Card>
+
+          <Card title="Recent Jobs">
             <Table
               rowKey="id"
-              loading={loadingJobDetail}
-              columns={chunkColumns}
-              dataSource={selectedJob.chunks || []}
+              loading={loadingJobs}
+              columns={jobColumns}
+              dataSource={jobs}
+              pagination={false}
+              size="small"
+              scroll={{ x: 1100 }}
+              onRow={(record) => ({
+                onClick: () => setSelectedJobId(record.id),
+              })}
+            />
+          </Card>
+        </>
+      ) : (
+        <>
+          <Card title="Current Collection">
+            {!selectedCollection ? (
+              <Empty description="No batch collection selected." />
+            ) : (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Space>
+                  <Tag color={COLLECTION_STATUS_COLOR[selectedCollection.status] || 'default'}>
+                    {selectedCollection.status}
+                  </Tag>
+                  <Text type="secondary">
+                    Requested by: {selectedCollection.requested_by_username || selectedCollection.requested_by_id || '-'}
+                  </Text>
+                  <Text type="secondary">Created: {formatDateTime(selectedCollection.created_at)}</Text>
+                </Space>
+
+                <Progress
+                  data-testid="bootstrap-collection-progress"
+                  percent={currentCollectionCompletionPercent}
+                  status={selectedCollection.status === 'failed' ? 'exception' : 'active'}
+                />
+
+                <Descriptions size="small" bordered column={3}>
+                  <Descriptions.Item label="Rows (dry-run)">{currentCollectionRowsTotal}</Descriptions.Item>
+                  <Descriptions.Item label="Scheduled">
+                    {selectedCollection.aggregate_counters.scheduled || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Coalesced">
+                    {selectedCollection.aggregate_counters.coalesced || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Completed">
+                    {selectedCollection.aggregate_counters.completed || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Failed">
+                    {selectedCollection.aggregate_counters.failed || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Skipped">
+                    {selectedCollection.aggregate_counters.skipped || 0}
+                  </Descriptions.Item>
+                </Descriptions>
+
+                <Table
+                  rowKey="id"
+                  loading={loadingCollectionDetail}
+                  columns={collectionItemColumns}
+                  dataSource={selectedCollection.items || []}
+                  pagination={false}
+                  size="small"
+                  scroll={{ x: 1100 }}
+                />
+              </Space>
+            )}
+          </Card>
+
+          <Card title="Recent Collections">
+            <Table
+              rowKey="id"
+              loading={loadingCollections}
+              columns={collectionColumns}
+              dataSource={collections}
               pagination={false}
               size="small"
               scroll={{ x: 1200 }}
+              onRow={(record) => ({
+                onClick: () => setSelectedCollectionId(record.id),
+              })}
             />
-          </Space>
-        )}
-      </Card>
-
-      <Card title="Recent Jobs">
-        <Table
-          rowKey="id"
-          loading={loadingJobs}
-          columns={jobColumns}
-          dataSource={jobs}
-          pagination={false}
-          size="small"
-          scroll={{ x: 1100 }}
-          onRow={(record) => ({
-            onClick: () => setSelectedJobId(record.id),
-          })}
-        />
-      </Card>
+          </Card>
+        </>
+      )}
     </Space>
   )
 }

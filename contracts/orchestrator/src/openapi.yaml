@@ -228,6 +228,12 @@ paths:
     $ref: paths/api_v2_pools_master-data_bindings_{id}_.yaml
   /api/v2/pools/master-data/bindings/upsert/:
     $ref: paths/api_v2_pools_master-data_bindings_upsert_.yaml
+  /api/v2/pools/master-data/bootstrap-collections/preflight/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-collections_preflight_.yaml
+  /api/v2/pools/master-data/bootstrap-collections/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-collections_.yaml
+  /api/v2/pools/master-data/bootstrap-collections/{id}/:
+    $ref: paths/api_v2_pools_master-data_bootstrap-collections_{id}_.yaml
   /api/v2/pools/master-data/bootstrap-import/preflight/:
     $ref: paths/api_v2_pools_master-data_bootstrap-import_preflight_.yaml
   /api/v2/pools/master-data/bootstrap-import/jobs/:

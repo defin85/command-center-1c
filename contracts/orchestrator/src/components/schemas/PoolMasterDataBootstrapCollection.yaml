@@ -1,0 +1,103 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  target_mode:
+    type: string
+    enum:
+      - cluster_all
+      - database_set
+  mode:
+    type: string
+    enum:
+      - dry_run
+      - execute
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  database_ids:
+    type: array
+    items:
+      type: string
+  entity_scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - tax_profile
+        - contract
+        - binding
+        - gl_account
+  status:
+    type: string
+    enum:
+      - dry_run_completed
+      - execute_running
+      - finalized
+      - failed
+  requested_by_id:
+    type: integer
+    nullable: true
+  requested_by_username:
+    type: string
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  aggregate_counters:
+    type: object
+    additionalProperties:
+      type: integer
+  progress:
+    type: object
+    additionalProperties:
+      type: number
+  child_job_status_counts:
+    type: object
+    additionalProperties:
+      type: integer
+  aggregate_dry_run_summary:
+    type: object
+    additionalProperties: true
+  audit_trail:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  items:
+    type: array
+    items:
+      $ref: ./PoolMasterDataBootstrapCollectionItem.yaml
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - target_mode
+  - mode
+  - cluster_id
+  - database_ids
+  - entity_scope
+  - status
+  - requested_by_id
+  - requested_by_username
+  - last_error_code
+  - last_error
+  - aggregate_counters
+  - progress
+  - child_job_status_counts
+  - aggregate_dry_run_summary
+  - audit_trail
+  - created_at
+  - updated_at

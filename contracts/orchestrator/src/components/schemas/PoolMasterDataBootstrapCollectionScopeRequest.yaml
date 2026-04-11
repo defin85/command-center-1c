@@ -1,0 +1,29 @@
+type: object
+properties:
+  target_mode:
+    type: string
+    enum:
+      - cluster_all
+      - database_set
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  database_ids:
+    type: array
+    items:
+      type: string
+  entity_scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - tax_profile
+        - contract
+        - binding
+        - gl_account
+required:
+  - target_mode
+  - entity_scope

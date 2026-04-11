@@ -1828,6 +1828,82 @@ export type PoolMasterDataBootstrapImportScopePayload = {
   entity_scope: PoolMasterDataBootstrapImportEntityType[]
 }
 
+export type PoolMasterDataBootstrapCollectionTargetMode = 'cluster_all' | 'database_set'
+
+export type PoolMasterDataBootstrapCollectionMode = 'dry_run' | 'execute'
+
+export type PoolMasterDataBootstrapCollectionStatus =
+  | 'dry_run_completed'
+  | 'execute_running'
+  | 'finalized'
+  | 'failed'
+
+export type PoolMasterDataBootstrapCollectionItemStatus =
+  | 'scheduled'
+  | 'coalesced'
+  | 'skipped'
+  | 'failed'
+  | 'completed'
+
+export type PoolMasterDataBootstrapCollectionPreflightDatabase = {
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  ok: boolean
+  preflight_result: PoolMasterDataBootstrapImportPreflightResult
+}
+
+export type PoolMasterDataBootstrapCollectionPreflightResult = {
+  ok: boolean
+  target_mode: PoolMasterDataBootstrapCollectionTargetMode
+  cluster_id: string | null
+  database_ids: string[]
+  database_count: number
+  entity_scope: PoolMasterDataBootstrapImportEntityType[]
+  databases: PoolMasterDataBootstrapCollectionPreflightDatabase[]
+  errors: Array<Record<string, unknown>>
+  generated_at: string
+}
+
+export type PoolMasterDataBootstrapCollectionItem = {
+  id: string
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  status: PoolMasterDataBootstrapCollectionItemStatus
+  reason_code: string
+  reason_detail: string
+  child_job_id: string | null
+  child_job_status: string
+  preflight_result: Record<string, unknown>
+  dry_run_summary: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataBootstrapCollection = {
+  id: string
+  tenant_id: string
+  target_mode: PoolMasterDataBootstrapCollectionTargetMode
+  mode: PoolMasterDataBootstrapCollectionMode
+  cluster_id: string | null
+  database_ids: string[]
+  entity_scope: PoolMasterDataBootstrapImportEntityType[]
+  status: PoolMasterDataBootstrapCollectionStatus
+  requested_by_id: number | null
+  requested_by_username: string
+  last_error_code: string
+  last_error: string
+  aggregate_counters: Record<string, number>
+  progress: Record<string, number>
+  child_job_status_counts: Record<string, number>
+  aggregate_dry_run_summary: Record<string, unknown>
+  audit_trail: Array<Record<string, unknown>>
+  items?: PoolMasterDataBootstrapCollectionItem[]
+  created_at: string
+  updated_at: string
+}
+
 export type PoolMasterDataRegistryResponse = GeneratedPoolMasterDataRegistryResponse
 
 export type CreatePoolMasterDataBootstrapImportJobPayload = PoolMasterDataBootstrapImportScopePayload & {
@@ -1835,8 +1911,26 @@ export type CreatePoolMasterDataBootstrapImportJobPayload = PoolMasterDataBootst
   chunk_size?: number
 }
 
+export type PoolMasterDataBootstrapCollectionScopePayload = {
+  target_mode: PoolMasterDataBootstrapCollectionTargetMode
+  cluster_id?: string
+  database_ids?: string[]
+  entity_scope: PoolMasterDataBootstrapImportEntityType[]
+}
+
+export type CreatePoolMasterDataBootstrapCollectionPayload =
+  PoolMasterDataBootstrapCollectionScopePayload & {
+    mode: PoolMasterDataBootstrapCollectionMode
+    chunk_size?: number
+  }
+
 export type ListPoolMasterDataBootstrapImportJobsParams = {
   database_id?: string
+  limit?: number
+  offset?: number
+}
+
+export type ListPoolMasterDataBootstrapCollectionsParams = {
   limit?: number
   offset?: number
 }
@@ -2025,6 +2119,12 @@ export type MasterDataListMeta = {
 }
 
 export type SimpleDatabaseRef = {
+  id: string
+  name: string
+  cluster_id: string | null
+}
+
+export type SimpleClusterRef = {
   id: string
   name: string
 }
@@ -2295,10 +2395,30 @@ export async function upsertMasterDataBinding(
   return response.data
 }
 
-export async function listPoolTargetDatabases(): Promise<SimpleDatabaseRef[]> {
+export async function listPoolTargetClusters(): Promise<SimpleClusterRef[]> {
+  const response = await apiClient.get<{ clusters: SimpleClusterRef[] }>(
+    '/api/v2/rbac/ref-clusters/',
+    {
+      params: { limit: 200, offset: 0 },
+      skipGlobalError: true,
+    }
+  )
+  return response.data.clusters ?? []
+}
+
+export async function listPoolTargetDatabases(
+  params: { cluster_id?: string } = {}
+): Promise<SimpleDatabaseRef[]> {
   const response = await apiClient.get<{ databases: SimpleDatabaseRef[] }>(
-    '/api/v2/databases/list-databases/',
-    { skipGlobalError: true }
+    '/api/v2/rbac/ref-databases/',
+    {
+      params: {
+        limit: 500,
+        offset: 0,
+        ...(params.cluster_id ? { cluster_id: params.cluster_id } : {}),
+      },
+      skipGlobalError: true,
+    }
   )
   return response.data.databases ?? []
 }
@@ -2382,11 +2502,33 @@ export async function runPoolMasterDataBootstrapImportPreflight(
   return response.data
 }
 
+export async function runPoolMasterDataBootstrapCollectionPreflight(
+  payload: PoolMasterDataBootstrapCollectionScopePayload
+): Promise<{ preflight: PoolMasterDataBootstrapCollectionPreflightResult }> {
+  const response = await apiClient.post<{ preflight: PoolMasterDataBootstrapCollectionPreflightResult }>(
+    '/api/v2/pools/master-data/bootstrap-collections/preflight/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
 export async function createPoolMasterDataBootstrapImportJob(
   payload: CreatePoolMasterDataBootstrapImportJobPayload
 ): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
   const response = await apiClient.post<{ job: PoolMasterDataBootstrapImportJob }>(
     '/api/v2/pools/master-data/bootstrap-import/jobs/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function createPoolMasterDataBootstrapCollection(
+  payload: CreatePoolMasterDataBootstrapCollectionPayload
+): Promise<{ collection: PoolMasterDataBootstrapCollection }> {
+  const response = await apiClient.post<{ collection: PoolMasterDataBootstrapCollection }>(
+    '/api/v2/pools/master-data/bootstrap-collections/',
     payload,
     { skipGlobalError: true }
   )
@@ -2418,11 +2560,46 @@ export async function listPoolMasterDataBootstrapImportJobs(
   }
 }
 
+export async function listPoolMasterDataBootstrapCollections(
+  params: ListPoolMasterDataBootstrapCollectionsParams = {}
+): Promise<{
+  count: number
+  limit: number
+  offset: number
+  collections: PoolMasterDataBootstrapCollection[]
+}> {
+  const response = await apiClient.get<{
+    count: number
+    limit: number
+    offset: number
+    collections: PoolMasterDataBootstrapCollection[]
+  }>('/api/v2/pools/master-data/bootstrap-collections/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    count: response.data.count ?? 0,
+    limit: response.data.limit ?? (params.limit ?? 20),
+    offset: response.data.offset ?? (params.offset ?? 0),
+    collections: response.data.collections ?? [],
+  }
+}
+
 export async function getPoolMasterDataBootstrapImportJob(
   jobId: string
 ): Promise<{ job: PoolMasterDataBootstrapImportJob }> {
   const response = await apiClient.get<{ job: PoolMasterDataBootstrapImportJob }>(
     `/api/v2/pools/master-data/bootstrap-import/jobs/${jobId}/`,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function getPoolMasterDataBootstrapCollection(
+  collectionId: string
+): Promise<{ collection: PoolMasterDataBootstrapCollection }> {
+  const response = await apiClient.get<{ collection: PoolMasterDataBootstrapCollection }>(
+    `/api/v2/pools/master-data/bootstrap-collections/${collectionId}/`,
     { skipGlobalError: true }
   )
   return response.data

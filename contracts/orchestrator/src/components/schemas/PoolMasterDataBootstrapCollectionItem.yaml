@@ -1,0 +1,57 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  status:
+    type: string
+    enum:
+      - scheduled
+      - coalesced
+      - skipped
+      - failed
+      - completed
+  reason_code:
+    type: string
+  reason_detail:
+    type: string
+  child_job_id:
+    type: string
+    format: uuid
+    nullable: true
+  child_job_status:
+    type: string
+  preflight_result:
+    type: object
+    additionalProperties: true
+  dry_run_summary:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - database_id
+  - database_name
+  - cluster_id
+  - status
+  - reason_code
+  - reason_detail
+  - child_job_id
+  - child_job_status
+  - preflight_result
+  - dry_run_summary
+  - created_at
+  - updated_at

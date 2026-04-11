@@ -1,0 +1,20 @@
+type: object
+properties:
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  ok:
+    type: boolean
+  preflight_result:
+    $ref: ./PoolMasterDataBootstrapImportPreflightResult.yaml
+required:
+  - database_id
+  - database_name
+  - cluster_id
+  - ok
+  - preflight_result

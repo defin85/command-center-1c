@@ -1,0 +1,16 @@
+allOf:
+  - $ref: ./PoolMasterDataBootstrapCollectionScopeRequest.yaml
+  - type: object
+    properties:
+      mode:
+        type: string
+        enum:
+          - dry_run
+          - execute
+      chunk_size:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 200
+    required:
+      - mode

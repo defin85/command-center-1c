@@ -465,6 +465,31 @@ class PoolMasterDataBootstrapImportChunkStatus(models.TextChoices):
     CANCELED = "canceled", "Canceled"
 
 
+class PoolMasterDataBootstrapCollectionTargetMode(models.TextChoices):
+    CLUSTER_ALL = "cluster_all", "Cluster All"
+    DATABASE_SET = "database_set", "Database Set"
+
+
+class PoolMasterDataBootstrapCollectionMode(models.TextChoices):
+    DRY_RUN = "dry_run", "Dry Run"
+    EXECUTE = "execute", "Execute"
+
+
+class PoolMasterDataBootstrapCollectionStatus(models.TextChoices):
+    DRY_RUN_COMPLETED = "dry_run_completed", "Dry Run Completed"
+    EXECUTE_RUNNING = "execute_running", "Execute Running"
+    FINALIZED = "finalized", "Finalized"
+    FAILED = "failed", "Failed"
+
+
+class PoolMasterDataBootstrapCollectionItemStatus(models.TextChoices):
+    SCHEDULED = "scheduled", "Scheduled"
+    COALESCED = "coalesced", "Coalesced"
+    SKIPPED = "skipped", "Skipped"
+    FAILED = "failed", "Failed"
+    COMPLETED = "completed", "Completed"
+
+
 class PoolMasterDataSyncJob(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
@@ -681,6 +706,150 @@ class PoolMasterDataSyncConflict(models.Model):
     def clean(self) -> None:
         if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
             raise ValidationError({"database": "Sync conflict database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataBootstrapCollectionRequest(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_bootstrap_collection_requests",
+    )
+    target_mode = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataBootstrapCollectionTargetMode.choices,
+        db_index=True,
+    )
+    mode = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataBootstrapCollectionMode.choices,
+        db_index=True,
+    )
+    cluster_id = models.UUIDField(null=True, blank=True, db_index=True)
+    database_ids = models.JSONField(default=list, blank=True)
+    entity_scope = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataBootstrapCollectionStatus.choices,
+        default=PoolMasterDataBootstrapCollectionStatus.DRY_RUN_COMPLETED,
+        db_index=True,
+    )
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_pool_master_data_bootstrap_collections",
+    )
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bootstrap_collections"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["tenant", "target_mode", "-created_at"]),
+        ]
+
+    def clean(self) -> None:
+        if not isinstance(self.database_ids, list) or not self.database_ids:
+            raise ValidationError({"database_ids": "Database snapshot must contain at least one database ID."})
+        normalized_database_ids = [str(value or "").strip() for value in self.database_ids]
+        if any(not value for value in normalized_database_ids):
+            raise ValidationError({"database_ids": "Database snapshot must not contain empty database IDs."})
+        if len(normalized_database_ids) != len(set(normalized_database_ids)):
+            raise ValidationError({"database_ids": "Database snapshot must not contain duplicates."})
+        self.database_ids = normalized_database_ids
+
+        if not isinstance(self.entity_scope, list) or not self.entity_scope:
+            raise ValidationError({"entity_scope": "Entity scope must contain at least one entity type."})
+        normalized_scope: list[str] = []
+        for value in self.entity_scope:
+            try:
+                normalized_value = normalize_pool_master_data_bootstrap_entity_type(str(value or ""))
+            except ValueError as exc:
+                raise ValidationError({"entity_scope": str(exc)}) from exc
+            normalized_scope.append(normalized_value)
+        if len(normalized_scope) != len(set(normalized_scope)):
+            raise ValidationError({"entity_scope": "Entity scope must not contain duplicate entity types."})
+        self.entity_scope = normalized_scope
+
+        if (
+            self.target_mode == PoolMasterDataBootstrapCollectionTargetMode.CLUSTER_ALL
+            and self.cluster_id is None
+        ):
+            raise ValidationError({"cluster_id": "cluster_id is required for cluster_all target mode."})
+        if (
+            self.target_mode == PoolMasterDataBootstrapCollectionTargetMode.DATABASE_SET
+            and self.cluster_id is not None
+        ):
+            raise ValidationError({"cluster_id": "cluster_id must be empty for database_set target mode."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataBootstrapCollectionItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    collection = models.ForeignKey(
+        PoolMasterDataBootstrapCollectionRequest,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_bootstrap_collection_items",
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataBootstrapCollectionItemStatus.choices,
+        default=PoolMasterDataBootstrapCollectionItemStatus.COMPLETED,
+        db_index=True,
+    )
+    child_job = models.ForeignKey(
+        "intercompany_pools.PoolMasterDataBootstrapImportJob",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="collection_items",
+    )
+    reason_code = models.CharField(max_length=64, blank=True, default="")
+    reason_detail = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_bootstrap_collection_items"
+        indexes = [
+            models.Index(fields=["collection", "status"]),
+            models.Index(fields=["database", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["collection", "database"],
+                name="uniq_pool_md_bootstrap_collection_item_scope",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.collection_id and self.database_id and self.database.tenant_id != self.collection.tenant_id:
+            raise ValidationError({"database": "Collection item database must belong to the same tenant."})
+        if (
+            self.child_job_id
+            and self.collection_id
+            and str(self.child_job.tenant_id) != str(self.collection.tenant_id)
+        ):
+            raise ValidationError({"child_job": "Child bootstrap job must belong to the same tenant."})
 
     def save(self, *args, **kwargs):
         self.full_clean()
