@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter } from 'react-router-dom'
@@ -33,6 +33,9 @@ const mockListMasterDataSyncConflicts = vi.fn()
 const mockRetryMasterDataSyncConflict = vi.fn()
 const mockReconcileMasterDataSyncConflict = vi.fn()
 const mockResolveMasterDataSyncConflict = vi.fn()
+const mockListPoolMasterDataSyncLaunches = vi.fn()
+const mockGetPoolMasterDataSyncLaunch = vi.fn()
+const mockCreatePoolMasterDataSyncLaunch = vi.fn()
 const mockRunPoolMasterDataBootstrapCollectionPreflight = vi.fn()
 const mockCreatePoolMasterDataBootstrapCollection = vi.fn()
 const mockListPoolMasterDataBootstrapCollections = vi.fn()
@@ -142,6 +145,67 @@ const buildBootstrapCollection = (overrides: Record<string, unknown> = {}) => ({
   ],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:02:00Z',
+  ...overrides,
+})
+
+const buildSyncLaunch = (overrides: Record<string, unknown> = {}) => ({
+  id: 'launch-1',
+  tenant_id: 'tenant-1',
+  mode: 'inbound',
+  target_mode: 'database_set',
+  cluster_id: null,
+  database_ids: ['db-1'],
+  entity_scope: ['party', 'item'],
+  status: 'completed',
+  workflow_execution_id: 'wf-launch-1',
+  operation_id: 'op-launch-1',
+  requested_by_id: 1,
+  requested_by_username: 'admin',
+  last_error_code: '',
+  last_error: '',
+  aggregate_counters: {
+    total_items: 2,
+    scheduled: 1,
+    coalesced: 0,
+    skipped: 0,
+    failed: 0,
+    completed: 1,
+  },
+  progress: {
+    total_items: 2,
+    scheduled: 1,
+    coalesced: 0,
+    skipped: 0,
+    failed: 0,
+    completed: 1,
+    terminal_items: 1,
+    completion_ratio: 0.5,
+  },
+  child_job_status_counts: {
+    queued: 1,
+  },
+  audit_trail: [],
+  items: [
+    {
+      id: 'launch-item-1',
+      database_id: 'db-1',
+      database_name: 'Main DB',
+      cluster_id: 'cluster-1',
+      entity_type: 'party',
+      status: 'scheduled',
+      reason_code: '',
+      reason_detail: '',
+      child_job_id: 'job-sync-1',
+      child_job_status: 'queued',
+      child_workflow_execution_id: 'wf-child-1',
+      child_operation_id: 'op-child-1',
+      metadata: {},
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:01:00Z',
   ...overrides,
 })
 
@@ -273,6 +337,9 @@ vi.mock('../../../api/intercompanyPools', () => ({
   retryMasterDataSyncConflict: (...args: unknown[]) => mockRetryMasterDataSyncConflict(...args),
   reconcileMasterDataSyncConflict: (...args: unknown[]) => mockReconcileMasterDataSyncConflict(...args),
   resolveMasterDataSyncConflict: (...args: unknown[]) => mockResolveMasterDataSyncConflict(...args),
+  listPoolMasterDataSyncLaunches: (...args: unknown[]) => mockListPoolMasterDataSyncLaunches(...args),
+  getPoolMasterDataSyncLaunch: (...args: unknown[]) => mockGetPoolMasterDataSyncLaunch(...args),
+  createPoolMasterDataSyncLaunch: (...args: unknown[]) => mockCreatePoolMasterDataSyncLaunch(...args),
   runPoolMasterDataBootstrapCollectionPreflight: (...args: unknown[]) =>
     mockRunPoolMasterDataBootstrapCollectionPreflight(...args),
   createPoolMasterDataBootstrapCollection: (...args: unknown[]) =>
@@ -307,6 +374,13 @@ function openSelectByTestId(testId: string) {
   const select = screen.getByTestId(testId)
   const trigger = select.querySelector('.ant-select-selector') as HTMLElement | null
   fireEvent.mouseDown(trigger ?? select)
+}
+
+function getOpenSelectDropdown() {
+  const dropdowns = Array.from(document.querySelectorAll('.ant-select-dropdown'))
+    .filter((node) => !node.classList.contains('ant-select-dropdown-hidden'))
+  expect(dropdowns.length).toBeGreaterThan(0)
+  return dropdowns[dropdowns.length - 1] as HTMLElement
 }
 
 async function selectDropdownOption(label: string | RegExp) {
@@ -346,6 +420,9 @@ describe('PoolMasterDataPage', () => {
     mockRetryMasterDataSyncConflict.mockReset()
     mockReconcileMasterDataSyncConflict.mockReset()
     mockResolveMasterDataSyncConflict.mockReset()
+    mockListPoolMasterDataSyncLaunches.mockReset()
+    mockGetPoolMasterDataSyncLaunch.mockReset()
+    mockCreatePoolMasterDataSyncLaunch.mockReset()
     mockRunPoolMasterDataBootstrapCollectionPreflight.mockReset()
     mockCreatePoolMasterDataBootstrapCollection.mockReset()
     mockListPoolMasterDataBootstrapCollections.mockReset()
@@ -726,6 +803,18 @@ describe('PoolMasterDataPage', () => {
     mockRetryMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
     mockReconcileMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
     mockResolveMasterDataSyncConflict.mockResolvedValue({ conflict: {} })
+    mockListPoolMasterDataSyncLaunches.mockResolvedValue({
+      launches: [],
+      count: 0,
+      limit: 20,
+      offset: 0,
+    })
+    mockGetPoolMasterDataSyncLaunch.mockResolvedValue({
+      launch: buildSyncLaunch(),
+    })
+    mockCreatePoolMasterDataSyncLaunch.mockResolvedValue({
+      launch: buildSyncLaunch(),
+    })
     mockRunPoolMasterDataBootstrapCollectionPreflight.mockResolvedValue({
       preflight: {
         ok: true,
@@ -1072,6 +1161,165 @@ describe('PoolMasterDataPage', () => {
         metadata: { source: 'ui' },
       })
     )
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('creates manual sync launch from the Sync tab and shows launch detail', async () => {
+    const user = userEvent.setup()
+    const createdLaunch = buildSyncLaunch({
+      id: 'launch-created-1',
+      mode: 'outbound',
+      target_mode: 'cluster_all',
+      cluster_id: 'cluster-1',
+      database_ids: ['db-1', 'db-2'],
+      entity_scope: ['party'],
+      status: 'running',
+      aggregate_counters: {
+        total_items: 2,
+        scheduled: 2,
+        coalesced: 0,
+        skipped: 0,
+        failed: 0,
+        completed: 0,
+      },
+      progress: {
+        total_items: 2,
+        scheduled: 2,
+        coalesced: 0,
+        skipped: 0,
+        failed: 0,
+        completed: 0,
+        terminal_items: 0,
+        completion_ratio: 0,
+      },
+      items: [
+        {
+          id: 'launch-item-created-1',
+          database_id: 'db-1',
+          database_name: 'Main DB',
+          cluster_id: 'cluster-1',
+          entity_type: 'party',
+          status: 'scheduled',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: 'job-sync-created-1',
+          child_job_status: 'queued',
+          child_workflow_execution_id: 'wf-child-created-1',
+          child_operation_id: 'op-child-created-1',
+          metadata: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+    })
+    mockListPoolMasterDataSyncLaunches
+      .mockResolvedValueOnce({
+        launches: [],
+        count: 0,
+        limit: 20,
+        offset: 0,
+      })
+      .mockResolvedValueOnce({
+        launches: [createdLaunch],
+        count: 1,
+        limit: 20,
+        offset: 0,
+      })
+    mockCreatePoolMasterDataSyncLaunch.mockResolvedValue({
+      launch: createdLaunch,
+    })
+    mockGetPoolMasterDataSyncLaunch.mockResolvedValue({
+      launch: createdLaunch,
+    })
+
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByTestId('sync-launch-open-drawer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('sync-launch-open-drawer'))
+
+    openSelectByTestId('sync-launch-mode')
+    await selectDropdownOption(/^Outbound$/)
+    openSelectByTestId('sync-launch-target-mode')
+    await selectDropdownOption(/^Cluster All$/)
+    openSelectByTestId('sync-launch-cluster')
+    await selectDropdownOption(/^Main Cluster$/)
+
+    openSelectByTestId('sync-launch-entity-scope')
+    const launchScopeDropdown = getOpenSelectDropdown()
+    expect(within(launchScopeDropdown).getByText('Party')).toBeInTheDocument()
+    expect(within(launchScopeDropdown).getByText('Item')).toBeInTheDocument()
+    expect(within(launchScopeDropdown).queryByText('GL Account')).not.toBeInTheDocument()
+    expect(within(launchScopeDropdown).queryByText('GL Account Set')).not.toBeInTheDocument()
+    fireEvent.click(document.body)
+
+    await user.click(screen.getByTestId('sync-launch-submit'))
+
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataSyncLaunch).toHaveBeenCalledWith({
+        mode: 'outbound',
+        target_mode: 'cluster_all',
+        cluster_id: 'cluster-1',
+        database_ids: undefined,
+        entity_scope: ['party', 'item'],
+      })
+    )
+    expect(await screen.findByText('Launch Detail')).toBeInTheDocument()
+    expect(await screen.findByText('launch-created-1')).toBeInTheDocument()
+    expect(await screen.findByText('job-sync-created-1')).toBeInTheDocument()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('keeps manual sync launch form values after validation error', async () => {
+    const user = userEvent.setup()
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByTestId('sync-launch-open-drawer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('sync-launch-open-drawer'))
+
+    openSelectByTestId('sync-launch-mode')
+    await selectDropdownOption(/^Reconcile$/)
+    openSelectByTestId('sync-launch-target-mode')
+    await selectDropdownOption(/^Cluster All$/)
+
+    await user.click(screen.getByTestId('sync-launch-submit'))
+
+    await waitFor(() =>
+      expect(screen.getByText('Select cluster.')).toBeInTheDocument()
+    )
+    const drawer = screen.getByTestId('sync-launch-drawer')
+    expect(drawer).toBeInTheDocument()
+    expect(screen.getByTestId('sync-launch-cluster')).toBeInTheDocument()
+    expect(screen.getByTestId('sync-launch-mode')).toHaveTextContent('Reconcile')
+    expect(mockCreatePoolMasterDataSyncLaunch).not.toHaveBeenCalled()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('filters sync launch entity scope by mode capabilities', async () => {
+    const user = userEvent.setup()
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByTestId('sync-launch-open-drawer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('sync-launch-open-drawer'))
+
+    openSelectByTestId('sync-launch-mode')
+    await selectDropdownOption(/^Outbound$/)
+    openSelectByTestId('sync-launch-entity-scope')
+    const outboundDropdown = getOpenSelectDropdown()
+    expect(within(outboundDropdown).getByText('Party')).toBeInTheDocument()
+    expect(within(outboundDropdown).getByText('Item')).toBeInTheDocument()
+    expect(within(outboundDropdown).getByText('Contract')).toBeInTheDocument()
+    expect(within(outboundDropdown).getByText('Tax Profile')).toBeInTheDocument()
+    expect(within(outboundDropdown).queryByText('GL Account')).not.toBeInTheDocument()
+    expect(within(outboundDropdown).queryByText('GL Account Set')).not.toBeInTheDocument()
+    fireEvent.click(document.body)
+
+    openSelectByTestId('sync-launch-mode')
+    await selectDropdownOption(/^Inbound$/)
+    openSelectByTestId('sync-launch-entity-scope')
+    const inboundDropdown = getOpenSelectDropdown()
+    expect(within(inboundDropdown).getByText('Party')).toBeInTheDocument()
+    expect(within(inboundDropdown).getByText('Item')).toBeInTheDocument()
+    expect(within(inboundDropdown).getByText('Contract')).toBeInTheDocument()
+    expect(within(inboundDropdown).getByText('Tax Profile')).toBeInTheDocument()
+    expect(within(inboundDropdown).queryByText('GL Account')).not.toBeInTheDocument()
+    expect(within(inboundDropdown).queryByText('GL Account Set')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('hides retry and reconcile actions when registry disables the required sync direction', async () => {

@@ -365,6 +365,16 @@ urlpatterns = [
         name='pools-master-data-sync-status-list',
     ),
     path(
+        'pools/master-data/sync-launches/',
+        intercompany_pools_master_data_sync.sync_launches_collection,
+        name='pools-master-data-sync-launches',
+    ),
+    path(
+        'pools/master-data/sync-launches/<uuid:id>/',
+        intercompany_pools_master_data_sync.get_sync_launch,
+        name='pools-master-data-sync-launch-get',
+    ),
+    path(
         'pools/master-data/bootstrap-collections/preflight/',
         intercompany_pools_master_data_bootstrap.preflight_pool_master_data_bootstrap_collection,
         name='pools-master-data-bootstrap-collections-preflight',

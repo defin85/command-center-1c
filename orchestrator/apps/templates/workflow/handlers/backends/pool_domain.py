@@ -15,6 +15,9 @@ from apps.intercompany_pools.master_data_sync_execution import (
     execute_pool_master_data_sync_finalize_step,
     execute_pool_master_data_sync_inbound_step,
 )
+from apps.intercompany_pools.master_data_sync_launch_execution import (
+    execute_pool_master_data_sync_launch_step,
+)
 from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 from apps.templates.workflow.models import WorkflowExecution
 
@@ -36,6 +39,7 @@ class PoolDomainBackend(AbstractOperationBackend):
         "pool.master_data_sync.inbound",
         "pool.master_data_sync.dispatch",
         "pool.master_data_sync.finalize",
+        "pool.master_data_sync.launch",
     }
 
     BACKEND_NAME = "pool_domain"
@@ -63,6 +67,10 @@ class PoolDomainBackend(AbstractOperationBackend):
                 )
             elif operation_type == "pool.master_data_sync.finalize":
                 step_output = execute_pool_master_data_sync_finalize_step(
+                    input_context=execution.input_context if isinstance(execution.input_context, dict) else {},
+                )
+            elif operation_type == "pool.master_data_sync.launch":
+                step_output = execute_pool_master_data_sync_launch_step(
                     input_context=execution.input_context if isinstance(execution.input_context, dict) else {},
                 )
             else:

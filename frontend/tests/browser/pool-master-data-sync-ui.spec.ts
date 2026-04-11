@@ -21,10 +21,12 @@ type ActionError = {
 type SyncUiMockState = {
   statuses: AnyRecord[]
   conflicts: AnyRecord[]
+  launches: AnyRecord[]
   actionCalls: {
     retry: AnyRecord[]
     reconcile: AnyRecord[]
     resolve: AnyRecord[]
+    launch: AnyRecord[]
   }
   actionErrors?: Partial<Record<'retry' | 'reconcile' | 'resolve', ActionError>>
 }
@@ -98,6 +100,20 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     }
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
       return fulfillJson(route, { clusters: [], databases: [] })
+    }
+    if (method === 'GET' && path === '/api/v2/rbac/ref-clusters/') {
+      return fulfillJson(route, {
+        clusters: [{ id: 'cluster-1', name: 'Main Cluster' }],
+        count: 1,
+        total: 1,
+      })
+    }
+    if (method === 'GET' && path === '/api/v2/rbac/ref-databases/') {
+      return fulfillJson(route, {
+        databases: [{ id: DATABASE_ID, name: 'Main DB', cluster_id: 'cluster-1' }],
+        count: 1,
+        total: 1,
+      })
     }
     if (method === 'GET' && path === '/api/v2/rbac/list-roles/') {
       return fulfillJson(route, { roles: [], count: 0, total: 0 })
@@ -373,6 +389,84 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
         : state.conflicts
       return fulfillJson(route, { count: rows.length, conflicts: rows })
     }
+    if (method === 'GET' && path === '/api/v2/pools/master-data/sync-launches/') {
+      return fulfillJson(route, {
+        launches: state.launches,
+        count: state.launches.length,
+        limit: 20,
+        offset: 0,
+      })
+    }
+    if (method === 'GET' && path.startsWith('/api/v2/pools/master-data/sync-launches/')) {
+      const launchId = path.split('/')[6]
+      const launch = state.launches.find((item) => String(item.id) === launchId) ?? null
+      return fulfillJson(route, { launch }, launch ? 200 : 404)
+    }
+    if (method === 'POST' && path === '/api/v2/pools/master-data/sync-launches/') {
+      const payload = request.postDataJSON() as AnyRecord
+      state.actionCalls.launch.push(payload)
+      const launch = {
+        id: 'launch-1',
+        tenant_id: TENANT_ID,
+        mode: payload.mode ?? 'inbound',
+        target_mode: payload.target_mode ?? 'database_set',
+        cluster_id: payload.cluster_id ?? null,
+        database_ids: Array.isArray(payload.database_ids) ? payload.database_ids : [DATABASE_ID],
+        entity_scope: Array.isArray(payload.entity_scope) ? payload.entity_scope : ['item'],
+        status: 'completed',
+        workflow_execution_id: 'wf-launch-1',
+        operation_id: 'op-launch-1',
+        requested_by_id: 1,
+        requested_by_username: 'sync-user',
+        last_error_code: '',
+        last_error: '',
+        aggregate_counters: {
+          total_items: 1,
+          scheduled: 1,
+          coalesced: 0,
+          skipped: 0,
+          failed: 0,
+          completed: 1,
+        },
+        progress: {
+          total_items: 1,
+          scheduled: 1,
+          coalesced: 0,
+          skipped: 0,
+          failed: 0,
+          completed: 1,
+          terminal_items: 1,
+          completion_ratio: 1,
+        },
+        child_job_status_counts: { completed: 1 },
+        audit_trail: [],
+        items: [
+          {
+            id: 'launch-item-1',
+            database_id: DATABASE_ID,
+            database_name: 'Main DB',
+            cluster_id: 'cluster-1',
+            entity_type: Array.isArray(payload.entity_scope) && payload.entity_scope.length > 0
+              ? payload.entity_scope[0]
+              : 'item',
+            status: 'scheduled',
+            reason_code: '',
+            reason_detail: '',
+            child_job_id: 'sync-job-1',
+            child_job_status: 'queued',
+            child_workflow_execution_id: 'wf-child-1',
+            child_operation_id: 'op-child-1',
+            metadata: {},
+            created_at: NOW,
+            updated_at: NOW,
+          },
+        ],
+        created_at: NOW,
+        updated_at: NOW,
+      }
+      state.launches = [launch]
+      return fulfillJson(route, { launch })
+    }
 
     if (method === 'POST' && path.endsWith('/retry/')) {
       const payload = request.postDataJSON() as AnyRecord
@@ -474,10 +568,12 @@ function buildDefaultState(): SyncUiMockState {
         updated_at: NOW,
       },
     ],
+    launches: [],
     actionCalls: {
       retry: [],
       reconcile: [],
       resolve: [],
+      launch: [],
     },
   }
 }
@@ -518,6 +614,34 @@ test('Pool Master Data Sync: list status/conflicts and execute conflict actions'
     resolution_code: 'MANUAL_RECONCILE',
     note: 'Manual resolve from Pool Master Data Sync UI',
     metadata: { source: 'ui' },
+  })
+})
+
+test('Pool Master Data Sync: creates manual launch and shows launch detail/history', async ({ page }) => {
+  const state = buildDefaultState()
+  await setupAuth(page)
+  await setupApiMocks(page, state)
+
+  await page.goto('/pools/master-data?tab=sync', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await expect(page.getByText('Launch History', { exact: true })).toBeVisible()
+
+  await page.getByTestId('sync-launch-open-drawer').click()
+  await page.getByTestId('sync-launch-database-set').click()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await page.getByTestId('sync-launch-submit').click()
+
+  await expect(page.getByText('Launch Detail', { exact: true })).toBeVisible()
+  await expect(page.getByText('launch-1', { exact: true })).toBeVisible()
+  await expect(page.getByText('sync-job-1', { exact: true })).toBeVisible()
+
+  expect(state.actionCalls.launch).toHaveLength(1)
+  expect(state.actionCalls.launch[0]).toEqual({
+    mode: 'inbound',
+    target_mode: 'database_set',
+    database_ids: [DATABASE_ID],
+    entity_scope: ['item'],
   })
 })
 

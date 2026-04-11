@@ -118,6 +118,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         display_order=70,
     ),
     PoolRuntimeTemplateSpec(
+        alias="pool.master_data_sync.launch",
+        label="Pool Master Data Sync Launch",
+        step_id="master_data_sync.launch",
+        description="System-managed pool runtime step: fan-out manual master-data sync launch requests.",
+        display_order=72,
+    ),
+    PoolRuntimeTemplateSpec(
         alias="pool.factual.sync_source_slice",
         label="Pool Factual Sync Source Slice",
         step_id="factual.sync_source_slice",

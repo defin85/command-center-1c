@@ -95,11 +95,23 @@ export function getBootstrapEntityOptions(
 }
 
 export function getSyncEntityOptions(
-  entries: PoolMasterDataRegistryEntry[]
+  entries: PoolMasterDataRegistryEntry[],
+  mode?: 'inbound' | 'outbound' | 'reconcile'
 ): Array<PoolMasterDataRegistryOption<string>> {
   return sortByDisplayOrder(
     entries.filter(
-      (entry) => entry.capabilities.sync_outbound || entry.capabilities.sync_inbound || entry.capabilities.sync_reconcile
+      (entry) => {
+        if (mode === 'inbound') {
+          return entry.capabilities.sync_inbound
+        }
+        if (mode === 'outbound') {
+          return entry.capabilities.sync_outbound
+        }
+        if (mode === 'reconcile') {
+          return entry.capabilities.sync_reconcile
+        }
+        return entry.capabilities.sync_outbound || entry.capabilities.sync_inbound || entry.capabilities.sync_reconcile
+      }
     )
     )
     .map((entry) => ({ value: entry.entity_type, label: getRegistryEntryLabel(entry) }))

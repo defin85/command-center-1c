@@ -493,6 +493,32 @@ class PoolMasterDataBootstrapCollectionItemStatus(models.TextChoices):
     COMPLETED = "completed", "Completed"
 
 
+class PoolMasterDataSyncLaunchMode(models.TextChoices):
+    INBOUND = "inbound", "Inbound"
+    OUTBOUND = "outbound", "Outbound"
+    RECONCILE = "reconcile", "Reconcile"
+
+
+class PoolMasterDataSyncLaunchTargetMode(models.TextChoices):
+    CLUSTER_ALL = "cluster_all", "Cluster All"
+    DATABASE_SET = "database_set", "Database Set"
+
+
+class PoolMasterDataSyncLaunchStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    COMPLETED = "completed", "Completed"
+    FAILED = "failed", "Failed"
+
+
+class PoolMasterDataSyncLaunchItemStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    SCHEDULED = "scheduled", "Scheduled"
+    COALESCED = "coalesced", "Coalesced"
+    SKIPPED = "skipped", "Skipped"
+    FAILED = "failed", "Failed"
+
+
 class PoolMasterDataDedupeClusterStatus(models.TextChoices):
     RESOLVED_AUTO = "resolved_auto", "Resolved Auto"
     RESOLVED_MANUAL = "resolved_manual", "Resolved Manual"
@@ -1068,6 +1094,161 @@ class PoolMasterDataBootstrapCollectionItem(models.Model):
             and str(self.child_job.tenant_id) != str(self.collection.tenant_id)
         ):
             raise ValidationError({"child_job": "Child bootstrap job must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncLaunchRequest(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_sync_launch_requests",
+    )
+    mode = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncLaunchMode.choices,
+        db_index=True,
+    )
+    target_mode = models.CharField(
+        max_length=32,
+        choices=PoolMasterDataSyncLaunchTargetMode.choices,
+        db_index=True,
+    )
+    cluster_id = models.UUIDField(null=True, blank=True, db_index=True)
+    database_ids = models.JSONField(default=list, blank=True)
+    entity_scope = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncLaunchStatus.choices,
+        default=PoolMasterDataSyncLaunchStatus.PENDING,
+        db_index=True,
+    )
+    workflow_execution_id = models.UUIDField(null=True, blank=True, db_index=True)
+    operation_id = models.UUIDField(null=True, blank=True, db_index=True)
+    requested_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="requested_pool_master_data_sync_launches",
+    )
+    last_error_code = models.CharField(max_length=64, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_launch_requests"
+        indexes = [
+            models.Index(fields=["tenant", "status", "-created_at"]),
+            models.Index(fields=["tenant", "mode", "-created_at"]),
+            models.Index(fields=["tenant", "target_mode", "-created_at"]),
+        ]
+
+    def clean(self) -> None:
+        if not isinstance(self.database_ids, list) or not self.database_ids:
+            raise ValidationError({"database_ids": "Database snapshot must contain at least one database ID."})
+        normalized_database_ids = [str(value or "").strip() for value in self.database_ids]
+        if any(not value for value in normalized_database_ids):
+            raise ValidationError({"database_ids": "Database snapshot must not contain empty database IDs."})
+        if len(normalized_database_ids) != len(set(normalized_database_ids)):
+            raise ValidationError({"database_ids": "Database snapshot must not contain duplicates."})
+        self.database_ids = normalized_database_ids
+
+        if not isinstance(self.entity_scope, list) or not self.entity_scope:
+            raise ValidationError({"entity_scope": "Entity scope must contain at least one entity type."})
+        normalized_scope: list[str] = []
+        for value in self.entity_scope:
+            try:
+                normalized_value = normalize_pool_master_data_entity_type(str(value or ""))
+            except ValueError as exc:
+                raise ValidationError({"entity_scope": str(exc)}) from exc
+            normalized_scope.append(normalized_value)
+        if len(normalized_scope) != len(set(normalized_scope)):
+            raise ValidationError({"entity_scope": "Entity scope must not contain duplicate entity types."})
+        self.entity_scope = normalized_scope
+
+        if self.target_mode == PoolMasterDataSyncLaunchTargetMode.CLUSTER_ALL and self.cluster_id is None:
+            raise ValidationError({"cluster_id": "cluster_id is required for cluster_all target mode."})
+        if self.target_mode == PoolMasterDataSyncLaunchTargetMode.DATABASE_SET and self.cluster_id is not None:
+            raise ValidationError({"cluster_id": "cluster_id must be empty for database_set target mode."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataSyncLaunchItem(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    launch_request = models.ForeignKey(
+        PoolMasterDataSyncLaunchRequest,
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_sync_launch_items",
+    )
+    entity_type = models.CharField(max_length=32, choices=PoolMasterDataEntityType.choices, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataSyncLaunchItemStatus.choices,
+        default=PoolMasterDataSyncLaunchItemStatus.PENDING,
+        db_index=True,
+    )
+    child_job = models.ForeignKey(
+        "intercompany_pools.PoolMasterDataSyncJob",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="launch_items",
+    )
+    reason_code = models.CharField(max_length=64, blank=True, default="")
+    reason_detail = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_sync_launch_items"
+        indexes = [
+            models.Index(fields=["launch_request", "status"]),
+            models.Index(fields=["database", "entity_type", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["launch_request", "database", "entity_type"],
+                name="uniq_pool_md_sync_launch_item_scope",
+            ),
+        ]
+
+    def clean(self) -> None:
+        self.entity_type = normalize_pool_master_data_entity_type(self.entity_type)
+        if self.launch_request_id and self.database_id and self.database.tenant_id != self.launch_request.tenant_id:
+            raise ValidationError({"database": "Launch item database must belong to the same tenant."})
+        if (
+            self.launch_request_id
+            and self.database_id
+            and str(self.database_id) not in list(self.launch_request.database_ids or [])
+        ):
+            raise ValidationError({"database": "Launch item database must belong to request snapshot."})
+        if self.launch_request_id and self.entity_type not in list(self.launch_request.entity_scope or []):
+            raise ValidationError({"entity_type": "Launch item entity_type must belong to request scope."})
+        if (
+            self.child_job_id
+            and self.launch_request_id
+            and str(self.child_job.tenant_id) != str(self.launch_request.tenant_id)
+        ):
+            raise ValidationError({"child_job": "Child sync job must belong to the same tenant."})
+        if self.child_job_id and self.child_job.database_id != self.database_id:
+            raise ValidationError({"child_job": "Child sync job must target the same database."})
+        if self.child_job_id and str(self.child_job.entity_type or "") != self.entity_type:
+            raise ValidationError({"child_job": "Child sync job must target the same entity_type."})
 
     def save(self, *args, **kwargs):
         self.full_clean()

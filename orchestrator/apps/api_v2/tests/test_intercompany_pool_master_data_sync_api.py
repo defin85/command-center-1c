@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.databases.models import Database
+from apps.databases.models import Cluster, Database
 from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
     PoolMasterDataSyncDirection,
@@ -83,6 +83,15 @@ def _create_database(*, tenant: Tenant, name: str) -> Database:
         odata_url="http://localhost/odata/sync-status.odata",
         username="user",
         password="pass",
+    )
+
+
+def _create_cluster(*, tenant: Tenant, name: str) -> Cluster:
+    return Cluster.objects.create(
+        tenant=tenant,
+        name=name,
+        ras_server=f"{name.lower().replace(' ', '-')}:1545",
+        cluster_service_url=f"http://{name.lower().replace(' ', '-')}.local",
     )
 
 
@@ -331,6 +340,111 @@ def test_master_data_sync_conflicts_list_supports_filters(
     assert payload["count"] == 1
     assert len(payload["conflicts"]) == 1
     assert payload["conflicts"][0]["status"] == "pending"
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launches_create_list_and_detail_preserve_snapshot(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    cluster = _create_cluster(tenant=default_tenant, name=f"Sync Launch Cluster {uuid4().hex[:6]}")
+    database_a = _create_database(tenant=default_tenant, name=f"sync-launch-db-a-{uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"sync-launch-db-b-{uuid4().hex[:6]}")
+    database_a.cluster = cluster
+    database_b.cluster = cluster
+    database_a.save(update_fields=["cluster", "updated_at"])
+    database_b.save(update_fields=["cluster", "updated_at"])
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
+        return_value=SimpleNamespace(enqueue_success=True),
+    ):
+        create_response = authenticated_client.post(
+            "/api/v2/pools/master-data/sync-launches/",
+            {
+                "mode": "inbound",
+                "target_mode": "cluster_all",
+                "cluster_id": str(cluster.id),
+                "entity_scope": ["item", "party"],
+            },
+            format="json",
+        )
+
+    assert create_response.status_code == 201
+    launch_payload = create_response.json()["launch"]
+    launch_id = launch_payload["id"]
+    assert launch_payload["mode"] == "inbound"
+    assert launch_payload["target_mode"] == "cluster_all"
+    assert launch_payload["cluster_id"] == str(cluster.id)
+    assert launch_payload["database_ids"] == [str(database_a.id), str(database_b.id)]
+    assert launch_payload["entity_scope"] == ["item", "party"]
+    assert launch_payload["status"] == "pending"
+
+    database_c = _create_database(tenant=default_tenant, name=f"sync-launch-db-c-{uuid4().hex[:6]}")
+    database_c.cluster = cluster
+    database_c.save(update_fields=["cluster", "updated_at"])
+
+    list_response = authenticated_client.get("/api/v2/pools/master-data/sync-launches/?limit=20&offset=0")
+    assert list_response.status_code == 200
+    assert list_response.json()["count"] >= 1
+    listed = {item["id"]: item for item in list_response.json()["launches"]}
+    assert launch_id in listed
+
+    detail_response = authenticated_client.get(f"/api/v2/pools/master-data/sync-launches/{launch_id}/")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()["launch"]
+    assert detail_payload["database_ids"] == [str(database_a.id), str(database_b.id)]
+    assert str(database_c.id) not in detail_payload["database_ids"]
+    assert detail_payload["aggregate_counters"]["total_items"] == 4
+    assert len(detail_payload["items"]) == 4
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launch_create_rejects_empty_database_set(
+    authenticated_client: APIClient,
+) -> None:
+    response = authenticated_client.post(
+        "/api/v2/pools/master-data/sync-launches/",
+        {
+            "mode": "outbound",
+            "target_mode": "database_set",
+            "database_ids": [],
+            "entity_scope": ["item"],
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["code"] == "SYNC_LAUNCH_DATABASE_IDS_REQUIRED"
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launch_create_requires_staff_or_tenant_admin(
+    default_tenant: Tenant,
+) -> None:
+    member_user = User.objects.create_user(username=f"pool-mdm-sync-launch-member-{uuid4().hex[:8]}", password="pass")
+    TenantMember.objects.update_or_create(
+        tenant=default_tenant,
+        user=member_user,
+        defaults={"role": TenantMember.ROLE_MEMBER},
+    )
+    member_client = APIClient()
+    member_client.force_authenticate(user=member_user)
+    member_client.credentials(HTTP_X_CC1C_TENANT_ID=str(default_tenant.id))
+
+    response = member_client.post(
+        "/api/v2/pools/master-data/sync-launches/",
+        {
+            "mode": "inbound",
+            "target_mode": "database_set",
+            "database_ids": [str(uuid4())],
+            "entity_scope": ["item"],
+        },
+        format="json",
+    )
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["code"] == "FORBIDDEN"
 
 
 @pytest.mark.django_db

@@ -1722,6 +1722,61 @@ export type PoolMasterDataSyncConflict = {
   updated_at: string
 }
 
+export type PoolMasterDataSyncLaunchMode = 'inbound' | 'outbound' | 'reconcile'
+
+export type PoolMasterDataSyncLaunchTargetMode = 'cluster_all' | 'database_set'
+
+export type PoolMasterDataSyncLaunchStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export type PoolMasterDataSyncLaunchItemStatus =
+  | 'pending'
+  | 'scheduled'
+  | 'coalesced'
+  | 'skipped'
+  | 'failed'
+
+export type PoolMasterDataSyncLaunchItem = {
+  id: string
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  entity_type: string
+  status: PoolMasterDataSyncLaunchItemStatus
+  reason_code: string
+  reason_detail: string
+  child_job_id: string | null
+  child_job_status: string
+  child_workflow_execution_id: string | null
+  child_operation_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataSyncLaunch = {
+  id: string
+  tenant_id: string
+  mode: PoolMasterDataSyncLaunchMode
+  target_mode: PoolMasterDataSyncLaunchTargetMode
+  cluster_id: string | null
+  database_ids: string[]
+  entity_scope: string[]
+  status: PoolMasterDataSyncLaunchStatus
+  workflow_execution_id: string | null
+  operation_id: string | null
+  requested_by_id: number | null
+  requested_by_username: string
+  last_error_code: string
+  last_error: string
+  aggregate_counters: Record<string, number>
+  progress: Record<string, number>
+  child_job_status_counts: Record<string, number>
+  audit_trail: Array<Record<string, unknown>>
+  items?: PoolMasterDataSyncLaunchItem[]
+  created_at: string
+  updated_at: string
+}
+
 export type PoolMasterDataBootstrapImportEntityType = string
 
 export type PoolMasterDataBootstrapImportJobStatus =
@@ -2094,6 +2149,19 @@ export type ListMasterDataSyncConflictsParams = {
   entity_type?: string
   status?: 'pending' | 'retrying' | 'resolved'
   limit?: number
+}
+
+export type CreatePoolMasterDataSyncLaunchPayload = {
+  mode: PoolMasterDataSyncLaunchMode
+  target_mode: PoolMasterDataSyncLaunchTargetMode
+  cluster_id?: string
+  database_ids?: string[]
+  entity_scope: string[]
+}
+
+export type ListPoolMasterDataSyncLaunchesParams = {
+  limit?: number
+  offset?: number
 }
 
 export type RetryMasterDataSyncConflictPayload = {
@@ -2578,6 +2646,47 @@ export async function resolveMasterDataSyncConflict(
   const response = await apiClient.post<{ conflict: PoolMasterDataSyncConflict }>(
     `/api/v2/pools/master-data/sync-conflicts/${conflictId}/resolve/`,
     payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolMasterDataSyncLaunches(
+  params: ListPoolMasterDataSyncLaunchesParams = {}
+): Promise<{ launches: PoolMasterDataSyncLaunch[]; count: number; limit: number; offset: number }> {
+  const response = await apiClient.get<{
+    launches: PoolMasterDataSyncLaunch[]
+    count: number
+    limit: number
+    offset: number
+  }>('/api/v2/pools/master-data/sync-launches/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    launches: response.data.launches ?? [],
+    count: response.data.count ?? 0,
+    limit: response.data.limit ?? (params.limit ?? 20),
+    offset: response.data.offset ?? (params.offset ?? 0),
+  }
+}
+
+export async function createPoolMasterDataSyncLaunch(
+  payload: CreatePoolMasterDataSyncLaunchPayload
+): Promise<{ launch: PoolMasterDataSyncLaunch }> {
+  const response = await apiClient.post<{ launch: PoolMasterDataSyncLaunch }>(
+    '/api/v2/pools/master-data/sync-launches/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function getPoolMasterDataSyncLaunch(
+  launchId: string
+): Promise<{ launch: PoolMasterDataSyncLaunch }> {
+  const response = await apiClient.get<{ launch: PoolMasterDataSyncLaunch }>(
+    `/api/v2/pools/master-data/sync-launches/${launchId}/`,
     { skipGlobalError: true }
   )
   return response.data

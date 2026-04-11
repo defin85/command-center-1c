@@ -427,6 +427,12 @@ export const shellSurfaceGovernanceInventory = [
     ownerRoutes: ['/pools/master-data'],
   },
   {
+    filePath: 'src/pages/Pools/masterData/SyncLaunchDrawer.tsx',
+    tier: 'platform-governed',
+    shellKinds: ['drawer'],
+    ownerRoutes: ['/pools/master-data'],
+  },
+  {
     filePath: 'src/pages/Pools/PoolBatchIntakeDrawer.tsx',
     tier: 'platform-governed',
     shellKinds: ['drawer'],
