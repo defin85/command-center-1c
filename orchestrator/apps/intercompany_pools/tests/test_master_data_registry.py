@@ -107,6 +107,7 @@ def test_registry_inspect_payload_contains_capability_matrix() -> None:
     assert gl_account_entry["capabilities"][POOL_MASTER_DATA_CAPABILITY_CROSS_INFOBASE_DEDUPE] is True
     assert gl_account_entry["dedupe_contract"]["enabled"] is True
     assert gl_account_entry["dedupe_contract"]["identity_signals"] == ["chart_identity", "code", "name"]
+    assert gl_account_entry["dedupe_contract"]["dedupe_key_signal_groups"] == [["chart_identity", "code"]]
     gl_account_set_entry = next(item for item in payload["entries"] if item["entity_type"] == "gl_account_set")
     assert gl_account_set_entry["binding_scope_fields"] == []
     assert gl_account_set_entry["capabilities"]["direct_binding"] is False

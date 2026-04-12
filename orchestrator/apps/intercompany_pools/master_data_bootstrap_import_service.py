@@ -1007,6 +1007,7 @@ def _apply_row(
     if entity_type == PoolMasterDataBootstrapImportEntityType.PARTY:
         return _apply_party_row(
             tenant=job.tenant,
+            database=job.database,
             row=row,
             origin_event_id=origin_event_id,
             job_id=str(job.id),
@@ -1014,6 +1015,7 @@ def _apply_row(
     if entity_type == PoolMasterDataBootstrapImportEntityType.ITEM:
         return _apply_item_row(
             tenant=job.tenant,
+            database=job.database,
             row=row,
             origin_event_id=origin_event_id,
             job_id=str(job.id),
@@ -1021,6 +1023,7 @@ def _apply_row(
     if entity_type == PoolMasterDataBootstrapImportEntityType.TAX_PROFILE:
         return _apply_tax_profile_row(
             tenant=job.tenant,
+            database=job.database,
             row=row,
             origin_event_id=origin_event_id,
             job_id=str(job.id),
@@ -1036,6 +1039,7 @@ def _apply_row(
     if entity_type == PoolMasterDataBootstrapImportEntityType.CONTRACT:
         return _apply_contract_row(
             tenant=job.tenant,
+            database=job.database,
             row=row,
             resolved_party_ids=resolved_ids[PoolMasterDataBootstrapImportEntityType.PARTY],
             resolved_party_aliases=resolved_aliases[PoolMasterDataBootstrapImportEntityType.PARTY],
@@ -1062,6 +1066,7 @@ def _apply_row(
 def _apply_party_row(
     *,
     tenant: Tenant,
+    database: Database,
     row: Mapping[str, Any],
     origin_event_id: str,
     job_id: str,
@@ -1094,14 +1099,14 @@ def _apply_party_row(
         result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
             entity_type=PoolMasterDataEntityType.PARTY,
-            source_database=None,
+            source_database=database,
             source_ref=_read_source_ref(row=row, fallback=canonical_id),
             source_canonical_id=canonical_id,
             canonical_payload=payload,
             origin_kind="bootstrap_import",
             origin_ref=str(job_id),
             origin_event_id=origin_event_id,
-            metadata={"bootstrap_job_id": str(job_id)},
+            metadata={"bootstrap_job_id": str(job_id), "database_id": str(database.id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
@@ -1134,6 +1139,7 @@ def _apply_party_row(
 def _apply_item_row(
     *,
     tenant: Tenant,
+    database: Database,
     row: Mapping[str, Any],
     origin_event_id: str,
     job_id: str,
@@ -1163,14 +1169,14 @@ def _apply_item_row(
         result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
             entity_type=PoolMasterDataEntityType.ITEM,
-            source_database=None,
+            source_database=database,
             source_ref=_read_source_ref(row=row, fallback=canonical_id),
             source_canonical_id=canonical_id,
             canonical_payload=payload,
             origin_kind="bootstrap_import",
             origin_ref=str(job_id),
             origin_event_id=origin_event_id,
-            metadata={"bootstrap_job_id": str(job_id)},
+            metadata={"bootstrap_job_id": str(job_id), "database_id": str(database.id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
@@ -1203,6 +1209,7 @@ def _apply_item_row(
 def _apply_tax_profile_row(
     *,
     tenant: Tenant,
+    database: Database,
     row: Mapping[str, Any],
     origin_event_id: str,
     job_id: str,
@@ -1234,14 +1241,14 @@ def _apply_tax_profile_row(
         result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
             entity_type=PoolMasterDataEntityType.TAX_PROFILE,
-            source_database=None,
+            source_database=database,
             source_ref=_read_source_ref(row=row, fallback=canonical_id),
             source_canonical_id=canonical_id,
             canonical_payload=payload,
             origin_kind="bootstrap_import",
             origin_ref=str(job_id),
             origin_event_id=origin_event_id,
-            metadata={"bootstrap_job_id": str(job_id)},
+            metadata={"bootstrap_job_id": str(job_id), "database_id": str(database.id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)
@@ -1373,6 +1380,7 @@ def _apply_gl_account_row(
 def _apply_contract_row(
     *,
     tenant: Tenant,
+    database: Database,
     row: Mapping[str, Any],
     resolved_party_ids: set[str],
     resolved_party_aliases: dict[str, str],
@@ -1439,14 +1447,14 @@ def _apply_contract_row(
         result = ingest_pool_master_data_source_record(
             tenant_id=str(tenant.id),
             entity_type=PoolMasterDataEntityType.CONTRACT,
-            source_database=None,
+            source_database=database,
             source_ref=_read_source_ref(row=row, fallback=canonical_id),
             source_canonical_id=canonical_id,
             canonical_payload=payload,
             origin_kind="bootstrap_import",
             origin_ref=str(job_id),
             origin_event_id=origin_event_id,
-            metadata={"bootstrap_job_id": str(job_id)},
+            metadata={"bootstrap_job_id": str(job_id), "database_id": str(database.id)},
         )
     except (MasterDataCanonicalUpsertError, DjangoValidationError, IntegrityError, ValueError) as exc:
         error_code, detail = _resolve_canonical_upsert_error(exc)

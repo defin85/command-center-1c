@@ -9,11 +9,28 @@ Tests cover:
 """
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from apps.templates.workflow.handlers.backends.odata import ODataBackend
 from apps.templates.workflow.handlers.base import NodeExecutionMode
+
+
+def _build_runtime_template(
+    *,
+    name: str,
+    operation_type: str,
+    target_entity: str,
+    template_data: dict,
+):
+    return SimpleNamespace(
+        id=str(uuid4()),
+        name=name,
+        operation_type=operation_type,
+        target_entity=target_entity,
+        template_data=template_data,
+    )
 
 
 class TestODataBackendOperationTypeSupport:
@@ -371,14 +388,11 @@ class TestODataBackendExecution:
         workflow_execution
     ):
         """Test delete operation execution."""
-        from apps.templates.models import OperationTemplate
-
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _build_runtime_template(
             name="Delete Records",
             operation_type='delete',
             target_entity="Users",
-            template_data={"filter": "id = {{ id }}"}
+            template_data={"filter": "id = {{ id }}"},
         )
 
         backend = ODataBackend()
@@ -423,14 +437,11 @@ class TestODataBackendExecution:
         workflow_execution
     ):
         """Test query operation execution."""
-        from apps.templates.models import OperationTemplate
-
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _build_runtime_template(
             name="Query Records",
             operation_type='query',
             target_entity="Users",
-            template_data={"filter": "status = '{{ status }}'"}
+            template_data={"filter": "status = '{{ status }}'"},
         )
 
         backend = ODataBackend()

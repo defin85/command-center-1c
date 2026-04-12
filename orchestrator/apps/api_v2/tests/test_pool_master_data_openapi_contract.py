@@ -65,6 +65,15 @@ def test_pool_master_data_paths_and_operation_ids_are_present() -> None:
         "/api/v2/pools/master-data/bindings/": ("get", "v2_pools_master_data_bindings_list"),
         "/api/v2/pools/master-data/bindings/{id}/": ("get", "v2_pools_master_data_bindings_get"),
         "/api/v2/pools/master-data/bindings/upsert/": ("post", "v2_pools_master_data_bindings_upsert"),
+        "/api/v2/pools/master-data/dedupe-review/": ("get", "v2_pools_master_data_dedupe_review_list"),
+        "/api/v2/pools/master-data/dedupe-review/{id}/": (
+            "get",
+            "v2_pools_master_data_dedupe_review_get",
+        ),
+        "/api/v2/pools/master-data/dedupe-review/{id}/actions/": (
+            "post",
+            "v2_pools_master_data_dedupe_review_action",
+        ),
         "/api/v2/pools/master-data/bootstrap-import/preflight/": (
             "post",
             "v2_pools_master_data_bootstrap_import_preflight",
@@ -108,6 +117,7 @@ def test_pool_master_data_list_contract_has_pagination_and_problem_details() -> 
         "/api/v2/pools/master-data/gl-accounts/",
         "/api/v2/pools/master-data/gl-account-sets/",
         "/api/v2/pools/master-data/bindings/",
+        "/api/v2/pools/master-data/dedupe-review/",
     ]
 
     for path in list_paths:

@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from apps.databases.models import Database
 from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.models import (
+    PoolMasterDataBinding,
     PoolMasterDataEntityType,
     PoolMasterDataSyncJob,
     PoolMasterDataSyncJobStatus,
@@ -108,6 +109,48 @@ def _create_pending_dedupe_review(*, tenant: Tenant) -> tuple[Database, Database
         origin_kind="bootstrap_import",
         origin_ref="job-b",
         origin_event_id="evt-party-b",
+    )
+    return database_a, database_b, str(blocked.review_item.id)
+
+
+def _create_pending_gl_account_dedupe_review(*, tenant: Tenant) -> tuple[Database, Database, str]:
+    database_a = _create_database(tenant=tenant, name=f"mdm-dedupe-gl-db-a-{uuid4().hex[:8]}")
+    database_b = _create_database(tenant=tenant, name=f"mdm-dedupe-gl-db-b-{uuid4().hex[:8]}")
+    ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+        source_database=database_a,
+        source_ref="gl-a",
+        source_canonical_id="gl-a",
+        canonical_payload={
+            "code": "10.01",
+            "name": "Материалы",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-gl-a",
+        origin_event_id="evt-gl-a",
+    )
+    blocked = ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.GL_ACCOUNT,
+        source_database=database_b,
+        source_ref="gl-b",
+        source_canonical_id="gl-b",
+        canonical_payload={
+            "code": "10.01",
+            "name": "Материалы Основные",
+            "chart_identity": "ChartOfAccounts_Main",
+            "config_name": "Accounting Enterprise",
+            "config_version": "3.0.1",
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-gl-b",
+        origin_event_id="evt-gl-b",
     )
     return database_a, database_b, str(blocked.review_item.id)
 
@@ -231,6 +274,61 @@ def test_master_data_dedupe_review_list_get_and_action_roundtrip(
     action_payload = action_response.json()
     assert action_payload["review_item"]["status"] == "resolved_manual"
     assert action_payload["review_item"]["cluster"]["status"] == "resolved_manual"
+
+    second_action_response = authenticated_client.post(
+        f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/actions/",
+        {
+            "action": "mark_distinct",
+            "note": "should fail because item is already resolved",
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        second_action_response,
+        status_code=400,
+        code="MASTER_DATA_DEDUPE_REVIEW_NOT_PENDING",
+    )
+
+
+@pytest.mark.django_db
+def test_master_data_dedupe_review_detail_includes_affected_bindings_and_runtime_blockers(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database_a, _, review_item_id = _create_pending_dedupe_review(tenant=default_tenant)
+    review_item = authenticated_client.get(
+        f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/"
+    ).json()["review_item"]
+    PoolMasterDataBinding.objects.create(
+        tenant=default_tenant,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id=review_item["cluster"]["canonical_id"],
+        database=database_a,
+        ib_ref_key="ref-party-001",
+        ib_catalog_kind="counterparty",
+    )
+
+    response = authenticated_client.get(f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/")
+    assert response.status_code == 200
+    payload = response.json()["review_item"]
+    assert payload["affected_bindings"][0]["database_id"] == str(database_a.id)
+    assert payload["affected_bindings"][0]["ib_ref_key"] == "ref-party-001"
+    blocker_codes = {item["code"] for item in payload["runtime_blockers"]}
+    assert blocker_codes == {"publication", "manual_sync_launch", "outbound_outbox"}
+
+
+@pytest.mark.django_db
+def test_master_data_dedupe_review_detail_omits_runtime_blockers_without_runtime_capability(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    _, _, review_item_id = _create_pending_gl_account_dedupe_review(tenant=default_tenant)
+
+    response = authenticated_client.get(f"/api/v2/pools/master-data/dedupe-review/{review_item_id}/")
+    assert response.status_code == 200
+    payload = response.json()["review_item"]
+    blocker_codes = {item["code"] for item in payload["runtime_blockers"]}
+    assert blocker_codes == {"publication"}
 
 
 @pytest.mark.django_db

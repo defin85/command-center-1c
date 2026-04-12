@@ -5703,6 +5703,182 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
+  /api/v2/pools/master-data/dedupe-review/:
+    get:
+      operationId: v2_pools_master_data_dedupe_review_list
+      summary: List master-data dedupe review items
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - pending_review
+              - resolved_auto
+              - resolved_manual
+              - superseded
+        - name: entity_type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - party
+              - item
+              - contract
+              - tax_profile
+              - gl_account
+        - name: reason_code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cluster_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: database_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataDedupeReviewListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/dedupe-review/{id}/:
+    get:
+      operationId: v2_pools_master_data_dedupe_review_get
+      summary: Get master-data dedupe review item
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataDedupeReviewActionResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/dedupe-review/{id}/actions/:
+    post:
+      operationId: v2_pools_master_data_dedupe_review_action
+      summary: Apply master-data dedupe review action
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataDedupeReviewActionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataDedupeReviewActionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataDedupeReviewActionRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataDedupeReviewActionResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/master-data/bootstrap-collections/preflight/:
     post:
       operationId: v2_pools_master_data_bootstrap_collections_preflight
@@ -20043,6 +20219,342 @@ components:
       required:
         - binding
         - created
+    PoolMasterDataDedupeCluster:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+            - gl_account
+        canonical_id:
+          type: string
+        dedupe_key:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending_review
+            - resolved_auto
+            - resolved_manual
+            - superseded
+        rollout_eligible:
+          type: boolean
+        reason_code:
+          type: string
+        reason_detail:
+          type: string
+        normalized_signals:
+          type: object
+          nullable: true
+          additionalProperties: true
+        conflicting_fields:
+          type: array
+          items:
+            type: string
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_by_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - id
+        - entity_type
+        - canonical_id
+        - dedupe_key
+        - status
+        - rollout_eligible
+        - reason_code
+        - reason_detail
+        - conflicting_fields
+        - resolved_at
+        - resolved_by_id
+    PoolMasterDataDedupeAffectedBinding:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+        ib_ref_key:
+          type: string
+        ib_catalog_kind:
+          type: string
+        owner_counterparty_canonical_id:
+          type: string
+        chart_identity:
+          type: string
+        sync_status:
+          type: string
+      required:
+        - id
+        - database_id
+        - database_name
+        - ib_ref_key
+        - ib_catalog_kind
+        - owner_counterparty_canonical_id
+        - chart_identity
+        - sync_status
+    PoolMasterDataDedupeRuntimeBlocker:
+      type: object
+      properties:
+        code:
+          type: string
+        label:
+          type: string
+        detail:
+          type: string
+      required:
+        - code
+        - label
+        - detail
+    PoolMasterDataDedupeSourceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+            - gl_account
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_database_id:
+          type: string
+          format: uuid
+          nullable: true
+        source_database_name:
+          type: string
+        source_ref:
+          type: string
+        source_fingerprint:
+          type: string
+        source_canonical_id:
+          type: string
+        canonical_id:
+          type: string
+        origin_kind:
+          type: string
+        origin_ref:
+          type: string
+        resolution_status:
+          type: string
+          enum:
+            - ingested
+            - resolved_auto
+            - resolved_manual
+            - pending_review
+        resolution_reason:
+          type: string
+        normalized_signals:
+          type: object
+          nullable: true
+          additionalProperties: true
+        payload_snapshot:
+          type: object
+          nullable: true
+          additionalProperties: true
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - entity_type
+        - cluster_id
+        - source_database_id
+        - source_database_name
+        - source_ref
+        - source_fingerprint
+        - source_canonical_id
+        - canonical_id
+        - origin_kind
+        - origin_ref
+        - resolution_status
+        - resolution_reason
+        - created_at
+        - updated_at
+    PoolMasterDataDedupeReviewItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        cluster_id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+            - gl_account
+        status:
+          type: string
+          enum:
+            - pending_review
+            - resolved_auto
+            - resolved_manual
+            - superseded
+        reason_code:
+          type: string
+        conflicting_fields:
+          type: array
+          items:
+            type: string
+        source_snapshot:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        proposed_survivor_source_record_id:
+          type: string
+          format: uuid
+          nullable: true
+        cluster:
+          $ref: '#/components/schemas/PoolMasterDataDedupeCluster'
+        affected_bindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataDedupeAffectedBinding'
+        runtime_blockers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataDedupeRuntimeBlocker'
+        source_records:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataDedupeSourceRecord'
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_by_id:
+          type: string
+          format: uuid
+          nullable: true
+        resolved_by_username:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          nullable: true
+          additionalProperties: true
+      required:
+        - id
+        - tenant_id
+        - cluster_id
+        - entity_type
+        - status
+        - reason_code
+        - conflicting_fields
+        - source_snapshot
+        - proposed_survivor_source_record_id
+        - cluster
+        - affected_bindings
+        - runtime_blockers
+        - source_records
+        - resolved_at
+        - resolved_by_id
+        - resolved_by_username
+        - created_at
+        - updated_at
+    PoolMasterDataDedupeReviewListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataDedupeReviewItem'
+        count:
+          type: integer
+          minimum: 0
+        meta:
+          type: object
+          properties:
+            limit:
+              type: integer
+              minimum: 1
+            offset:
+              type: integer
+              minimum: 0
+            total:
+              type: integer
+              minimum: 0
+          required:
+            - limit
+            - offset
+            - total
+      required:
+        - items
+        - count
+        - meta
+    PoolMasterDataDedupeReviewActionResponse:
+      type: object
+      properties:
+        review_item:
+          $ref: '#/components/schemas/PoolMasterDataDedupeReviewItem'
+      required:
+        - review_item
+    PoolMasterDataDedupeReviewActionRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - accept_merge
+            - choose_survivor
+            - mark_distinct
+        source_record_id:
+          type: string
+          format: uuid
+        note:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+      required:
+        - action
     PoolMasterDataBootstrapCollectionScopeRequest:
       type: object
       properties:

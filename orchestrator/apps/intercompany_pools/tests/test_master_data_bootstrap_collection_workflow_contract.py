@@ -10,12 +10,15 @@ from apps.intercompany_pools.master_data_bootstrap_collection_workflow_contract 
     build_pool_master_data_bootstrap_collection_workflow_input_context,
     validate_pool_master_data_bootstrap_collection_workflow_input_context,
 )
+from apps.intercompany_pools.models import PoolMasterDataBootstrapCollectionMode
 
 
 def test_build_bootstrap_collection_workflow_input_context_contains_snapshot_and_origin() -> None:
     payload = build_pool_master_data_bootstrap_collection_workflow_input_context(
         collection_id=str(uuid4()),
         tenant_id=str(uuid4()),
+        stage=PoolMasterDataBootstrapCollectionMode.DRY_RUN,
+        runner_token="dry_run:test-runner-token",
         correlation_id="corr-bootstrap-collection-001",
         origin_system="bootstrap_collection_execute",
         origin_event_id="evt-bootstrap-collection-001",
@@ -25,6 +28,8 @@ def test_build_bootstrap_collection_workflow_input_context_contains_snapshot_and
     assert payload["contract_version"] == POOL_MASTER_DATA_BOOTSTRAP_COLLECTION_WORKFLOW_CONTRACT
     assert payload["collection_id"]
     assert payload["tenant_id"]
+    assert payload["stage"] == PoolMasterDataBootstrapCollectionMode.DRY_RUN
+    assert payload["runner_token"] == "dry_run:test-runner-token"
     assert payload["correlation_id"] == "corr-bootstrap-collection-001"
     assert payload["origin_system"] == "bootstrap_collection_execute"
     assert payload["origin_event_id"] == "evt-bootstrap-collection-001"
@@ -36,6 +41,8 @@ def test_validate_bootstrap_collection_workflow_input_context_accepts_valid_payl
         "contract_version": POOL_MASTER_DATA_BOOTSTRAP_COLLECTION_WORKFLOW_CONTRACT,
         "collection_id": str(uuid4()),
         "tenant_id": str(uuid4()),
+        "stage": PoolMasterDataBootstrapCollectionMode.EXECUTE,
+        "runner_token": "execute:test-runner-token",
         "correlation_id": "corr-bootstrap-collection-002",
         "origin_system": "tests",
         "origin_event_id": "evt-bootstrap-collection-002",
@@ -48,6 +55,8 @@ def test_validate_bootstrap_collection_workflow_input_context_accepts_valid_payl
 
     assert validated["collection_id"] == payload["collection_id"]
     assert validated["tenant_id"] == payload["tenant_id"]
+    assert validated["stage"] == PoolMasterDataBootstrapCollectionMode.EXECUTE
+    assert validated["runner_token"] == "execute:test-runner-token"
     assert validated["actor_username"] == "admin"
 
 
@@ -56,6 +65,8 @@ def test_validate_bootstrap_collection_workflow_input_context_fails_closed_when_
         "contract_version": POOL_MASTER_DATA_BOOTSTRAP_COLLECTION_WORKFLOW_CONTRACT,
         "collection_id": str(uuid4()),
         "tenant_id": str(uuid4()),
+        "stage": PoolMasterDataBootstrapCollectionMode.DRY_RUN,
+        "runner_token": "dry_run:test-runner-token",
         "correlation_id": "",
         "origin_system": "tests",
         "origin_event_id": "evt-bootstrap-collection-003",

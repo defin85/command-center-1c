@@ -1,0 +1,6 @@
+type: object
+properties:
+  review_item:
+    $ref: ./PoolMasterDataDedupeReviewItem.yaml
+required:
+  - review_item

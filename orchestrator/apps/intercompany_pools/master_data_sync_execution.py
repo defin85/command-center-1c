@@ -7,7 +7,13 @@ from uuid import uuid4
 from django.db import transaction
 from django.utils import timezone
 
-from .master_data_dedupe import MasterDataDedupeReviewRequiredError, require_pool_master_data_dedupe_resolved
+from apps.databases.models import Database
+
+from .master_data_dedupe import (
+    MasterDataDedupeReviewRequiredError,
+    ingest_pool_master_data_source_record,
+    require_pool_master_data_dedupe_resolved,
+)
 from .master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_INBOUND,
     POOL_MASTER_DATA_CAPABILITY_SYNC_OUTBOUND,
@@ -19,6 +25,7 @@ from .master_data_sync_conflicts import (
     MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
     MASTER_DATA_SYNC_CONFLICT_APPLY,
     MASTER_DATA_SYNC_CONFLICT_POLICY_VIOLATION,
+    MasterDataSyncConflictError,
     enqueue_master_data_sync_conflict,
     raise_fail_closed_master_data_sync_conflict,
 )
@@ -119,8 +126,8 @@ def resolve_effective_pool_master_data_sync_policy(
 def configure_pool_master_data_sync_inbound_callbacks(
     *,
     select_changes: _InboundSelectChangesCallback,
-    apply_change: _InboundApplyChangeCallback,
-    notify_changes_received: _InboundNotifyChangesReceivedCallback,
+    apply_change: _InboundApplyChangeCallback | None = None,
+    notify_changes_received: _InboundNotifyChangesReceivedCallback | None = None,
     select_changes_kwargs: Mapping[str, Any] | None = None,
     notify_changes_received_kwargs: Mapping[str, Any] | None = None,
 ) -> None:
@@ -801,6 +808,21 @@ def execute_pool_master_data_sync_inbound_step(
                 "error_detail": exc.detail,
             },
         )
+    except MasterDataDedupeReviewRequiredError as exc:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(sync_job.tenant_id),
+            database_id=str(sync_job.database_id),
+            entity_type=str(sync_job.entity_type),
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
+            detail=exc.detail,
+            canonical_id=str(exc.canonical_id or ""),
+            origin_system=str(normalized_context["origin_system"]),
+            origin_event_id=str(normalized_context["origin_event_id"]),
+            diagnostics=exc.to_diagnostic(),
+            metadata={"runtime_gate": "dedupe_review_required"},
+        )
+    except MasterDataSyncConflictError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise_fail_closed_master_data_sync_conflict(
             tenant_id=str(sync_job.tenant_id),
@@ -1049,16 +1071,26 @@ def _process_pool_master_data_sync_inbound_batch(
     sync_job: PoolMasterDataSyncJob,
 ):
     select_changes = _INBOUND_SELECT_CHANGES_CALLBACK
-    apply_change = _INBOUND_APPLY_CHANGE_CALLBACK
     notify_changes_received = _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK
-    if select_changes is None or apply_change is None or notify_changes_received is None:
+    if select_changes is None or notify_changes_received is None:
         raise InboundPollerTransportError(
             code=MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED,
             detail=(
-                "Inbound callbacks are not configured. "
-                "Configure callbacks before running inbound workflow step."
+                "Inbound transport callbacks are not configured. "
+                "Configure select_changes and notify_changes_received before running inbound workflow step."
             ),
         )
+    apply_change = _INBOUND_APPLY_CHANGE_CALLBACK
+    if apply_change is None:
+        def apply_change(*, change, tenant_id, database_id, entity_type, dedupe_fingerprint, **kwargs):
+            return _apply_pool_master_data_sync_inbound_change(
+                sync_job=sync_job,
+                change=change,
+                tenant_id=tenant_id,
+                database_id=database_id,
+                entity_type=entity_type,
+                dedupe_fingerprint=dedupe_fingerprint,
+            )
 
     return process_master_data_sync_inbound_batch(
         tenant_id=str(sync_job.tenant_id),
@@ -1070,6 +1102,82 @@ def _process_pool_master_data_sync_inbound_batch(
         select_changes_kwargs=dict(_INBOUND_SELECT_CHANGES_KWARGS),
         notify_changes_received_kwargs=dict(_INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS),
     )
+
+
+def _apply_pool_master_data_sync_inbound_change(
+    *,
+    sync_job: PoolMasterDataSyncJob,
+    change,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+    dedupe_fingerprint: str,
+) -> None:
+    database = Database.objects.filter(id=str(database_id), tenant_id=str(tenant_id)).first()
+    if database is None:
+        raise ValueError(
+            f"INBOUND_SOURCE_DATABASE_NOT_FOUND: database '{database_id}' is not available in tenant '{tenant_id}'"
+        )
+    normalized_entity_type = normalize_pool_master_data_entity_type(entity_type)
+    change_entity_type = normalize_pool_master_data_entity_type(str(change.entity_type))
+    if change_entity_type != normalized_entity_type:
+        raise ValueError(
+            "INBOUND_ENTITY_TYPE_MISMATCH: "
+            f"change entity '{change_entity_type}' != scope '{normalized_entity_type}'"
+        )
+
+    payload = dict(change.payload or {})
+    source_ref = (
+        str(payload.get("source_ref") or "").strip()
+        or str(payload.get("ib_ref_key") or "").strip()
+        or str(change.canonical_id or "").strip()
+    )
+    try:
+        result = ingest_pool_master_data_source_record(
+            tenant_id=str(tenant_id),
+            entity_type=normalized_entity_type,
+            source_database=database,
+            source_ref=source_ref,
+            source_canonical_id=str(change.canonical_id or ""),
+            canonical_payload=payload,
+            origin_kind="sync_inbound",
+            origin_ref=str(sync_job.id),
+            origin_event_id=str(change.origin_event_id or ""),
+            metadata={
+                "sync_job_id": str(sync_job.id),
+                "source_database_id": str(database.id),
+                "origin_system": str(change.origin_system or ""),
+                "payload_fingerprint": str(change.payload_fingerprint or ""),
+                "dedupe_fingerprint": str(dedupe_fingerprint or ""),
+            },
+        )
+    except MasterDataDedupeReviewRequiredError as exc:
+        raise_fail_closed_master_data_sync_conflict(
+            tenant_id=str(tenant_id),
+            database_id=str(database_id),
+            entity_type=normalized_entity_type,
+            conflict_code=MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
+            detail=exc.detail,
+            canonical_id=str(exc.canonical_id or change.canonical_id or ""),
+            origin_system=str(change.origin_system or ""),
+            origin_event_id=str(change.origin_event_id or ""),
+            diagnostics={
+                **exc.to_diagnostic(),
+                "runtime_gate": "dedupe_review_required",
+                "dedupe_fingerprint": str(dedupe_fingerprint or ""),
+                "sync_job_id": str(sync_job.id),
+            },
+            metadata={"sync_job_id": str(sync_job.id)},
+        )
+    if result.blocked:
+        raise MasterDataDedupeReviewRequiredError(
+            detail=str(result.detail or "Cross-infobase dedupe review is required."),
+            entity_type=normalized_entity_type,
+            canonical_id=str(result.canonical_id or change.canonical_id or ""),
+            cluster_id=str(result.cluster.id) if result.cluster is not None else "",
+            review_item_id=str(result.review_item.id) if result.review_item is not None else "",
+            reason_code=str(result.reason_code or MASTER_DATA_SYNC_DEDUPE_REVIEW_REQUIRED),
+        )
 
 
 def _get_sync_job_for_context(*, normalized_context: Mapping[str, Any]) -> PoolMasterDataSyncJob:

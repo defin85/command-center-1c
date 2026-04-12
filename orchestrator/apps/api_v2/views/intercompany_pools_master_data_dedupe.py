@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
 from apps.intercompany_pools.master_data_dedupe import (
     MASTER_DATA_DEDUPE_INVALID_ACTION,
+    MASTER_DATA_DEDUPE_REVIEW_NOT_PENDING,
     apply_pool_master_data_dedupe_review_action,
     get_pool_master_data_dedupe_review_item,
     list_pool_master_data_dedupe_review_items,
@@ -67,6 +68,23 @@ class PoolMasterDataDedupeClusterSerializer(serializers.Serializer):
     resolved_by_id = serializers.UUIDField(required=False, allow_null=True)
 
 
+class PoolMasterDataDedupeAffectedBindingSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    database_id = serializers.UUIDField()
+    database_name = serializers.CharField()
+    ib_ref_key = serializers.CharField()
+    ib_catalog_kind = serializers.CharField(required=False, allow_blank=True)
+    owner_counterparty_canonical_id = serializers.CharField(required=False, allow_blank=True)
+    chart_identity = serializers.CharField(required=False, allow_blank=True)
+    sync_status = serializers.CharField(required=False, allow_blank=True)
+
+
+class PoolMasterDataDedupeRuntimeBlockerSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    label = serializers.CharField()
+    detail = serializers.CharField()
+
+
 class PoolMasterDataDedupeReviewItemSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     tenant_id = serializers.UUIDField()
@@ -78,6 +96,8 @@ class PoolMasterDataDedupeReviewItemSerializer(serializers.Serializer):
     source_snapshot = serializers.JSONField(required=False)
     proposed_survivor_source_record_id = serializers.UUIDField(required=False, allow_null=True)
     cluster = PoolMasterDataDedupeClusterSerializer()
+    affected_bindings = PoolMasterDataDedupeAffectedBindingSerializer(many=True, required=False)
+    runtime_blockers = PoolMasterDataDedupeRuntimeBlockerSerializer(many=True, required=False)
     source_records = PoolMasterDataDedupeSourceRecordSerializer(many=True)
     resolved_at = serializers.DateTimeField(required=False, allow_null=True)
     resolved_by_id = serializers.UUIDField(required=False, allow_null=True)
@@ -244,7 +264,12 @@ def apply_master_data_dedupe_review_action_endpoint(request, id: UUID):
             status_code=http_status.HTTP_404_NOT_FOUND,
         )
     except ValueError as exc:
-        code = MASTER_DATA_DEDUPE_INVALID_ACTION if MASTER_DATA_DEDUPE_INVALID_ACTION in str(exc) else "VALIDATION_ERROR"
+        if MASTER_DATA_DEDUPE_INVALID_ACTION in str(exc):
+            code = MASTER_DATA_DEDUPE_INVALID_ACTION
+        elif MASTER_DATA_DEDUPE_REVIEW_NOT_PENDING in str(exc):
+            code = MASTER_DATA_DEDUPE_REVIEW_NOT_PENDING
+        else:
+            code = "VALIDATION_ERROR"
         return _problem(
             code=code,
             title="Master Data Dedupe Action Invalid",

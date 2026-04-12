@@ -8,8 +8,10 @@ import {
   getPoolMasterDataDedupeReviewItem,
   listPoolMasterDataDedupeReviewItems,
   listPoolTargetDatabases,
+  type PoolMasterDataDedupeAffectedBinding,
   type PoolMasterDataDedupeReviewItem,
   type PoolMasterDataDedupeReviewStatus,
+  type PoolMasterDataDedupeRuntimeBlocker,
   type PoolMasterDataRegistryEntry,
   type PoolMasterDataSourceRecord,
   type SimpleDatabaseRef,
@@ -159,10 +161,10 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       })
       setReviewItems(response.items)
       setSelectedReviewId((current) => {
-        if (current && response.items.some((item) => item.id === current)) {
+        if (current) {
           return current
         }
-        if (reviewItemIdFromUrl && response.items.some((item) => item.id === reviewItemIdFromUrl)) {
+        if (reviewItemIdFromUrl) {
           return reviewItemIdFromUrl
         }
         return response.items[0]?.id ?? null
@@ -345,6 +347,44 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       render: (_value, row) => `${row.origin_kind || '-'}:${row.origin_ref || '-'}`,
     },
   ]
+  const bindingColumns: ColumnsType<PoolMasterDataDedupeAffectedBinding> = [
+    { title: 'Database', dataIndex: 'database_name', key: 'database_name', width: 220 },
+    { title: 'IB Ref', dataIndex: 'ib_ref_key', key: 'ib_ref_key', width: 200 },
+    {
+      title: 'Scope',
+      key: 'scope',
+      width: 280,
+      render: (_value, row) => {
+        if (row.ib_catalog_kind) {
+          return row.ib_catalog_kind
+        }
+        if (row.owner_counterparty_canonical_id) {
+          return row.owner_counterparty_canonical_id
+        }
+        if (row.chart_identity) {
+          return row.chart_identity
+        }
+        return '-'
+      },
+    },
+    {
+      title: 'Sync Status',
+      dataIndex: 'sync_status',
+      key: 'sync_status',
+      width: 140,
+      render: (value: string) => <Tag>{value || '-'}</Tag>,
+    },
+  ]
+  const runtimeBlockerColumns: ColumnsType<PoolMasterDataDedupeRuntimeBlocker> = [
+    {
+      title: 'Blocker',
+      dataIndex: 'label',
+      key: 'label',
+      width: 220,
+      render: (value: string, row) => <Tag color="warning">{value || row.code}</Tag>,
+    },
+    { title: 'Detail', dataIndex: 'detail', key: 'detail' },
+  ]
 
   const detailExtra = selectedReview ? (
     <Space>
@@ -380,6 +420,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           <Select
             allowClear
             placeholder="Database"
+            data-testid="dedupe-review-database-filter"
             value={databaseId}
             options={databases.map((database) => ({ value: database.id, label: database.name }))}
             onChange={(value) => setDatabaseId(value)}
@@ -388,6 +429,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           <Select
             allowClear
             placeholder="Entity type"
+            data-testid="dedupe-review-entity-filter"
             value={entityType}
             options={entityTypeOptions}
             onChange={(value) => setEntityType(value)}
@@ -396,6 +438,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           <Select
             allowClear
             placeholder="Status"
+            data-testid="dedupe-review-status-filter"
             value={status}
             options={REVIEW_STATUS_OPTIONS}
             onChange={(value) => setStatus(value)}
@@ -404,6 +447,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           <Input
             allowClear
             placeholder="Reason code"
+            data-testid="dedupe-review-reason-filter"
             value={reasonCode}
             onChange={(event) => {
               const value = event.target.value.trim()
@@ -487,6 +531,29 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
                 onClick: () => setSelectedSourceRecordId(record.id),
               })}
             />
+
+            <Card title="Affected Bindings" size="small">
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                columns={bindingColumns}
+                dataSource={selectedReview.affected_bindings ?? []}
+                locale={{ emptyText: 'No affected bindings.' }}
+                scroll={{ x: 900 }}
+              />
+            </Card>
+
+            <Card title="Runtime Blockers" size="small">
+              <Table
+                rowKey="code"
+                size="small"
+                pagination={false}
+                columns={runtimeBlockerColumns}
+                dataSource={selectedReview.runtime_blockers ?? []}
+                locale={{ emptyText: 'No runtime blockers.' }}
+              />
+            </Card>
 
             <JsonBlock title="Cluster Signals" value={selectedReview.cluster.normalized_signals ?? {}} />
             <JsonBlock title="Review Metadata" value={selectedReview.metadata ?? {}} />

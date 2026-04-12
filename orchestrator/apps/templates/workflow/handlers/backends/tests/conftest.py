@@ -3,12 +3,12 @@ Pytest fixtures for backend tests.
 """
 
 import pytest
+from types import SimpleNamespace
 from uuid import uuid4
 
 from django.contrib.auth.models import User
 
 from apps.databases.models import Database, Cluster
-from apps.templates.models import OperationTemplate
 from apps.templates.workflow.models import WorkflowTemplate
 
 
@@ -85,35 +85,35 @@ def workflow_execution(db, workflow_template):
 @pytest.fixture
 def lock_operation_template(db):
     """Create RAS lock_scheduled_jobs operation template."""
-    return OperationTemplate.objects.create(
+    return SimpleNamespace(
         id=str(uuid4()),
         name="Lock Scheduled Jobs",
         operation_type="lock_scheduled_jobs",
         target_entity="Infobase",
         template_data={
             "description": "Lock scheduled jobs for maintenance"
-        }
+        },
     )
 
 
 @pytest.fixture
 def unlock_operation_template(db):
     """Create RAS unlock_scheduled_jobs operation template."""
-    return OperationTemplate.objects.create(
+    return SimpleNamespace(
         id=str(uuid4()),
         name="Unlock Scheduled Jobs",
         operation_type="unlock_scheduled_jobs",
         target_entity="Infobase",
         template_data={
             "description": "Unlock scheduled jobs"
-        }
+        },
     )
 
 
 @pytest.fixture
 def create_operation_template(db):
     """Create OData create operation template."""
-    return OperationTemplate.objects.create(
+    return SimpleNamespace(
         id=str(uuid4()),
         name="Create Records",
         operation_type="create",
@@ -121,14 +121,14 @@ def create_operation_template(db):
         template_data={
             "entity": "Users",
             "data": {"name": "{{ name }}", "email": "{{ email }}"}
-        }
+        },
     )
 
 
 @pytest.fixture
 def update_operation_template(db):
     """Create OData update operation template."""
-    return OperationTemplate.objects.create(
+    return SimpleNamespace(
         id=str(uuid4()),
         name="Update Records",
         operation_type="update",
@@ -137,5 +137,5 @@ def update_operation_template(db):
             "entity": "Users",
             "filter": "id = {{ id }}",
             "data": {"status": "{{ status }}"}
-        }
+        },
     )

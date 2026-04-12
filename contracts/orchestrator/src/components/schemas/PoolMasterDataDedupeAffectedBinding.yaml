@@ -1,0 +1,29 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+    format: uuid
+  database_name:
+    type: string
+  ib_ref_key:
+    type: string
+  ib_catalog_kind:
+    type: string
+  owner_counterparty_canonical_id:
+    type: string
+  chart_identity:
+    type: string
+  sync_status:
+    type: string
+required:
+  - id
+  - database_id
+  - database_name
+  - ib_ref_key
+  - ib_catalog_kind
+  - owner_counterparty_canonical_id
+  - chart_identity
+  - sync_status

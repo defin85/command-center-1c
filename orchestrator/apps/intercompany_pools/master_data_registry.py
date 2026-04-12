@@ -54,6 +54,7 @@ class PoolMasterDataRegistryDedupeContract:
     enabled: bool
     rollout_eligible: bool = False
     identity_signals: tuple[str, ...] = ()
+    dedupe_key_signal_groups: tuple[tuple[str, ...], ...] = ()
     normalization_rules: tuple[str, ...] = ()
     survivor_precedence: tuple[str, ...] = ()
     review_required_conditions: tuple[str, ...] = ()
@@ -128,6 +129,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             enabled=True,
             rollout_eligible=True,
             identity_signals=("inn", "kpp", "name"),
+            dedupe_key_signal_groups=(("inn", "kpp"), ("inn",)),
             normalization_rules=("trim", "collapse_spaces", "name_slug", "digits_only:inn", "digits_only:kpp"),
             survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
             review_required_conditions=(
@@ -161,6 +163,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             enabled=True,
             rollout_eligible=True,
             identity_signals=("sku", "unit", "name"),
+            dedupe_key_signal_groups=(("sku",), ("name", "unit")),
             normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:sku", "lower:unit"),
             survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
             review_required_conditions=("missing_identity_signals", "unit_conflict", "name_conflict", "multiple_active_clusters"),
@@ -193,12 +196,18 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             enabled=True,
             rollout_eligible=True,
             identity_signals=("owner_counterparty_canonical_id", "number", "date", "name"),
+            dedupe_key_signal_groups=(
+                ("owner_counterparty_canonical_id", "number", "date"),
+                ("owner_counterparty_canonical_id", "number"),
+                ("owner_counterparty_canonical_id", "date"),
+            ),
             normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:number", "iso_date:date"),
             survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
             review_required_conditions=(
                 "owner_scope_conflict",
                 "number_conflict",
                 "date_conflict",
+                "name_conflict",
                 "multiple_active_clusters",
             ),
         ),
@@ -226,6 +235,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             enabled=True,
             rollout_eligible=True,
             identity_signals=("vat_code", "vat_rate", "vat_included"),
+            dedupe_key_signal_groups=(("vat_code", "vat_rate", "vat_included"),),
             normalization_rules=("trim", "upper:vat_code", "decimal:vat_rate", "bool:vat_included"),
             survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
             review_required_conditions=("structural_conflict", "multiple_active_clusters"),
@@ -250,6 +260,7 @@ _POOL_MASTER_DATA_REGISTRY_ENTRIES: tuple[PoolMasterDataRegistryEntry, ...] = (
             enabled=True,
             rollout_eligible=True,
             identity_signals=("chart_identity", "code", "name"),
+            dedupe_key_signal_groups=(("chart_identity", "code"),),
             normalization_rules=("trim", "collapse_spaces", "name_slug", "upper:code", "lower:chart_identity"),
             survivor_precedence=("existing_manual_canonical", "existing_cluster_canonical", "first_resolved_source"),
             review_required_conditions=("chart_conflict", "name_conflict", "multiple_active_clusters"),
@@ -416,6 +427,9 @@ def serialize_pool_master_data_registry_entry(
             "enabled": bool(entry.dedupe_contract.enabled),
             "rollout_eligible": bool(entry.dedupe_contract.rollout_eligible),
             "identity_signals": list(entry.dedupe_contract.identity_signals),
+            "dedupe_key_signal_groups": [
+                list(group) for group in entry.dedupe_contract.dedupe_key_signal_groups
+            ],
             "normalization_rules": list(entry.dedupe_contract.normalization_rules),
             "survivor_precedence": list(entry.dedupe_contract.survivor_precedence),
             "review_required_conditions": list(entry.dedupe_contract.review_required_conditions),

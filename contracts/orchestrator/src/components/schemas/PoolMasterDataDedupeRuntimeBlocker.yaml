@@ -1,0 +1,12 @@
+type: object
+properties:
+  code:
+    type: string
+  label:
+    type: string
+  detail:
+    type: string
+required:
+  - code
+  - label
+  - detail

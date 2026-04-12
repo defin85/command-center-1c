@@ -48,6 +48,8 @@ from apps.intercompany_pools.master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
 )
 from apps.intercompany_pools.models import (
+    PoolMasterItem,
+    PoolMasterDataSourceRecord,
     PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncDirection,
@@ -631,6 +633,180 @@ def test_inbound_step_processes_batch_via_workflow_runtime_path() -> None:
             "next_checkpoint_token": "cp-inbound-step-001",
         }
     ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_inbound_step_uses_default_source_record_ingestion_when_apply_callback_is_not_overridden() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-default-{uuid4().hex[:6]}", name="Sync Inbound Default")
+    database = _create_database(tenant=tenant, suffix="inbound-default")
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True, default_policy=PoolMasterDataSyncPolicy.IB_MASTER)
+    sync_job = PoolMasterDataSyncJob.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.IB_MASTER,
+        direction=PoolMasterDataSyncDirection.INBOUND,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+    )
+    inbound_change = MasterDataSyncInboundChange(
+        origin_system="ib",
+        origin_event_id="evt-inbound-default-001",
+        canonical_id="item-inbound-default-001",
+        entity_type=PoolMasterDataEntityType.ITEM,
+        payload={
+            "name": "Inbound Item",
+            "sku": "SKU-IN-001",
+            "unit": "pcs",
+            "source_ref": "Ref_Item_Inbound",
+        },
+        payload_fingerprint="fp-inbound-default-001",
+    )
+    notify_calls: list[dict[str, str]] = []
+
+    def _select_changes(*, checkpoint_token: str, **kwargs):
+        return MasterDataSyncSelectChangesResult(
+            changes=[inbound_change],
+            source_checkpoint_token=checkpoint_token,
+            next_checkpoint_token="cp-inbound-default-001",
+        )
+
+    def _notify_changes_received(*, checkpoint_token: str, next_checkpoint_token: str, **kwargs):
+        notify_calls.append(
+            {
+                "checkpoint_token": checkpoint_token,
+                "next_checkpoint_token": next_checkpoint_token,
+            }
+        )
+
+    configure_pool_master_data_sync_inbound_callbacks(
+        select_changes=_select_changes,
+        apply_change=None,
+        notify_changes_received=_notify_changes_received,
+    )
+    try:
+        output = execute_pool_master_data_sync_inbound_step(
+            input_context={
+                "contract_version": "pool_master_data_sync_workflow.v1",
+                "sync_job_id": str(sync_job.id),
+                "tenant_id": str(tenant.id),
+                "database_id": str(database.id),
+                "entity_type": PoolMasterDataEntityType.ITEM,
+                "sync_policy": PoolMasterDataSyncPolicy.IB_MASTER,
+                "sync_direction": PoolMasterDataSyncDirection.INBOUND,
+                "correlation_id": "corr-inbound-default-001",
+                "origin_system": "ib",
+                "origin_event_id": "evt-inbound-default-001",
+            }
+        )
+    finally:
+        reset_pool_master_data_sync_inbound_callbacks()
+
+    assert output["inbound"]["applied"] == 1
+    source_record = PoolMasterDataSourceRecord.objects.get(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        source_database=database,
+        source_ref="Ref_Item_Inbound",
+    )
+    assert source_record.origin_kind == "sync_inbound"
+    assert source_record.origin_ref == str(sync_job.id)
+    assert source_record.metadata["payload_fingerprint"] == "fp-inbound-default-001"
+    assert source_record.metadata["dedupe_fingerprint"]
+    item = PoolMasterItem.objects.get(tenant=tenant, canonical_id="item-inbound-default-001")
+    assert item.name == "Inbound Item"
+    assert item.sku == "SKU-IN-001"
+    assert notify_calls == [
+        {
+            "checkpoint_token": "",
+            "next_checkpoint_token": "cp-inbound-default-001",
+        }
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_inbound_step_fail_closed_when_default_ingestion_requires_dedupe_review() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-review-{uuid4().hex[:6]}", name="Sync Inbound Review")
+    database_a = _create_database(tenant=tenant, suffix="inbound-review-a")
+    database_b = _create_database(tenant=tenant, suffix="inbound-review-b")
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True, default_policy=PoolMasterDataSyncPolicy.IB_MASTER)
+    sync_job = PoolMasterDataSyncJob.objects.create(
+        tenant=tenant,
+        database=database_b,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.IB_MASTER,
+        direction=PoolMasterDataSyncDirection.INBOUND,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+    )
+    ingest_pool_master_data_source_record(
+        tenant_id=str(tenant.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        source_database=database_a,
+        source_ref="item-a",
+        source_canonical_id="item-a",
+        canonical_payload={
+            "name": "Item Base",
+            "sku": "SKU-001",
+            "unit": "pcs",
+            "metadata": {},
+        },
+        origin_kind="bootstrap_import",
+        origin_ref="job-a",
+        origin_event_id="evt-item-a",
+    )
+    inbound_change = MasterDataSyncInboundChange(
+        origin_system="ib",
+        origin_event_id="evt-inbound-review-001",
+        canonical_id="item-b",
+        entity_type=PoolMasterDataEntityType.ITEM,
+        payload={
+            "name": "Item Conflicted",
+            "sku": "SKU-001",
+            "unit": "pcs",
+            "source_ref": "item-b",
+        },
+        payload_fingerprint="fp-inbound-review-001",
+    )
+    notify_calls: list[str] = []
+
+    def _select_changes(*, checkpoint_token: str, **kwargs):
+        return MasterDataSyncSelectChangesResult(
+            changes=[inbound_change],
+            source_checkpoint_token=checkpoint_token,
+            next_checkpoint_token="cp-inbound-review-001",
+        )
+
+    def _notify_changes_received(**kwargs):
+        notify_calls.append("called")
+
+    configure_pool_master_data_sync_inbound_callbacks(
+        select_changes=_select_changes,
+        apply_change=None,
+        notify_changes_received=_notify_changes_received,
+    )
+    try:
+        with pytest.raises(MasterDataSyncConflictError) as exc_info:
+            execute_pool_master_data_sync_inbound_step(
+                input_context={
+                    "contract_version": "pool_master_data_sync_workflow.v1",
+                    "sync_job_id": str(sync_job.id),
+                    "tenant_id": str(tenant.id),
+                    "database_id": str(database_b.id),
+                    "entity_type": PoolMasterDataEntityType.ITEM,
+                    "sync_policy": PoolMasterDataSyncPolicy.IB_MASTER,
+                    "sync_direction": PoolMasterDataSyncDirection.INBOUND,
+                    "correlation_id": "corr-inbound-review-001",
+                    "origin_system": "ib",
+                    "origin_event_id": "evt-inbound-review-001",
+                }
+            )
+    finally:
+        reset_pool_master_data_sync_inbound_callbacks()
+
+    assert exc_info.value.code == MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED
+    assert notify_calls == []
+    conflict = PoolMasterDataSyncConflict.objects.get(id=exc_info.value.conflict_id)
+    assert conflict.conflict_code == MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED
+    assert conflict.diagnostics["dedupe_review_item_id"]
 
 
 @pytest.mark.django_db(transaction=True)

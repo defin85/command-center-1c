@@ -1,0 +1,58 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+      - gl_account
+  canonical_id:
+    type: string
+  dedupe_key:
+    type: string
+  status:
+    type: string
+    enum:
+      - pending_review
+      - resolved_auto
+      - resolved_manual
+      - superseded
+  rollout_eligible:
+    type: boolean
+  reason_code:
+    type: string
+  reason_detail:
+    type: string
+  normalized_signals:
+    type: object
+    nullable: true
+    additionalProperties: true
+  conflicting_fields:
+    type: array
+    items:
+      type: string
+  resolved_at:
+    type: string
+    format: date-time
+    nullable: true
+  resolved_by_id:
+    type: string
+    format: uuid
+    nullable: true
+required:
+  - id
+  - entity_type
+  - canonical_id
+  - dedupe_key
+  - status
+  - rollout_eligible
+  - reason_code
+  - reason_detail
+  - conflicting_fields
+  - resolved_at
+  - resolved_by_id

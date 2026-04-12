@@ -1,0 +1,94 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  cluster_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+      - gl_account
+  status:
+    type: string
+    enum:
+      - pending_review
+      - resolved_auto
+      - resolved_manual
+      - superseded
+  reason_code:
+    type: string
+  conflicting_fields:
+    type: array
+    items:
+      type: string
+  source_snapshot:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  proposed_survivor_source_record_id:
+    type: string
+    format: uuid
+    nullable: true
+  cluster:
+    $ref: ./PoolMasterDataDedupeCluster.yaml
+  affected_bindings:
+    type: array
+    items:
+      $ref: ./PoolMasterDataDedupeAffectedBinding.yaml
+  runtime_blockers:
+    type: array
+    items:
+      $ref: ./PoolMasterDataDedupeRuntimeBlocker.yaml
+  source_records:
+    type: array
+    items:
+      $ref: ./PoolMasterDataDedupeSourceRecord.yaml
+  resolved_at:
+    type: string
+    format: date-time
+    nullable: true
+  resolved_by_id:
+    type: string
+    format: uuid
+    nullable: true
+  resolved_by_username:
+    type: string
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+  metadata:
+    type: object
+    nullable: true
+    additionalProperties: true
+required:
+  - id
+  - tenant_id
+  - cluster_id
+  - entity_type
+  - status
+  - reason_code
+  - conflicting_fields
+  - source_snapshot
+  - proposed_survivor_source_record_id
+  - cluster
+  - affected_bindings
+  - runtime_blockers
+  - source_records
+  - resolved_at
+  - resolved_by_id
+  - resolved_by_username
+  - created_at
+  - updated_at

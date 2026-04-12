@@ -2240,6 +2240,23 @@ export type PoolMasterDataSourceRecord = {
   updated_at: string
 }
 
+export type PoolMasterDataDedupeAffectedBinding = {
+  id: string
+  database_id: string
+  database_name: string
+  ib_ref_key: string
+  ib_catalog_kind: string
+  owner_counterparty_canonical_id: string
+  chart_identity: string
+  sync_status: string
+}
+
+export type PoolMasterDataDedupeRuntimeBlocker = {
+  code: string
+  label: string
+  detail: string
+}
+
 export type PoolMasterDataDedupeReviewItem = {
   id: string
   tenant_id: string
@@ -2251,6 +2268,8 @@ export type PoolMasterDataDedupeReviewItem = {
   source_snapshot: unknown[]
   proposed_survivor_source_record_id: string | null
   cluster: PoolMasterDataDedupeCluster
+  affected_bindings: PoolMasterDataDedupeAffectedBinding[]
+  runtime_blockers: PoolMasterDataDedupeRuntimeBlocker[]
   source_records: PoolMasterDataSourceRecord[]
   resolved_at: string | null
   resolved_by_id: string | null

@@ -1,0 +1,82 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+      - gl_account
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  source_database_id:
+    type: string
+    format: uuid
+    nullable: true
+  source_database_name:
+    type: string
+  source_ref:
+    type: string
+  source_fingerprint:
+    type: string
+  source_canonical_id:
+    type: string
+  canonical_id:
+    type: string
+  origin_kind:
+    type: string
+  origin_ref:
+    type: string
+  resolution_status:
+    type: string
+    enum:
+      - ingested
+      - resolved_auto
+      - resolved_manual
+      - pending_review
+  resolution_reason:
+    type: string
+  normalized_signals:
+    type: object
+    nullable: true
+    additionalProperties: true
+  payload_snapshot:
+    type: object
+    nullable: true
+    additionalProperties: true
+  metadata:
+    type: object
+    nullable: true
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - entity_type
+  - cluster_id
+  - source_database_id
+  - source_database_name
+  - source_ref
+  - source_fingerprint
+  - source_canonical_id
+  - canonical_id
+  - origin_kind
+  - origin_ref
+  - resolution_status
+  - resolution_reason
+  - created_at
+  - updated_at

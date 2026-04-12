@@ -378,6 +378,26 @@ def test_generated_gateway_routes_include_binding_profile_catalog_paths() -> Non
     assert 'OperationID: "v2_pools_binding_profiles_deactivate"' in content
 
 
+def test_generated_gateway_routes_include_master_data_dedupe_review_paths() -> None:
+    routes_path = (
+        _repo_root()
+        / "go-services"
+        / "api-gateway"
+        / "internal"
+        / "routes"
+        / "generated"
+        / "orchestrator_routes.go"
+    )
+    content = routes_path.read_text(encoding="utf-8")
+
+    assert 'Path: "/pools/master-data/dedupe-review/"' in content
+    assert 'OperationID: "v2_pools_master_data_dedupe_review_list"' in content
+    assert 'Path: "/pools/master-data/dedupe-review/:id/"' in content
+    assert 'OperationID: "v2_pools_master_data_dedupe_review_get"' in content
+    assert 'Path: "/pools/master-data/dedupe-review/:id/actions/"' in content
+    assert 'OperationID: "v2_pools_master_data_dedupe_review_action"' in content
+
+
 def test_generated_retry_chain_attempt_kind_enum_matches_contract() -> None:
     contract = _load_openapi_contract()
     retry_chain_schema = _schema(contract, "PoolRunRetryChainAttempt")

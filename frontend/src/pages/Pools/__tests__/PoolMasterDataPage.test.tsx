@@ -248,6 +248,30 @@ const buildDedupeReviewItem = (overrides: Record<string, unknown> = {}) => ({
     resolved_at: null,
     resolved_by_id: null,
   },
+  affected_bindings: [
+    {
+      id: 'binding-1',
+      database_id: 'db-1',
+      database_name: 'Main DB',
+      ib_ref_key: 'ref-party-001',
+      ib_catalog_kind: 'counterparty',
+      owner_counterparty_canonical_id: '',
+      chart_identity: '',
+      sync_status: 'resolved',
+    },
+  ],
+  runtime_blockers: [
+    {
+      code: 'publication',
+      label: 'Publication',
+      detail: 'Publication remains blocked until the review item is resolved.',
+    },
+    {
+      code: 'manual_sync_launch',
+      label: 'Manual Sync Launch',
+      detail: 'Manual rollout remains blocked until the review item is resolved.',
+    },
+  ],
   source_records: [
     {
       id: 'source-1',
@@ -1044,6 +1068,82 @@ describe('PoolMasterDataPage', () => {
         metadata: { source: 'ui' },
       })
     )
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('keeps review detail context after choose survivor under pending_review filter', async () => {
+    const user = userEvent.setup()
+    const pendingReview = buildDedupeReviewItem()
+    const resolvedReview = buildDedupeReviewItem({
+      status: 'resolved_manual',
+      resolved_at: '2026-01-01T00:03:00Z',
+      resolved_by_username: 'admin',
+      cluster: {
+        ...buildDedupeReviewItem().cluster,
+        status: 'resolved_manual',
+      },
+    })
+    let pendingFilterLoads = 0
+    mockListPoolMasterDataDedupeReviewItems.mockImplementation(async (params?: Record<string, unknown>) => {
+      if (params?.status === 'pending_review') {
+        pendingFilterLoads += 1
+        return pendingFilterLoads > 1
+          ? { items: [], count: 0, meta: { limit: 50, offset: 0, total: 0 } }
+          : { items: [pendingReview], count: 1, meta: { limit: 50, offset: 0, total: 1 } }
+      }
+      return { items: [pendingReview], count: 1, meta: { limit: 50, offset: 0, total: 1 } }
+    })
+    mockGetPoolMasterDataDedupeReviewItem
+      .mockResolvedValueOnce({ review_item: pendingReview })
+      .mockResolvedValue({ review_item: resolvedReview })
+    mockApplyPoolMasterDataDedupeReviewAction.mockResolvedValue({
+      review_item: resolvedReview,
+    })
+
+    renderPage('/pools/master-data?tab=dedupe-review&reviewItemId=review-1')
+
+    expect(await screen.findByText('Review Queue')).toBeInTheDocument()
+    openSelectByTestId('dedupe-review-status-filter')
+    await selectDropdownOption('pending_review')
+    await waitFor(() =>
+      expect(mockListPoolMasterDataDedupeReviewItems).toHaveBeenLastCalledWith({
+        database_id: undefined,
+        entity_type: undefined,
+        status: 'pending_review',
+        reason_code: undefined,
+        cluster_id: 'cluster-review-1',
+        limit: 50,
+        offset: 0,
+      })
+    )
+
+    await user.click(screen.getByLabelText('Use Ref_B as survivor'))
+    await user.click(screen.getByRole('button', { name: 'Choose Survivor' }))
+
+    expect((await screen.findAllByText('resolved_manual')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No dedupe review item selected.')).not.toBeInTheDocument()
+    expect(mockGetPoolMasterDataDedupeReviewItem).toHaveBeenLastCalledWith('review-1')
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('renders dedupe blockers and affected bindings in review detail', async () => {
+    const pendingReview = buildDedupeReviewItem()
+    mockListPoolMasterDataDedupeReviewItems.mockResolvedValue({
+      items: [pendingReview],
+      count: 1,
+      meta: { limit: 50, offset: 0, total: 1 },
+    })
+    mockGetPoolMasterDataDedupeReviewItem.mockResolvedValue({
+      review_item: pendingReview,
+    })
+
+    renderPage('/pools/master-data?tab=dedupe-review&reviewItemId=review-1')
+
+    expect(await screen.findByText('Review Detail')).toBeInTheDocument()
+    expect(await screen.findByText('Affected Bindings')).toBeInTheDocument()
+    expect(screen.getAllByText('Main DB').length).toBeGreaterThan(0)
+    expect(screen.getByText('ref-party-001')).toBeInTheDocument()
+    expect(screen.getByText('Runtime Blockers')).toBeInTheDocument()
+    expect(screen.getByText('Publication')).toBeInTheDocument()
+    expect(screen.getByText('Manual Sync Launch')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('blocks Party save when no role is selected', async () => {

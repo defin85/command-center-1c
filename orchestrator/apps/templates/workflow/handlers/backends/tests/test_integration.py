@@ -12,10 +12,47 @@ import pytest
 from unittest.mock import patch
 from uuid import uuid4
 
-from apps.templates.models import OperationTemplate
+from apps.templates.models import OperationDefinition, OperationExposure
 from apps.templates.workflow.models import WorkflowNode, WorkflowStepResult
 from apps.templates.workflow.handlers.operation import OperationHandler
 from apps.templates.workflow.handlers.base import NodeExecutionMode, NodeExecutionResult
+
+
+def _create_template_exposure(
+    *,
+    name: str,
+    operation_type: str,
+    target_entity: str,
+    template_data: dict,
+) -> OperationExposure:
+    exposure_id = uuid4()
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_WORKFLOW,
+        executor_payload={
+            "operation_type": operation_type,
+            "target_entity": target_entity,
+            "template_data": template_data,
+        },
+        contract_version=1,
+        fingerprint=f"backend-integration:{exposure_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        id=exposure_id,
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=str(exposure_id),
+        tenant=None,
+        label=name,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
 
 
 @pytest.mark.django_db
@@ -29,15 +66,14 @@ class TestRASBackendIntegration:
     ):
         """Test complete workflow execution with RAS lock operation."""
         # Create operation template
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Maintenance Lock",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
             template_data={
                 "description": "Lock for maintenance",
                 "duration": "{{ duration }}"
-            }
+            },
         )
 
         # Create workflow node
@@ -94,12 +130,11 @@ class TestRASBackendIntegration:
         workflow_execution
     ):
         """Test workflow with RAS terminate_sessions operation."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Terminate Sessions",
             operation_type='terminate_sessions',
             target_entity="Infobase",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(
@@ -141,12 +176,11 @@ class TestRASBackendIntegration:
         workflow_execution
     ):
         """Test workflow with RAS block_sessions operation."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Block Sessions",
             operation_type='block_sessions',
             target_entity="Infobase",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(
@@ -195,8 +229,7 @@ class TestODataBackendIntegration:
         workflow_execution
     ):
         """Test complete workflow execution with OData create operation."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Create Users",
             operation_type='create',
             target_entity="Users",
@@ -206,7 +239,7 @@ class TestODataBackendIntegration:
                     "name": "{{ name }}",
                     "email": "{{ email }}"
                 }
-            }
+            },
         )
 
         node = WorkflowNode(
@@ -258,8 +291,7 @@ class TestODataBackendIntegration:
         workflow_execution
     ):
         """Test workflow with OData update operation."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Update Users",
             operation_type='update',
             target_entity="Users",
@@ -267,7 +299,7 @@ class TestODataBackendIntegration:
                 "entity": "Users",
                 "filter": "id = {{ user_id }}",
                 "data": {"status": "{{ status }}"}
-            }
+            },
         )
 
         node = WorkflowNode(
@@ -310,15 +342,14 @@ class TestODataBackendIntegration:
         workflow_execution
     ):
         """Test workflow with OData delete operation."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Delete Records",
             operation_type='delete',
             target_entity="Users",
             template_data={
                 "entity": "Users",
                 "filter": "id = {{ record_id }}"
-            }
+            },
         )
 
         node = WorkflowNode(
@@ -361,12 +392,11 @@ class TestODataBackendIntegration:
         workflow_execution
     ):
         """Test workflow with OData operation in ASYNC mode."""
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Async Create",
             operation_type='create',
             target_entity="Reports",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(
@@ -417,12 +447,11 @@ class TestMixedWorkflowIntegration:
     ):
         """Test workflow with RAS operation followed by OData operation."""
         # Create RAS operation
-        ras_template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        ras_template = _create_template_exposure(
             name="Lock for Maintenance",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         ras_node = WorkflowNode(
@@ -433,12 +462,11 @@ class TestMixedWorkflowIntegration:
         )
 
         # Create OData operation
-        odata_template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        odata_template = _create_template_exposure(
             name="Update Status",
             operation_type='update',
             target_entity="Systems",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         odata_node = WorkflowNode(
@@ -532,12 +560,11 @@ class TestMixedWorkflowIntegration:
             password="password"
         )
 
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Lock Multiple",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(

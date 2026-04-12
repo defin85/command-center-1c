@@ -18,7 +18,7 @@ def test_sync_pool_runtime_template_registry_creates_required_aliases() -> None:
     assert "pool.master_data_sync.dispatch" in expected_aliases
     assert "pool.master_data_sync.finalize" in expected_aliases
     assert "pool.master_data_sync.launch" in expected_aliases
-    assert "pool.master_data_bootstrap.collection.execute" in expected_aliases
+    assert "pool.master_data_bootstrap.collection.stage" in expected_aliases
     assert result.created == len(expected_aliases)
     assert result.updated == 0
     assert result.unchanged == 0

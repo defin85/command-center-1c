@@ -10,6 +10,7 @@ Tests cover:
 import pytest
 from uuid import uuid4
 
+from apps.templates.models import OperationDefinition, OperationExposure
 from apps.templates.workflow.handlers.operation import OperationHandler
 from apps.templates.workflow.handlers.base import NodeExecutionMode, NodeExecutionResult
 from apps.templates.workflow.handlers.backends import (
@@ -20,6 +21,43 @@ from apps.templates.workflow.handlers.backends import (
     RASBackend,
     AbstractOperationBackend,
 )
+
+
+def _create_template_exposure(
+    *,
+    name: str,
+    operation_type: str,
+    target_entity: str,
+    template_data: dict,
+) -> OperationExposure:
+    exposure_id = uuid4()
+    definition = OperationDefinition.objects.create(
+        tenant_scope="global",
+        executor_kind=OperationDefinition.EXECUTOR_WORKFLOW,
+        executor_payload={
+            "operation_type": operation_type,
+            "target_entity": target_entity,
+            "template_data": template_data,
+        },
+        contract_version=1,
+        fingerprint=f"backend-routing:{exposure_id}",
+        status=OperationDefinition.STATUS_ACTIVE,
+    )
+    return OperationExposure.objects.create(
+        id=exposure_id,
+        definition=definition,
+        surface=OperationExposure.SURFACE_TEMPLATE,
+        alias=str(exposure_id),
+        tenant=None,
+        label=name,
+        description="",
+        is_active=True,
+        capability="",
+        contexts=[],
+        display_order=0,
+        capability_config={},
+        status=OperationExposure.STATUS_PUBLISHED,
+    )
 
 
 class TestBackendRouting:
@@ -132,10 +170,10 @@ class TestBackendRouting:
 
         assert isinstance(backend, PoolDomainBackend)
 
-    def test_get_backend_returns_pool_domain_for_bootstrap_collection_execute_alias(self):
-        """Test that bootstrap collection execute alias routes to PoolDomainBackend."""
+    def test_get_backend_returns_pool_domain_for_bootstrap_collection_stage_alias(self):
+        """Test that bootstrap collection stage alias routes to PoolDomainBackend."""
         handler = OperationHandler()
-        backend = handler._get_backend('pool.master_data_bootstrap.collection.execute')
+        backend = handler._get_backend('pool.master_data_bootstrap.collection.stage')
 
         assert isinstance(backend, PoolDomainBackend)
 
@@ -220,7 +258,7 @@ class TestBackendRouting:
         assert 'pool.master_data_sync.dispatch' in pool_types
         assert 'pool.master_data_sync.finalize' in pool_types
         assert 'pool.master_data_sync.launch' in pool_types
-        assert 'pool.master_data_bootstrap.collection.execute' in pool_types
+        assert 'pool.master_data_bootstrap.collection.stage' in pool_types
 
         # Check IBCMD types
         ibcmd_types = all_types['ibcmd']
@@ -251,7 +289,7 @@ class TestBackendRouting:
         assert pool_backend.supports_operation_type('pool.master_data_sync.inbound') is True
         assert pool_backend.supports_operation_type('pool.master_data_sync.dispatch') is True
         assert pool_backend.supports_operation_type('pool.master_data_sync.launch') is True
-        assert pool_backend.supports_operation_type('pool.master_data_bootstrap.collection.execute') is True
+        assert pool_backend.supports_operation_type('pool.master_data_bootstrap.collection.stage') is True
         assert pool_backend.supports_operation_type('create') is False
 
         # IBCMD should support ibcmd types
@@ -336,17 +374,15 @@ class TestBackendRoutingIntegration:
         workflow_execution
     ):
         """Test complete flow: OperationHandler -> RASBackend."""
-        from apps.templates.models import OperationTemplate
         from apps.templates.workflow.models import WorkflowNode
         from unittest.mock import patch
 
         # Create RAS operation template
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Test Lock",
             operation_type='lock_scheduled_jobs',
             target_entity="Infobase",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(
@@ -387,17 +423,15 @@ class TestBackendRoutingIntegration:
         workflow_execution
     ):
         """Test complete flow: OperationHandler -> ODataBackend."""
-        from apps.templates.models import OperationTemplate
         from apps.templates.workflow.models import WorkflowNode
         from unittest.mock import patch
 
         # Create OData operation template
-        template = OperationTemplate.objects.create(
-            id=str(uuid4()),
+        template = _create_template_exposure(
             name="Test Create",
             operation_type='create',
             target_entity="Users",
-            template_data={"noop": "ok"}
+            template_data={"noop": "ok"},
         )
 
         node = WorkflowNode(

@@ -14,6 +14,7 @@ from apps.intercompany_pools.models import (
     PoolMasterBindingCatalogKind,
     PoolMasterDataBootstrapImportEntityType,
     PoolMasterDataEntityType,
+    PoolMasterDataSourceRecord,
     PoolMasterParty,
 )
 from apps.tenancy.models import Tenant
@@ -33,9 +34,11 @@ def _create_database(*, tenant: Tenant, suffix: str) -> Database:
 @pytest.mark.django_db
 def test_apply_party_row_uses_dedupe_ingestion_and_returns_canonical_id() -> None:
     tenant = Tenant.objects.create(slug=f"bootstrap-dedupe-party-{uuid4().hex[:6]}", name="Bootstrap Dedupe")
+    database = _create_database(tenant=tenant, suffix="party")
 
     outcome = _apply_party_row(
         tenant=tenant,
+        database=database,
         row={
             "canonical_id": "party-source-a",
             "source_ref": "Ref_Party_A",
@@ -53,6 +56,70 @@ def test_apply_party_row_uses_dedupe_ingestion_and_returns_canonical_id() -> Non
     assert outcome.source_canonical_id == "party-source-a"
     assert outcome.canonical_id == "party-source-a"
     assert PoolMasterParty.objects.filter(tenant=tenant, canonical_id="party-source-a").exists()
+    source_record = PoolMasterDataSourceRecord.objects.get(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        source_ref="Ref_Party_A",
+    )
+    assert source_record.source_database_id == database.id
+
+
+@pytest.mark.django_db
+def test_apply_party_row_keeps_source_records_distinct_per_database() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"bootstrap-dedupe-party-db-{uuid4().hex[:6]}",
+        name="Bootstrap Dedupe By Database",
+    )
+    database_a = _create_database(tenant=tenant, suffix="party-a")
+    database_b = _create_database(tenant=tenant, suffix="party-b")
+
+    first = _apply_party_row(
+        tenant=tenant,
+        database=database_a,
+        row={
+            "canonical_id": "party-source-a",
+            "source_ref": "Ref_Party",
+            "name": "ООО Единая",
+            "full_name": "ООО Единая",
+            "inn": "7705005005",
+            "kpp": "770501001",
+            "is_counterparty": True,
+        },
+        origin_event_id="evt-party-db-a",
+        job_id="job-a",
+    )
+    second = _apply_party_row(
+        tenant=tenant,
+        database=database_b,
+        row={
+            "canonical_id": "party-source-b",
+            "source_ref": "Ref_Party",
+            "name": "ООО Единая",
+            "full_name": "ООО Единая",
+            "inn": "7705005005",
+            "kpp": "770501001",
+            "is_counterparty": True,
+        },
+        origin_event_id="evt-party-db-b",
+        job_id="job-b",
+    )
+
+    assert first.action == "created"
+    assert second.action in {"updated", "skipped"}
+    assert first.canonical_id == "party-source-a"
+    assert second.canonical_id == "party-source-a"
+    source_records = list(
+        PoolMasterDataSourceRecord.objects.filter(
+            tenant=tenant,
+            entity_type=PoolMasterDataEntityType.PARTY,
+            source_ref="Ref_Party",
+        ).order_by("source_database_id")
+    )
+    assert len(source_records) == 2
+    assert {str(record.source_database_id) for record in source_records} == {
+        str(database_a.id),
+        str(database_b.id),
+    }
 
 
 @pytest.mark.django_db
