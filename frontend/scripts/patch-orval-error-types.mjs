@@ -66,6 +66,10 @@ const factualSummaryPath = resolve(
   process.cwd(),
   'src/api/generated/model/poolFactualSummary.ts'
 )
+const bootstrapCollectionCreateRequestAllOfPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/poolMasterDataBootstrapCollectionCreateRequestAllOf.ts'
+)
 
 const bodyImportRegex = /import type { BodyType } from ['"]\.\.\/\.\.\/mutator['"];?/
 const mutatorTypeImport = "import type { ErrorType } from '../../mutator';"
@@ -129,6 +133,17 @@ function ensurePoolFactualSummarySyncFields(filePath) {
     )
   }
 
+  writeFileSync(filePath, content, 'utf8')
+}
+
+function ensureBootstrapCollectionCreateRequestCollectionId(filePath) {
+  let content = readFileSync(filePath, 'utf8')
+  if (!content.includes('  collection_id?: string;\n')) {
+    content = content.replace(
+      'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n',
+      'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n  collection_id?: string;\n'
+    )
+  }
   writeFileSync(filePath, content, 'utf8')
 }
 
@@ -450,3 +465,4 @@ writeFileSync(modelIndexPath, modelIndexContent, 'utf8')
 ensureBootstrapImportGlAccountEnum(bootstrapImportScopeEntityScopeItemPath)
 ensureBootstrapImportGlAccountEnum(bootstrapImportJobEntityScopeItemPath)
 ensurePoolFactualSummarySyncFields(factualSummaryPath)
+ensureBootstrapCollectionCreateRequestCollectionId(bootstrapCollectionCreateRequestAllOfPath)

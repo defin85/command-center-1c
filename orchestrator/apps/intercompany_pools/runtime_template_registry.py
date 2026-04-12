@@ -125,6 +125,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         display_order=72,
     ),
     PoolRuntimeTemplateSpec(
+        alias="pool.master_data_bootstrap.collection.stage",
+        label="Pool Master Data Bootstrap Collection Stage",
+        step_id="master_data_bootstrap.collection.stage",
+        description="System-managed pool runtime step: process chunked bootstrap collection stages.",
+        display_order=73,
+    ),
+    PoolRuntimeTemplateSpec(
         alias="pool.factual.sync_source_slice",
         label="Pool Factual Sync Source Slice",
         step_id="factual.sync_source_slice",

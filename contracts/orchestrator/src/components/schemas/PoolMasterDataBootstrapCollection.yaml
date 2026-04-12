@@ -14,6 +14,7 @@ properties:
   mode:
     type: string
     enum:
+      - preflight
       - dry_run
       - execute
   cluster_id:
@@ -38,6 +39,8 @@ properties:
   status:
     type: string
     enum:
+      - preflight_completed
+      - dry_run_running
       - dry_run_completed
       - execute_running
       - finalized
@@ -63,6 +66,9 @@ properties:
     type: object
     additionalProperties:
       type: integer
+  aggregate_preflight_result:
+    type: object
+    additionalProperties: true
   aggregate_dry_run_summary:
     type: object
     additionalProperties: true
@@ -97,7 +103,9 @@ required:
   - aggregate_counters
   - progress
   - child_job_status_counts
+  - aggregate_preflight_result
   - aggregate_dry_run_summary
   - audit_trail
+  - items
   - created_at
   - updated_at

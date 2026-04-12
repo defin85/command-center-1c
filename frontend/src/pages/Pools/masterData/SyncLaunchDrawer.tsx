@@ -77,8 +77,8 @@ export function SyncLaunchDrawer({
       setSubmitError('')
       return
     }
-    const currentMode = form.getFieldValue('mode') as string | undefined
-    const currentTargetMode = form.getFieldValue('target_mode') as string | undefined
+    const currentMode = form.getFieldValue('mode') as PoolMasterDataSyncLaunchMode | undefined
+    const currentTargetMode = form.getFieldValue('target_mode') as 'cluster_all' | 'database_set' | undefined
     const currentScope = (form.getFieldValue('entity_scope') as string[] | undefined) ?? []
     form.setFieldsValue({
       mode: currentMode || 'inbound',

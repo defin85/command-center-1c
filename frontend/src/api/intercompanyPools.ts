@@ -1885,15 +1885,18 @@ export type PoolMasterDataBootstrapImportScopePayload = {
 
 export type PoolMasterDataBootstrapCollectionTargetMode = 'cluster_all' | 'database_set'
 
-export type PoolMasterDataBootstrapCollectionMode = 'dry_run' | 'execute'
+export type PoolMasterDataBootstrapCollectionMode = 'preflight' | 'dry_run' | 'execute'
 
 export type PoolMasterDataBootstrapCollectionStatus =
+  | 'preflight_completed'
+  | 'dry_run_running'
   | 'dry_run_completed'
   | 'execute_running'
   | 'finalized'
   | 'failed'
 
 export type PoolMasterDataBootstrapCollectionItemStatus =
+  | 'pending'
   | 'scheduled'
   | 'coalesced'
   | 'skipped'
@@ -1952,6 +1955,7 @@ export type PoolMasterDataBootstrapCollection = {
   aggregate_counters: Record<string, number>
   progress: Record<string, number>
   child_job_status_counts: Record<string, number>
+  aggregate_preflight_result: Record<string, unknown>
   aggregate_dry_run_summary: Record<string, unknown>
   audit_trail: Array<Record<string, unknown>>
   items?: PoolMasterDataBootstrapCollectionItem[]
@@ -1975,6 +1979,7 @@ export type PoolMasterDataBootstrapCollectionScopePayload = {
 
 export type CreatePoolMasterDataBootstrapCollectionPayload =
   PoolMasterDataBootstrapCollectionScopePayload & {
+    collection_id?: string
     mode: PoolMasterDataBootstrapCollectionMode
     chunk_size?: number
   }
@@ -2749,8 +2754,14 @@ export async function runPoolMasterDataBootstrapImportPreflight(
 
 export async function runPoolMasterDataBootstrapCollectionPreflight(
   payload: PoolMasterDataBootstrapCollectionScopePayload
-): Promise<{ preflight: PoolMasterDataBootstrapCollectionPreflightResult }> {
-  const response = await apiClient.post<{ preflight: PoolMasterDataBootstrapCollectionPreflightResult }>(
+): Promise<{
+  preflight: PoolMasterDataBootstrapCollectionPreflightResult
+  collection: PoolMasterDataBootstrapCollection
+}> {
+  const response = await apiClient.post<{
+    preflight: PoolMasterDataBootstrapCollectionPreflightResult
+    collection: PoolMasterDataBootstrapCollection
+  }>(
     '/api/v2/pools/master-data/bootstrap-collections/preflight/',
     payload,
     { skipGlobalError: true }

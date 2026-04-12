@@ -20176,13 +20176,6 @@ components:
         - databases
         - errors
         - generated_at
-    PoolMasterDataBootstrapCollectionPreflightResponse:
-      type: object
-      properties:
-        preflight:
-          $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionPreflight'
-      required:
-        - preflight
     PoolMasterDataBootstrapCollectionItem:
       type: object
       properties:
@@ -20200,6 +20193,7 @@ components:
         status:
           type: string
           enum:
+            - pending
             - scheduled
             - coalesced
             - skipped
@@ -20258,6 +20252,7 @@ components:
         mode:
           type: string
           enum:
+            - preflight
             - dry_run
             - execute
         cluster_id:
@@ -20282,6 +20277,8 @@ components:
         status:
           type: string
           enum:
+            - preflight_completed
+            - dry_run_running
             - dry_run_completed
             - execute_running
             - finalized
@@ -20307,6 +20304,9 @@ components:
           type: object
           additionalProperties:
             type: integer
+        aggregate_preflight_result:
+          type: object
+          additionalProperties: true
         aggregate_dry_run_summary:
           type: object
           additionalProperties: true
@@ -20341,10 +20341,22 @@ components:
         - aggregate_counters
         - progress
         - child_job_status_counts
+        - aggregate_preflight_result
         - aggregate_dry_run_summary
         - audit_trail
+        - items
         - created_at
         - updated_at
+    PoolMasterDataBootstrapCollectionPreflightResponse:
+      type: object
+      properties:
+        preflight:
+          $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionPreflight'
+        collection:
+          $ref: '#/components/schemas/PoolMasterDataBootstrapCollection'
+      required:
+        - preflight
+        - collection
     PoolMasterDataBootstrapCollectionListResponse:
       type: object
       properties:
@@ -20371,6 +20383,10 @@ components:
         - $ref: '#/components/schemas/PoolMasterDataBootstrapCollectionScopeRequest'
         - type: object
           properties:
+            collection_id:
+              type: string
+              format: uuid
+              description: Required when promoting an existing batch collection from preflight to dry_run or execute.
             mode:
               type: string
               enum:

@@ -2,6 +2,10 @@ allOf:
   - $ref: ./PoolMasterDataBootstrapCollectionScopeRequest.yaml
   - type: object
     properties:
+      collection_id:
+        type: string
+        format: uuid
+        description: Required when promoting an existing batch collection from preflight to dry_run or execute.
       mode:
         type: string
         enum:

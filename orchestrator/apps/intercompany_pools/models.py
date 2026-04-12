@@ -474,18 +474,22 @@ class PoolMasterDataBootstrapCollectionTargetMode(models.TextChoices):
 
 
 class PoolMasterDataBootstrapCollectionMode(models.TextChoices):
+    PREFLIGHT = "preflight", "Preflight"
     DRY_RUN = "dry_run", "Dry Run"
     EXECUTE = "execute", "Execute"
 
 
 class PoolMasterDataBootstrapCollectionStatus(models.TextChoices):
+    PREFLIGHT_COMPLETED = "preflight_completed", "Preflight Completed"
     DRY_RUN_COMPLETED = "dry_run_completed", "Dry Run Completed"
+    DRY_RUN_RUNNING = "dry_run_running", "Dry Run Running"
     EXECUTE_RUNNING = "execute_running", "Execute Running"
     FINALIZED = "finalized", "Finalized"
     FAILED = "failed", "Failed"
 
 
 class PoolMasterDataBootstrapCollectionItemStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
     SCHEDULED = "scheduled", "Scheduled"
     COALESCED = "coalesced", "Coalesced"
     SKIPPED = "skipped", "Skipped"

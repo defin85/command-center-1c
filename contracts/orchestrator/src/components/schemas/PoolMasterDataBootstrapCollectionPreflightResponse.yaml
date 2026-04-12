@@ -2,5 +2,8 @@ type: object
 properties:
   preflight:
     $ref: ./PoolMasterDataBootstrapCollectionPreflight.yaml
+  collection:
+    $ref: ./PoolMasterDataBootstrapCollection.yaml
 required:
   - preflight
+  - collection

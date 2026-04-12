@@ -29,11 +29,13 @@ from apps.intercompany_pools.master_data_bootstrap_import_service import (
 from apps.intercompany_pools.master_data_bootstrap_collection_service import (
     BOOTSTRAP_COLLECTION_CLUSTER_NOT_FOUND,
     BOOTSTRAP_COLLECTION_DATABASE_NOT_FOUND,
+    BOOTSTRAP_COLLECTION_DRY_RUN_BLOCKED,
+    BOOTSTRAP_COLLECTION_EXECUTE_BLOCKED,
     BOOTSTRAP_COLLECTION_REQUEST_NOT_FOUND,
+    create_pool_master_data_bootstrap_collection_preflight_request,
     create_pool_master_data_bootstrap_collection_request,
     get_pool_master_data_bootstrap_collection_request,
     list_pool_master_data_bootstrap_collection_requests,
-    run_pool_master_data_bootstrap_collection_preflight_preview,
     serialize_pool_master_data_bootstrap_collection_request,
 )
 from apps.intercompany_pools.master_data_registry import get_pool_master_data_bootstrap_entity_types
@@ -112,6 +114,7 @@ _BOOTSTRAP_COLLECTION_TARGET_MODE_CHOICES = [
     PoolMasterDataBootstrapCollectionTargetMode.DATABASE_SET,
 ]
 _BOOTSTRAP_COLLECTION_MODE_CHOICES = [
+    PoolMasterDataBootstrapCollectionMode.PREFLIGHT,
     PoolMasterDataBootstrapCollectionMode.DRY_RUN,
     PoolMasterDataBootstrapCollectionMode.EXECUTE,
 ]
@@ -211,8 +214,23 @@ class BootstrapCollectionScopeRequestSerializer(serializers.Serializer):
 
 
 class BootstrapCollectionCreateRequestSerializer(BootstrapCollectionScopeRequestSerializer):
-    mode = serializers.ChoiceField(choices=_BOOTSTRAP_COLLECTION_MODE_CHOICES)
+    mode = serializers.ChoiceField(
+        choices=[
+            PoolMasterDataBootstrapCollectionMode.DRY_RUN,
+            PoolMasterDataBootstrapCollectionMode.EXECUTE,
+        ]
+    )
+    collection_id = serializers.UUIDField(required=False)
     chunk_size = serializers.IntegerField(required=False, min_value=1, max_value=1000, default=200)
+
+    def validate(self, attrs):
+        mode = str(attrs.get("mode") or "")
+        if mode in {
+            PoolMasterDataBootstrapCollectionMode.DRY_RUN,
+            PoolMasterDataBootstrapCollectionMode.EXECUTE,
+        } and not attrs.get("collection_id"):
+            raise serializers.ValidationError({"collection_id": ["collection_id is required for this stage."]})
+        return attrs
 
 
 class BootstrapCollectionListQuerySerializer(serializers.Serializer):
@@ -254,6 +272,7 @@ class BootstrapCollectionSerializer(serializers.Serializer):
     aggregate_counters = serializers.JSONField(required=False)
     progress = serializers.JSONField(required=False)
     child_job_status_counts = serializers.JSONField(required=False)
+    aggregate_preflight_result = serializers.JSONField(required=False)
     aggregate_dry_run_summary = serializers.JSONField(required=False)
     audit_trail = serializers.JSONField(required=False)
     items = BootstrapCollectionItemSerializer(many=True, required=False)
@@ -263,6 +282,7 @@ class BootstrapCollectionSerializer(serializers.Serializer):
 
 class BootstrapCollectionPreflightResponseSerializer(serializers.Serializer):
     preflight = serializers.JSONField()
+    collection = BootstrapCollectionSerializer(required=False)
 
 
 class BootstrapCollectionResponseSerializer(serializers.Serializer):
@@ -316,6 +336,11 @@ def _collection_exception_to_response(exc: Exception) -> Response:
         BOOTSTRAP_COLLECTION_REQUEST_NOT_FOUND,
     }:
         status_code = http_status.HTTP_404_NOT_FOUND
+    elif code in {
+        BOOTSTRAP_COLLECTION_DRY_RUN_BLOCKED,
+        BOOTSTRAP_COLLECTION_EXECUTE_BLOCKED,
+    }:
+        status_code = http_status.HTTP_409_CONFLICT
     return _problem(
         code=code,
         title="Bootstrap Collection Request Failed",
@@ -400,18 +425,29 @@ def preflight_pool_master_data_bootstrap_collection(request):
             errors=serializer.errors,
         )
     payload = serializer.validated_data
+    tenant, tenant_error = _resolve_tenant_or_problem(tenant_id=str(tenant_id))
+    if tenant_error is not None:
+        return tenant_error
     try:
-        preflight = run_pool_master_data_bootstrap_collection_preflight_preview(
-            tenant_id=str(tenant_id),
+        collection = create_pool_master_data_bootstrap_collection_preflight_request(
+            tenant=tenant,
             target_mode=str(payload.get("target_mode")),
             cluster_id=str(payload.get("cluster_id")) if payload.get("cluster_id") else None,
             database_ids=list(payload.get("database_ids") or []),
             entity_scope=list(payload.get("entity_scope") or []),
             actor_id=str(request.user.id),
+            actor_username=str(getattr(request.user, "username", "") or ""),
         )
     except (LookupError, ValueError) as exc:
         return _collection_exception_to_response(exc)
-    return Response({"preflight": preflight}, status=http_status.HTTP_200_OK)
+    serialized = serialize_pool_master_data_bootstrap_collection_request(collection=collection, include_items=False)
+    return Response(
+        {
+            "preflight": serialized.get("aggregate_preflight_result") or {},
+            "collection": serialized,
+        },
+        status=http_status.HTTP_200_OK,
+    )
 
 
 @extend_schema(
@@ -473,6 +509,7 @@ def pool_master_data_bootstrap_collections_endpoint(request):
                 database_ids=list(payload.get("database_ids") or []),
                 entity_scope=list(payload.get("entity_scope") or []),
                 mode=str(payload.get("mode")),
+                collection_id=str(payload.get("collection_id")) if payload.get("collection_id") else None,
                 chunk_size=int(payload.get("chunk_size") or 200),
                 actor_id=str(request.user.id),
                 actor_username=str(getattr(request.user, "username", "") or ""),

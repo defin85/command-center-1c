@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,9 @@ from apps.databases.models import Cluster
 from apps.databases.models import Database
 from apps.intercompany_pools.master_data_bootstrap_import_feature_flags import (
     POOL_MASTER_DATA_BOOTSTRAP_IMPORT_RUNTIME_KEY,
+)
+from apps.intercompany_pools.master_data_bootstrap_collection_service import (
+    run_pool_master_data_bootstrap_collection_stage_chunk,
 )
 from apps.intercompany_pools.master_data_bootstrap_import_service import (
     run_pool_master_data_bootstrap_import_job_execution,
@@ -50,6 +54,27 @@ def _stub_bootstrap_async_executor(monkeypatch) -> None:
     monkeypatch.setattr(
         "apps.intercompany_pools.master_data_bootstrap_import_service.start_pool_master_data_bootstrap_import_job_execution",
         lambda **_kwargs: True,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _stub_bootstrap_collection_workflow_start(monkeypatch) -> None:
+    def _start_workflow(*, collection, **_kwargs):
+        return SimpleNamespace(
+            collection=PoolMasterDataBootstrapCollectionRequest.objects.get(id=collection.id),
+            execution_id=str(uuid4()),
+            operation_id=str(uuid4()),
+            enqueue_success=True,
+            enqueue_status="queued",
+            enqueue_error=None,
+            created_execution=True,
+        )
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_collection_workflow_runtime."
+        "start_pool_master_data_bootstrap_collection_stage_workflow",
+        _start_workflow,
+        raising=False,
     )
 
 
@@ -158,6 +183,26 @@ def _configure_source_callbacks(
         preflight=_preflight,
         fetch_rows=_fetch_rows,
     )
+
+
+def _run_collection_stage_until_terminal(
+    *,
+    collection_id: str,
+    stage: str,
+    runner_limit: int = 20,
+) -> PoolMasterDataBootstrapCollectionRequest:
+    latest = PoolMasterDataBootstrapCollectionRequest.objects.get(id=collection_id)
+    for _ in range(runner_limit):
+        latest = run_pool_master_data_bootstrap_collection_stage_chunk(
+            collection_id=str(latest.id),
+            stage=stage,
+        ).collection
+        latest.refresh_from_db()
+        counters = (latest.metadata or {}).get("aggregate_counters") or {}
+        if int(counters.get("pending") or 0) == 0:
+            break
+    latest.refresh_from_db()
+    return latest
 
 
 @pytest.mark.django_db
@@ -674,12 +719,17 @@ def test_bootstrap_collection_preflight_cluster_all_returns_snapshot(
 
     assert response.status_code == 200
     payload = response.json()["preflight"]
+    collection = response.json()["collection"]
     assert payload["ok"] is True
     assert payload["target_mode"] == "cluster_all"
     assert payload["cluster_id"] == str(cluster.id)
     assert payload["database_count"] == 2
     assert payload["database_ids"] == [str(database_a.id), str(database_b.id)]
     assert [entry["database_id"] for entry in payload["databases"]] == [str(database_a.id), str(database_b.id)]
+    assert collection["id"]
+    assert collection["mode"] == "preflight"
+    assert collection["status"] == "preflight_completed"
+    assert collection["database_ids"] == [str(database_a.id), str(database_b.id)]
 
 
 @pytest.mark.django_db
@@ -689,6 +739,7 @@ def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot
 ) -> None:
     database_a = _create_database(tenant=default_tenant, name=f"Dry Run A {uuid4().hex[:6]}")
     database_b = _create_database(tenant=default_tenant, name=f"Dry Run B {uuid4().hex[:6]}")
+    fetch_calls: list[tuple[str, str]] = []
 
     def _preflight(*, entity_scope: list[str], **_kwargs) -> PoolMasterDataBootstrapSourcePreflightResult:
         return PoolMasterDataBootstrapSourcePreflightResult(
@@ -701,6 +752,7 @@ def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot
         )
 
     def _fetch_rows(*, database: Database, entity_type: str, **_kwargs) -> list[dict]:
+        fetch_calls.append((str(database.id), entity_type))
         if str(database.id) == str(database_b.id) and entity_type == "party":
             return [{"canonical_id": "party-b", "name": "Party B"}]
         if str(database.id) == str(database_a.id) and entity_type == "party":
@@ -714,9 +766,22 @@ def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot
         fetch_rows=_fetch_rows,
     )
 
+    preflight_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/preflight/",
+        {
+            "target_mode": "database_set",
+            "database_ids": [str(database_b.id), str(database_a.id)],
+            "entity_scope": ["item", "party"],
+        },
+        format="json",
+    )
+    assert preflight_response.status_code == 200
+    preflight_collection = preflight_response.json()["collection"]
+
     create_response = admin_client.post(
         "/api/v2/pools/master-data/bootstrap-collections/",
         {
+            "collection_id": preflight_collection["id"],
             "target_mode": "database_set",
             "database_ids": [str(database_b.id), str(database_a.id)],
             "entity_scope": ["item", "party"],
@@ -726,11 +791,16 @@ def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot
     )
     assert create_response.status_code == 201
     collection = create_response.json()["collection"]
-    assert collection["status"] == "dry_run_completed"
+    assert collection["id"] == preflight_collection["id"]
+    assert collection["status"] == "dry_run_running"
     assert collection["database_ids"] == [str(database_b.id), str(database_a.id)]
-    assert collection["aggregate_counters"]["completed"] == 2
-    assert collection["aggregate_counters"]["failed"] == 0
-    assert collection["aggregate_dry_run_summary"]["rows_total"] == 3
+    assert fetch_calls == []
+
+    completed = _run_collection_stage_until_terminal(
+        collection_id=collection["id"],
+        stage="dry_run",
+    )
+    assert completed.status == "dry_run_completed"
 
     stored = PoolMasterDataBootstrapCollectionRequest.objects.get(id=collection["id"])
     assert stored.database_ids == [str(database_b.id), str(database_a.id)]
@@ -745,8 +815,69 @@ def test_bootstrap_collection_dry_run_list_and_detail_preserve_database_snapshot
     )
     assert detail_response.status_code == 200
     detail = detail_response.json()["collection"]
-    assert [item["database_id"] for item in detail["items"]] == [str(database_a.id), str(database_b.id)]
+    assert detail["aggregate_counters"]["completed"] == 2
+    assert detail["aggregate_counters"]["failed"] == 0
+    assert detail["aggregate_dry_run_summary"]["rows_total"] == 3
+    assert [item["database_id"] for item in detail["items"]] == [str(database_b.id), str(database_a.id)]
     assert all(item["status"] == "completed" for item in detail["items"])
+
+
+@pytest.mark.django_db
+def test_bootstrap_collection_dry_run_all_failed_marks_parent_failed(
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database_a = _create_database(tenant=default_tenant, name=f"Dry Run Fail A {uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"Dry Run Fail B {uuid4().hex[:6]}")
+
+    def _preflight_fail(*, entity_scope: list[str], **_kwargs) -> PoolMasterDataBootstrapSourcePreflightResult:
+        return PoolMasterDataBootstrapSourcePreflightResult(
+            ok=False,
+            source_kind="ib_odata",
+            coverage={entity: False for entity in entity_scope},
+            credential_strategy="service",
+            errors=[
+                {
+                    "code": "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING",
+                    "detail": "Source auth mapping is missing.",
+                }
+            ],
+            diagnostics={"source": "test"},
+        )
+
+    configure_pool_master_data_bootstrap_source_callbacks(
+        preflight=_preflight_fail,
+        fetch_rows=lambda **_kwargs: [],
+    )
+
+    preflight_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/preflight/",
+        {
+            "target_mode": "database_set",
+            "database_ids": [str(database_a.id), str(database_b.id)],
+            "entity_scope": ["party"],
+        },
+        format="json",
+    )
+    assert preflight_response.status_code == 200
+    collection = preflight_response.json()["collection"]
+    assert collection["status"] == "failed"
+    assert collection["aggregate_counters"]["failed"] == 2
+    assert collection["aggregate_counters"]["completed"] == 0
+    assert collection["last_error_code"] == "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING"
+
+    response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "collection_id": collection["id"],
+            "target_mode": "database_set",
+            "database_ids": [str(database_a.id), str(database_b.id)],
+            "entity_scope": ["party"],
+            "mode": "dry_run",
+        },
+        format="json",
+    )
+    _assert_problem_details_response(response, status_code=409, code="BOOTSTRAP_COLLECTION_DRY_RUN_BLOCKED")
 
 
 @pytest.mark.django_db
@@ -811,8 +942,8 @@ def test_bootstrap_collection_execute_mixed_outcomes_coalesce_and_finalize(
     assert existing_job_response.status_code == 201
     existing_job_id = existing_job_response.json()["job"]["id"]
 
-    collection_response = admin_client.post(
-        "/api/v2/pools/master-data/bootstrap-collections/",
+    failed_preflight_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/preflight/",
         {
             "target_mode": "database_set",
             "database_ids": [
@@ -821,47 +952,106 @@ def test_bootstrap_collection_execute_mixed_outcomes_coalesce_and_finalize(
                 str(database_failed.id),
             ],
             "entity_scope": ["party"],
+        },
+        format="json",
+    )
+    assert failed_preflight_response.status_code == 200
+    failed_preflight = failed_preflight_response.json()["collection"]
+    assert failed_preflight["status"] == "failed"
+    assert failed_preflight["aggregate_counters"]["failed"] == 1
+
+    blocked_dry_run_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "collection_id": failed_preflight["id"],
+            "target_mode": "database_set",
+            "database_ids": [
+                str(database_coalesced.id),
+                str(database_scheduled.id),
+                str(database_failed.id),
+            ],
+            "entity_scope": ["party"],
+            "mode": "dry_run",
+        },
+        format="json",
+    )
+    _assert_problem_details_response(
+        blocked_dry_run_response,
+        status_code=409,
+        code="BOOTSTRAP_COLLECTION_DRY_RUN_BLOCKED",
+    )
+
+    ready_preflight_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/preflight/",
+        {
+            "target_mode": "database_set",
+            "database_ids": [
+                str(database_coalesced.id),
+                str(database_scheduled.id),
+            ],
+            "entity_scope": ["party"],
+        },
+        format="json",
+    )
+    assert ready_preflight_response.status_code == 200
+    ready_preflight = ready_preflight_response.json()["collection"]
+    assert ready_preflight["status"] == "preflight_completed"
+
+    ready_dry_run_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "collection_id": ready_preflight["id"],
+            "target_mode": "database_set",
+            "database_ids": [
+                str(database_coalesced.id),
+                str(database_scheduled.id),
+            ],
+            "entity_scope": ["party"],
+            "mode": "dry_run",
+        },
+        format="json",
+    )
+    assert ready_dry_run_response.status_code == 201
+    ready_dry_run = ready_dry_run_response.json()["collection"]
+    assert ready_dry_run["id"] == ready_preflight["id"]
+    assert ready_dry_run["status"] == "dry_run_running"
+
+    completed_dry_run = _run_collection_stage_until_terminal(
+        collection_id=ready_dry_run["id"],
+        stage="dry_run",
+    )
+    assert completed_dry_run.status == "dry_run_completed"
+
+    collection_response = admin_client.post(
+        "/api/v2/pools/master-data/bootstrap-collections/",
+        {
+            "collection_id": str(completed_dry_run.id),
+            "target_mode": "database_set",
+            "database_ids": [
+                str(database_coalesced.id),
+                str(database_scheduled.id),
+            ],
+            "entity_scope": ["party"],
             "mode": "execute",
         },
         format="json",
     )
     assert collection_response.status_code == 201
     collection = collection_response.json()["collection"]
+    assert collection["id"] == str(completed_dry_run.id)
     assert collection["status"] == "execute_running"
-    assert collection["aggregate_counters"]["coalesced"] == 1
-    assert collection["aggregate_counters"]["scheduled"] == 1
-    assert collection["aggregate_counters"]["failed"] == 1
+    assert PoolMasterDataBootstrapCollectionRequest.objects.filter(id=collection["id"]).count() == 1
 
+    _run_collection_stage_until_terminal(
+        collection_id=collection["id"],
+        stage="execute",
+    )
     detail_response = admin_client.get(
         f"/api/v2/pools/master-data/bootstrap-collections/{collection['id']}/"
     )
     assert detail_response.status_code == 200
     detail = detail_response.json()["collection"]
+    assert detail["database_ids"] == [str(database_coalesced.id), str(database_scheduled.id)]
     items_by_database = {item["database_id"]: item for item in detail["items"]}
-    assert items_by_database[str(database_coalesced.id)]["status"] == "coalesced"
     assert items_by_database[str(database_coalesced.id)]["child_job_id"] == existing_job_id
-    assert items_by_database[str(database_failed.id)]["status"] == "failed"
-    assert items_by_database[str(database_failed.id)]["reason_code"] == "BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING"
-
-    scheduled_child_job_id = items_by_database[str(database_scheduled.id)]["child_job_id"]
-    assert items_by_database[str(database_scheduled.id)]["status"] == "scheduled"
-    assert scheduled_child_job_id
-
-    run_pool_master_data_bootstrap_import_job_execution(
-        job_id=scheduled_child_job_id,
-        actor_id=str(admin_user.id),
-        retry_failed_only=False,
-    )
-
-    refreshed_detail_response = admin_client.get(
-        f"/api/v2/pools/master-data/bootstrap-collections/{collection['id']}/"
-    )
-    assert refreshed_detail_response.status_code == 200
-    refreshed_detail = refreshed_detail_response.json()["collection"]
-    refreshed_items_by_database = {item["database_id"]: item for item in refreshed_detail["items"]}
-    assert refreshed_detail["status"] == "finalized"
-    assert refreshed_items_by_database[str(database_scheduled.id)]["status"] == "completed"
-    assert PoolMasterParty.objects.filter(
-        tenant=default_tenant,
-        canonical_id=f"party-{database_scheduled.id}",
-    ).exists()
+    assert items_by_database[str(database_coalesced.id)]["status"] == "coalesced"

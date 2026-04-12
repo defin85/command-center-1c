@@ -120,6 +120,17 @@ const buildBootstrapCollection = (overrides: Record<string, unknown> = {}) => ({
     completion_ratio: 1,
   },
   child_job_status_counts: {},
+  aggregate_preflight_result: {
+    ok: true,
+    target_mode: 'database_set',
+    cluster_id: null,
+    database_ids: ['db-1'],
+    database_count: 1,
+    entity_scope: ['party', 'item'],
+    databases: [],
+    errors: [],
+    generated_at: '2026-01-01T00:00:00Z',
+  },
   aggregate_dry_run_summary: {
     rows_total: 2,
     chunks_total: 1,
@@ -842,6 +853,36 @@ describe('PoolMasterDataPage', () => {
         errors: [],
         generated_at: '2026-01-01T00:00:00Z',
       },
+      collection: buildBootstrapCollection({
+        id: 'collection-preflight',
+        mode: 'preflight',
+        status: 'preflight_completed',
+        aggregate_dry_run_summary: {},
+        items: [
+          {
+            id: 'collection-item-1',
+            database_id: 'db-1',
+            database_name: 'Main DB',
+            cluster_id: 'cluster-1',
+            status: 'completed',
+            reason_code: '',
+            reason_detail: '',
+            child_job_id: null,
+            child_job_status: '',
+            preflight_result: {
+              ok: true,
+              source_kind: 'ib_odata',
+              coverage: { party: true, item: true },
+              credential_strategy: 'service',
+              errors: [],
+              diagnostics: {},
+            },
+            dry_run_summary: {},
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      }),
     })
     mockCreatePoolMasterDataBootstrapCollection.mockResolvedValue({
       collection: buildBootstrapCollection(),
@@ -1703,8 +1744,55 @@ describe('PoolMasterDataPage', () => {
 
   it('runs batch bootstrap collection preflight, dry-run, and execute', async () => {
     const user = userEvent.setup()
+    const preflightCollection = buildBootstrapCollection({
+      id: 'collection-batch',
+      status: 'preflight_completed',
+      mode: 'preflight',
+      database_ids: ['db-1', 'db-2'],
+      aggregate_dry_run_summary: {},
+      aggregate_counters: {
+        total_items: 2,
+        scheduled: 0,
+        coalesced: 0,
+        skipped: 0,
+        failed: 0,
+        completed: 2,
+      },
+      items: [
+        {
+          id: 'collection-item-1',
+          database_id: 'db-1',
+          database_name: 'Main DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+        {
+          id: 'collection-item-2',
+          database_id: 'db-2',
+          database_name: 'Replica DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+      ],
+    })
     const dryRunCollection = buildBootstrapCollection({
-      id: 'collection-dry-run',
+      id: 'collection-batch',
       status: 'dry_run_completed',
       mode: 'dry_run',
       database_ids: ['db-1', 'db-2'],
@@ -1715,6 +1803,21 @@ describe('PoolMasterDataPage', () => {
         skipped: 0,
         failed: 0,
         completed: 2,
+      },
+      progress: {
+        total_items: 2,
+        scheduled: 0,
+        coalesced: 0,
+        skipped: 0,
+        failed: 0,
+        completed: 2,
+        terminal_items: 2,
+        completion_ratio: 1,
+      },
+      aggregate_dry_run_summary: {
+        rows_total: 2,
+        chunks_total: 2,
+        entities: [],
       },
       items: [
         {
@@ -1750,7 +1853,7 @@ describe('PoolMasterDataPage', () => {
       ],
     })
     const executeCollection = buildBootstrapCollection({
-      id: 'collection-execute',
+      id: 'collection-batch',
       status: 'execute_running',
       mode: 'execute',
       database_ids: ['db-1', 'db-2'],
@@ -1833,16 +1936,30 @@ describe('PoolMasterDataPage', () => {
         errors: [],
         generated_at: '2026-01-01T00:00:00Z',
       },
+      collection: preflightCollection,
     })
     mockCreatePoolMasterDataBootstrapCollection
       .mockResolvedValueOnce({ collection: dryRunCollection })
       .mockResolvedValueOnce({ collection: executeCollection })
-    mockListPoolMasterDataBootstrapCollections.mockResolvedValue({
-      count: 2,
-      limit: 20,
-      offset: 0,
-      collections: [executeCollection, dryRunCollection],
-    })
+    mockListPoolMasterDataBootstrapCollections
+      .mockResolvedValueOnce({
+        count: 0,
+        limit: 20,
+        offset: 0,
+        collections: [],
+      })
+      .mockResolvedValueOnce({
+        count: 1,
+        limit: 20,
+        offset: 0,
+        collections: [dryRunCollection],
+      })
+      .mockResolvedValue({
+        count: 1,
+        limit: 20,
+        offset: 0,
+        collections: [executeCollection],
+      })
     mockGetPoolMasterDataBootstrapCollection
       .mockResolvedValueOnce({ collection: dryRunCollection })
       .mockResolvedValueOnce({ collection: executeCollection })
@@ -1868,6 +1985,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenNthCalledWith(1, {
+        collection_id: 'collection-batch',
         target_mode: 'database_set',
         database_ids: ['db-1', 'db-2'],
         entity_scope: ['party', 'item'],
@@ -1878,6 +1996,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByTestId('bootstrap-collection-run-execute'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenNthCalledWith(2, {
+        collection_id: 'collection-batch',
         target_mode: 'database_set',
         database_ids: ['db-1', 'db-2'],
         entity_scope: ['party', 'item'],
@@ -1887,6 +2006,204 @@ describe('PoolMasterDataPage', () => {
 
     expect(await screen.findByText('Current Collection')).toBeInTheDocument()
     expect(await screen.findByText('Recent Collections')).toBeInTheDocument()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('blocks batch execute when dry-run collection has failed items', async () => {
+    const user = userEvent.setup()
+    const preflightCollection = buildBootstrapCollection({
+      id: 'collection-failed',
+      status: 'preflight_completed',
+      mode: 'preflight',
+      database_ids: ['db-1', 'db-2'],
+      aggregate_dry_run_summary: {},
+      items: [
+        {
+          id: 'collection-item-1',
+          database_id: 'db-1',
+          database_name: 'Main DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+        {
+          id: 'collection-item-2',
+          database_id: 'db-2',
+          database_name: 'Replica DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+      ],
+    })
+    const failedDryRunCollection = buildBootstrapCollection({
+      id: 'collection-failed',
+      status: 'failed',
+      mode: 'dry_run',
+      aggregate_counters: {
+        total_items: 2,
+        scheduled: 0,
+        coalesced: 0,
+        skipped: 0,
+        failed: 1,
+        completed: 1,
+      },
+      items: [
+        {
+          id: 'collection-item-1',
+          database_id: 'db-1',
+          database_name: 'Main DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: { rows_total: 1, chunks_total: 1 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+        {
+          id: 'collection-item-2',
+          database_id: 'db-2',
+          database_name: 'Replica DB',
+          cluster_id: 'cluster-1',
+          status: 'failed',
+          reason_code: 'BOOTSTRAP_SOURCE_AUTH_MAPPING_MISSING',
+          reason_detail: 'Source auth mapping is missing.',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: false },
+          dry_run_summary: {},
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+      ],
+    })
+
+    mockRunPoolMasterDataBootstrapCollectionPreflight.mockResolvedValueOnce({
+      preflight: {
+        ok: true,
+        target_mode: 'database_set',
+        cluster_id: null,
+        database_ids: ['db-1', 'db-2'],
+        database_count: 2,
+        entity_scope: ['party', 'item'],
+        databases: [],
+        errors: [],
+        generated_at: '2026-01-01T00:00:00Z',
+      },
+      collection: preflightCollection,
+    })
+    mockCreatePoolMasterDataBootstrapCollection.mockResolvedValueOnce({ collection: failedDryRunCollection })
+    mockListPoolMasterDataBootstrapCollections.mockResolvedValue({
+      count: 1,
+      limit: 20,
+      offset: 0,
+      collections: [failedDryRunCollection],
+    })
+    mockGetPoolMasterDataBootstrapCollection.mockResolvedValueOnce({ collection: failedDryRunCollection })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    await user.click(screen.getByText('Batch Collection'))
+
+    openSelectByTestId('bootstrap-collection-databases-select')
+    await selectDropdownOption(/Main DB/)
+    openSelectByTestId('bootstrap-collection-databases-select')
+    await selectDropdownOption(/Replica DB/)
+
+    await user.click(screen.getByTestId('bootstrap-collection-run-preflight'))
+    await user.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
+
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenCalledWith({
+        collection_id: 'collection-failed',
+        target_mode: 'database_set',
+        database_ids: ['db-1', 'db-2'],
+        entity_scope: ['party', 'item'],
+        mode: 'dry_run',
+      })
+    )
+
+    await waitFor(() => expect(screen.getByTestId('bootstrap-collection-run-execute')).toBeDisabled())
+    await user.click(screen.getByTestId('bootstrap-collection-run-execute'))
+    expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenCalledTimes(1)
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('shows batch target mode and immutable target snapshot in collection detail', async () => {
+    const user = userEvent.setup()
+    const batchCollection = buildBootstrapCollection({
+      id: 'collection-targets',
+      target_mode: 'database_set',
+      database_ids: ['db-2', 'db-1'],
+      items: [
+        {
+          id: 'collection-item-2',
+          database_id: 'db-2',
+          database_name: 'Replica DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: { rows_total: 1, chunks_total: 1 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+        {
+          id: 'collection-item-1',
+          database_id: 'db-1',
+          database_name: 'Main DB',
+          cluster_id: 'cluster-1',
+          status: 'completed',
+          reason_code: '',
+          reason_detail: '',
+          child_job_id: null,
+          child_job_status: '',
+          preflight_result: { ok: true },
+          dry_run_summary: { rows_total: 1, chunks_total: 1 },
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:02:00Z',
+        },
+      ],
+    })
+
+    mockListPoolMasterDataBootstrapCollections.mockResolvedValue({
+      count: 1,
+      limit: 20,
+      offset: 0,
+      collections: [batchCollection],
+    })
+    mockGetPoolMasterDataBootstrapCollection.mockResolvedValue({ collection: batchCollection })
+
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    await user.click(screen.getByText('Batch Collection'))
+
+    const currentCollectionCard = (await screen.findByText('Current Collection')).closest('.ant-card')
+    expect(currentCollectionCard).not.toBeNull()
+    const detail = within(currentCollectionCard as HTMLElement)
+
+    expect(await detail.findByText('Target Mode')).toBeInTheDocument()
+    expect(detail.getByText('database_set')).toBeInTheDocument()
+    expect(detail.getByText('Replica DB · Main Cluster, Main DB · Main Cluster')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps batch bootstrap form values after preflight error', async () => {

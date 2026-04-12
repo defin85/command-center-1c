@@ -69,7 +69,12 @@ type DryRunState =
   | null
 
 const TERMINAL_JOB_STATUSES = new Set(['finalized', 'failed', 'canceled'])
-const TERMINAL_COLLECTION_STATUSES = new Set(['finalized', 'failed'])
+const TERMINAL_COLLECTION_STATUSES = new Set([
+  'preflight_completed',
+  'dry_run_completed',
+  'finalized',
+  'failed',
+])
 
 const STATUS_COLOR: Record<string, string> = {
   preflight_pending: 'processing',
@@ -84,6 +89,8 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 const COLLECTION_STATUS_COLOR: Record<string, string> = {
+  preflight_completed: 'processing',
+  dry_run_running: 'processing',
   dry_run_completed: 'processing',
   execute_running: 'processing',
   finalized: 'success',
@@ -91,6 +98,7 @@ const COLLECTION_STATUS_COLOR: Record<string, string> = {
 }
 
 const COLLECTION_ITEM_STATUS_COLOR: Record<string, string> = {
+  pending: 'processing',
   scheduled: 'processing',
   coalesced: 'default',
   skipped: 'default',
@@ -163,11 +171,38 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       ),
     [clusters]
   )
+  const databaseById = useMemo(
+    () =>
+      new Map(
+        databases.map((database) => [database.id, database])
+      ),
+    [databases]
+  )
 
   const singlePreflightResult = preflightState?.kind === 'single' ? preflightState.result : null
   const batchPreflightResult = preflightState?.kind === 'batch' ? preflightState.result : null
   const singleDryRunSummary = dryRunState?.kind === 'single' ? dryRunState.summary : null
   const batchDryRunSummary = dryRunState?.kind === 'batch' ? dryRunState.summary : null
+  const effectiveBatchPreflightResult = useMemo(() => {
+    if (batchPreflightResult) {
+      return batchPreflightResult
+    }
+    const candidate = selectedCollection?.aggregate_preflight_result
+    if (!candidate || Object.keys(candidate).length === 0) {
+      return null
+    }
+    return candidate as PoolMasterDataBootstrapCollectionPreflightResult
+  }, [batchPreflightResult, selectedCollection])
+  const effectiveBatchDryRunSummary = useMemo(() => {
+    if (batchDryRunSummary && Object.keys(batchDryRunSummary).length > 0) {
+      return batchDryRunSummary
+    }
+    const candidate = selectedCollection?.aggregate_dry_run_summary
+    if (!candidate || Object.keys(candidate).length === 0) {
+      return null
+    }
+    return candidate
+  }, [batchDryRunSummary, selectedCollection])
   const watchedTargetMode = Form.useWatch('target_mode', form) as
     | 'cluster_all'
     | 'database_set'
@@ -357,16 +392,16 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     if (selectedCollection && selectedCollection.mode === 'execute') {
       return 3
     }
-    if (batchDryRunSummary || selectedCollection?.mode === 'dry_run') {
+    if (effectiveBatchDryRunSummary || selectedCollection?.mode === 'dry_run') {
       return 2
     }
-    if (batchPreflightResult?.ok) {
+    if (effectiveBatchPreflightResult?.ok) {
       return 1
     }
     return 0
   }, [
-    batchDryRunSummary,
-    batchPreflightResult,
+    effectiveBatchDryRunSummary,
+    effectiveBatchPreflightResult,
     launcherMode,
     selectedCollection,
     selectedJob,
@@ -374,10 +409,21 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     singlePreflightResult,
   ])
 
+  const batchExecuteBlockedByDryRunFailure =
+    launcherMode === 'batch' &&
+    selectedCollection?.mode === 'dry_run' &&
+    (selectedCollection.status === 'failed' || Number(selectedCollection.aggregate_counters.failed || 0) > 0)
+
   const executeAllowed =
     launcherMode === 'single'
       ? Boolean(singlePreflightResult?.ok && singleDryRunSummary)
-      : Boolean(batchPreflightResult?.ok && batchDryRunSummary)
+      : Boolean(
+          effectiveBatchPreflightResult?.ok &&
+          selectedCollection?.id &&
+          selectedCollection.mode === 'dry_run' &&
+          selectedCollection.status === 'dry_run_completed' &&
+          !batchExecuteBlockedByDryRunFailure
+        )
 
   const setFieldErrorsFromProblem = (fieldErrors: Record<string, string[]>) => {
     if (Object.keys(fieldErrors).length === 0) {
@@ -444,6 +490,9 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       const response = await runPoolMasterDataBootstrapCollectionPreflight(payload)
       setPreflightState({ kind: 'batch', result: response.preflight })
       setDryRunState(null)
+      setSelectedCollectionId(response.collection.id)
+      setSelectedCollection(response.collection)
+      await loadCollections()
       message.success(
         response.preflight.ok
           ? `Aggregate preflight успешно пройден для ${response.preflight.database_count} ИБ.`
@@ -467,7 +516,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       message.error('Сначала выполните успешный preflight.')
       return
     }
-    if (launcherMode === 'batch' && !batchPreflightResult?.ok) {
+    if (launcherMode === 'batch' && !effectiveBatchPreflightResult?.ok) {
       message.error('Сначала выполните успешный aggregate preflight.')
       return
     }
@@ -489,7 +538,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       }
 
       const payload = await resolveBatchScopePayload()
+      if (!selectedCollection?.id) {
+        message.error('Сначала выполните aggregate preflight.')
+        return
+      }
       const response = await createPoolMasterDataBootstrapCollection({
+        collection_id: selectedCollection.id,
         ...payload,
         mode: 'dry_run',
       })
@@ -540,7 +594,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       }
 
       const payload = await resolveBatchScopePayload()
+      if (!selectedCollection?.id) {
+        message.error('Сначала выполните успешный batch dry-run.')
+        return
+      }
       const response = await createPoolMasterDataBootstrapCollection({
+        collection_id: selectedCollection.id,
         ...payload,
         mode: 'execute',
       })
@@ -599,10 +658,24 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     Math.max(0, Math.round(Number(selectedJob?.progress?.completion_ratio || 0) * 100))
   )
   const currentCollectionRowsTotal =
-    Number(batchDryRunSummary?.rows_total || selectedCollection?.aggregate_dry_run_summary?.rows_total || 0) || 0
+    Number(effectiveBatchDryRunSummary?.rows_total || selectedCollection?.aggregate_dry_run_summary?.rows_total || 0) || 0
   const currentCollectionCompletionPercent = Math.min(
     100,
     Math.max(0, Math.round(Number(selectedCollection?.progress?.completion_ratio || 0) * 100))
+  )
+
+  const formatCollectionSnapshot = useCallback(
+    (collection: PoolMasterDataBootstrapCollection) =>
+      collection.database_ids
+        .map((databaseId) => {
+          const database = databaseById.get(databaseId)
+          if (!database) {
+            return databaseId
+          }
+          return formatDatabaseLabel(database)
+        })
+        .join(', '),
+    [databaseById, formatDatabaseLabel]
   )
 
   const jobColumns: ColumnsType<PoolMasterDataBootstrapImportJob> = [
@@ -680,13 +753,20 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       render: (value: string) => <Tag color={COLLECTION_STATUS_COLOR[value] || 'default'}>{value}</Tag>,
     },
     {
+      title: 'Mode',
+      dataIndex: 'target_mode',
+      key: 'target_mode',
+      width: 150,
+    },
+    {
       title: 'Targets',
       key: 'targets',
       width: 280,
       render: (_, row) =>
-        row.target_mode === 'cluster_all'
+        formatCollectionSnapshot(row) ||
+        (row.target_mode === 'cluster_all'
           ? clusterNameById.get(row.cluster_id || '') || `Cluster ${row.cluster_id || '-'}`
-          : `${row.database_ids.length} databases`,
+          : `${row.database_ids.length} databases`),
     },
     {
       title: 'Scope',
@@ -919,7 +999,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               data-testid={launcherMode === 'single' ? 'bootstrap-import-run-dry-run' : 'bootstrap-collection-run-dry-run'}
               onClick={() => void handleCreateDryRun()}
               loading={runningDryRun}
-              disabled={launcherMode === 'single' ? !singlePreflightResult?.ok : !batchPreflightResult?.ok}
+              disabled={launcherMode === 'single' ? !singlePreflightResult?.ok : !effectiveBatchPreflightResult?.ok}
             >
               Run Dry-run
             </Button>
@@ -964,15 +1044,15 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
             />
           )}
 
-          {launcherMode === 'batch' && batchPreflightResult && (
+          {launcherMode === 'batch' && effectiveBatchPreflightResult && (
             <Alert
-              type={batchPreflightResult.ok ? 'success' : 'warning'}
+              type={effectiveBatchPreflightResult.ok ? 'success' : 'warning'}
               showIcon
-              message={batchPreflightResult.ok ? 'Aggregate preflight passed.' : 'Aggregate preflight failed.'}
+              message={effectiveBatchPreflightResult.ok ? 'Aggregate preflight passed.' : 'Aggregate preflight failed.'}
               description={
-                batchPreflightResult.ok
-                  ? `${batchPreflightResult.database_count} databases are ready for bootstrap collection.`
-                  : batchPreflightResult.errors
+                effectiveBatchPreflightResult.ok
+                  ? `${effectiveBatchPreflightResult.database_count} databases are ready for bootstrap collection.`
+                  : effectiveBatchPreflightResult.errors
                       .map((item) => String(item.detail || item.code || 'Preflight failed'))
                       .join('; ')
               }
@@ -1081,6 +1161,33 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               <Empty description="No batch collection selected." />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                {selectedCollection.mode === 'preflight' && selectedCollection.status === 'failed' ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="Aggregate preflight contains failed databases."
+                    description="Dry-run remains blocked until the selected target snapshot completes preflight without failed items."
+                  />
+                ) : null}
+                {selectedCollection.mode === 'dry_run' &&
+                Number(selectedCollection.aggregate_counters.failed || 0) > 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="Batch dry-run contains failed databases."
+                    description="Execute remains blocked until the selected target snapshot completes dry-run without failed items."
+                  />
+                ) : null}
+                {selectedCollection.mode === 'dry_run' &&
+                selectedCollection.status === 'dry_run_running' ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="Batch dry-run is running."
+                    description="The aggregate preview is processed asynchronously. Refresh or wait for the collection detail to update."
+                  />
+                ) : null}
+
                 <Space>
                   <Tag color={COLLECTION_STATUS_COLOR[selectedCollection.status] || 'default'}>
                     {selectedCollection.status}
@@ -1098,6 +1205,15 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                 />
 
                 <Descriptions size="small" bordered column={3}>
+                  <Descriptions.Item label="Target Mode">{selectedCollection.target_mode}</Descriptions.Item>
+                  <Descriptions.Item label="Cluster">
+                    {selectedCollection.cluster_id
+                      ? clusterNameById.get(selectedCollection.cluster_id) || selectedCollection.cluster_id
+                      : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Target Snapshot">
+                    {formatCollectionSnapshot(selectedCollection) || '-'}
+                  </Descriptions.Item>
                   <Descriptions.Item label="Rows (dry-run)">{currentCollectionRowsTotal}</Descriptions.Item>
                   <Descriptions.Item label="Scheduled">
                     {selectedCollection.aggregate_counters.scheduled || 0}
