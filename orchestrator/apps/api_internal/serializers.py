@@ -4,6 +4,8 @@ Serializers for Internal API endpoints.
 Minimal serializers for Go Worker communication.
 """
 
+import uuid
+
 from rest_framework import serializers
 
 
@@ -275,7 +277,7 @@ class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
     """Input serializer for canonical pool runtime bridge endpoint."""
 
     tenant_id = serializers.UUIDField()
-    pool_run_id = serializers.UUIDField()
+    pool_run_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     workflow_execution_id = serializers.UUIDField()
     node_id = serializers.CharField(max_length=128)
     operation_type = serializers.CharField(max_length=255)
@@ -291,3 +293,26 @@ class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
         if not isinstance(value, dict):
             raise serializers.ValidationError("payload must be an object.")
         return value
+
+    def validate(self, attrs):
+        operation_type = str(attrs.get("operation_type") or "").strip()
+        raw_pool_run_id = str(attrs.get("pool_run_id") or "").strip()
+        pool_run_optional_operation_types = {
+            "pool.master_data_sync.launch",
+        }
+
+        if not operation_type:
+            raise serializers.ValidationError({"operation_type": "operation_type is required."})
+        if operation_type not in pool_run_optional_operation_types and not raw_pool_run_id:
+            raise serializers.ValidationError(
+                {"pool_run_id": "pool_run_id is required for this operation_type."}
+            )
+        if raw_pool_run_id:
+            try:
+                uuid.UUID(raw_pool_run_id)
+            except ValueError as exc:
+                raise serializers.ValidationError({"pool_run_id": "pool_run_id must be a valid UUID."}) from exc
+
+        attrs["operation_type"] = operation_type
+        attrs["pool_run_id"] = raw_pool_run_id
+        return attrs

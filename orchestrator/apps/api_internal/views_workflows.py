@@ -43,6 +43,9 @@ PUBLICATION_STEP_STATE_RANK = {
 POOL_RUNTIME_CONTEXT_MISMATCH = "POOL_RUNTIME_CONTEXT_MISMATCH"
 IDEMPOTENCY_KEY_CONFLICT = "IDEMPOTENCY_KEY_CONFLICT"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
+POOL_RUNTIME_OPTIONAL_RUN_OPERATION_TYPES = {
+    "pool.master_data_sync.launch",
+}
 ERROR_DETAILS_MAX_SIZE_BYTES = 8 * 1024
 ERROR_DETAILS_REDACTED_VALUE = "***REDACTED***"
 ERROR_DETAILS_MAX_DEPTH = 4
@@ -407,6 +410,10 @@ def _build_pool_runtime_request_fingerprint(
         default=str,
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _pool_runtime_bridge_requires_run(*, operation_type: str) -> bool:
+    return str(operation_type or "").strip() not in POOL_RUNTIME_OPTIONAL_RUN_OPERATION_TYPES
 
 
 def _build_idempotency_replay_payload(
@@ -2036,17 +2043,18 @@ def _validate_pool_runtime_bridge_context(
     if execution_tenant_id != tenant_id:
         return f"execution tenant '{execution_tenant_id}' does not match request tenant '{tenant_id}'"
 
-    run_tenant_id = str(run.tenant_id or "").strip()
-    if run_tenant_id != tenant_id:
-        return f"pool run tenant '{run_tenant_id}' does not match request tenant '{tenant_id}'"
+    if run is not None:
+        run_tenant_id = str(run.tenant_id or "").strip()
+        if run_tenant_id != tenant_id:
+            return f"pool run tenant '{run_tenant_id}' does not match request tenant '{tenant_id}'"
 
-    run_execution_id = str(run.workflow_execution_id or "").strip()
-    execution_id = str(execution.id)
-    if not run_execution_id or run_execution_id != execution_id:
-        return (
-            f"pool run '{run.id}' is linked to execution '{run_execution_id or '<none>'}', "
-            f"got '{execution_id}'"
-        )
+        run_execution_id = str(run.workflow_execution_id or "").strip()
+        execution_id = str(execution.id)
+        if not run_execution_id or run_execution_id != execution_id:
+            return (
+                f"pool run '{run.id}' is linked to execution '{run_execution_id or '<none>'}', "
+                f"got '{execution_id}'"
+            )
 
     node = _resolve_workflow_node(execution=execution, node_id=node_id)
     if node is None:
@@ -2074,6 +2082,31 @@ def _validate_pool_runtime_bridge_context(
             return operation_ref_mismatch
 
     return None
+
+
+def _execute_pool_runtime_bridge_step(
+    *,
+    operation_type: str,
+    rendered_payload: dict[str, object],
+    runtime_context: dict[str, object],
+    execution,
+) -> dict[str, object]:
+    from apps.intercompany_pools.master_data_sync_launch_execution import (
+        execute_pool_master_data_sync_launch_step,
+    )
+    from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
+
+    execution_input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if operation_type == "pool.master_data_sync.launch":
+        return execute_pool_master_data_sync_launch_step(
+            input_context=execution_input_context,
+        )
+    return execute_pool_runtime_step(
+        operation_type=operation_type,
+        rendered_data=rendered_payload,
+        context=runtime_context,
+        execution=execution,
+    )
 
 
 @exclude_schema
@@ -2335,7 +2368,6 @@ def execute_pool_runtime_step_v2(request):
     Executes pool runtime step via canonical internal bridge endpoint.
     """
     from apps.intercompany_pools.models import PoolRun, PoolRuntimeStepIdempotencyLog
-    from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
     from apps.templates.workflow.models import WorkflowExecution
 
     serializer = PoolRuntimeStepExecutionSerializer(data=request.data)
@@ -2351,10 +2383,11 @@ def execute_pool_runtime_step_v2(request):
 
     data = serializer.validated_data
     workflow_execution_id = data["workflow_execution_id"]
-    pool_run_id = data["pool_run_id"]
+    pool_run_id = str(data.get("pool_run_id") or "").strip()
     tenant_id = str(data["tenant_id"])
     node_id = str(data["node_id"] or "").strip()
     operation_type = str(data["operation_type"] or "").strip()
+    requires_pool_run = _pool_runtime_bridge_requires_run(operation_type=operation_type)
     step_attempt = int(data["step_attempt"])
     transport_attempt = int(data["transport_attempt"])
     idempotency_key = str(data["idempotency_key"] or "").strip()
@@ -2370,12 +2403,14 @@ def execute_pool_runtime_step_v2(request):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    run = PoolRun.objects.filter(id=pool_run_id).first()
-    if run is None:
-        return Response(
-            _build_error_response_payload(error="Pool run not found", code="NOT_FOUND"),
-            status=status.HTTP_404_NOT_FOUND,
-        )
+    run = None
+    if requires_pool_run:
+        run = PoolRun.objects.filter(id=pool_run_id).first()
+        if run is None:
+            return Response(
+                _build_error_response_payload(error="Pool run not found", code="NOT_FOUND"),
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
     mismatch_details = _validate_pool_runtime_bridge_context(
         execution=execution,
@@ -2406,7 +2441,7 @@ def execute_pool_runtime_step_v2(request):
 
     request_fingerprint = _build_pool_runtime_request_fingerprint(
         tenant_id=tenant_id,
-        pool_run_id=str(run.id),
+        pool_run_id=str(run.id) if run is not None else "",
         workflow_execution_id=str(execution.id),
         node_id=node_id,
         operation_type=operation_type,
@@ -2417,52 +2452,24 @@ def execute_pool_runtime_step_v2(request):
     response_payload: dict[str, object] = {}
 
     try:
-        with transaction.atomic():
-            existing = (
-                PoolRuntimeStepIdempotencyLog.objects.select_for_update()
-                .filter(tenant_id=run.tenant_id, idempotency_key=idempotency_key)
-                .order_by("id")
-                .first()
-            )
-            if existing is not None:
-                if existing.request_fingerprint != request_fingerprint:
-                    return Response(
-                        _build_error_response_payload(
-                            error="Idempotency key conflict",
-                            code=IDEMPOTENCY_KEY_CONFLICT,
-                        ),
-                        status=status.HTTP_409_CONFLICT,
-                    )
-                replay_snapshot = dict(existing.response_snapshot or {})
-                PoolRuntimeStepIdempotencyLog.objects.filter(id=existing.id).update(
-                    replay_count=F("replay_count") + 1,
-                    last_replayed_at=timezone.now(),
-                )
-                return Response(
-                    _build_idempotency_replay_payload(
-                        snapshot=replay_snapshot,
-                        idempotency_key=idempotency_key,
-                        step_attempt=step_attempt,
-                        transport_attempt=transport_attempt,
-                    ),
-                    status=status.HTTP_200_OK,
-                )
+        runtime_context: dict[str, object] = {}
+        if run is not None:
+            runtime_context["pool_run_id"] = str(run.id)
+        if publication_auth:
+            runtime_context["publication_auth"] = publication_auth
 
-            runtime_context = {"pool_run_id": str(run.id)}
-            if publication_auth:
-                runtime_context["publication_auth"] = publication_auth
-
-            step_result = execute_pool_runtime_step(
+        if run is None:
+            # sync launch fan-out is state-based and reuses pending launch items, so bridge retries
+            # can safely re-enter without dedicated run-scoped idempotency persistence.
+            step_result = _execute_pool_runtime_bridge_step(
                 operation_type=operation_type,
-                rendered_data=rendered_payload,
-                context=runtime_context,
+                rendered_payload=rendered_payload,
+                runtime_context=runtime_context,
                 execution=execution,
             )
-
-            response_payload: dict[str, object] = {
+            response_payload = {
                 "success": True,
                 "workflow_execution_id": str(execution.id),
-                "pool_run_id": str(run.id),
                 "node_id": node_id,
                 "step_attempt": step_attempt,
                 "transport_attempt": transport_attempt,
@@ -2472,17 +2479,82 @@ def execute_pool_runtime_step_v2(request):
                 "idempotency_replayed": False,
                 "result": step_result if isinstance(step_result, dict) else {},
             }
-            PoolRuntimeStepIdempotencyLog.objects.create(
-                run=run,
-                tenant_id=run.tenant_id,
-                workflow_execution_id=execution.id,
-                node_id=node_id,
-                operation_type=operation_type,
-                idempotency_key=idempotency_key,
-                request_fingerprint=request_fingerprint,
-                response_snapshot=response_payload,
-            )
+        else:
+            with transaction.atomic():
+                existing = (
+                    PoolRuntimeStepIdempotencyLog.objects.select_for_update()
+                    .filter(tenant_id=run.tenant_id, idempotency_key=idempotency_key)
+                    .order_by("id")
+                    .first()
+                )
+                if existing is not None:
+                    if existing.request_fingerprint != request_fingerprint:
+                        return Response(
+                            _build_error_response_payload(
+                                error="Idempotency key conflict",
+                                code=IDEMPOTENCY_KEY_CONFLICT,
+                            ),
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    replay_snapshot = dict(existing.response_snapshot or {})
+                    PoolRuntimeStepIdempotencyLog.objects.filter(id=existing.id).update(
+                        replay_count=F("replay_count") + 1,
+                        last_replayed_at=timezone.now(),
+                    )
+                    return Response(
+                        _build_idempotency_replay_payload(
+                            snapshot=replay_snapshot,
+                            idempotency_key=idempotency_key,
+                            step_attempt=step_attempt,
+                            transport_attempt=transport_attempt,
+                        ),
+                        status=status.HTTP_200_OK,
+                    )
+
+                step_result = _execute_pool_runtime_bridge_step(
+                    operation_type=operation_type,
+                    rendered_payload=rendered_payload,
+                    runtime_context=runtime_context,
+                    execution=execution,
+                )
+
+                response_payload = {
+                    "success": True,
+                    "workflow_execution_id": str(execution.id),
+                    "pool_run_id": str(run.id),
+                    "node_id": node_id,
+                    "step_attempt": step_attempt,
+                    "transport_attempt": transport_attempt,
+                    "idempotency_key": idempotency_key,
+                    "status": "completed",
+                    "side_effect_applied": True,
+                    "idempotency_replayed": False,
+                    "result": step_result if isinstance(step_result, dict) else {},
+                }
+                PoolRuntimeStepIdempotencyLog.objects.create(
+                    run=run,
+                    tenant_id=run.tenant_id,
+                    workflow_execution_id=execution.id,
+                    node_id=node_id,
+                    operation_type=operation_type,
+                    idempotency_key=idempotency_key,
+                    request_fingerprint=request_fingerprint,
+                    response_snapshot=response_payload,
+                )
     except IntegrityError:
+        if run is None:
+            logger.exception(
+                "Unexpected idempotency integrity error for run-less pool runtime step",
+                extra={
+                    "workflow_execution_id": str(workflow_execution_id),
+                    "node_id": node_id,
+                    "operation_type": operation_type,
+                },
+            )
+            return Response(
+                _build_error_response_payload(error="Failed to execute pool runtime step", code="INTERNAL_ERROR"),
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         existing = (
             PoolRuntimeStepIdempotencyLog.objects.filter(tenant_id=run.tenant_id, idempotency_key=idempotency_key)
             .order_by("id")
