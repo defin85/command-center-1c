@@ -47,7 +47,10 @@ from apps.intercompany_pools.master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
 )
 from apps.intercompany_pools.models import (
+    PoolMasterContract,
     PoolMasterItem,
+    PoolMasterParty,
+    PoolMasterTaxProfile,
     PoolMasterDataSourceRecord,
     PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
@@ -811,6 +814,155 @@ def test_inbound_step_uses_live_odata_transport_baseline_then_delta_when_callbac
         source_ref="item-new-001",
     ).first()
     assert checkpoint is not None
+    assert client_inits
+    assert client_inits[0]["verify_tls"] is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_inbound_step_uses_live_odata_transport_for_party_contract_and_tax_profile() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-live-md-{uuid4().hex[:6]}", name="Sync Inbound Live MD")
+    database = _create_database(tenant=tenant, suffix="inbound-live-md")
+    _create_service_mapping(database=database)
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True, default_policy=PoolMasterDataSyncPolicy.IB_MASTER)
+    reset_pool_master_data_sync_inbound_callbacks()
+
+    live_counterparties: list[dict[str, object]] = []
+    live_contracts: list[dict[str, object]] = []
+    client_inits: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **kwargs):
+            client_inits.append(dict(kwargs))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields)
+            if entity_name == "Catalog_Контрагенты":
+                rows = live_counterparties
+            elif entity_name == "Catalog_ДоговорыКонтрагентов":
+                rows = live_contracts
+            else:
+                raise AssertionError(f"unexpected entity lookup {entity_name}")
+            start = int(skip or 0)
+            size = int(top or len(rows) or 1)
+            return [dict(row) for row in rows[start : start + size]]
+
+    def _run_inbound(entity_type: str, suffix: str) -> dict[str, object]:
+        sync_job = PoolMasterDataSyncJob.objects.create(
+            tenant=tenant,
+            database=database,
+            entity_type=entity_type,
+            policy=PoolMasterDataSyncPolicy.IB_MASTER,
+            direction=PoolMasterDataSyncDirection.INBOUND,
+            status=PoolMasterDataSyncJobStatus.RUNNING,
+        )
+        return execute_pool_master_data_sync_inbound_step(
+            input_context={
+                "contract_version": "pool_master_data_sync_workflow.v1",
+                "sync_job_id": str(sync_job.id),
+                "tenant_id": str(tenant.id),
+                "database_id": str(database.id),
+                "entity_type": entity_type,
+                "sync_policy": PoolMasterDataSyncPolicy.IB_MASTER,
+                "sync_direction": PoolMasterDataSyncDirection.INBOUND,
+                "correlation_id": f"corr-{entity_type}-{suffix}",
+                "origin_system": "ib",
+                "origin_event_id": f"evt-{entity_type}-{suffix}",
+            }
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        for entity_type in (
+            PoolMasterDataEntityType.PARTY,
+            PoolMasterDataEntityType.TAX_PROFILE,
+            PoolMasterDataEntityType.CONTRACT,
+        ):
+            baseline_output = _run_inbound(entity_type, "baseline")
+            assert baseline_output["inbound"]["polled"] == 0
+            assert baseline_output["inbound"]["applied"] == 0
+
+        live_counterparties.append(
+            {
+                "Ref_Key": "party-new-001",
+                "DataVersion": "AAAAAAAB",
+                "Code": "00001",
+                "Description": "New Live Party",
+                "НаименованиеПолное": "New Live Party LLC",
+                "ИНН": "7701234567",
+                "КПП": "770101001",
+                "DeletionMark": False,
+                "IsFolder": False,
+            }
+        )
+        party_output = _run_inbound(PoolMasterDataEntityType.PARTY, "delta")
+        assert party_output["inbound"]["polled"] == 1
+        assert party_output["inbound"]["applied"] == 1
+
+        live_contracts.append(
+            {
+                "Ref_Key": "contract-new-001",
+                "DataVersion": "AAAAAAAC",
+                "Description": "New Live Contract",
+                "Owner_Key": "party-new-001",
+                "Номер": "CTR-001",
+                "Дата": "2026-04-13T00:00:00",
+                "ВидДоговора": "СПокупателем",
+                "СтавкаНДС": "НДС20",
+                "СуммаВключаетНДС": True,
+                "DeletionMark": False,
+                "IsFolder": False,
+            }
+        )
+        tax_output = _run_inbound(PoolMasterDataEntityType.TAX_PROFILE, "delta")
+        contract_output = _run_inbound(PoolMasterDataEntityType.CONTRACT, "delta")
+
+    assert tax_output["inbound"]["polled"] == 1
+    assert tax_output["inbound"]["applied"] == 1
+    assert contract_output["inbound"]["polled"] == 1
+    assert contract_output["inbound"]["applied"] == 1
+
+    party = PoolMasterParty.objects.get(tenant=tenant, canonical_id="party:party-new-001")
+    assert party.name == "New Live Party"
+    assert party.metadata["ib_ref_keys"][str(database.id)]["counterparty"] == "party-new-001"
+
+    tax_profile = PoolMasterTaxProfile.objects.get(tenant=tenant, canonical_id="vat20")
+    assert str(tax_profile.vat_rate) == "20.00"
+    assert tax_profile.vat_code == "VAT20"
+    assert tax_profile.metadata["ib_ref_keys"][str(database.id)] == "НДС20"
+
+    contract = PoolMasterContract.objects.get(tenant=tenant, canonical_id="contract:contract-new-001")
+    assert contract.name == "New Live Contract"
+    assert contract.owner_counterparty_id == party.id
+    assert contract.metadata["ib_ref_keys"][str(database.id)]["party:party-new-001"] == "contract-new-001"
+    assert contract.metadata["vat_profile_canonical_id"] == "vat20"
+    assert contract.metadata["vat_native_ref"] == "НДС20"
+
+    assert PoolMasterDataSourceRecord.objects.filter(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        source_database=database,
+        source_ref="party-new-001",
+    ).exists()
+    assert PoolMasterDataSourceRecord.objects.filter(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.CONTRACT,
+        source_database=database,
+        source_ref="contract-new-001",
+    ).exists()
+    assert PoolMasterDataSourceRecord.objects.filter(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.TAX_PROFILE,
+        source_database=database,
+        source_ref="НДС20",
+    ).exists()
     assert client_inits
     assert client_inits[0]["verify_tls"] is True
 

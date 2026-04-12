@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from apps.intercompany_pools.master_data_sync_dispatcher import (
     dispatch_pending_master_data_sync_outbox,
 )
 from apps.intercompany_pools.models import (
+    PoolMasterContract,
     PoolMasterDataBinding,
     PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
@@ -20,6 +21,8 @@ from apps.intercompany_pools.models import (
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
     PoolMasterItem,
+    PoolMasterParty,
+    PoolMasterTaxProfile,
 )
 from apps.tenancy.models import Tenant
 
@@ -281,6 +284,229 @@ def test_dispatcher_uses_live_odata_item_transport_by_default_and_materializes_b
                 "ЕдиницаИзмерения_Key": "unit-live-001",
             },
         }
+    ]
+    assert client_inits
+    assert client_inits[0]["verify_tls"] is True
+
+
+@pytest.mark.django_db
+def test_dispatcher_uses_live_odata_transport_for_party_contract_and_tax_profile() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-dispatch-live-md-{uuid4().hex[:6]}", name="Sync Dispatch Live MD")
+    database = _create_database(tenant=tenant, suffix="live-md")
+    _create_service_mapping(database=database)
+
+    party = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-live-001",
+        name="Live Party",
+        full_name="Live Party LLC",
+        inn="7701234567",
+        kpp="770101001",
+        is_counterparty=True,
+        is_our_organization=False,
+        metadata={},
+    )
+    tax_profile = PoolMasterTaxProfile.objects.create(
+        tenant=tenant,
+        canonical_id="vat20",
+        vat_rate="20.00",
+        vat_included=True,
+        vat_code="VAT20",
+        metadata={},
+    )
+    contract = PoolMasterContract.objects.create(
+        tenant=tenant,
+        canonical_id="contract-live-001",
+        name="Live Contract",
+        owner_counterparty=party,
+        number="CTR-001",
+        date=date(2026, 4, 13),
+        metadata={},
+    )
+
+    now = timezone.now() - timedelta(seconds=1)
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-party-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-party-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "party_upsert",
+            "canonical_id": str(party.canonical_id),
+            "payload": {
+                "canonical_id": str(party.canonical_id),
+                "name": str(party.name),
+                "full_name": str(party.full_name),
+                "inn": str(party.inn),
+                "kpp": str(party.kpp),
+                "is_counterparty": True,
+                "is_our_organization": False,
+                "metadata": {},
+            },
+            "payload_fingerprint": "fp-party-live-001",
+        },
+        available_at=now,
+        attempt_count=0,
+    )
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.TAX_PROFILE,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-tax-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-tax-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "tax_profile_upsert",
+            "canonical_id": str(tax_profile.canonical_id),
+            "payload": {
+                "canonical_id": str(tax_profile.canonical_id),
+                "vat_rate": "20.00",
+                "vat_included": True,
+                "vat_code": "VAT20",
+                "metadata": {
+                    "vat_native_ref": "НДС20",
+                },
+            },
+            "payload_fingerprint": "fp-tax-live-001",
+        },
+        available_at=now,
+        attempt_count=0,
+    )
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.CONTRACT,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-contract-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-contract-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "contract_upsert",
+            "canonical_id": str(contract.canonical_id),
+            "payload": {
+                "canonical_id": str(contract.canonical_id),
+                "name": str(contract.name),
+                "owner_counterparty_canonical_id": str(party.canonical_id),
+                "number": str(contract.number),
+                "date": "2026-04-13",
+                "metadata": {
+                    "contract_kind": "СПокупателем",
+                    "vat_profile_canonical_id": "vat20",
+                    "vat_native_ref": "НДС20",
+                    "vat_code": "VAT20",
+                    "vat_included": True,
+                },
+            },
+            "payload_fingerprint": "fp-contract-live-001",
+        },
+        available_at=now,
+        attempt_count=0,
+    )
+
+    client_inits: list[dict[str, object]] = []
+    create_calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **kwargs):
+            client_inits.append(dict(kwargs))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields, top, skip)
+            return []
+
+        def create_entity(self, entity_name, entity_data):
+            create_calls.append({"entity_name": entity_name, "entity_data": dict(entity_data)})
+            if entity_name == "Catalog_Контрагенты":
+                return {"Ref_Key": "target-party-001"}
+            if entity_name == "Catalog_ДоговорыКонтрагентов":
+                return {"Ref_Key": "target-contract-001"}
+            raise AssertionError(f"unexpected create for {entity_name}")
+
+        def update_entity(self, entity_name, entity_id, entity_data):
+            raise AssertionError(f"unexpected update for {entity_name} {entity_id} {entity_data}")
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        result = dispatch_pending_master_data_sync_outbox(batch_size=10)
+
+    assert result.claimed == 3
+    assert result.sent == 3
+    assert result.failed == 0
+
+    party_binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id="party-live-001",
+        ib_catalog_kind="counterparty",
+    )
+    assert party_binding.ib_ref_key == "target-party-001"
+
+    tax_binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.TAX_PROFILE,
+        canonical_id="vat20",
+    )
+    assert tax_binding.ib_ref_key == "НДС20"
+
+    contract_binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.CONTRACT,
+        canonical_id="contract-live-001",
+        owner_counterparty_canonical_id="party-live-001",
+    )
+    assert contract_binding.ib_ref_key == "target-contract-001"
+
+    party.refresh_from_db()
+    tax_profile.refresh_from_db()
+    contract.refresh_from_db()
+    assert party.metadata["ib_ref_keys"][str(database.id)]["counterparty"] == "target-party-001"
+    assert tax_profile.metadata["ib_ref_keys"][str(database.id)] == "НДС20"
+    assert contract.metadata["ib_ref_keys"][str(database.id)]["party-live-001"] == "target-contract-001"
+
+    assert create_calls == [
+        {
+            "entity_name": "Catalog_Контрагенты",
+            "entity_data": {
+                "Description": "Live Party",
+                "НаименованиеПолное": "Live Party LLC",
+                "Parent_Key": "00000000-0000-0000-0000-000000000000",
+                "IsFolder": False,
+                "DeletionMark": False,
+                "ЮридическоеФизическоеЛицо": "ЮридическоеЛицо",
+                "ИНН": "7701234567",
+                "КПП": "770101001",
+            },
+        },
+        {
+            "entity_name": "Catalog_ДоговорыКонтрагентов",
+            "entity_data": {
+                "Description": "Live Contract",
+                "Owner_Key": "target-party-001",
+                "Parent_Key": "00000000-0000-0000-0000-000000000000",
+                "IsFolder": False,
+                "DeletionMark": False,
+                "ВидДоговора": "СПокупателем",
+                "СуммаВключаетНДС": True,
+                "Номер": "CTR-001",
+                "Дата": "2026-04-13T00:00:00",
+                "СтавкаНДС": "НДС20",
+            },
+        },
     ]
     assert client_inits
     assert client_inits[0]["verify_tls"] is True

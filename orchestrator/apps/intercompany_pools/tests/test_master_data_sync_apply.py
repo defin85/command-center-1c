@@ -14,6 +14,7 @@ from apps.intercompany_pools.models import (
     PoolMasterDataEntityType,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
+    PoolMasterParty,
 )
 from apps.tenancy.models import Tenant
 
@@ -130,24 +131,69 @@ def test_apply_outbox_updates_binding_and_sanitizes_audit_metadata() -> None:
 
 
 @pytest.mark.django_db
-def test_apply_outbox_allows_non_binding_mutation_without_binding_update() -> None:
+def test_apply_outbox_materializes_party_binding_and_metadata_from_transport_result() -> None:
     tenant = Tenant.objects.create(slug=f"sync-apply-party-{uuid4().hex[:6]}", name="Sync Apply Party")
     database = _create_database(tenant=tenant, suffix="party")
-    payload_fingerprint = build_master_data_mutation_payload_fingerprint(
-        payload={"canonical_id": "party-001", "name": "Party 001"}
+    party = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-001",
+        name="Party 001",
+        full_name="Party 001 LLC",
+        inn="7701234567",
+        kpp="770101001",
+        is_counterparty=True,
+        is_our_organization=False,
+        metadata={},
     )
-    outbox = _create_outbox(
+    payload = {
+        "canonical_id": "party-001",
+        "name": "Party 001",
+        "full_name": "Party 001 LLC",
+        "inn": "7701234567",
+        "kpp": "770101001",
+        "is_counterparty": True,
+        "is_our_organization": False,
+        "metadata": {},
+    }
+    payload_fingerprint = build_master_data_mutation_payload_fingerprint(payload=payload)
+    outbox = PoolMasterDataSyncOutbox.objects.create(
         tenant=tenant,
         database=database,
-        payload_fingerprint=payload_fingerprint,
-        mutation_kind="party_upsert",
+        entity_type=PoolMasterDataEntityType.PARTY,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-{uuid4().hex[:8]}",
+        origin_system="cc",
+        origin_event_id=f"evt-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "party_upsert",
+            "canonical_id": "party-001",
+            "payload": payload,
+            "payload_fingerprint": payload_fingerprint,
+        },
+        available_at=timezone.now() - timedelta(seconds=1),
     )
 
     result = apply_master_data_outbox_to_ib(
         outbox=outbox,
-        ib_apply=lambda _outbox: {"status": "ok"},
+        ib_apply=lambda _outbox: {
+            "status": "ok",
+            "ib_ref_key": "ref-party-001",
+            "ib_catalog_kind": "counterparty",
+        },
     )
 
     assert result["applied"] is True
     assert result["idempotent"] is False
-    assert result["binding_updated"] is False
+    assert result["binding_updated"] is True
+
+    binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id="party-001",
+        ib_catalog_kind="counterparty",
+    )
+    assert binding.ib_ref_key == "ref-party-001"
+
+    party.refresh_from_db()
+    assert party.metadata["ib_ref_keys"][str(database.id)]["counterparty"] == "ref-party-001"
