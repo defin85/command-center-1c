@@ -66,6 +66,7 @@ _CHILD_TERMINAL_JOB_STATUSES = {
     PoolMasterDataSyncJobStatus.CANCELED,
 }
 _REQUEST_CACHE_ATTR = "_sync_launch_items_cache"
+SYNC_LAUNCH_FANOUT_CHUNK_SIZE = 50
 
 
 def create_pool_master_data_sync_launch_request(
@@ -246,15 +247,55 @@ def run_pool_master_data_sync_launch_request_fanout(
     launch_request = _refresh_launch_request(
         tenant_id=str(launch_request.tenant_id),
         launch_request_id=str(launch_request.id),
-        include_items=True,
+        include_items=False,
         refresh=False,
     )
-    items = _get_request_items(launch_request)
+    pending_item_ids = list(
+        PoolMasterDataSyncLaunchItem.objects.filter(
+            launch_request_id=launch_request.id,
+            status=PoolMasterDataSyncLaunchItemStatus.PENDING,
+        )
+        .order_by("database__name", "entity_type", "id")
+        .values_list("id", flat=True)
+    )
+    chunk_size = max(1, int(SYNC_LAUNCH_FANOUT_CHUNK_SIZE))
+    processed_items = 0
+    total_pending_items = len(pending_item_ids)
 
-    for item in items:
-        if item.status != PoolMasterDataSyncLaunchItemStatus.PENDING:
-            continue
-        _process_launch_item(launch_request=launch_request, item=item)
+    for chunk_index, start_index in enumerate(range(0, total_pending_items, chunk_size), start=1):
+        chunk_ids = pending_item_ids[start_index : start_index + chunk_size]
+        chunk_items = list(
+            PoolMasterDataSyncLaunchItem.objects.filter(id__in=chunk_ids)
+            .select_related("database", "child_job")
+            .order_by("database__name", "entity_type", "id")
+        )
+        for item in chunk_items:
+            _process_launch_item(launch_request=launch_request, item=item)
+        processed_items += len(chunk_items)
+
+        refreshed_chunk = _refresh_launch_request(
+            tenant_id=str(launch_request.tenant_id),
+            launch_request_id=str(launch_request.id),
+            include_items=False,
+            refresh=True,
+        )
+        _append_launch_audit(
+            launch_request=refreshed_chunk,
+            action="fanout_chunk_completed",
+            actor_id=str(refreshed_chunk.requested_by_id or ""),
+            actor_username=_read_requested_by_username(refreshed_chunk),
+            metadata={
+                "chunk_index": chunk_index,
+                "chunk_size": len(chunk_items),
+                "configured_chunk_size": chunk_size,
+                "processed_items": processed_items,
+                "pending_items_remaining": max(total_pending_items - processed_items, 0),
+                "aggregate_counters": dict(
+                    (refreshed_chunk.metadata or {}).get("aggregate_counters") or {}
+                ),
+            },
+        )
+        refreshed_chunk.save(update_fields=["metadata", "updated_at"])
 
     refreshed = _refresh_launch_request(
         tenant_id=str(launch_request.tenant_id),
@@ -767,6 +808,7 @@ __all__ = [
     "SYNC_LAUNCH_CLUSTER_NOT_FOUND",
     "SYNC_LAUNCH_DATABASE_NOT_FOUND",
     "SYNC_LAUNCH_EMPTY_TARGETS",
+    "SYNC_LAUNCH_FANOUT_CHUNK_SIZE",
     "SYNC_LAUNCH_REQUEST_NOT_FOUND",
     "create_pool_master_data_sync_launch_request",
     "get_pool_master_data_sync_launch_request",

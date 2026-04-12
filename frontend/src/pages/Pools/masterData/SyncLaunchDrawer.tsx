@@ -56,6 +56,15 @@ export function SyncLaunchDrawer({
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const setFieldErrorsFromProblem = (fieldErrors: Record<string, string[]>) => {
+    if (Object.keys(fieldErrors).length === 0) {
+      return
+    }
+    form.setFields(
+      Object.entries(fieldErrors).map(([name, errors]) => ({ name, errors })) as never
+    )
+  }
+
   const launchMode = Form.useWatch('mode', form) as PoolMasterDataSyncLaunchMode | undefined
   const launchTargetMode = Form.useWatch('target_mode', form) as 'cluster_all' | 'database_set' | undefined
   const watchedClusterId = Form.useWatch('cluster_id', form) as string | undefined
@@ -133,6 +142,7 @@ export function SyncLaunchDrawer({
         return
       }
       const resolved = resolveApiError(error, 'Не удалось создать manual sync launch.')
+      setFieldErrorsFromProblem(resolved.fieldErrors)
       setSubmitError(resolved.message)
     } finally {
       setSubmitting(false)

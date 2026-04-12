@@ -276,3 +276,73 @@ def test_create_sync_launch_request_preserves_immutable_target_snapshot() -> Non
     refreshed = PoolMasterDataSyncLaunchRequest.objects.get(id=launch_request.id)
     assert refreshed.database_ids == [str(database_a.id), str(database_b.id)]
     assert str(database_c.id) not in refreshed.database_ids
+
+
+@pytest.mark.django_db
+def test_run_sync_launch_fanout_processes_items_in_configured_chunks() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-launch-chunks-{uuid4().hex[:6]}", name="Sync Launch Chunks")
+    cluster = _create_cluster(tenant=tenant, suffix="chunks")
+    databases = [
+        _create_database(tenant=tenant, cluster=cluster, suffix=f"chunks-{index}")
+        for index in range(5)
+    ]
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
+        return_value=SimpleNamespace(enqueue_success=True),
+    ):
+        launch_request = create_pool_master_data_sync_launch_request(
+            tenant=tenant,
+            mode=PoolMasterDataSyncLaunchMode.INBOUND,
+            target_mode="database_set",
+            cluster_id=None,
+            database_ids=[str(database.id) for database in databases],
+            entity_scope=[PoolMasterDataEntityType.ITEM],
+            actor_id="1",
+            actor_username="chunk-admin",
+        )
+
+    def _trigger(**kwargs) -> PoolMasterDataSyncTriggerResult:
+        database = Database.objects.get(id=kwargs["database_id"])
+        child_job = _create_sync_job(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+            status=PoolMasterDataSyncJobStatus.RUNNING,
+        )
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=child_job,
+            created_job=True,
+            started_workflow=True,
+            skipped=False,
+            skip_reason=None,
+            policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+            policy_source="database_scope",
+            start_result=SimpleNamespace(
+                enqueue_status="queued",
+                enqueue_error=None,
+                sync_job=child_job,
+            ),
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_service.SYNC_LAUNCH_FANOUT_CHUNK_SIZE",
+        2,
+    ), patch(
+        "apps.intercompany_pools.master_data_sync_launch_service.trigger_pool_master_data_inbound_sync_job",
+        side_effect=_trigger,
+    ):
+        refreshed = run_pool_master_data_sync_launch_request_fanout(
+            launch_request_id=str(launch_request.id)
+        )
+
+    assert refreshed.status == PoolMasterDataSyncLaunchStatus.COMPLETED
+    chunk_events = [
+        entry
+        for entry in refreshed.metadata["audit_trail"]
+        if entry.get("action") == "fanout_chunk_completed"
+    ]
+    assert len(chunk_events) == 3
+    assert [entry["metadata"]["chunk_size"] for entry in chunk_events] == [2, 2, 1]
+    assert [entry["metadata"]["processed_items"] for entry in chunk_events] == [2, 4, 5]
+    assert all(entry["metadata"]["configured_chunk_size"] == 2 for entry in chunk_events)

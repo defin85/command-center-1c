@@ -1,0 +1,58 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  entity_type:
+    type: string
+    enum:
+      - party
+      - item
+      - contract
+      - tax_profile
+  status:
+    type: string
+  reason_code:
+    type: string
+  reason_detail:
+    type: string
+  child_job_id:
+    type: string
+    format: uuid
+    nullable: true
+  child_job_status:
+    type: string
+  child_workflow_execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  child_operation_id:
+    type: string
+    format: uuid
+    nullable: true
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - database_id
+  - database_name
+  - entity_type
+  - status
+  - reason_code
+  - reason_detail
+  - child_job_status

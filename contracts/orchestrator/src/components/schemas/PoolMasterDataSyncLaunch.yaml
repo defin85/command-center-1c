@@ -1,0 +1,95 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  mode:
+    type: string
+    enum:
+      - inbound
+      - outbound
+      - reconcile
+  target_mode:
+    type: string
+    enum:
+      - cluster_all
+      - database_set
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  database_ids:
+    type: array
+    items:
+      type: string
+  entity_scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - party
+        - item
+        - contract
+        - tax_profile
+  status:
+    type: string
+    enum:
+      - pending
+      - running
+      - completed
+      - failed
+  workflow_execution_id:
+    type: string
+    format: uuid
+    nullable: true
+  operation_id:
+    type: string
+    format: uuid
+    nullable: true
+  requested_by_id:
+    type: integer
+    nullable: true
+  requested_by_username:
+    type: string
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  aggregate_counters:
+    type: object
+    additionalProperties: true
+  progress:
+    type: object
+    additionalProperties: true
+  child_job_status_counts:
+    type: object
+    additionalProperties: true
+  audit_trail:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  items:
+    type: array
+    items:
+      $ref: ./PoolMasterDataSyncLaunchItem.yaml
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - mode
+  - target_mode
+  - database_ids
+  - entity_scope
+  - status
+  - requested_by_username
+  - last_error_code
+  - last_error

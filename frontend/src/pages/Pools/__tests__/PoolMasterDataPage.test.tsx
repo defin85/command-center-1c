@@ -1432,6 +1432,51 @@ describe('PoolMasterDataPage', () => {
     expect(mockCreatePoolMasterDataSyncLaunch).not.toHaveBeenCalled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('keeps manual sync launch scope after server-side create error', async () => {
+    const user = userEvent.setup()
+    mockCreatePoolMasterDataSyncLaunch.mockRejectedValue({
+      response: {
+        data: {
+          code: 'SYNC_LAUNCH_DATABASE_NOT_FOUND',
+          title: 'Sync Launch Invalid',
+          detail: 'Selected databases are no longer available.',
+          errors: {
+            database_ids: ['Refresh the selected databases.'],
+          },
+        },
+      },
+    })
+
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByTestId('sync-launch-open-drawer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('sync-launch-open-drawer'))
+
+    openSelectByTestId('sync-launch-mode')
+    await selectDropdownOption(/^Outbound$/)
+    openSelectByTestId('sync-launch-database-set')
+    await selectDropdownOption(/Main DB/)
+
+    await user.click(screen.getByTestId('sync-launch-submit'))
+
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataSyncLaunch).toHaveBeenCalledWith({
+        mode: 'outbound',
+        target_mode: 'database_set',
+        cluster_id: undefined,
+        database_ids: ['db-1'],
+        entity_scope: ['party', 'item'],
+      })
+    )
+    expect(await screen.findByText('Selected databases are no longer available.')).toBeInTheDocument()
+    expect(await screen.findByText('Refresh the selected databases.')).toBeInTheDocument()
+    expect(screen.getByTestId('sync-launch-drawer')).toBeInTheDocument()
+    expect(screen.getByTestId('sync-launch-mode')).toHaveTextContent('Outbound')
+    expect(screen.getByTestId('sync-launch-database-set')).toHaveTextContent('Main DB')
+    expect(screen.getByTestId('sync-launch-entity-scope')).toHaveTextContent('Party')
+    expect(screen.getByTestId('sync-launch-entity-scope')).toHaveTextContent('Item')
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('filters sync launch entity scope by mode capabilities', async () => {
     const user = userEvent.setup()
     renderPage('/pools/master-data?tab=sync')

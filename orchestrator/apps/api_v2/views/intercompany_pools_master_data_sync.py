@@ -10,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.api_v2.serializers.common import ProblemDetailsErrorSerializer
+from apps.databases.models import Cluster, Database
 from apps.intercompany_pools.master_data_sync_launch_service import (
     SYNC_LAUNCH_CLUSTER_NOT_FOUND,
     SYNC_LAUNCH_DATABASE_NOT_FOUND,
@@ -43,6 +44,7 @@ from apps.tenancy.models import Tenant
 from apps.tenancy.models import TenantMember
 
 from .intercompany_pools import _problem, _resolve_tenant_id
+from .rbac.serializers_core import RefClustersResponseSerializer, RefDatabasesResponseSerializer
 
 SCHEDULING_PRIORITY_CHOICES = ["p0", "p1", "p2", "p3"]
 SCHEDULING_ROLE_CHOICES = ["inbound", "outbound", "reconcile", "manual_remediation"]
@@ -200,6 +202,10 @@ class SyncLaunchCreateRequestSerializer(serializers.Serializer):
 class SyncLaunchListQuerySerializer(serializers.Serializer):
     limit = serializers.IntegerField(required=False, min_value=1, max_value=200, default=20)
     offset = serializers.IntegerField(required=False, min_value=0, default=0)
+
+
+class SyncTargetDatabasesQuerySerializer(serializers.Serializer):
+    cluster_id = serializers.UUIDField(required=False)
 
 
 class SyncLaunchItemSerializer(serializers.Serializer):
@@ -426,6 +432,88 @@ def get_sync_launch(request, id: UUID):
         },
         status=http_status.HTTP_200_OK,
     )
+
+
+@extend_schema(
+    summary="List sync target clusters",
+    request=None,
+    responses={
+        200: RefClustersResponseSerializer,
+        400: ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_sync_target_clusters(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    tenant, tenant_problem = _resolve_tenant_or_problem(tenant_id=str(tenant_id))
+    if tenant_problem is not None:
+        return tenant_problem
+
+    rows = list(Cluster.objects.filter(tenant_id=tenant.id).order_by("name", "id"))
+    payload = {
+        "clusters": [
+            {
+                "id": cluster.id,
+                "name": cluster.name,
+            }
+            for cluster in rows
+        ],
+        "count": len(rows),
+        "total": len(rows),
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    summary="List sync target databases",
+    request=None,
+    parameters=[SyncTargetDatabasesQuerySerializer],
+    responses={
+        200: RefDatabasesResponseSerializer,
+        400: ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        404: ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_sync_target_databases(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    tenant, tenant_problem = _resolve_tenant_or_problem(tenant_id=str(tenant_id))
+    if tenant_problem is not None:
+        return tenant_problem
+
+    query_serializer = SyncTargetDatabasesQuerySerializer(data=request.query_params)
+    if not query_serializer.is_valid():
+        return _validation_problem(detail="Invalid query parameters.", errors=query_serializer.errors)
+
+    cluster_id = query_serializer.validated_data.get("cluster_id")
+    queryset = Database.objects.filter(tenant_id=tenant.id)
+    if cluster_id is not None:
+        queryset = queryset.filter(cluster_id=cluster_id)
+    rows = list(queryset.order_by("name", "id"))
+    payload = {
+        "databases": [
+            {
+                "id": str(database.id),
+                "name": database.name,
+                "cluster_id": database.cluster_id,
+            }
+            for database in rows
+        ],
+        "count": len(rows),
+        "total": len(rows),
+    }
+    return Response(payload, status=http_status.HTTP_200_OK)
 
 
 @extend_schema(

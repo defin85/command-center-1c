@@ -215,6 +215,103 @@ def test_trigger_outbound_sync_uses_runtime_default_policy_when_scope_missing() 
 
 
 @pytest.mark.django_db
+def test_trigger_outbound_sync_coalesces_only_existing_outbound_job() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-coalesce-out-{uuid4().hex[:6]}", name="Sync Exec Coalesce Out")
+    database = _create_database(tenant=tenant, suffix="coalesce-out")
+    PoolMasterDataSyncScope.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    )
+    _set_runtime(enabled=True, outbound_enabled=True, inbound_enabled=True)
+    existing_job = PoolMasterDataSyncJob.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+        direction=PoolMasterDataSyncDirection.OUTBOUND,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+        workflow_execution_id=uuid4(),
+        operation_id=uuid4(),
+        metadata={"trigger_count": 1, "policy_source": "database_scope"},
+    )
+
+    result = trigger_pool_master_data_outbound_sync_job(
+        tenant_id=str(tenant.id),
+        database_id=str(database.id),
+        entity_type=PoolMasterDataEntityType.ITEM,
+        canonical_id="item-coalesce-out",
+        origin_system="cc",
+        origin_event_id="evt-coalesce-out",
+    )
+
+    assert result.created_job is False
+    assert result.started_workflow is True
+    assert result.sync_job is not None
+    assert result.sync_job.id == existing_job.id
+    existing_job.refresh_from_db()
+    assert existing_job.direction == PoolMasterDataSyncDirection.OUTBOUND
+    assert existing_job.policy == PoolMasterDataSyncPolicy.BIDIRECTIONAL
+    assert existing_job.metadata["trigger_count"] == 2
+    assert existing_job.metadata["last_requested_policy"] == PoolMasterDataSyncPolicy.BIDIRECTIONAL
+
+
+@pytest.mark.django_db
+def test_trigger_outbound_sync_does_not_reuse_active_inbound_job() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-cross-dir-{uuid4().hex[:6]}", name="Sync Exec Cross Dir")
+    database = _create_database(tenant=tenant, suffix="cross-dir")
+    PoolMasterDataSyncScope.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    )
+    _set_runtime(enabled=True, outbound_enabled=True, inbound_enabled=True)
+    existing_job = PoolMasterDataSyncJob.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+        direction=PoolMasterDataSyncDirection.INBOUND,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+        workflow_execution_id=uuid4(),
+        operation_id=uuid4(),
+    )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id=str(uuid4()),
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = trigger_pool_master_data_outbound_sync_job(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+            canonical_id="item-cross-dir",
+            origin_system="cc",
+            origin_event_id="evt-cross-dir",
+        )
+
+    assert result.created_job is True
+    assert result.sync_job is not None
+    assert result.sync_job.id != existing_job.id
+    assert result.sync_job.direction == PoolMasterDataSyncDirection.OUTBOUND
+    existing_job.refresh_from_db()
+    assert existing_job.direction == PoolMasterDataSyncDirection.INBOUND
+    assert PoolMasterDataSyncJob.objects.filter(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+    ).count() == 2
+
+
+@pytest.mark.django_db
 def test_trigger_outbound_sync_skips_when_outbound_runtime_gate_is_disabled() -> None:
     tenant = Tenant.objects.create(slug=f"sync-exec-skip-{uuid4().hex[:6]}", name="Sync Exec Skip")
     database = _create_database(tenant=tenant, suffix="skip")
@@ -417,6 +514,57 @@ def test_trigger_reconcile_sync_creates_bidirectional_job_and_starts_workflow() 
     assert metadata["last_trigger"]["mode"] == "reconcile_probe"
     assert metadata["last_trigger"]["reconcile_window_id"] == "window-001"
     assert metadata["last_trigger"]["reconcile_window_deadline_at"] == "2026-03-03T12:02:00Z"
+
+
+@pytest.mark.django_db
+def test_trigger_reconcile_sync_does_not_reuse_active_outbound_job() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"sync-exec-reconcile-cross-{uuid4().hex[:6]}",
+        name="Sync Exec Reconcile Cross",
+    )
+    database = _create_database(tenant=tenant, suffix="reconcile-cross")
+    PoolMasterDataSyncScope.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+    )
+    _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True)
+    existing_job = PoolMasterDataSyncJob.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+        direction=PoolMasterDataSyncDirection.OUTBOUND,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+        workflow_execution_id=uuid4(),
+        operation_id=uuid4(),
+    )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id=str(uuid4()),
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = trigger_pool_master_data_reconcile_sync_job(
+            tenant_id=str(tenant.id),
+            database_id=str(database.id),
+            entity_type=PoolMasterDataEntityType.ITEM,
+            reconcile_window_id="window-cross",
+            reconcile_window_deadline_at="2026-03-03T12:02:00Z",
+        )
+
+    assert result.created_job is True
+    assert result.sync_job is not None
+    assert result.sync_job.id != existing_job.id
+    assert result.sync_job.direction == PoolMasterDataSyncDirection.BIDIRECTIONAL
+    existing_job.refresh_from_db()
+    assert existing_job.direction == PoolMasterDataSyncDirection.OUTBOUND
 
 
 @pytest.mark.django_db

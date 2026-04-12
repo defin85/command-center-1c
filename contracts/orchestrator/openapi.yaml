@@ -7577,6 +7577,235 @@ paths:
           description: ''
         '401':
           description: Unauthorized
+  /api/v2/pools/master-data/sync-target-clusters/:
+    get:
+      operationId: v2_pools_master_data_sync_target_clusters_retrieve
+      summary: List sync target clusters
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefClustersResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/sync-target-databases/:
+    get:
+      operationId: v2_pools_master_data_sync_target_databases_retrieve
+      summary: List sync target databases
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: cluster_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefDatabasesResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/sync-launches/:
+    get:
+      operationId: v2_pools_master_data_sync_launches_retrieve
+      summary: List master-data sync launches
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataSyncLaunchListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+    post:
+      operationId: v2_pools_master_data_sync_launches_create
+      summary: Create master-data sync launch
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataSyncLaunchCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataSyncLaunchCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PoolMasterDataSyncLaunchCreateRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataSyncLaunchResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/sync-launches/{id}/:
+    get:
+      operationId: v2_pools_master_data_sync_launches_retrieve_2
+      summary: Get master-data sync launch detail
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PoolMasterDataSyncLaunchResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/master-data/sync-conflicts/:
     get:
       operationId: v2_pools_master_data_sync_conflicts_list
@@ -22088,6 +22317,281 @@ components:
       required:
         - count
         - statuses
+    ClusterRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+        - id
+        - name
+    RefClustersResponse:
+      type: object
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClusterRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+        - clusters
+        - count
+        - total
+    DatabaseRef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - cluster_id
+        - id
+        - name
+    RefDatabasesResponse:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+        - count
+        - databases
+        - total
+    PoolMasterDataSyncLaunchItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        entity_type:
+          type: string
+          enum:
+            - party
+            - item
+            - contract
+            - tax_profile
+        status:
+          type: string
+        reason_code:
+          type: string
+        reason_detail:
+          type: string
+        child_job_id:
+          type: string
+          format: uuid
+          nullable: true
+        child_job_status:
+          type: string
+        child_workflow_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        child_operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - database_id
+        - database_name
+        - entity_type
+        - status
+        - reason_code
+        - reason_detail
+        - child_job_status
+    PoolMasterDataSyncLaunch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+            - inbound
+            - outbound
+            - reconcile
+        target_mode:
+          type: string
+          enum:
+            - cluster_all
+            - database_set
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        database_ids:
+          type: array
+          items:
+            type: string
+        entity_scope:
+          type: array
+          items:
+            type: string
+            enum:
+              - party
+              - item
+              - contract
+              - tax_profile
+        status:
+          type: string
+          enum:
+            - pending
+            - running
+            - completed
+            - failed
+        workflow_execution_id:
+          type: string
+          format: uuid
+          nullable: true
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        requested_by_id:
+          type: integer
+          nullable: true
+        requested_by_username:
+          type: string
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        aggregate_counters:
+          type: object
+          additionalProperties: true
+        progress:
+          type: object
+          additionalProperties: true
+        child_job_status_counts:
+          type: object
+          additionalProperties: true
+        audit_trail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataSyncLaunchItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - mode
+        - target_mode
+        - database_ids
+        - entity_scope
+        - status
+        - requested_by_username
+        - last_error_code
+        - last_error
+    PoolMasterDataSyncLaunchListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        launches:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataSyncLaunch'
+      required:
+        - count
+        - limit
+        - offset
+        - launches
+    PoolMasterDataSyncLaunchCreateRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+            - inbound
+            - outbound
+            - reconcile
+        target_mode:
+          type: string
+          enum:
+            - cluster_all
+            - database_set
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        database_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 64
+        entity_scope:
+          type: array
+          items:
+            type: string
+            enum:
+              - party
+              - item
+              - contract
+              - tax_profile
+      required:
+        - mode
+        - target_mode
+        - entity_scope
+    PoolMasterDataSyncLaunchResponse:
+      type: object
+      properties:
+        launch:
+          $ref: '#/components/schemas/PoolMasterDataSyncLaunch'
+      required:
+        - launch
     PoolMasterDataSyncConflict:
       type: object
       properties:
@@ -24740,17 +25244,6 @@ components:
       required:
         - id
         - username
-    ClusterRef:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-      required:
-        - id
-        - name
     EffectiveAccessClusterSourceItem:
       type: object
       properties:
@@ -24784,21 +25277,6 @@ components:
       required:
         - cluster
         - level
-    DatabaseRef:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        cluster_id:
-          type: string
-          format: uuid
-          nullable: true
-      required:
-        - cluster_id
-        - id
-        - name
     EffectiveAccessDatabaseSourceItem:
       type: object
       properties:
@@ -25910,36 +26388,6 @@ components:
       required:
         - artifacts
         - count
-        - total
-    RefClustersResponse:
-      type: object
-      properties:
-        clusters:
-          type: array
-          items:
-            $ref: '#/components/schemas/ClusterRef'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-        - clusters
-        - count
-        - total
-    RefDatabasesResponse:
-      type: object
-      properties:
-        databases:
-          type: array
-          items:
-            $ref: '#/components/schemas/DatabaseRef'
-        count:
-          type: integer
-        total:
-          type: integer
-      required:
-        - count
-        - databases
         - total
     RefOperationTemplatesResponse:
       type: object

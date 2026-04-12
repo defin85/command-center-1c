@@ -365,6 +365,16 @@ urlpatterns = [
         name='pools-master-data-sync-status-list',
     ),
     path(
+        'pools/master-data/sync-target-clusters/',
+        intercompany_pools_master_data_sync.list_sync_target_clusters,
+        name='pools-master-data-sync-target-clusters',
+    ),
+    path(
+        'pools/master-data/sync-target-databases/',
+        intercompany_pools_master_data_sync.list_sync_target_databases,
+        name='pools-master-data-sync-target-databases',
+    ),
+    path(
         'pools/master-data/sync-launches/',
         intercompany_pools_master_data_sync.sync_launches_collection,
         name='pools-master-data-sync-launches',

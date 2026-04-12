@@ -2581,7 +2581,7 @@ export async function upsertMasterDataBinding(
 
 export async function listPoolTargetClusters(): Promise<SimpleClusterRef[]> {
   const response = await apiClient.get<{ clusters: SimpleClusterRef[] }>(
-    '/api/v2/rbac/ref-clusters/',
+    '/api/v2/pools/master-data/sync-target-clusters/',
     {
       params: { limit: 200, offset: 0 },
       skipGlobalError: true,
@@ -2594,7 +2594,7 @@ export async function listPoolTargetDatabases(
   params: { cluster_id?: string } = {}
 ): Promise<SimpleDatabaseRef[]> {
   const response = await apiClient.get<{ databases: SimpleDatabaseRef[] }>(
-    '/api/v2/rbac/ref-databases/',
+    '/api/v2/pools/master-data/sync-target-databases/',
     {
       params: {
         limit: 500,

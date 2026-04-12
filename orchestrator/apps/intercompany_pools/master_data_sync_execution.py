@@ -154,6 +154,44 @@ def reset_pool_master_data_sync_inbound_callbacks() -> None:
     _INBOUND_NOTIFY_CHANGES_RECEIVED_KWARGS.clear()
 
 
+def _find_active_sync_job(
+    *,
+    tenant_id: str,
+    database_id: str,
+    entity_type: str,
+    direction: str,
+) -> PoolMasterDataSyncJob | None:
+    return (
+        PoolMasterDataSyncJob.objects.select_for_update()
+        .filter(
+            tenant_id=tenant_id,
+            database_id=database_id,
+            entity_type=entity_type,
+            direction=direction,
+            status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def _update_coalesced_sync_job_metadata(
+    *,
+    sync_job: PoolMasterDataSyncJob,
+    last_trigger: Mapping[str, Any],
+    requested_policy: str,
+    requested_policy_source: str,
+) -> PoolMasterDataSyncJob:
+    metadata = dict(sync_job.metadata or {})
+    metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
+    metadata["last_trigger"] = dict(last_trigger)
+    metadata["last_requested_policy"] = requested_policy
+    metadata["last_requested_policy_source"] = requested_policy_source
+    sync_job.metadata = metadata
+    sync_job.save(update_fields=["metadata", "updated_at"])
+    return sync_job
+
+
 def trigger_pool_master_data_outbound_sync_job(
     *,
     tenant_id: str,
@@ -270,16 +308,17 @@ def trigger_pool_master_data_outbound_sync_job(
         )
 
     with transaction.atomic():
-        existing_job = (
-            PoolMasterDataSyncJob.objects.select_for_update()
-            .filter(
-                tenant_id=normalized_tenant_id,
-                database_id=normalized_database_id,
-                entity_type=normalized_entity_type,
-                status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
-            )
-            .order_by("-created_at")
-            .first()
+        last_trigger = {
+            "canonical_id": normalized_canonical_id,
+            "origin_system": normalized_origin_system,
+            "origin_event_id": normalized_origin_event_id,
+            "at": timezone.now().isoformat(),
+        }
+        existing_job = _find_active_sync_job(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            direction=PoolMasterDataSyncDirection.OUTBOUND,
         )
         if existing_job is None:
             sync_job = PoolMasterDataSyncJob.objects.create(
@@ -292,30 +331,17 @@ def trigger_pool_master_data_outbound_sync_job(
                 metadata={
                     "trigger_count": 1,
                     "policy_source": policy_decision.source,
-                    "last_trigger": {
-                        "canonical_id": normalized_canonical_id,
-                        "origin_system": normalized_origin_system,
-                        "origin_event_id": normalized_origin_event_id,
-                        "at": timezone.now().isoformat(),
-                    },
+                    "last_trigger": last_trigger,
                 },
             )
             created_job = True
         else:
-            sync_job = existing_job
-            metadata = dict(sync_job.metadata or {})
-            metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
-            metadata["policy_source"] = policy_decision.source
-            metadata["last_trigger"] = {
-                "canonical_id": normalized_canonical_id,
-                "origin_system": normalized_origin_system,
-                "origin_event_id": normalized_origin_event_id,
-                "at": timezone.now().isoformat(),
-            }
-            sync_job.policy = policy_decision.policy
-            sync_job.direction = PoolMasterDataSyncDirection.OUTBOUND
-            sync_job.metadata = metadata
-            sync_job.save(update_fields=["policy", "direction", "metadata", "updated_at"])
+            sync_job = _update_coalesced_sync_job_metadata(
+                sync_job=existing_job,
+                last_trigger=last_trigger,
+                requested_policy=policy_decision.policy,
+                requested_policy_source=policy_decision.source,
+            )
             created_job = False
 
     start_result = start_pool_master_data_sync_job_workflow(
@@ -441,16 +467,16 @@ def trigger_pool_master_data_inbound_sync_job(
         )
 
     with transaction.atomic():
-        existing_job = (
-            PoolMasterDataSyncJob.objects.select_for_update()
-            .filter(
-                tenant_id=normalized_tenant_id,
-                database_id=normalized_database_id,
-                entity_type=normalized_entity_type,
-                status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
-            )
-            .order_by("-created_at")
-            .first()
+        last_trigger = {
+            "origin_system": normalized_origin_system,
+            "origin_event_id": normalized_origin_event_id,
+            "at": timezone.now().isoformat(),
+        }
+        existing_job = _find_active_sync_job(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            direction=PoolMasterDataSyncDirection.INBOUND,
         )
         if existing_job is None:
             sync_job = PoolMasterDataSyncJob.objects.create(
@@ -463,28 +489,17 @@ def trigger_pool_master_data_inbound_sync_job(
                 metadata={
                     "trigger_count": 1,
                     "policy_source": policy_decision.source,
-                    "last_trigger": {
-                        "origin_system": normalized_origin_system,
-                        "origin_event_id": normalized_origin_event_id,
-                        "at": timezone.now().isoformat(),
-                    },
+                    "last_trigger": last_trigger,
                 },
             )
             created_job = True
         else:
-            sync_job = existing_job
-            metadata = dict(sync_job.metadata or {})
-            metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
-            metadata["policy_source"] = policy_decision.source
-            metadata["last_trigger"] = {
-                "origin_system": normalized_origin_system,
-                "origin_event_id": normalized_origin_event_id,
-                "at": timezone.now().isoformat(),
-            }
-            sync_job.policy = policy_decision.policy
-            sync_job.direction = PoolMasterDataSyncDirection.INBOUND
-            sync_job.metadata = metadata
-            sync_job.save(update_fields=["policy", "direction", "metadata", "updated_at"])
+            sync_job = _update_coalesced_sync_job_metadata(
+                sync_job=existing_job,
+                last_trigger=last_trigger,
+                requested_policy=policy_decision.policy,
+                requested_policy_source=policy_decision.source,
+            )
             created_job = False
 
     start_result = start_pool_master_data_sync_job_workflow(
@@ -603,16 +618,19 @@ def trigger_pool_master_data_reconcile_sync_job(
     )
 
     with transaction.atomic():
-        existing_job = (
-            PoolMasterDataSyncJob.objects.select_for_update()
-            .filter(
-                tenant_id=normalized_tenant_id,
-                database_id=normalized_database_id,
-                entity_type=normalized_entity_type,
-                status__in=[PoolMasterDataSyncJobStatus.PENDING, PoolMasterDataSyncJobStatus.RUNNING],
-            )
-            .order_by("-created_at")
-            .first()
+        last_trigger = {
+            "origin_system": normalized_origin_system,
+            "origin_event_id": normalized_origin_event_id,
+            "mode": "reconcile_probe",
+            "reconcile_window_id": normalized_window_id,
+            "reconcile_window_deadline_at": normalized_window_deadline_at,
+            "at": timezone.now().isoformat(),
+        }
+        existing_job = _find_active_sync_job(
+            tenant_id=normalized_tenant_id,
+            database_id=normalized_database_id,
+            entity_type=normalized_entity_type,
+            direction=PoolMasterDataSyncDirection.BIDIRECTIONAL,
         )
         if existing_job is None:
             sync_job = PoolMasterDataSyncJob.objects.create(
@@ -625,34 +643,17 @@ def trigger_pool_master_data_reconcile_sync_job(
                 metadata={
                     "trigger_count": 1,
                     "policy_source": policy_decision.source,
-                    "last_trigger": {
-                        "origin_system": normalized_origin_system,
-                        "origin_event_id": normalized_origin_event_id,
-                        "mode": "reconcile_probe",
-                        "reconcile_window_id": normalized_window_id,
-                        "reconcile_window_deadline_at": normalized_window_deadline_at,
-                        "at": timezone.now().isoformat(),
-                    },
+                    "last_trigger": last_trigger,
                 },
             )
             created_job = True
         else:
-            sync_job = existing_job
-            metadata = dict(sync_job.metadata or {})
-            metadata["trigger_count"] = int(metadata.get("trigger_count") or 0) + 1
-            metadata["policy_source"] = policy_decision.source
-            metadata["last_trigger"] = {
-                "origin_system": normalized_origin_system,
-                "origin_event_id": normalized_origin_event_id,
-                "mode": "reconcile_probe",
-                "reconcile_window_id": normalized_window_id,
-                "reconcile_window_deadline_at": normalized_window_deadline_at,
-                "at": timezone.now().isoformat(),
-            }
-            sync_job.policy = policy_decision.policy
-            sync_job.direction = PoolMasterDataSyncDirection.BIDIRECTIONAL
-            sync_job.metadata = metadata
-            sync_job.save(update_fields=["policy", "direction", "metadata", "updated_at"])
+            sync_job = _update_coalesced_sync_job_metadata(
+                sync_job=existing_job,
+                last_trigger=last_trigger,
+                requested_policy=policy_decision.policy,
+                requested_policy_source=policy_decision.source,
+            )
             created_job = False
 
     start_result = start_pool_master_data_sync_job_workflow(

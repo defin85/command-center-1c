@@ -101,14 +101,14 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
       return fulfillJson(route, { clusters: [], databases: [] })
     }
-    if (method === 'GET' && path === '/api/v2/rbac/ref-clusters/') {
+    if (method === 'GET' && path === '/api/v2/pools/master-data/sync-target-clusters/') {
       return fulfillJson(route, {
         clusters: [{ id: 'cluster-1', name: 'Main Cluster' }],
         count: 1,
         total: 1,
       })
     }
-    if (method === 'GET' && path === '/api/v2/rbac/ref-databases/') {
+    if (method === 'GET' && path === '/api/v2/pools/master-data/sync-target-databases/') {
       return fulfillJson(route, {
         databases: [{ id: DATABASE_ID, name: 'Main DB', cluster_id: 'cluster-1' }],
         count: 1,

@@ -290,6 +290,14 @@ paths:
     $ref: paths/api_v2_pools_master-data_gl-account-sets_{id}_publish_.yaml
   /api/v2/pools/master-data/sync-status/:
     $ref: paths/api_v2_pools_master-data_sync-status_.yaml
+  /api/v2/pools/master-data/sync-target-clusters/:
+    $ref: paths/api_v2_pools_master-data_sync-target-clusters_.yaml
+  /api/v2/pools/master-data/sync-target-databases/:
+    $ref: paths/api_v2_pools_master-data_sync-target-databases_.yaml
+  /api/v2/pools/master-data/sync-launches/:
+    $ref: paths/api_v2_pools_master-data_sync-launches_.yaml
+  /api/v2/pools/master-data/sync-launches/{id}/:
+    $ref: paths/api_v2_pools_master-data_sync-launches_{id}_.yaml
   /api/v2/pools/master-data/sync-conflicts/:
     $ref: paths/api_v2_pools_master-data_sync-conflicts_.yaml
   /api/v2/pools/master-data/sync-conflicts/{id}/retry/:

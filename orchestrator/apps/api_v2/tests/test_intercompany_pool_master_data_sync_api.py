@@ -400,6 +400,73 @@ def test_master_data_sync_launches_create_list_and_detail_preserve_snapshot(
 
 
 @pytest.mark.django_db
+def test_master_data_sync_target_refs_are_tenant_scoped_and_cluster_aware(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    cluster_a = _create_cluster(tenant=default_tenant, name=f"Sync Target Cluster A {uuid4().hex[:6]}")
+    cluster_b = _create_cluster(tenant=default_tenant, name=f"Sync Target Cluster B {uuid4().hex[:6]}")
+    database_a = _create_database(tenant=default_tenant, name=f"sync-target-db-a-{uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"sync-target-db-b-{uuid4().hex[:6]}")
+    database_a.cluster = cluster_a
+    database_b.cluster = cluster_b
+    database_a.save(update_fields=["cluster", "updated_at"])
+    database_b.save(update_fields=["cluster", "updated_at"])
+
+    other_tenant = Tenant.objects.create(slug=f"sync-target-other-{uuid4().hex[:8]}", name="Sync Target Other")
+    other_cluster = _create_cluster(tenant=other_tenant, name=f"Sync Target Cluster Other {uuid4().hex[:6]}")
+    other_database = _create_database(tenant=other_tenant, name=f"sync-target-db-other-{uuid4().hex[:6]}")
+    other_database.cluster = other_cluster
+    other_database.save(update_fields=["cluster", "updated_at"])
+
+    clusters_response = authenticated_client.get("/api/v2/pools/master-data/sync-target-clusters/")
+    assert clusters_response.status_code == 200
+    cluster_ids = {row["id"] for row in clusters_response.json()["clusters"]}
+    assert str(cluster_a.id) in cluster_ids
+    assert str(cluster_b.id) in cluster_ids
+    assert str(other_cluster.id) not in cluster_ids
+
+    databases_response = authenticated_client.get(
+        f"/api/v2/pools/master-data/sync-target-databases/?cluster_id={cluster_a.id}"
+    )
+    assert databases_response.status_code == 200
+    database_ids = [row["id"] for row in databases_response.json()["databases"]]
+    assert database_ids == [str(database_a.id)]
+    assert str(database_b.id) not in database_ids
+    assert str(other_database.id) not in database_ids
+
+
+@pytest.mark.django_db
+def test_master_data_sync_target_refs_allow_tenant_member_without_manage_rbac(
+    default_tenant: Tenant,
+) -> None:
+    member_user = User.objects.create_user(username=f"pool-mdm-sync-target-{uuid4().hex[:8]}", password="pass")
+    TenantMember.objects.update_or_create(
+        tenant=default_tenant,
+        user=member_user,
+        defaults={"role": TenantMember.ROLE_MEMBER},
+    )
+    member_client = APIClient()
+    member_client.force_authenticate(user=member_user)
+    member_client.credentials(HTTP_X_CC1C_TENANT_ID=str(default_tenant.id))
+
+    cluster = _create_cluster(tenant=default_tenant, name=f"Sync Target Member {uuid4().hex[:6]}")
+    database = _create_database(tenant=default_tenant, name=f"sync-target-member-{uuid4().hex[:6]}")
+    database.cluster = cluster
+    database.save(update_fields=["cluster", "updated_at"])
+
+    clusters_response = member_client.get("/api/v2/pools/master-data/sync-target-clusters/")
+    databases_response = member_client.get(
+        f"/api/v2/pools/master-data/sync-target-databases/?cluster_id={cluster.id}"
+    )
+
+    assert clusters_response.status_code == 200
+    assert databases_response.status_code == 200
+    assert any(row["id"] == str(cluster.id) for row in clusters_response.json()["clusters"])
+    assert [row["id"] for row in databases_response.json()["databases"]] == [str(database.id)]
+
+
+@pytest.mark.django_db
 def test_master_data_sync_launch_create_rejects_empty_database_set(
     authenticated_client: APIClient,
 ) -> None:
