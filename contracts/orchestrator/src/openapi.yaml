@@ -70,6 +70,8 @@ paths:
     $ref: paths/api_v2_databases_get-extensions-snapshot_.yaml
   /api/v2/databases/get-metadata-management/:
     $ref: paths/api_v2_databases_get-metadata-management_.yaml
+  /api/v2/databases/update-pool-master-data-sync-eligibility/:
+    $ref: paths/api_v2_databases_update-pool-master-data-sync-eligibility_.yaml
   /api/v2/databases/health-check/:
     $ref: paths/api_v2_databases_health-check_.yaml
   /api/v2/databases/list-databases/:

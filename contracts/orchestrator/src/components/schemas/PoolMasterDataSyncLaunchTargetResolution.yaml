@@ -1,0 +1,25 @@
+type: object
+properties:
+  eligible_count:
+    type: integer
+  excluded_count:
+    type: integer
+  unconfigured_count:
+    type: integer
+  eligible_database_ids:
+    type: array
+    items:
+      type: string
+      format: uuid
+  excluded_databases:
+    type: array
+    items:
+      $ref: ./PoolMasterDataSyncLaunchTargetResolutionEntry.yaml
+  unconfigured_databases:
+    type: array
+    items:
+      $ref: ./PoolMasterDataSyncLaunchTargetResolutionEntry.yaml
+required:
+  - eligible_count
+  - excluded_count
+  - unconfigured_count

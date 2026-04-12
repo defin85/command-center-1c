@@ -1,0 +1,14 @@
+type: object
+properties:
+  databases:
+    type: array
+    items:
+      $ref: ./PoolMasterDataSyncTargetDatabaseRef.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - databases
+  - count
+  - total

@@ -55,6 +55,15 @@ def _create_database(*, tenant: Tenant, cluster: Cluster | None, suffix: str) ->
     )
 
 
+def _set_cluster_all_eligibility_state(*, database: Database, state: str) -> None:
+    metadata = dict(database.metadata or {})
+    namespace = dict(metadata.get("pool_master_data_sync") or {})
+    namespace["cluster_all_eligibility"] = state
+    metadata["pool_master_data_sync"] = namespace
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+
+
 def _create_sync_job(
     *,
     tenant: Tenant,
@@ -401,6 +410,8 @@ def test_create_sync_launch_request_preserves_immutable_target_snapshot() -> Non
     cluster = _create_cluster(tenant=tenant, suffix="snapshot")
     database_a = _create_database(tenant=tenant, cluster=cluster, suffix="snapshot-a")
     database_b = _create_database(tenant=tenant, cluster=cluster, suffix="snapshot-b")
+    _set_cluster_all_eligibility_state(database=database_a, state="eligible")
+    _set_cluster_all_eligibility_state(database=database_b, state="excluded")
 
     with patch(
         "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
@@ -417,11 +428,26 @@ def test_create_sync_launch_request_preserves_immutable_target_snapshot() -> Non
             actor_username="snapshot-admin",
         )
 
-    assert launch_request.database_ids == [str(database_a.id), str(database_b.id)]
+    assert launch_request.database_ids == [str(database_a.id)]
+    assert launch_request.metadata["target_resolution"] == {
+        "eligible_count": 1,
+        "excluded_count": 1,
+        "unconfigured_count": 0,
+        "eligible_database_ids": [str(database_a.id)],
+        "excluded_databases": [
+            {
+                "database_id": str(database_b.id),
+                "database_name": database_b.name,
+                "cluster_id": str(cluster.id),
+                "cluster_all_eligibility_state": "excluded",
+            }
+        ],
+        "unconfigured_databases": [],
+    }
 
     database_c = _create_database(tenant=tenant, cluster=cluster, suffix="snapshot-c")
     refreshed = PoolMasterDataSyncLaunchRequest.objects.get(id=launch_request.id)
-    assert refreshed.database_ids == [str(database_a.id), str(database_b.id)]
+    assert refreshed.database_ids == [str(database_a.id)]
     assert str(database_c.id) not in refreshed.database_ids
 
 

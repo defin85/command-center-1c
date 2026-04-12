@@ -14,8 +14,10 @@ import { DatabaseMetadataManagementDrawer } from '../DatabaseMetadataManagementD
 const mockUseDatabaseMetadataManagement = vi.fn()
 const mockUseReverifyDatabaseConfigurationProfile = vi.fn()
 const mockUseRefreshDatabaseMetadataSnapshot = vi.fn()
+const mockUseUpdateDatabaseMasterDataSyncEligibility = vi.fn()
 const mockReverifyMutate = vi.fn()
 const mockRefreshMutate = vi.fn()
+const mockUpdateEligibilityMutate = vi.fn()
 
 vi.mock('../../../../observability/uiActionJournal', () => ({
   trackUiAction: mockTrackUiAction,
@@ -27,7 +29,30 @@ vi.mock('../../../../api/queries/databases', () => ({
     mockUseReverifyDatabaseConfigurationProfile(...args)
   ),
   useRefreshDatabaseMetadataSnapshot: (...args: unknown[]) => mockUseRefreshDatabaseMetadataSnapshot(...args),
+  useUpdateDatabaseMasterDataSyncEligibility: (...args: unknown[]) => (
+    mockUseUpdateDatabaseMasterDataSyncEligibility(...args)
+  ),
 }))
+
+const buildPoolMasterDataSyncState = (overrides: Record<string, unknown> = {}) => ({
+  cluster_all_eligibility: {
+    state: 'unconfigured',
+  },
+  readiness: {
+    cluster_attached: true,
+    odata_configured: true,
+    credentials_configured: true,
+    ibcmd_profile_configured: false,
+    service_mapping_status: 'missing',
+    service_mapping_count: 0,
+    runtime_enabled: true,
+    inbound_enabled: true,
+    outbound_enabled: true,
+    default_policy: 'cc_master',
+    health_status: 'healthy',
+  },
+  ...overrides,
+})
 
 const renderDrawer = (props?: Partial<ComponentProps<typeof DatabaseMetadataManagementDrawer>>) => {
   const onClose = vi.fn()
@@ -56,10 +81,12 @@ describe('DatabaseMetadataManagementDrawer', () => {
   beforeEach(() => {
     mockUseReverifyDatabaseConfigurationProfile.mockReset()
     mockUseRefreshDatabaseMetadataSnapshot.mockReset()
+    mockUseUpdateDatabaseMasterDataSyncEligibility.mockReset()
     mockUseDatabaseMetadataManagement.mockReset()
     mockTrackUiAction.mockClear()
     mockReverifyMutate.mockReset()
     mockRefreshMutate.mockReset()
+    mockUpdateEligibilityMutate.mockReset()
     mockUseReverifyDatabaseConfigurationProfile.mockReturnValue({
       mutate: mockReverifyMutate,
       isPending: false,
@@ -67,6 +94,11 @@ describe('DatabaseMetadataManagementDrawer', () => {
     })
     mockUseRefreshDatabaseMetadataSnapshot.mockReturnValue({
       mutate: mockRefreshMutate,
+      isPending: false,
+      data: null,
+    })
+    mockUseUpdateDatabaseMasterDataSyncEligibility.mockReturnValue({
+      mutate: mockUpdateEligibilityMutate,
       isPending: false,
       data: null,
     })
@@ -116,6 +148,9 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: 'b'.repeat(64),
           publication_drift: true,
         },
+        pool_master_data_sync: buildPoolMasterDataSyncState({
+          cluster_all_eligibility: { state: 'eligible' },
+        }),
       },
     })
 
@@ -125,8 +160,11 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(screen.getByText('Metadata management: Accounting DB')).toBeInTheDocument()
     expect(screen.getByText('Configuration profile')).toBeInTheDocument()
     expect(screen.getByText('Metadata snapshot')).toBeInTheDocument()
+    expect(screen.getByText('Pool master-data cluster_all eligibility')).toBeInTheDocument()
+    expect(screen.getByText('Pool master-data readiness')).toBeInTheDocument()
     expect(screen.getByText('Verified')).toBeInTheDocument()
     expect(screen.getByText('Drift')).toBeInTheDocument()
+    expect(screen.getByText('Eligible')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeInTheDocument()
 
@@ -190,6 +228,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: '',
           publication_drift: false,
         },
+        pool_master_data_sync: buildPoolMasterDataSyncState(),
       },
     })
 
@@ -263,6 +302,9 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: '',
           publication_drift: false,
         },
+        pool_master_data_sync: buildPoolMasterDataSyncState({
+          cluster_all_eligibility: { state: 'excluded' },
+        }),
       },
     })
 
@@ -270,6 +312,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
 
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save eligibility' })).toBeDisabled()
   })
 
   it('tracks reverify and refresh actions from the metadata drawer', async () => {
@@ -316,6 +359,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
           observed_metadata_hash: '',
           publication_drift: false,
         },
+        pool_master_data_sync: buildPoolMasterDataSyncState(),
       },
     })
 
@@ -348,6 +392,79 @@ describe('DatabaseMetadataManagementDrawer', () => {
     )
     expect(mockRefreshMutate).toHaveBeenCalledWith(
       { database_id: 'db-1' },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    )
+  })
+
+  it('updates cluster_all eligibility through the metadata drawer', async () => {
+    mockUseDatabaseMetadataManagement.mockReturnValue({
+      isLoading: false,
+      error: null,
+      data: {
+        database_id: 'db-1',
+        configuration_profile: {
+          status: 'verified',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          config_generation_id: 'gen-1',
+          config_root_name: 'БухгалтерияПредприятия',
+          config_vendor: '1С',
+          config_name_source: 'synonym_ru',
+          verification_operation_id: '',
+          verified_at: '2026-03-12T00:00:00Z',
+          generation_probe_requested_at: null,
+          generation_probe_checked_at: null,
+          observed_metadata_hash: '',
+          canonical_metadata_hash: '',
+          publication_drift: false,
+          reverify_available: true,
+          reverify_blocker_code: '',
+          reverify_blocker_message: '',
+          reverify_blocking_action: '',
+        },
+        metadata_snapshot: {
+          status: 'available',
+          missing_reason: '',
+          snapshot_id: 'snapshot-1',
+          source: 'db',
+          fetched_at: '2026-03-12T01:00:00Z',
+          catalog_version: 'v1:abc',
+          config_name: 'Бухгалтерия предприятия, редакция 3.0',
+          config_version: '3.0.193.19',
+          extensions_fingerprint: '',
+          metadata_hash: 'a'.repeat(64),
+          resolution_mode: 'database_scope',
+          is_shared_snapshot: false,
+          provenance_database_id: 'db-1',
+          provenance_confirmed_at: '2026-03-12T01:00:00Z',
+          observed_metadata_hash: '',
+          publication_drift: false,
+        },
+        pool_master_data_sync: buildPoolMasterDataSyncState(),
+      },
+    })
+
+    renderDrawer()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('radio', { name: /Eligible: include this database in cluster_all/i }))
+    await user.click(screen.getByTestId('database-metadata-management-save-eligibility'))
+
+    expect(mockTrackUiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actionKind: 'operator.action',
+        actionName: 'Update cluster_all eligibility',
+      }),
+      expect.any(Function),
+    )
+    expect(mockUpdateEligibilityMutate).toHaveBeenCalledWith(
+      {
+        database_id: 'db-1',
+        cluster_all_eligibility_state: 'eligible',
+      },
       expect.objectContaining({
         onSuccess: expect.any(Function),
         onError: expect.any(Function),

@@ -9,7 +9,10 @@ properties:
     $ref: ./DatabaseMetadataManagementConfigurationProfile.yaml
   metadata_snapshot:
     $ref: ./DatabaseMetadataManagementSnapshot.yaml
+  pool_master_data_sync:
+    $ref: ./DatabaseMetadataManagementPoolMasterDataSync.yaml
 required:
   - database_id
   - configuration_profile
   - metadata_snapshot
+  - pool_master_data_sync

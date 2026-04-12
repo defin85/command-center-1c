@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Form, Select } from 'antd'
+import { Alert, Button, Form, Select, Space, Typography } from 'antd'
 
 import {
   type CreatePoolMasterDataSyncLaunchPayload,
@@ -28,7 +28,14 @@ type SyncLaunchDrawerProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
   loadingTargets: boolean
   onClose: () => void
+  onOpenEligibilityContext?: (context: { clusterId: string; databaseId?: string }) => void
   onSubmit: (payload: CreatePoolMasterDataSyncLaunchPayload) => Promise<void>
+}
+
+type ClusterEligibilitySummary = {
+  eligibleCount: number
+  excluded: SimpleDatabaseRef[]
+  unconfigured: SimpleDatabaseRef[]
 }
 
 const LAUNCH_MODE_OPTIONS: Array<{ value: PoolMasterDataSyncLaunchMode; label: string }> = [
@@ -50,6 +57,7 @@ export function SyncLaunchDrawer({
   registryEntries,
   loadingTargets,
   onClose,
+  onOpenEligibilityContext,
   onSubmit,
 }: SyncLaunchDrawerProps) {
   const [form] = Form.useForm<SyncLauncherFormValues>()
@@ -72,6 +80,32 @@ export function SyncLaunchDrawer({
   const launchEntityTypeOptions = useMemo(
     () => getSyncEntityOptions(registryEntries, launchMode ?? 'inbound'),
     [launchMode, registryEntries]
+  )
+
+  const selectedClusterDatabases = useMemo(
+    () => databases.filter((database) => database.cluster_id === watchedClusterId),
+    [databases, watchedClusterId],
+  )
+
+  const clusterEligibilitySummary = useMemo<ClusterEligibilitySummary | null>(() => {
+    if (launchTargetMode !== 'cluster_all' || !watchedClusterId) {
+      return null
+    }
+    return {
+      eligibleCount: selectedClusterDatabases.filter(
+        (database) => database.cluster_all_eligibility_state === 'eligible'
+      ).length,
+      excluded: selectedClusterDatabases.filter(
+        (database) => database.cluster_all_eligibility_state === 'excluded'
+      ),
+      unconfigured: selectedClusterDatabases.filter(
+        (database) => database.cluster_all_eligibility_state === 'unconfigured'
+      ),
+    }
+  }, [launchTargetMode, selectedClusterDatabases, watchedClusterId])
+
+  const clusterAllBlocked = Boolean(
+    clusterEligibilitySummary && clusterEligibilitySummary.unconfigured.length > 0
   )
 
   const filteredLauncherDatabases = useMemo(() => {
@@ -128,6 +162,10 @@ export function SyncLaunchDrawer({
   const handleSubmit = async () => {
     try {
       setSubmitError('')
+      if (clusterAllBlocked) {
+        setSubmitError('Resolve cluster_all eligibility in /databases before launch.')
+        return
+      }
       const values = await form.validateFields()
       setSubmitting(true)
       await onSubmit({
@@ -158,6 +196,7 @@ export function SyncLaunchDrawer({
       subtitle="Create a cluster-wide or database-scoped manual sync launch request."
       submitText="Launch"
       confirmLoading={submitting}
+      submitDisabled={submitting || clusterAllBlocked}
       drawerTestId="sync-launch-drawer"
       submitButtonTestId="sync-launch-submit"
     >
@@ -193,20 +232,67 @@ export function SyncLaunchDrawer({
         </Form.Item>
 
         {launchTargetMode === 'cluster_all' ? (
-          <Form.Item
-            label="Cluster"
-            name="cluster_id"
-            rules={[{ required: true, message: 'Select cluster.' }]}
-          >
-            <Select
-              data-testid="sync-launch-cluster"
-              loading={loadingTargets}
-              options={clusters.map((cluster) => ({
-                value: cluster.id,
-                label: cluster.name,
-              }))}
-            />
-          </Form.Item>
+          <>
+            <Form.Item
+              label="Cluster"
+              name="cluster_id"
+              rules={[{ required: true, message: 'Select cluster.' }]}
+            >
+              <Select
+                data-testid="sync-launch-cluster"
+                loading={loadingTargets}
+                options={clusters.map((cluster) => ({
+                  value: cluster.id,
+                  label: cluster.name,
+                }))}
+              />
+            </Form.Item>
+
+            {clusterEligibilitySummary && watchedClusterId ? (
+              <Alert
+                type={clusterAllBlocked ? 'error' : 'info'}
+                showIcon
+                data-testid="sync-launch-cluster-all-summary"
+                message={`Cluster summary: ${clusterEligibilitySummary.eligibleCount} eligible, ${clusterEligibilitySummary.excluded.length} excluded, ${clusterEligibilitySummary.unconfigured.length} unconfigured.`}
+                description={(
+                  <Space direction="vertical" size={4}>
+                    <Typography.Text>
+                      Eligible databases will be included in cluster_all.
+                    </Typography.Text>
+                    {clusterEligibilitySummary.excluded.length > 0 ? (
+                      <Typography.Text>
+                        Excluded from cluster_all: {clusterEligibilitySummary.excluded.map((database) => database.name).join(', ')}.
+                      </Typography.Text>
+                    ) : null}
+                    {clusterEligibilitySummary.unconfigured.length > 0 ? (
+                      <Typography.Text>
+                        Resolve eligibility in /databases before launch for: {clusterEligibilitySummary.unconfigured.map((database) => database.name).join(', ')}.
+                      </Typography.Text>
+                    ) : null}
+                    {clusterEligibilitySummary.excluded.length > 0 ? (
+                      <Typography.Text>
+                        Use Database Set for one-off launches that must include excluded databases.
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
+                )}
+                action={clusterAllBlocked && onOpenEligibilityContext ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      onOpenEligibilityContext({
+                        clusterId: watchedClusterId,
+                        databaseId: clusterEligibilitySummary.unconfigured[0]?.id,
+                      })
+                    }}
+                    data-testid="sync-launch-open-eligibility-handoff"
+                  >
+                    Open /databases
+                  </Button>
+                ) : undefined}
+              />
+            ) : null}
+          </>
         ) : null}
 
         {launchTargetMode === 'database_set' ? (

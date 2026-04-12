@@ -14,8 +14,10 @@ from apps.databases.models import Cluster, Database
 from apps.intercompany_pools.master_data_sync_launch_service import (
     SYNC_LAUNCH_CLUSTER_NOT_FOUND,
     SYNC_LAUNCH_DATABASE_NOT_FOUND,
+    SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED,
     SYNC_LAUNCH_EMPTY_TARGETS,
     SYNC_LAUNCH_REQUEST_NOT_FOUND,
+    SyncLaunchValidationError,
     create_pool_master_data_sync_launch_request,
     get_pool_master_data_sync_launch_request,
     list_pool_master_data_sync_launch_requests,
@@ -33,6 +35,10 @@ from apps.intercompany_pools.master_data_registry import (
     get_pool_master_data_entity_types_for_capabilities,
 )
 from apps.intercompany_pools.master_data_sync_read_model import list_master_data_sync_status_rows
+from apps.intercompany_pools.master_data_sync_cluster_all_eligibility import (
+    POOL_MASTER_DATA_SYNC_CLUSTER_ALL_ELIGIBILITY_VALUES,
+    serialize_pool_master_data_sync_cluster_all_database_entry,
+)
 from apps.intercompany_pools.models import (
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
@@ -44,7 +50,7 @@ from apps.tenancy.models import Tenant
 from apps.tenancy.models import TenantMember
 
 from .intercompany_pools import _problem, _resolve_tenant_id
-from .rbac.serializers_core import RefClustersResponseSerializer, RefDatabasesResponseSerializer
+from .rbac.serializers_core import RefClustersResponseSerializer
 
 SCHEDULING_PRIORITY_CHOICES = ["p0", "p1", "p2", "p3"]
 SCHEDULING_ROLE_CHOICES = ["inbound", "outbound", "reconcile", "manual_remediation"]
@@ -182,6 +188,7 @@ class MasterDataSyncConflictListQuerySerializer(serializers.Serializer):
 _SYNC_LAUNCH_MODE_CHOICES = list(PoolMasterDataSyncLaunchMode.values)
 _SYNC_LAUNCH_TARGET_MODE_CHOICES = list(PoolMasterDataSyncLaunchTargetMode.values)
 _SYNC_LAUNCH_STATUS_CHOICES = list(PoolMasterDataSyncLaunchStatus.values)
+_SYNC_TARGET_DATABASE_ELIGIBILITY_CHOICES = sorted(POOL_MASTER_DATA_SYNC_CLUSTER_ALL_ELIGIBILITY_VALUES)
 
 
 class SyncLaunchCreateRequestSerializer(serializers.Serializer):
@@ -206,6 +213,39 @@ class SyncLaunchListQuerySerializer(serializers.Serializer):
 
 class SyncTargetDatabasesQuerySerializer(serializers.Serializer):
     cluster_id = serializers.UUIDField(required=False)
+
+
+class SyncTargetDatabaseRefSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    name = serializers.CharField()
+    cluster_id = serializers.UUIDField(required=False, allow_null=True)
+    cluster_all_eligibility_state = serializers.ChoiceField(
+        choices=_SYNC_TARGET_DATABASE_ELIGIBILITY_CHOICES
+    )
+
+
+class SyncTargetDatabasesResponseSerializer(serializers.Serializer):
+    databases = SyncTargetDatabaseRefSerializer(many=True)
+    count = serializers.IntegerField(min_value=0)
+    total = serializers.IntegerField(min_value=0)
+
+
+class SyncLaunchTargetResolutionEntrySerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    database_name = serializers.CharField()
+    cluster_id = serializers.UUIDField(required=False, allow_null=True)
+    cluster_all_eligibility_state = serializers.ChoiceField(
+        choices=_SYNC_TARGET_DATABASE_ELIGIBILITY_CHOICES
+    )
+
+
+class SyncLaunchTargetResolutionSerializer(serializers.Serializer):
+    eligible_count = serializers.IntegerField(min_value=0)
+    excluded_count = serializers.IntegerField(min_value=0)
+    unconfigured_count = serializers.IntegerField(min_value=0)
+    eligible_database_ids = serializers.ListField(child=serializers.CharField(), required=False)
+    excluded_databases = SyncLaunchTargetResolutionEntrySerializer(many=True, required=False)
+    unconfigured_databases = SyncLaunchTargetResolutionEntrySerializer(many=True, required=False)
 
 
 class SyncLaunchItemSerializer(serializers.Serializer):
@@ -247,6 +287,7 @@ class SyncLaunchSerializer(serializers.Serializer):
     progress = serializers.JSONField(required=False)
     child_job_status_counts = serializers.JSONField(required=False)
     audit_trail = serializers.JSONField(required=False)
+    target_resolution = SyncLaunchTargetResolutionSerializer(required=False)
     items = SyncLaunchItemSerializer(many=True, required=False)
     created_at = serializers.DateTimeField(required=False)
     updated_at = serializers.DateTimeField(required=False)
@@ -279,6 +320,12 @@ def _sync_launch_exception_to_response(exc: Exception) -> Response:
     detail = str(exc) or "Sync launch request failed."
     code = "VALIDATION_ERROR"
     status_code = http_status.HTTP_400_BAD_REQUEST
+    errors: object | None = None
+    if isinstance(exc, SyncLaunchValidationError):
+        code = str(exc.code or code)
+        detail = str(exc.detail or detail)
+        status_code = int(exc.status_code or status_code)
+        errors = exc.errors
     if ":" in detail:
         maybe_code, maybe_detail = detail.split(":", 1)
         normalized_code = str(maybe_code or "").strip()
@@ -291,6 +338,8 @@ def _sync_launch_exception_to_response(exc: Exception) -> Response:
         SYNC_LAUNCH_REQUEST_NOT_FOUND,
     }:
         status_code = http_status.HTTP_404_NOT_FOUND
+    if code == SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED:
+        status_code = http_status.HTTP_409_CONFLICT
     if code == SYNC_LAUNCH_EMPTY_TARGETS:
         status_code = http_status.HTTP_409_CONFLICT
     return _problem(
@@ -298,6 +347,7 @@ def _sync_launch_exception_to_response(exc: Exception) -> Response:
         title="Sync Launch Invalid",
         detail=detail,
         status_code=status_code,
+        errors=errors,
     )
 
 
@@ -475,7 +525,7 @@ def list_sync_target_clusters(request):
     request=None,
     parameters=[SyncTargetDatabasesQuerySerializer],
     responses={
-        200: RefDatabasesResponseSerializer,
+        200: SyncTargetDatabasesResponseSerializer,
         400: ProblemDetailsErrorSerializer,
         401: OpenApiResponse(description="Unauthorized"),
         404: ProblemDetailsErrorSerializer,
@@ -507,6 +557,9 @@ def list_sync_target_databases(request):
                 "id": str(database.id),
                 "name": database.name,
                 "cluster_id": database.cluster_id,
+                "cluster_all_eligibility_state": serialize_pool_master_data_sync_cluster_all_database_entry(
+                    database=database
+                )["cluster_all_eligibility_state"],
             }
             for database in rows
         ],

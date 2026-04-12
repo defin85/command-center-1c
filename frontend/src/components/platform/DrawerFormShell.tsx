@@ -16,6 +16,7 @@ type DrawerFormShellProps = {
   subtitle?: ReactNode
   submitText?: ReactNode
   confirmLoading?: boolean
+  submitDisabled?: boolean
   extra?: ReactNode
   width?: number
   submitButtonTestId?: string
@@ -31,6 +32,7 @@ export function DrawerFormShell({
   subtitle,
   submitText = 'Save',
   confirmLoading = false,
+  submitDisabled = false,
   extra,
   width = 880,
   submitButtonTestId,
@@ -86,6 +88,7 @@ export function DrawerFormShell({
       <Button
         type="primary"
         loading={confirmLoading}
+        disabled={submitDisabled}
         onClick={() => {
           void trackUiAction({
             actionKind: 'drawer.submit',

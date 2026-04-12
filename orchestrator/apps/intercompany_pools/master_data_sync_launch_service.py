@@ -17,6 +17,9 @@ from .master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
     supports_pool_master_data_capability,
 )
+from .master_data_sync_cluster_all_eligibility import (
+    summarize_pool_master_data_sync_cluster_all_eligibility,
+)
 from .master_data_sync_outbound_snapshot import enqueue_manual_outbound_snapshot_for_scope
 from .master_data_sync_conflicts import MasterDataSyncConflictError
 from .master_data_sync_execution import (
@@ -48,6 +51,7 @@ SYNC_LAUNCH_CLUSTER_NOT_FOUND = "SYNC_LAUNCH_CLUSTER_NOT_FOUND"
 SYNC_LAUNCH_DATABASE_IDS_REQUIRED = "SYNC_LAUNCH_DATABASE_IDS_REQUIRED"
 SYNC_LAUNCH_DATABASE_NOT_FOUND = "SYNC_LAUNCH_DATABASE_NOT_FOUND"
 SYNC_LAUNCH_EMPTY_TARGETS = "SYNC_LAUNCH_EMPTY_TARGETS"
+SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED = "SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED"
 SYNC_LAUNCH_SCOPE_EMPTY = "SYNC_LAUNCH_SCOPE_EMPTY"
 SYNC_LAUNCH_SCOPE_UNSUPPORTED = "SYNC_LAUNCH_SCOPE_UNSUPPORTED"
 SYNC_LAUNCH_TRIGGER_FAILED = "SYNC_LAUNCH_TRIGGER_FAILED"
@@ -70,6 +74,22 @@ _REQUEST_CACHE_ATTR = "_sync_launch_items_cache"
 SYNC_LAUNCH_FANOUT_CHUNK_SIZE = 50
 
 
+class SyncLaunchValidationError(ValueError):
+    def __init__(
+        self,
+        *,
+        code: str,
+        detail: str,
+        errors: object | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        self.code = str(code or "VALIDATION_ERROR")
+        self.detail = str(detail or "").strip() or "Sync launch request failed."
+        self.errors = errors
+        self.status_code = status_code
+        super().__init__(f"{self.code}: {self.detail}")
+
+
 def create_pool_master_data_sync_launch_request(
     *,
     tenant: Tenant,
@@ -84,7 +104,7 @@ def create_pool_master_data_sync_launch_request(
     resolved_mode = _normalize_mode(mode)
     resolved_target_mode = _normalize_target_mode(target_mode)
     normalized_scope = _normalize_entity_scope(entity_scope=entity_scope, mode=resolved_mode)
-    resolved_cluster_id, databases = _resolve_launch_targets(
+    resolved_cluster_id, databases, target_resolution = _resolve_launch_targets(
         tenant_id=str(tenant.id),
         target_mode=resolved_target_mode,
         cluster_id=cluster_id,
@@ -102,6 +122,7 @@ def create_pool_master_data_sync_launch_request(
             requested_by_id=_resolve_requested_by_id(actor_id),
             metadata={
                 "audit_trail": [],
+                "target_resolution": target_resolution,
             },
         )
         _append_launch_audit(
@@ -115,6 +136,7 @@ def create_pool_master_data_sync_launch_request(
                 "cluster_id": str(resolved_cluster_id) if resolved_cluster_id else None,
                 "database_ids": [str(database.id) for database in databases],
                 "entity_scope": normalized_scope,
+                "target_resolution": target_resolution,
             },
         )
         items: list[PoolMasterDataSyncLaunchItem] = []
@@ -212,6 +234,7 @@ def serialize_pool_master_data_sync_launch_request(
         "progress": _as_dict(metadata.get("progress")),
         "child_job_status_counts": _as_dict(metadata.get("child_job_status_counts")),
         "audit_trail": _as_list(metadata.get("audit_trail")),
+        "target_resolution": sanitize_master_data_sync_value(_as_dict(metadata.get("target_resolution"))),
         "created_at": launch_request.created_at,
         "updated_at": launch_request.updated_at,
     }
@@ -736,7 +759,7 @@ def _resolve_launch_targets(
     target_mode: str,
     cluster_id: str | None,
     database_ids: Iterable[str] | None,
-) -> tuple[str | None, list[Database]]:
+) -> tuple[str | None, list[Database], dict[str, Any]]:
     normalized_tenant_id = str(tenant_id or "").strip()
     if target_mode == PoolMasterDataSyncLaunchTargetMode.CLUSTER_ALL:
         normalized_cluster_id = str(cluster_id or "").strip()
@@ -755,7 +778,31 @@ def _resolve_launch_targets(
             raise ValueError(
                 f"{SYNC_LAUNCH_EMPTY_TARGETS}: cluster '{normalized_cluster_id}' has no target databases"
             )
-        return str(cluster.id), databases
+        target_resolution = summarize_pool_master_data_sync_cluster_all_eligibility(databases=databases)
+        if target_resolution["unconfigured_count"] > 0:
+            raise SyncLaunchValidationError(
+                code=SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED,
+                detail=(
+                    f"cluster '{normalized_cluster_id}' contains databases without explicit "
+                    "cluster_all eligibility decision"
+                ),
+                errors={
+                    "cluster_id": [
+                        "Resolve cluster_all eligibility for all databases in /databases before launch."
+                    ],
+                    "unconfigured_databases": target_resolution["unconfigured_databases"],
+                },
+                status_code=409,
+            )
+        eligible_database_ids = set(target_resolution.get("eligible_database_ids") or [])
+        eligible_databases = [
+            database for database in databases if str(database.id) in eligible_database_ids
+        ]
+        if not eligible_databases:
+            raise ValueError(
+                f"{SYNC_LAUNCH_EMPTY_TARGETS}: cluster '{normalized_cluster_id}' has no eligible target databases"
+            )
+        return str(cluster.id), eligible_databases, target_resolution
 
     if target_mode == PoolMasterDataSyncLaunchTargetMode.DATABASE_SET:
         selected_database_ids = [str(value or "").strip() for value in list(database_ids or []) if str(value or "").strip()]
@@ -776,7 +823,15 @@ def _resolve_launch_targets(
             raise ValueError(
                 f"{SYNC_LAUNCH_DATABASE_NOT_FOUND}: databases not found in tenant scope: {', '.join(missing_ids)}"
             )
-        return None, [database_map[database_id] for database_id in deduped_database_ids]
+        resolved_databases = [database_map[database_id] for database_id in deduped_database_ids]
+        return None, resolved_databases, {
+            "eligible_count": len(resolved_databases),
+            "excluded_count": 0,
+            "unconfigured_count": 0,
+            "eligible_database_ids": [str(database.id) for database in resolved_databases],
+            "excluded_databases": [],
+            "unconfigured_databases": [],
+        }
 
     raise ValueError(
         f"{SYNC_LAUNCH_TARGET_MODE_INVALID}: unsupported launch target mode '{target_mode}'"
@@ -843,10 +898,12 @@ def _as_list(value: object | None) -> list[Any]:
 
 __all__ = [
     "SYNC_LAUNCH_CLUSTER_NOT_FOUND",
+    "SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED",
     "SYNC_LAUNCH_DATABASE_NOT_FOUND",
     "SYNC_LAUNCH_EMPTY_TARGETS",
     "SYNC_LAUNCH_FANOUT_CHUNK_SIZE",
     "SYNC_LAUNCH_REQUEST_NOT_FOUND",
+    "SyncLaunchValidationError",
     "create_pool_master_data_sync_launch_request",
     "get_pool_master_data_sync_launch_request",
     "list_pool_master_data_sync_launch_requests",

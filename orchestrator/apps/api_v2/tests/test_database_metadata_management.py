@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 from __future__ import annotations
 
 import uuid
@@ -65,6 +66,15 @@ def _set_business_configuration_profile(
     database.save(update_fields=["metadata", "updated_at"])
 
 
+def _set_cluster_all_eligibility_state(*, database: Database, state: str) -> None:
+    metadata = dict(database.metadata or {})
+    namespace = dict(metadata.get("pool_master_data_sync") or {})
+    namespace["cluster_all_eligibility"] = state
+    metadata["pool_master_data_sync"] = namespace
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+
+
 def _create_current_metadata_catalog_snapshot(
     *,
     database: Database,
@@ -124,6 +134,9 @@ def test_get_database_metadata_management_returns_missing_state_without_hidden_b
     assert payload["configuration_profile"]["reverify_blocking_action"] == "configure_ibcmd_connection_profile"
     assert payload["metadata_snapshot"]["status"] == "missing"
     assert payload["metadata_snapshot"]["missing_reason"] == "configuration_profile_unavailable"
+    assert payload["pool_master_data_sync"]["cluster_all_eligibility"]["state"] == "unconfigured"
+    assert payload["pool_master_data_sync"]["readiness"]["cluster_attached"] is False
+    assert payload["pool_master_data_sync"]["readiness"]["runtime_enabled"] is False
     assert PoolODataMetadataCatalogSnapshot.objects.count() == 0
     assert PoolODataMetadataCatalogScopeResolution.objects.count() == 0
 
@@ -141,6 +154,7 @@ def test_get_database_metadata_management_returns_profile_and_snapshot_state(cli
         canonical_metadata_hash="a" * 64,
         publication_drift=True,
     )
+    _set_cluster_all_eligibility_state(database=db, state="eligible")
     snapshot = _create_current_metadata_catalog_snapshot(database=db, metadata_hash="a" * 64)
 
     response = client.get("/api/v2/databases/get-metadata-management/", {"database_id": str(db.id)})
@@ -164,6 +178,10 @@ def test_get_database_metadata_management_returns_profile_and_snapshot_state(cli
     assert payload["metadata_snapshot"]["resolution_mode"] == "database_scope"
     assert payload["metadata_snapshot"]["is_shared_snapshot"] is False
     assert payload["metadata_snapshot"]["provenance_database_id"] == str(db.id)
+    assert payload["pool_master_data_sync"]["cluster_all_eligibility"]["state"] == "eligible"
+    assert payload["pool_master_data_sync"]["readiness"]["odata_configured"] is True
+    assert payload["pool_master_data_sync"]["readiness"]["credentials_configured"] is True
+    assert payload["pool_master_data_sync"]["readiness"]["service_mapping_status"] == "missing"
 
 
 @pytest.mark.django_db
@@ -201,6 +219,7 @@ def test_get_database_metadata_management_marks_verification_pending_from_active
     assert payload["configuration_profile"]["reverify_available"] is True
     assert payload["metadata_snapshot"]["status"] == "missing"
     assert payload["metadata_snapshot"]["missing_reason"] == "current_snapshot_missing"
+    assert payload["pool_master_data_sync"]["cluster_all_eligibility"]["state"] == "unconfigured"
 
 
 @pytest.mark.django_db
@@ -321,3 +340,54 @@ def test_refresh_metadata_snapshot_returns_updated_state(client, user, target_db
     assert payload["metadata_snapshot"]["status"] == "available"
     assert payload["metadata_snapshot"]["snapshot_id"] == str(refreshed_snapshot.id)
     assert payload["metadata_snapshot"]["metadata_hash"] == "c" * 64
+
+
+@pytest.mark.django_db
+def test_update_pool_master_data_sync_eligibility_requires_manage_permission(client, user, target_dbs):
+    db = target_dbs[0]
+    _grant_database_permission(client, user, "operate_database")
+    support._allow_operate(user, db, level=PermissionLevel.OPERATE)
+
+    response = client.post(
+        "/api/v2/databases/update-pool-master-data-sync-eligibility/",
+        {
+            "database_id": str(db.id),
+            "cluster_all_eligibility_state": "eligible",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 403
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "PERMISSION_DENIED"
+
+
+@pytest.mark.django_db
+def test_update_pool_master_data_sync_eligibility_returns_updated_metadata_management_state(client, user, target_dbs):
+    db = target_dbs[0]
+    _grant_database_permission(client, user, "manage_database")
+    support._allow_operate(user, db, level=PermissionLevel.MANAGE)
+    _set_business_configuration_profile(database=db)
+    _create_current_metadata_catalog_snapshot(database=db, metadata_hash="d" * 64)
+
+    response = client.post(
+        "/api/v2/databases/update-pool-master-data-sync-eligibility/",
+        {
+            "database_id": str(db.id),
+            "cluster_all_eligibility_state": "excluded",
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["database"]["id"] == str(db.id)
+    assert payload["message"] == "Pool master-data cluster_all eligibility updated"
+    assert payload["metadata_management"]["database_id"] == str(db.id)
+    assert payload["metadata_management"]["metadata_snapshot"]["status"] == "available"
+    assert payload["metadata_management"]["pool_master_data_sync"]["cluster_all_eligibility"]["state"] == "excluded"
+    assert payload["metadata_management"]["pool_master_data_sync"]["readiness"]["odata_configured"] is True
+
+    db.refresh_from_db()
+    assert db.metadata["pool_master_data_sync"]["cluster_all_eligibility"] == "excluded"

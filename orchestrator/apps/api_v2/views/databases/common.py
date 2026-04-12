@@ -470,12 +470,38 @@ class DatabaseMetadataManagementSnapshotSerializer(serializers.Serializer):
     publication_drift = serializers.BooleanField(required=False)
 
 
+class DatabaseMasterDataSyncClusterAllEligibilitySerializer(serializers.Serializer):
+    state = serializers.ChoiceField(
+        choices=["eligible", "excluded", "unconfigured"]
+    )
+
+
+class DatabaseMasterDataSyncReadinessSerializer(serializers.Serializer):
+    cluster_attached = serializers.BooleanField()
+    odata_configured = serializers.BooleanField()
+    credentials_configured = serializers.BooleanField()
+    ibcmd_profile_configured = serializers.BooleanField()
+    service_mapping_status = serializers.CharField()
+    service_mapping_count = serializers.IntegerField(min_value=0)
+    runtime_enabled = serializers.BooleanField()
+    inbound_enabled = serializers.BooleanField()
+    outbound_enabled = serializers.BooleanField()
+    default_policy = serializers.CharField(allow_blank=True, required=False)
+    health_status = serializers.CharField(allow_blank=True, required=False)
+
+
+class DatabaseMetadataManagementPoolMasterDataSyncSerializer(serializers.Serializer):
+    cluster_all_eligibility = DatabaseMasterDataSyncClusterAllEligibilitySerializer()
+    readiness = DatabaseMasterDataSyncReadinessSerializer()
+
+
 class DatabaseMetadataManagementResponseSerializer(serializers.Serializer):
     """Response payload for canonical database metadata management state."""
 
     database_id = serializers.UUIDField(help_text="Database UUID")
     configuration_profile = DatabaseMetadataManagementConfigurationProfileSerializer()
     metadata_snapshot = DatabaseMetadataManagementSnapshotSerializer()
+    pool_master_data_sync = DatabaseMetadataManagementPoolMasterDataSyncSerializer()
 
 
 class DatabaseMetadataManagementReverifyResponseSerializer(serializers.Serializer):
@@ -512,6 +538,23 @@ class DatabaseDbmsMetadataUpdateRequestSerializer(serializers.Serializer):
 class DatabaseDbmsMetadataUpdateResponseSerializer(serializers.Serializer):
     """Response for update_dbms_metadata endpoint."""
     database = DatabaseSerializer()
+    message = serializers.CharField()
+
+
+class DatabaseMasterDataSyncEligibilityUpdateRequestSerializer(serializers.Serializer):
+    """Request body for updating pool master-data cluster_all eligibility."""
+
+    database_id = serializers.CharField(help_text="Database ID to update")
+    cluster_all_eligibility_state = serializers.ChoiceField(
+        choices=["eligible", "excluded", "unconfigured"]
+    )
+
+
+class DatabaseMasterDataSyncEligibilityUpdateResponseSerializer(serializers.Serializer):
+    """Response for update_pool_master_data_sync_eligibility endpoint."""
+
+    database = DatabaseSerializer()
+    metadata_management = DatabaseMetadataManagementResponseSerializer()
     message = serializers.CharField()
 
 

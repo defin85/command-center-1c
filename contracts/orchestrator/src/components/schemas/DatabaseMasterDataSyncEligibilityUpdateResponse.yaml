@@ -1,0 +1,12 @@
+type: object
+properties:
+  database:
+    $ref: ./Database.yaml
+  metadata_management:
+    $ref: ./DatabaseMetadataManagementResponse.yaml
+  message:
+    type: string
+required:
+  - database
+  - metadata_management
+  - message

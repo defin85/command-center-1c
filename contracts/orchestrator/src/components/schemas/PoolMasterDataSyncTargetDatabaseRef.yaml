@@ -1,0 +1,21 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  cluster_all_eligibility_state:
+    type: string
+    enum:
+      - eligible
+      - excluded
+      - unconfigured
+required:
+  - id
+  - name
+  - cluster_all_eligibility_state

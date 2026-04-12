@@ -1,0 +1,54 @@
+post:
+  operationId: v2_databases_update_pool_master_data_sync_eligibility_create
+  description: Set explicit cluster_all eligibility state for pool master-data sync on the selected database.
+  summary: Update pool master-data cluster_all eligibility
+  tags:
+    - v2
+  requestBody:
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest.yaml
+    required: true
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseMasterDataSyncEligibilityUpdateResponse.yaml
+      description: ''
+    '400':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+      description: ''
+    '401':
+      description: Unauthorized
+    '403':
+      description: Forbidden
+    '404':
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/DatabaseErrorResponse.yaml
+      description: ''
+  parameters:
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Optional tenant context selector. If omitted, tenant is resolved via
+        user preference or first membership. For staff users, omission may
+        return cross-tenant results on some endpoints.

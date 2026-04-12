@@ -1753,6 +1753,27 @@ export type PoolMasterDataSyncLaunchItem = {
   updated_at: string
 }
 
+export type PoolMasterDataSyncClusterAllEligibilityState =
+  | 'eligible'
+  | 'excluded'
+  | 'unconfigured'
+
+export type PoolMasterDataSyncLaunchTargetResolutionEntry = {
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  cluster_all_eligibility_state: PoolMasterDataSyncClusterAllEligibilityState
+}
+
+export type PoolMasterDataSyncLaunchTargetResolution = {
+  eligible_count: number
+  excluded_count: number
+  unconfigured_count: number
+  eligible_database_ids?: string[]
+  excluded_databases?: PoolMasterDataSyncLaunchTargetResolutionEntry[]
+  unconfigured_databases?: PoolMasterDataSyncLaunchTargetResolutionEntry[]
+}
+
 export type PoolMasterDataSyncLaunch = {
   id: string
   tenant_id: string
@@ -1772,6 +1793,7 @@ export type PoolMasterDataSyncLaunch = {
   progress: Record<string, number>
   child_job_status_counts: Record<string, number>
   audit_trail: Array<Record<string, unknown>>
+  target_resolution?: PoolMasterDataSyncLaunchTargetResolution
   items?: PoolMasterDataSyncLaunchItem[]
   created_at: string
   updated_at: string
@@ -2306,6 +2328,7 @@ export type SimpleDatabaseRef = {
   id: string
   name: string
   cluster_id: string | null
+  cluster_all_eligibility_state: PoolMasterDataSyncClusterAllEligibilityState
 }
 
 export type SimpleClusterRef = {

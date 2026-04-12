@@ -166,6 +166,22 @@ export type DatabaseIbcmdConnectionProfileUpdateResponse = {
   message: string
 }
 
+export type DatabaseMasterDataSyncClusterAllEligibilityState =
+  | 'eligible'
+  | 'excluded'
+  | 'unconfigured'
+
+export type DatabaseMasterDataSyncEligibilityUpdateRequest = {
+  database_id: string
+  cluster_all_eligibility_state: DatabaseMasterDataSyncClusterAllEligibilityState
+}
+
+export type DatabaseMasterDataSyncEligibilityUpdateResponse = {
+  database: Database
+  metadata_management: DatabaseMetadataManagementResponse
+  message: string
+}
+
 export type InfobaseUserRef = {
   id: number
   username: string
@@ -428,6 +444,28 @@ export function useRefreshDatabaseMetadataSnapshot() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.metadataManagement(variables.database_id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
+    },
+  })
+}
+
+export function useUpdateDatabaseMasterDataSyncEligibility() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (
+      data: DatabaseMasterDataSyncEligibilityUpdateRequest
+    ): Promise<DatabaseMasterDataSyncEligibilityUpdateResponse> => {
+      const response = await apiClient.post<DatabaseMasterDataSyncEligibilityUpdateResponse>(
+        '/api/v2/databases/update-pool-master-data-sync-eligibility/',
+        data,
+      )
+      return response.data
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.databases.metadataManagement(variables.database_id),
+      })
       queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
     },
   })

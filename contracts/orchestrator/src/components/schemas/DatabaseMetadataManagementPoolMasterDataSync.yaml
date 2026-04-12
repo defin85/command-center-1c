@@ -1,0 +1,9 @@
+type: object
+properties:
+  cluster_all_eligibility:
+    $ref: ./DatabaseMasterDataSyncClusterAllEligibility.yaml
+  readiness:
+    $ref: ./DatabaseMasterDataSyncReadiness.yaml
+required:
+  - cluster_all_eligibility
+  - readiness

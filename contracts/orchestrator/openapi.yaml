@@ -1612,6 +1612,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/DatabaseErrorResponse'
           description: ''
+  /api/v2/databases/update-pool-master-data-sync-eligibility/:
+    post:
+      operationId: v2_databases_update_pool_master_data_sync_eligibility_create
+      description: Set explicit cluster_all eligibility state for pool master-data sync on the selected database.
+      summary: Update pool master-data cluster_all eligibility
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DatabaseMasterDataSyncEligibilityUpdateRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseMasterDataSyncEligibilityUpdateResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatabaseErrorResponse'
+          description: ''
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
   /api/v2/databases/health-check/:
     post:
       operationId: v2_databases_health_check_create
@@ -7641,7 +7693,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RefDatabasesResponse'
+                $ref: '#/components/schemas/PoolMasterDataSyncTargetDatabasesResponse'
           description: ''
         '400':
           content:
@@ -15818,6 +15870,64 @@ components:
         - provenance_database_id
         - observed_metadata_hash
         - publication_drift
+    DatabaseMasterDataSyncClusterAllEligibility:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - eligible
+            - excluded
+            - unconfigured
+      required:
+        - state
+    DatabaseMasterDataSyncReadiness:
+      type: object
+      properties:
+        cluster_attached:
+          type: boolean
+        odata_configured:
+          type: boolean
+        credentials_configured:
+          type: boolean
+        ibcmd_profile_configured:
+          type: boolean
+        service_mapping_status:
+          type: string
+        service_mapping_count:
+          type: integer
+        runtime_enabled:
+          type: boolean
+        inbound_enabled:
+          type: boolean
+        outbound_enabled:
+          type: boolean
+        default_policy:
+          type: string
+        health_status:
+          type: string
+      required:
+        - cluster_attached
+        - odata_configured
+        - credentials_configured
+        - ibcmd_profile_configured
+        - service_mapping_status
+        - service_mapping_count
+        - runtime_enabled
+        - inbound_enabled
+        - outbound_enabled
+        - default_policy
+        - health_status
+    DatabaseMetadataManagementPoolMasterDataSync:
+      type: object
+      properties:
+        cluster_all_eligibility:
+          $ref: '#/components/schemas/DatabaseMasterDataSyncClusterAllEligibility'
+        readiness:
+          $ref: '#/components/schemas/DatabaseMasterDataSyncReadiness'
+      required:
+        - cluster_all_eligibility
+        - readiness
     DatabaseMetadataManagementResponse:
       type: object
       description: Response payload for canonical database metadata management state.
@@ -15830,10 +15940,41 @@ components:
           $ref: '#/components/schemas/DatabaseMetadataManagementConfigurationProfile'
         metadata_snapshot:
           $ref: '#/components/schemas/DatabaseMetadataManagementSnapshot'
+        pool_master_data_sync:
+          $ref: '#/components/schemas/DatabaseMetadataManagementPoolMasterDataSync'
       required:
         - database_id
         - configuration_profile
         - metadata_snapshot
+        - pool_master_data_sync
+    DatabaseMasterDataSyncEligibilityUpdateRequest:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        cluster_all_eligibility_state:
+          type: string
+          enum:
+            - eligible
+            - excluded
+            - unconfigured
+      required:
+        - database_id
+        - cluster_all_eligibility_state
+    DatabaseMasterDataSyncEligibilityUpdateResponse:
+      type: object
+      properties:
+        database:
+          $ref: '#/components/schemas/Database'
+        metadata_management:
+          $ref: '#/components/schemas/DatabaseMetadataManagementResponse'
+        message:
+          type: string
+      required:
+        - database
+        - metadata_management
+        - message
     HealthCheckRequest:
       type: object
       description: Request body for health_check endpoint.
@@ -22343,36 +22484,91 @@ components:
         - clusters
         - count
         - total
-    DatabaseRef:
+    PoolMasterDataSyncTargetDatabaseRef:
       type: object
       properties:
         id:
           type: string
+          format: uuid
         name:
           type: string
         cluster_id:
           type: string
           format: uuid
           nullable: true
+        cluster_all_eligibility_state:
+          type: string
+          enum:
+            - eligible
+            - excluded
+            - unconfigured
       required:
-        - cluster_id
         - id
         - name
-    RefDatabasesResponse:
+        - cluster_all_eligibility_state
+    PoolMasterDataSyncTargetDatabasesResponse:
       type: object
       properties:
         databases:
           type: array
           items:
-            $ref: '#/components/schemas/DatabaseRef'
+            $ref: '#/components/schemas/PoolMasterDataSyncTargetDatabaseRef'
         count:
           type: integer
         total:
           type: integer
       required:
-        - count
         - databases
+        - count
         - total
+    PoolMasterDataSyncLaunchTargetResolutionEntry:
+      type: object
+      properties:
+        database_id:
+          type: string
+          format: uuid
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        cluster_all_eligibility_state:
+          type: string
+          enum:
+            - eligible
+            - excluded
+            - unconfigured
+      required:
+        - database_id
+        - database_name
+        - cluster_all_eligibility_state
+    PoolMasterDataSyncLaunchTargetResolution:
+      type: object
+      properties:
+        eligible_count:
+          type: integer
+        excluded_count:
+          type: integer
+        unconfigured_count:
+          type: integer
+        eligible_database_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        excluded_databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataSyncLaunchTargetResolutionEntry'
+        unconfigured_databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/PoolMasterDataSyncLaunchTargetResolutionEntry'
+      required:
+        - eligible_count
+        - excluded_count
+        - unconfigured_count
     PoolMasterDataSyncLaunchItem:
       type: object
       properties:
@@ -22507,6 +22703,8 @@ components:
           items:
             type: object
             additionalProperties: true
+        target_resolution:
+          $ref: '#/components/schemas/PoolMasterDataSyncLaunchTargetResolution'
         items:
           type: array
           items:
@@ -25277,6 +25475,21 @@ components:
       required:
         - cluster
         - level
+    DatabaseRef:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - cluster_id
+        - id
+        - name
     EffectiveAccessDatabaseSourceItem:
       type: object
       properties:
@@ -26388,6 +26601,21 @@ components:
       required:
         - artifacts
         - count
+        - total
+    RefDatabasesResponse:
+      type: object
+      properties:
+        databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/DatabaseRef'
+        count:
+          type: integer
+        total:
+          type: integer
+      required:
+        - count
+        - databases
         - total
     RefOperationTemplatesResponse:
       type: object

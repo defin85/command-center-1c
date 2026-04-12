@@ -8,6 +8,18 @@ import { MemoryRouter } from 'react-router-dom'
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolMasterDataPage } from '../PoolMasterDataPage'
 
+const { mockNavigate } = vi.hoisted(() => ({
+  mockNavigate: vi.fn(),
+}))
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
+
 const mockListMasterDataParties = vi.fn()
 const mockUpsertMasterDataParty = vi.fn()
 const mockListMasterDataItems = vi.fn()
@@ -471,6 +483,7 @@ describe('PoolMasterDataPage', () => {
     mockListPoolMasterDataDedupeReviewItems.mockReset()
     mockGetPoolMasterDataDedupeReviewItem.mockReset()
     mockApplyPoolMasterDataDedupeReviewAction.mockReset()
+    mockNavigate.mockReset()
 
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -824,8 +837,8 @@ describe('PoolMasterDataPage', () => {
       { id: 'cluster-1', name: 'Main Cluster' },
     ])
     mockListPoolTargetDatabases.mockResolvedValue([
-      { id: 'db-1', name: 'Main DB', cluster_id: 'cluster-1' },
-      { id: 'db-2', name: 'Replica DB', cluster_id: 'cluster-1' },
+      { id: 'db-1', name: 'Main DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'eligible' },
+      { id: 'db-2', name: 'Replica DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'eligible' },
     ])
     mockListMasterDataSyncStatus.mockResolvedValue({
       statuses: [],
@@ -1477,6 +1490,39 @@ describe('PoolMasterDataPage', () => {
     expect(screen.getByTestId('sync-launch-entity-scope')).toHaveTextContent('Item')
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('blocks cluster_all launch when eligibility is unconfigured and offers handoff to /databases', async () => {
+    const user = userEvent.setup()
+    mockListPoolTargetDatabases.mockResolvedValue([
+      { id: 'db-1', name: 'Main DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'eligible' },
+      { id: 'db-2', name: 'Replica DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'unconfigured' },
+      { id: 'db-3', name: 'Archive DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'excluded' },
+    ])
+
+    renderPage('/pools/master-data?tab=sync')
+
+    expect(await screen.findByTestId('sync-launch-open-drawer')).toBeInTheDocument()
+    await user.click(screen.getByTestId('sync-launch-open-drawer'))
+
+    openSelectByTestId('sync-launch-target-mode')
+    await selectDropdownOption(/^Cluster All$/)
+    openSelectByTestId('sync-launch-cluster')
+    await selectDropdownOption(/^Main Cluster$/)
+
+    expect(await screen.findByTestId('sync-launch-cluster-all-summary')).toBeInTheDocument()
+    expect(screen.getByText('Cluster summary: 1 eligible, 1 excluded, 1 unconfigured.')).toBeInTheDocument()
+    expect(screen.getByText('Excluded from cluster_all: Archive DB.')).toBeInTheDocument()
+    expect(screen.getByText('Resolve eligibility in /databases before launch for: Replica DB.')).toBeInTheDocument()
+    expect(screen.getByText('Use Database Set for one-off launches that must include excluded databases.')).toBeInTheDocument()
+    expect(screen.getByTestId('sync-launch-submit')).toBeDisabled()
+
+    await user.click(screen.getByTestId('sync-launch-open-eligibility-handoff'))
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      '/databases?cluster=cluster-1&context=metadata&database=db-2'
+    )
+    expect(mockCreatePoolMasterDataSyncLaunch).not.toHaveBeenCalled()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('filters sync launch entity scope by mode capabilities', async () => {
     const user = userEvent.setup()
     renderPage('/pools/master-data?tab=sync')
@@ -1506,6 +1552,46 @@ describe('PoolMasterDataPage', () => {
     expect(within(inboundDropdown).getByText('Tax Profile')).toBeInTheDocument()
     expect(within(inboundDropdown).queryByText('GL Account')).not.toBeInTheDocument()
     expect(within(inboundDropdown).queryByText('GL Account Set')).not.toBeInTheDocument()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('shows cluster_all resolution detail for excluded databases', async () => {
+    const launchWithResolution = buildSyncLaunch({
+      id: 'launch-resolution-1',
+      target_mode: 'cluster_all',
+      cluster_id: 'cluster-1',
+      database_ids: ['db-1'],
+      target_resolution: {
+        eligible_count: 1,
+        excluded_count: 1,
+        unconfigured_count: 0,
+        eligible_database_ids: ['db-1'],
+        excluded_databases: [
+          {
+            database_id: 'db-2',
+            database_name: 'Replica DB',
+            cluster_id: 'cluster-1',
+            cluster_all_eligibility_state: 'excluded',
+          },
+        ],
+        unconfigured_databases: [],
+      },
+    })
+    mockListPoolMasterDataSyncLaunches.mockResolvedValue({
+      launches: [launchWithResolution],
+      count: 1,
+      limit: 20,
+      offset: 0,
+    })
+    mockGetPoolMasterDataSyncLaunch.mockResolvedValue({
+      launch: launchWithResolution,
+    })
+
+    renderPage('/pools/master-data?tab=sync&launchId=launch-resolution-1')
+
+    expect(await screen.findByText('Launch Detail')).toBeInTheDocument()
+    expect(await screen.findByText('Cluster resolution: 1 eligible, 1 excluded, 0 unconfigured.')).toBeInTheDocument()
+    expect(screen.getByText('Excluded from snapshot: Replica DB.')).toBeInTheDocument()
+    expect(screen.getByText('Use Database Set for one-off launches that must include excluded databases.')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('hides retry and reconcile actions when registry disables the required sync direction', async () => {

@@ -95,6 +95,15 @@ def _create_cluster(*, tenant: Tenant, name: str) -> Cluster:
     )
 
 
+def _set_cluster_all_eligibility_state(*, database: Database, state: str) -> None:
+    metadata = dict(database.metadata or {})
+    namespace = dict(metadata.get("pool_master_data_sync") or {})
+    namespace["cluster_all_eligibility"] = state
+    metadata["pool_master_data_sync"] = namespace
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+
+
 @pytest.mark.django_db
 def test_master_data_sync_status_aggregates_checkpoint_outbox_and_conflicts(
     authenticated_client: APIClient,
@@ -354,6 +363,8 @@ def test_master_data_sync_launches_create_list_and_detail_preserve_snapshot(
     database_b.cluster = cluster
     database_a.save(update_fields=["cluster", "updated_at"])
     database_b.save(update_fields=["cluster", "updated_at"])
+    _set_cluster_all_eligibility_state(database=database_a, state="eligible")
+    _set_cluster_all_eligibility_state(database=database_b, state="eligible")
 
     with patch(
         "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
@@ -379,6 +390,14 @@ def test_master_data_sync_launches_create_list_and_detail_preserve_snapshot(
     assert launch_payload["database_ids"] == [str(database_a.id), str(database_b.id)]
     assert launch_payload["entity_scope"] == ["item", "party"]
     assert launch_payload["status"] == "pending"
+    assert launch_payload["target_resolution"] == {
+        "eligible_count": 2,
+        "excluded_count": 0,
+        "unconfigured_count": 0,
+        "eligible_database_ids": [str(database_a.id), str(database_b.id)],
+        "excluded_databases": [],
+        "unconfigured_databases": [],
+    }
 
     database_c = _create_database(tenant=default_tenant, name=f"sync-launch-db-c-{uuid4().hex[:6]}")
     database_c.cluster = cluster
@@ -395,6 +414,7 @@ def test_master_data_sync_launches_create_list_and_detail_preserve_snapshot(
     detail_payload = detail_response.json()["launch"]
     assert detail_payload["database_ids"] == [str(database_a.id), str(database_b.id)]
     assert str(database_c.id) not in detail_payload["database_ids"]
+    assert detail_payload["target_resolution"]["eligible_count"] == 2
     assert detail_payload["aggregate_counters"]["total_items"] == 4
     assert len(detail_payload["items"]) == 4
 
@@ -412,6 +432,8 @@ def test_master_data_sync_target_refs_are_tenant_scoped_and_cluster_aware(
     database_b.cluster = cluster_b
     database_a.save(update_fields=["cluster", "updated_at"])
     database_b.save(update_fields=["cluster", "updated_at"])
+    _set_cluster_all_eligibility_state(database=database_a, state="eligible")
+    _set_cluster_all_eligibility_state(database=database_b, state="excluded")
 
     other_tenant = Tenant.objects.create(slug=f"sync-target-other-{uuid4().hex[:8]}", name="Sync Target Other")
     other_cluster = _create_cluster(tenant=other_tenant, name=f"Sync Target Cluster Other {uuid4().hex[:6]}")
@@ -430,8 +452,10 @@ def test_master_data_sync_target_refs_are_tenant_scoped_and_cluster_aware(
         f"/api/v2/pools/master-data/sync-target-databases/?cluster_id={cluster_a.id}"
     )
     assert databases_response.status_code == 200
-    database_ids = [row["id"] for row in databases_response.json()["databases"]]
+    database_rows = databases_response.json()["databases"]
+    database_ids = [row["id"] for row in database_rows]
     assert database_ids == [str(database_a.id)]
+    assert database_rows[0]["cluster_all_eligibility_state"] == "eligible"
     assert str(database_b.id) not in database_ids
     assert str(other_database.id) not in database_ids
 
@@ -454,6 +478,7 @@ def test_master_data_sync_target_refs_allow_tenant_member_without_manage_rbac(
     database = _create_database(tenant=default_tenant, name=f"sync-target-member-{uuid4().hex[:6]}")
     database.cluster = cluster
     database.save(update_fields=["cluster", "updated_at"])
+    _set_cluster_all_eligibility_state(database=database, state="unconfigured")
 
     clusters_response = member_client.get("/api/v2/pools/master-data/sync-target-clusters/")
     databases_response = member_client.get(
@@ -464,6 +489,129 @@ def test_master_data_sync_target_refs_allow_tenant_member_without_manage_rbac(
     assert databases_response.status_code == 200
     assert any(row["id"] == str(cluster.id) for row in clusters_response.json()["clusters"])
     assert [row["id"] for row in databases_response.json()["databases"]] == [str(database.id)]
+    assert databases_response.json()["databases"][0]["cluster_all_eligibility_state"] == "unconfigured"
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launch_create_preserves_cluster_all_exclusions_in_target_resolution(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    cluster = _create_cluster(tenant=default_tenant, name=f"Sync Launch Resolution {uuid4().hex[:6]}")
+    database_a = _create_database(tenant=default_tenant, name=f"sync-launch-resolution-a-{uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"sync-launch-resolution-b-{uuid4().hex[:6]}")
+    database_a.cluster = cluster
+    database_b.cluster = cluster
+    database_a.save(update_fields=["cluster", "updated_at"])
+    database_b.save(update_fields=["cluster", "updated_at"])
+    _set_cluster_all_eligibility_state(database=database_a, state="eligible")
+    _set_cluster_all_eligibility_state(database=database_b, state="excluded")
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
+        return_value=SimpleNamespace(enqueue_success=True),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/master-data/sync-launches/",
+            {
+                "mode": "inbound",
+                "target_mode": "cluster_all",
+                "cluster_id": str(cluster.id),
+                "entity_scope": ["item"],
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    payload = response.json()["launch"]
+    assert payload["database_ids"] == [str(database_a.id)]
+    assert payload["target_resolution"] == {
+        "eligible_count": 1,
+        "excluded_count": 1,
+        "unconfigured_count": 0,
+        "eligible_database_ids": [str(database_a.id)],
+        "excluded_databases": [
+            {
+                "database_id": str(database_b.id),
+                "database_name": database_b.name,
+                "cluster_id": str(cluster.id),
+                "cluster_all_eligibility_state": "excluded",
+            }
+        ],
+        "unconfigured_databases": [],
+    }
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launch_create_blocks_cluster_all_until_eligibility_is_configured(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    cluster = _create_cluster(tenant=default_tenant, name=f"Sync Launch Blocked {uuid4().hex[:6]}")
+    database_a = _create_database(tenant=default_tenant, name=f"sync-launch-blocked-a-{uuid4().hex[:6]}")
+    database_b = _create_database(tenant=default_tenant, name=f"sync-launch-blocked-b-{uuid4().hex[:6]}")
+    database_a.cluster = cluster
+    database_b.cluster = cluster
+    database_a.save(update_fields=["cluster", "updated_at"])
+    database_b.save(update_fields=["cluster", "updated_at"])
+    _set_cluster_all_eligibility_state(database=database_a, state="eligible")
+
+    response = authenticated_client.post(
+        "/api/v2/pools/master-data/sync-launches/",
+        {
+            "mode": "inbound",
+            "target_mode": "cluster_all",
+            "cluster_id": str(cluster.id),
+            "entity_scope": ["item"],
+        },
+        format="json",
+    )
+
+    assert response.status_code == 409
+    payload = response.json()
+    assert payload["code"] == "SYNC_LAUNCH_CLUSTER_ALL_UNCONFIGURED"
+    assert payload["errors"]["cluster_id"] == [
+        "Resolve cluster_all eligibility for all databases in /databases before launch."
+    ]
+    assert payload["errors"]["unconfigured_databases"] == [
+        {
+            "database_id": str(database_b.id),
+            "database_name": database_b.name,
+            "cluster_id": str(cluster.id),
+            "cluster_all_eligibility_state": "unconfigured",
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_master_data_sync_launch_database_set_allows_explicit_override_for_excluded_database(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(tenant=default_tenant, name=f"sync-launch-explicit-{uuid4().hex[:6]}")
+    _set_cluster_all_eligibility_state(database=database, state="excluded")
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_workflow_runtime.start_pool_master_data_sync_launch_request_workflow",
+        return_value=SimpleNamespace(enqueue_success=True),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/master-data/sync-launches/",
+            {
+                "mode": "outbound",
+                "target_mode": "database_set",
+                "database_ids": [str(database.id)],
+                "entity_scope": ["item"],
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201
+    payload = response.json()["launch"]
+    assert payload["database_ids"] == [str(database.id)]
+    assert payload["target_resolution"]["eligible_database_ids"] == [str(database.id)]
+    assert payload["target_resolution"]["excluded_databases"] == []
+    assert payload["target_resolution"]["unconfigured_databases"] == []
 
 
 @pytest.mark.django_db

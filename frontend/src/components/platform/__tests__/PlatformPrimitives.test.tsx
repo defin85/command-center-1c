@@ -200,6 +200,25 @@ describe('platform primitives', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
+  it('disables DrawerFormShell submit when submitDisabled is set', () => {
+    render(
+      <AntApp>
+        <DrawerFormShell
+          open
+          onClose={vi.fn()}
+          onSubmit={vi.fn()}
+          title="Attachment workspace"
+          submitText="Save bindings"
+          submitDisabled
+        >
+          <div>Drawer body</div>
+        </DrawerFormShell>
+      </AntApp>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Save bindings' })).toBeDisabled()
+  })
+
   it('renders DrawerSurfaceShell as the canonical non-form drawer surface', async () => {
     const user = userEvent.setup()
 

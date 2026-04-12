@@ -14,11 +14,17 @@ from apps.intercompany_pools.business_configuration_operations import (
     get_business_configuration_verification_availability,
 )
 from apps.intercompany_pools.business_configuration_profile import get_business_configuration_profile
+from apps.intercompany_pools.master_data_sync_cluster_all_eligibility import (
+    build_pool_master_data_sync_readiness_summary,
+    get_pool_master_data_sync_cluster_all_eligibility_state,
+    set_pool_master_data_sync_cluster_all_eligibility_state,
+)
 from apps.intercompany_pools.metadata_catalog import (
     MetadataCatalogError,
     get_database_metadata_catalog_state,
     refresh_metadata_catalog_snapshot,
 )
+from apps.databases.serializers import DatabaseSerializer
 
 
 def _database_error(*, code: str, message: str, details: dict[str, Any] | None = None, status_code: int = 400):
@@ -82,9 +88,19 @@ def _serialize_configuration_profile_state(*, database: Database) -> dict[str, A
     }
 
 
+def _serialize_pool_master_data_sync_state(*, database: Database) -> dict[str, Any]:
+    return {
+        "cluster_all_eligibility": {
+            "state": get_pool_master_data_sync_cluster_all_eligibility_state(database=database),
+        },
+        "readiness": build_pool_master_data_sync_readiness_summary(database=database),
+    }
+
+
 def _serialize_metadata_management_payload(*, tenant_id: str, database: Database) -> dict[str, Any]:
     state = get_database_metadata_catalog_state(tenant_id=tenant_id, database=database)
     profile_state = _serialize_configuration_profile_state(database=database)
+    pool_master_data_sync_state = _serialize_pool_master_data_sync_state(database=database)
 
     if state.snapshot is None or state.resolution is None:
         return {
@@ -112,6 +128,7 @@ def _serialize_metadata_management_payload(*, tenant_id: str, database: Database
                 "observed_metadata_hash": profile_state["observed_metadata_hash"],
                 "publication_drift": profile_state["publication_drift"],
             },
+            "pool_master_data_sync": pool_master_data_sync_state,
         }
 
     snapshot = state.snapshot
@@ -137,6 +154,7 @@ def _serialize_metadata_management_payload(*, tenant_id: str, database: Database
             "observed_metadata_hash": profile_state["observed_metadata_hash"],
             "publication_drift": profile_state["publication_drift"],
         },
+        "pool_master_data_sync": pool_master_data_sync_state,
     }
 
 
@@ -338,4 +356,70 @@ def refresh_metadata_snapshot(request):
             tenant_id=str(tenant_id),
             database=database,
         )
+    )
+
+
+@extend_schema(
+    tags=["v2"],
+    summary="Update pool master-data cluster_all eligibility",
+    description="Set explicit cluster_all eligibility state for pool master-data sync on the selected database.",
+    request=DatabaseMasterDataSyncEligibilityUpdateRequestSerializer,
+    responses={
+        200: DatabaseMasterDataSyncEligibilityUpdateResponseSerializer,
+        400: DatabaseErrorResponseSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden"),
+        404: DatabaseErrorResponseSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def update_pool_master_data_sync_eligibility(request):
+    serializer = DatabaseMasterDataSyncEligibilityUpdateRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _database_error(
+            code="VALIDATION_ERROR",
+            message="Invalid payload",
+            details=serializer.errors,
+            status_code=400,
+        )
+
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _permission_denied("Tenant context is missing.")
+
+    database = _load_database_for_tenant(request, database_id=serializer.validated_data["database_id"])
+    if database is None:
+        return _database_error(code="DATABASE_NOT_FOUND", message="Database not found", status_code=404)
+
+    if not request.user.has_perm(perms.PERM_DATABASES_MANAGE_DATABASE, database):
+        return _permission_denied("You do not have permission to update database metadata.")
+
+    state = str(serializer.validated_data["cluster_all_eligibility_state"] or "")
+    database.metadata = set_pool_master_data_sync_cluster_all_eligibility_state(
+        database=database,
+        state=state,
+    )
+    database.save(update_fields=["metadata", "updated_at"])
+
+    log_admin_action(
+        request,
+        action="database.pool_master_data_sync.cluster_all_eligibility.update",
+        outcome="success",
+        target_type="database",
+        target_id=str(database.id),
+        metadata={
+            "cluster_all_eligibility_state": state,
+        },
+    )
+
+    return Response(
+        {
+            "database": DatabaseSerializer(database).data,
+            "metadata_management": _serialize_metadata_management_payload(
+                tenant_id=str(tenant_id),
+                database=database,
+            ),
+            "message": "Pool master-data cluster_all eligibility updated",
+        }
     )

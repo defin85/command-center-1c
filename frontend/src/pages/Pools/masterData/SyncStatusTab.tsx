@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   App as AntApp,
+  Alert,
   Button,
   Card,
   Descriptions,
@@ -12,7 +13,7 @@ import {
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   createPoolMasterDataSyncLaunch,
@@ -144,9 +145,15 @@ const buildLaunchSummary = (launch: PoolMasterDataSyncLaunch): string => (
 
 export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const { message } = AntApp.useApp()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [clusters, setClusters] = useState<Array<{ id: string; name: string }>>([])
-  const [databases, setDatabases] = useState<Array<{ id: string; name: string; cluster_id: string | null }>>([])
+  const [databases, setDatabases] = useState<Array<{
+    id: string
+    name: string
+    cluster_id: string | null
+    cluster_all_eligibility_state: 'eligible' | 'excluded' | 'unconfigured'
+  }>>([])
   const [databaseId, setDatabaseId] = useState<string | undefined>(searchParams.get('databaseId')?.trim() || undefined)
   const [entityType, setEntityType] = useState<string | undefined>(searchParams.get('entityType')?.trim() || undefined)
   const [priority, setPriority] = useState<PoolMasterDataSyncPriority | undefined>(undefined)
@@ -410,6 +417,16 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       loadLaunchDetail(response.launch.id),
     ])
   }, [loadLaunchDetail, loadLaunches, message, updateRouteParams])
+
+  const openEligibilityContext = useCallback((context: { clusterId: string; databaseId?: string }) => {
+    const next = new URLSearchParams()
+    next.set('cluster', context.clusterId)
+    next.set('context', 'metadata')
+    if (context.databaseId) {
+      next.set('database', context.databaseId)
+    }
+    navigate(`/databases?${next.toString()}`)
+  }, [navigate])
 
   const visibleStatusRows = useMemo(
     () => statusRows.filter((row) => visibleSyncEntityTypes.has(row.entity_type)),
@@ -848,6 +865,29 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             <Tag>terminal {selectedLaunch.progress?.terminal_items ?? 0}</Tag>
           </Space>
 
+          {selectedLaunch.target_mode === 'cluster_all' && selectedLaunch.target_resolution ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`Cluster resolution: ${selectedLaunch.target_resolution.eligible_count} eligible, ${selectedLaunch.target_resolution.excluded_count} excluded, ${selectedLaunch.target_resolution.unconfigured_count} unconfigured.`}
+              description={(
+                <Space direction="vertical" size={4}>
+                  {selectedLaunch.target_resolution.excluded_databases && selectedLaunch.target_resolution.excluded_databases.length > 0 ? (
+                    <Text>
+                      Excluded from snapshot: {selectedLaunch.target_resolution.excluded_databases.map((database) => database.database_name).join(', ')}.
+                    </Text>
+                  ) : null}
+                  {selectedLaunch.target_resolution.excluded_count > 0 ? (
+                    <Text type="secondary">
+                      Use Database Set for one-off launches that must include excluded databases.
+                    </Text>
+                  ) : null}
+                </Space>
+              )}
+            />
+          ) : null}
+
           {selectedLaunch.last_error_code || selectedLaunch.last_error ? (
             <Card size="small" style={{ marginBottom: 16 }}>
               <Space direction="vertical" size={4}>
@@ -886,6 +926,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         registryEntries={registryEntries}
         loadingTargets={loadingTargets}
         onClose={() => setDrawerOpen(false)}
+        onOpenEligibilityContext={openEligibilityContext}
         onSubmit={submitLaunch}
       />
     </Space>

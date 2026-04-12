@@ -27,7 +27,7 @@ get:
       content:
         application/json:
           schema:
-            $ref: ../components/schemas/RefDatabasesResponse.yaml
+            $ref: ../components/schemas/PoolMasterDataSyncTargetDatabasesResponse.yaml
       description: ''
     '400':
       content:

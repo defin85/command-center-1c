@@ -1,6 +1,7 @@
-import { Alert, App, Button, Grid, Space, Spin, Typography } from 'antd'
+import { Alert, App, Button, Grid, Radio, Space, Spin, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { useEffect, useState } from 'react'
 
 import type { DatabaseMetadataManagementConfigurationProfile } from '../../../api/generated/model/databaseMetadataManagementConfigurationProfile'
 import type { DatabaseMetadataManagementResponse } from '../../../api/generated/model/databaseMetadataManagementResponse'
@@ -9,6 +10,7 @@ import {
   useDatabaseMetadataManagement,
   useRefreshDatabaseMetadataSnapshot,
   useReverifyDatabaseConfigurationProfile,
+  useUpdateDatabaseMasterDataSyncEligibility,
 } from '../../../api/queries/databases'
 import { DrawerFormShell } from '../../../components/platform'
 import { trackUiAction } from '../../../observability/uiActionJournal'
@@ -20,6 +22,7 @@ export interface DatabaseMetadataManagementDrawerProps {
   databaseId?: string
   databaseName?: string
   mutatingDisabled?: boolean
+  eligibilityMutatingDisabled?: boolean
   onClose: () => void
   onOperationQueued?: (operationId: string) => void
   onOpenIbcmdProfile?: () => void
@@ -45,6 +48,31 @@ type MetadataSummaryItem = {
   value: string
 }
 
+type ClusterAllEligibilityState = 'eligible' | 'excluded' | 'unconfigured'
+
+type DatabaseMetadataManagementPoolMasterDataSyncState = {
+  cluster_all_eligibility?: {
+    state?: ClusterAllEligibilityState | null
+  } | null
+  readiness?: {
+    cluster_attached?: boolean
+    odata_configured?: boolean
+    credentials_configured?: boolean
+    ibcmd_profile_configured?: boolean
+    service_mapping_status?: string
+    service_mapping_count?: number
+    runtime_enabled?: boolean
+    inbound_enabled?: boolean
+    outbound_enabled?: boolean
+    default_policy?: string
+    health_status?: string
+  } | null
+}
+
+type MetadataManagementPayload = DatabaseMetadataManagementResponse & {
+  pool_master_data_sync?: DatabaseMetadataManagementPoolMasterDataSyncState | null
+}
+
 const { useBreakpoint } = Grid
 const DESKTOP_BREAKPOINT_PX = 992
 
@@ -57,6 +85,8 @@ const formatDateTime = (value?: string | null): string => {
 const formatValue = (value?: string | null): string => {
   return typeof value === 'string' && value.trim() ? value : 'n/a'
 }
+
+const formatBoolean = (value?: boolean): string => (value ? 'Yes' : 'No')
 
 const buildProfileStatusDescriptor = (
   profile: ConfigurationProfileState
@@ -160,6 +190,34 @@ const buildSnapshotStatusDescriptor = (
   }
 }
 
+const buildEligibilityStatusDescriptor = (
+  state: ClusterAllEligibilityState
+): StatusDescriptor => {
+  switch (state) {
+    case 'eligible':
+      return {
+        tone: 'success',
+        label: 'Eligible',
+        message: 'Эта база войдёт в pool master-data cluster_all launch.',
+        description: 'Use this for databases that intentionally belong to cluster-wide manual sync.',
+      }
+    case 'excluded':
+      return {
+        tone: 'info',
+        label: 'Excluded',
+        message: 'Эта база намеренно исключена из pool master-data cluster_all.',
+        description: 'Для разового запуска по этой ИБ используйте target mode Database Set.',
+      }
+    default:
+      return {
+        tone: 'warning',
+        label: 'Unconfigured',
+        message: 'По этой базе ещё не принято явное решение для cluster_all.',
+        description: 'Пока состояние не переведено в Eligible или Excluded, cluster-wide launch блокируется fail-closed.',
+      }
+  }
+}
+
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error && error.message) return error.message
   return 'unknown error'
@@ -226,6 +284,7 @@ export const DatabaseMetadataManagementDrawer = ({
   databaseId,
   databaseName,
   mutatingDisabled = false,
+  eligibilityMutatingDisabled = mutatingDisabled,
   onClose,
   onOperationQueued,
   onOpenIbcmdProfile,
@@ -246,12 +305,19 @@ export const DatabaseMetadataManagementDrawer = ({
   })
   const reverifyMutation = useReverifyDatabaseConfigurationProfile()
   const refreshMutation = useRefreshDatabaseMetadataSnapshot()
+  const updateEligibilityMutation = useUpdateDatabaseMasterDataSyncEligibility()
 
-  const payload: DatabaseMetadataManagementResponse | null = metadataQuery.data ?? null
+  const payload = (metadataQuery.data ?? null) as MetadataManagementPayload | null
   const profile = (payload?.configuration_profile ?? null) as ConfigurationProfileState | null
   const snapshot = payload?.metadata_snapshot ?? null
+  const poolMasterDataSync = payload?.pool_master_data_sync ?? null
+  const eligibilityState = (
+    poolMasterDataSync?.cluster_all_eligibility?.state ?? 'unconfigured'
+  ) as ClusterAllEligibilityState
+  const readiness = poolMasterDataSync?.readiness ?? null
   const profileDescriptor = profile ? buildProfileStatusDescriptor(profile) : null
   const snapshotDescriptor = snapshot ? buildSnapshotStatusDescriptor(snapshot, profile) : null
+  const eligibilityDescriptor = buildEligibilityStatusDescriptor(eligibilityState)
   const queuedOperationId =
     reverifyMutation.data?.operation_id || profile?.verification_operation_id || ''
   const reverifyBlockedByIbcmdProfile = (
@@ -259,6 +325,7 @@ export const DatabaseMetadataManagementDrawer = ({
     && profile?.reverify_blocking_action === 'configure_ibcmd_connection_profile'
   )
   const refreshBlockedByMissingProfile = snapshot?.missing_reason === 'configuration_profile_unavailable'
+  const [eligibilityDraft, setEligibilityDraft] = useState<ClusterAllEligibilityState>('unconfigured')
   const trackMetadataAction = <T,>(actionName: string, handler: () => T) => (
     trackUiAction({
       actionKind: 'operator.action',
@@ -269,6 +336,15 @@ export const DatabaseMetadataManagementDrawer = ({
       },
     }, handler)
   )
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    setEligibilityDraft(eligibilityState)
+  }, [eligibilityState, open])
+
+  const eligibilityDirty = eligibilityDraft !== eligibilityState
 
   const handleReverify = () => {
     if (!databaseId || mutatingDisabled) return
@@ -297,6 +373,24 @@ export const DatabaseMetadataManagementDrawer = ({
           message.error(`Не удалось обновить snapshot: ${error.message}`)
         },
       }
+    )
+  }
+
+  const handleSaveEligibility = () => {
+    if (!databaseId || eligibilityMutatingDisabled || !eligibilityDirty) return
+    updateEligibilityMutation.mutate(
+      {
+        database_id: databaseId,
+        cluster_all_eligibility_state: eligibilityDraft,
+      },
+      {
+        onSuccess: (response) => {
+          message.success(response.message || 'Pool master-data eligibility updated')
+        },
+        onError: (error: Error) => {
+          message.error(`Не удалось обновить eligibility: ${error.message}`)
+        },
+      },
     )
   }
 
@@ -439,6 +533,76 @@ export const DatabaseMetadataManagementDrawer = ({
             { key: 'provenance_database_id', label: 'Provenance database', value: formatValue(snapshot.provenance_database_id) },
             { key: 'provenance_confirmed_at', label: 'Provenance confirmed at', value: formatDateTime(snapshot.provenance_confirmed_at) },
             { key: 'missing_reason', label: 'Missing reason', value: formatValue(snapshot.missing_reason) },
+          ])}
+
+          <div
+            aria-hidden
+            style={{
+              borderTop: '1px solid #e5e7eb',
+              margin: 0,
+              width: '100%',
+            }}
+          />
+
+          <Alert
+            type={eligibilityDescriptor.tone}
+            showIcon
+            message={
+              <Space size="small" wrap>
+                <span>{eligibilityDescriptor.message}</span>
+                {renderStatusTag(eligibilityDescriptor)}
+              </Space>
+            }
+            description={eligibilityDescriptor.description}
+            action={(
+              <Button
+                type="primary"
+                onClick={() => {
+                  void trackMetadataAction('Update cluster_all eligibility', handleSaveEligibility)
+                }}
+                disabled={eligibilityMutatingDisabled || !eligibilityDirty}
+                loading={updateEligibilityMutation.isPending}
+                data-testid="database-metadata-management-save-eligibility"
+              >
+                Save eligibility
+              </Button>
+            )}
+          />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Pool master-data cluster_all eligibility
+            </Typography.Title>
+            <Radio.Group
+              value={eligibilityDraft}
+              onChange={(event) => setEligibilityDraft(event.target.value as ClusterAllEligibilityState)}
+              disabled={eligibilityMutatingDisabled}
+              data-testid="database-metadata-management-eligibility"
+            >
+              <Space direction="vertical" size={8}>
+                <Radio value="eligible">Eligible: include this database in cluster_all.</Radio>
+                <Radio value="excluded">Excluded: keep it out of cluster_all intentionally.</Radio>
+                <Radio value="unconfigured">Unconfigured: block cluster_all until a decision is made.</Radio>
+              </Space>
+            </Radio.Group>
+            <Typography.Text type="secondary">
+              Eligibility is an operator decision about business participation. It does not change automatically
+              when readiness or health drifts.
+            </Typography.Text>
+          </div>
+
+          {renderMetadataSummarySection('Pool master-data readiness', [
+            { key: 'cluster_attached', label: 'Cluster attached', value: formatBoolean(readiness?.cluster_attached) },
+            { key: 'runtime_enabled', label: 'Runtime enabled', value: formatBoolean(readiness?.runtime_enabled) },
+            { key: 'inbound_enabled', label: 'Inbound enabled', value: formatBoolean(readiness?.inbound_enabled) },
+            { key: 'outbound_enabled', label: 'Outbound enabled', value: formatBoolean(readiness?.outbound_enabled) },
+            { key: 'odata_configured', label: 'OData configured', value: formatBoolean(readiness?.odata_configured) },
+            { key: 'credentials_configured', label: 'Credentials configured', value: formatBoolean(readiness?.credentials_configured) },
+            { key: 'ibcmd_profile_configured', label: 'IBCMD profile configured', value: formatBoolean(readiness?.ibcmd_profile_configured) },
+            { key: 'service_mapping_status', label: 'Service mapping status', value: formatValue(readiness?.service_mapping_status) },
+            { key: 'service_mapping_count', label: 'Service mapping count', value: String(readiness?.service_mapping_count ?? 0) },
+            { key: 'default_policy', label: 'Default policy', value: formatValue(readiness?.default_policy) },
+            { key: 'health_status', label: 'Health status', value: formatValue(readiness?.health_status) },
           ])}
 
           <Typography.Text type="secondary">

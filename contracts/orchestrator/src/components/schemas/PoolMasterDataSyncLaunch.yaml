@@ -72,6 +72,8 @@ properties:
     items:
       type: object
       additionalProperties: true
+  target_resolution:
+    $ref: ./PoolMasterDataSyncLaunchTargetResolution.yaml
   items:
     type: array
     items:

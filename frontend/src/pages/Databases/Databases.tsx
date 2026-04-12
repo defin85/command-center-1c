@@ -201,6 +201,12 @@ export const Databases = () => {
     return !canOperateDatabase(selectedDatabaseIdFromUrl)
   }, [canOperateDatabase, mutatingDisabled, selectedDatabaseIdFromUrl])
 
+  const metadataManagementEligibilityMutatingDisabled = useMemo(() => {
+    if (mutatingDisabled) return true
+    if (!selectedDatabaseIdFromUrl) return true
+    return !canManageDatabase(selectedDatabaseIdFromUrl)
+  }, [canManageDatabase, mutatingDisabled, selectedDatabaseIdFromUrl])
+
   const canManageSelected = useMemo(
     () => selectedDatabases.length > 0 && selectedDatabases.every((db) => canManageDatabase(db.id)),
     [selectedDatabases, canManageDatabase]
@@ -1055,6 +1061,7 @@ export const Databases = () => {
         databaseId={selectedDatabase?.id}
         databaseName={selectedDatabase?.name}
         mutatingDisabled={metadataManagementMutatingDisabled}
+        eligibilityMutatingDisabled={metadataManagementEligibilityMutatingDisabled}
         onClose={closeMetadataManagementDrawer}
         onOperationQueued={(operationId) => navigate(`/operations?operation=${operationId}`)}
         onOpenIbcmdProfile={() => {

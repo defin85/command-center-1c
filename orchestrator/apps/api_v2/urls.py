@@ -109,6 +109,11 @@ urlpatterns = [
     path('databases/get-metadata-management/', databases.get_metadata_management, name='get-metadata-management'),
     path('databases/update-credentials/', databases.update_database_credentials, name='update-database-credentials'),
     path('databases/update-dbms-metadata/', databases.update_dbms_metadata, name='update-dbms-metadata'),
+    path(
+        'databases/update-pool-master-data-sync-eligibility/',
+        databases.update_pool_master_data_sync_eligibility,
+        name='update-pool-master-data-sync-eligibility',
+    ),
     path('databases/update-ibcmd-connection-profile/', databases.update_ibcmd_connection_profile, name='update-ibcmd-connection-profile'),
     path('databases/reverify-configuration-profile/', databases.reverify_configuration_profile, name='reverify-configuration-profile'),
     path('databases/refresh-metadata-snapshot/', databases.refresh_metadata_snapshot, name='refresh-metadata-snapshot'),
