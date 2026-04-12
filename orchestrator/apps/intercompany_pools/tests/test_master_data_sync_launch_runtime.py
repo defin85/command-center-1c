@@ -327,6 +327,75 @@ def test_run_sync_launch_fanout_for_manual_outbound_seeds_canonical_snapshot_bef
 
 
 @pytest.mark.django_db
+def test_run_sync_launch_fanout_for_manual_outbound_bounds_origin_event_id_length() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"sync-launch-outbound-long-{uuid4().hex[:6]}",
+        name="Sync Launch Outbound Long Origin Event",
+    )
+    cluster = _create_cluster(tenant=tenant, suffix="outbound-long")
+    database = _create_database(tenant=tenant, cluster=cluster, suffix="outbound-long")
+    launch_request = _create_launch_request(
+        tenant=tenant,
+        database_ids=[str(database.id)],
+        entity_scope=[PoolMasterDataEntityType.ITEM],
+        mode=PoolMasterDataSyncLaunchMode.OUTBOUND,
+    )
+    launch_item = launch_request.items.create(database=database, entity_type=PoolMasterDataEntityType.ITEM)
+    PoolMasterItem.objects.create(
+        tenant=tenant,
+        canonical_id=f"item-long-{'x' * 96}",
+        name="Launch Snapshot Long Item",
+        sku="LS-LONG-001",
+        unit="pcs",
+        metadata={"seed": "runtime"},
+    )
+    scheduled_job = _create_sync_job(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+        direction=PoolMasterDataSyncDirection.OUTBOUND,
+    )
+
+    def _trigger(**kwargs) -> PoolMasterDataSyncTriggerResult:
+        outbox_row = PoolMasterDataSyncOutbox.objects.get(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+        )
+        assert len(outbox_row.origin_event_id) <= 128
+        assert outbox_row.origin_event_id.startswith(
+            f"manual-sync-launch:{launch_request.id}:{launch_item.id}:scope:"
+        )
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=scheduled_job,
+            created_job=True,
+            started_workflow=True,
+            skipped=False,
+            skip_reason=None,
+            policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+            policy_source="database_scope",
+            start_result=SimpleNamespace(
+                enqueue_status="queued",
+                enqueue_error=None,
+                sync_job=scheduled_job,
+            ),
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_service.trigger_pool_master_data_outbound_sync_job",
+        side_effect=_trigger,
+    ):
+        refreshed = run_pool_master_data_sync_launch_request_fanout(
+            launch_request_id=str(launch_request.id)
+        )
+
+    launch_item.refresh_from_db()
+    assert launch_item.status == PoolMasterDataSyncLaunchItemStatus.SCHEDULED
+    assert refreshed.metadata["aggregate_counters"]["scheduled"] == 1
+
+
+@pytest.mark.django_db
 def test_create_sync_launch_request_preserves_immutable_target_snapshot() -> None:
     tenant = Tenant.objects.create(slug=f"sync-launch-snapshot-{uuid4().hex[:6]}", name="Sync Launch Snapshot")
     cluster = _create_cluster(tenant=tenant, suffix="snapshot")

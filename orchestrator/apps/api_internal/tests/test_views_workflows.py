@@ -178,6 +178,48 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
         )
         return tenant, execution, template
 
+    def _create_pool_runtime_master_data_sync_fixture(self, *, operation_type: str, sync_direction: str):
+        suffix = uuid4().hex[:8]
+        tenant = Tenant.objects.create(
+            slug=f"tenant-pool-runtime-sync-{suffix}",
+            name=f"Tenant Pool Runtime Sync {suffix}",
+        )
+        template = WorkflowTemplate.objects.create(
+            name=f"pool-runtime-sync-{uuid4().hex[:8]}",
+            description="",
+            workflow_type=WorkflowType.SEQUENTIAL,
+            dag_structure={
+                "nodes": [
+                    {
+                        "id": "n1",
+                        "name": "Master Data Sync",
+                        "type": "operation",
+                        "template_id": operation_type,
+                    }
+                ],
+                "edges": [],
+            },
+            is_valid=True,
+            is_active=True,
+        )
+        execution = template.create_execution(
+            {
+                "contract_version": "pool_master_data_sync_workflow.v1",
+                "sync_job_id": str(uuid4()),
+                "tenant_id": str(tenant.id),
+                "database_id": str(uuid4()),
+                "entity_type": "item",
+                "sync_policy": "bidirectional",
+                "sync_direction": sync_direction,
+                "correlation_id": f"corr-{sync_direction}-bridge-001",
+                "origin_system": "ib",
+                "origin_event_id": f"evt-{sync_direction}-bridge-001",
+            },
+            tenant=tenant,
+            execution_consumer="pools",
+        )
+        return tenant, execution, template
+
     def _create_pool_batch_publication_fixture(self):
         tenant = Tenant.objects.create(slug=f"tenant-pool-batch-{uuid4().hex[:8]}", name="Tenant Pool Batch")
         pool = OrganizationPool.objects.create(
@@ -2706,6 +2748,10 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             workflow_execution_id=str(execution.id),
             operation_type="pool.master_data_sync.launch",
         )
+        payload["operation_ref"] = {
+            "alias": "pool.master_data_sync.launch",
+            "binding_mode": "alias_latest",
+        }
         payload["payload"] = {
             "launch_request_id": execution.input_context["launch_request_id"],
         }
@@ -2733,6 +2779,73 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
                 idempotency_key="bridge-key-0001",
             ).exists()
         )
+
+    def test_execute_pool_runtime_step_allows_runless_master_data_sync_steps_without_pool_run_id(self):
+        cases = [
+            (
+                "pool.master_data_sync.inbound",
+                "inbound",
+                "apps.intercompany_pools.master_data_sync_execution.execute_pool_master_data_sync_inbound_step",
+                {"step": "master_data_sync.inbound", "status": "completed"},
+            ),
+            (
+                "pool.master_data_sync.dispatch",
+                "outbound",
+                "apps.intercompany_pools.master_data_sync_execution.execute_pool_master_data_sync_dispatch_step",
+                {"step": "master_data_sync.dispatch", "status": "completed"},
+            ),
+            (
+                "pool.master_data_sync.finalize",
+                "outbound",
+                "apps.intercompany_pools.master_data_sync_execution.execute_pool_master_data_sync_finalize_step",
+                {"step": "master_data_sync.finalize", "status": "completed"},
+            ),
+        ]
+
+        for operation_type, sync_direction, patch_target, expected_result in cases:
+            with self.subTest(operation_type=operation_type):
+                tenant, execution, _ = self._create_pool_runtime_master_data_sync_fixture(
+                    operation_type=operation_type,
+                    sync_direction=sync_direction,
+                )
+                payload = self._build_bridge_request_payload(
+                    tenant_id=str(tenant.id),
+                    pool_run_id=None,
+                    workflow_execution_id=str(execution.id),
+                    operation_type=operation_type,
+                )
+                payload["operation_ref"] = {
+                    "alias": operation_type,
+                    "binding_mode": "alias_latest",
+                }
+                payload["payload"] = {
+                    "sync_job_id": execution.input_context["sync_job_id"],
+                }
+
+                with patch(
+                    patch_target,
+                    return_value=expected_result,
+                ) as step_mock:
+                    response = self.client.post(
+                        "/api/v2/internal/workflows/execute-pool-runtime-step",
+                        payload,
+                        format="json",
+                    )
+
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertTrue(response.data["success"])
+                self.assertEqual(response.data["status"], "completed")
+                self.assertEqual(response.data["workflow_execution_id"], str(execution.id))
+                self.assertNotIn("pool_run_id", response.data)
+                self.assertFalse(response.data["idempotency_replayed"])
+                self.assertEqual(response.data["result"], expected_result)
+                step_mock.assert_called_once_with(input_context=execution.input_context)
+                self.assertFalse(
+                    PoolRuntimeStepIdempotencyLog.objects.filter(
+                        tenant_id=tenant.id,
+                        idempotency_key="bridge-key-0001",
+                    ).exists()
+                )
 
     def test_execute_pool_runtime_step_propagates_publication_auth_context_when_present(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()

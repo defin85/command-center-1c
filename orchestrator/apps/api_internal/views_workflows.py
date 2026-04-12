@@ -44,6 +44,9 @@ POOL_RUNTIME_CONTEXT_MISMATCH = "POOL_RUNTIME_CONTEXT_MISMATCH"
 IDEMPOTENCY_KEY_CONFLICT = "IDEMPOTENCY_KEY_CONFLICT"
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 POOL_RUNTIME_OPTIONAL_RUN_OPERATION_TYPES = {
+    "pool.master_data_sync.inbound",
+    "pool.master_data_sync.dispatch",
+    "pool.master_data_sync.finalize",
     "pool.master_data_sync.launch",
 }
 ERROR_DETAILS_MAX_SIZE_BYTES = 8 * 1024
@@ -2091,12 +2094,29 @@ def _execute_pool_runtime_bridge_step(
     runtime_context: dict[str, object],
     execution,
 ) -> dict[str, object]:
+    from apps.intercompany_pools.master_data_sync_execution import (
+        execute_pool_master_data_sync_dispatch_step,
+        execute_pool_master_data_sync_finalize_step,
+        execute_pool_master_data_sync_inbound_step,
+    )
     from apps.intercompany_pools.master_data_sync_launch_execution import (
         execute_pool_master_data_sync_launch_step,
     )
     from apps.intercompany_pools.pool_domain_steps import execute_pool_runtime_step
 
     execution_input_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    if operation_type == "pool.master_data_sync.inbound":
+        return execute_pool_master_data_sync_inbound_step(
+            input_context=execution_input_context,
+        )
+    if operation_type == "pool.master_data_sync.dispatch":
+        return execute_pool_master_data_sync_dispatch_step(
+            input_context=execution_input_context,
+        )
+    if operation_type == "pool.master_data_sync.finalize":
+        return execute_pool_master_data_sync_finalize_step(
+            input_context=execution_input_context,
+        )
     if operation_type == "pool.master_data_sync.launch":
         return execute_pool_master_data_sync_launch_step(
             input_context=execution_input_context,
@@ -2459,8 +2479,8 @@ def execute_pool_runtime_step_v2(request):
             runtime_context["publication_auth"] = publication_auth
 
         if run is None:
-            # sync launch fan-out is state-based and reuses pending launch items, so bridge retries
-            # can safely re-enter without dedicated run-scoped idempotency persistence.
+            # Run-less master-data sync workflows are state-based, so bridge retries can safely
+            # re-enter without dedicated run-scoped idempotency persistence.
             step_result = _execute_pool_runtime_bridge_step(
                 operation_type=operation_type,
                 rendered_payload=rendered_payload,

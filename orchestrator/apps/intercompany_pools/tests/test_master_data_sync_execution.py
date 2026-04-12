@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from apps.databases.models import Database
+from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.master_data_sync_conflicts import (
     MASTER_DATA_SYNC_CONFLICT_DEDUPE_REVIEW_REQUIRED,
@@ -19,7 +19,6 @@ from apps.intercompany_pools.master_data_sync_inbound_poller import (
 )
 from apps.intercompany_pools.master_data_sync_execution import (
     LegacyInboundRouteDisabledError,
-    MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED,
     MASTER_DATA_SYNC_INBOUND_CAPABILITY_DISABLED,
     MASTER_DATA_SYNC_INBOUND_DISABLED,
     MASTER_DATA_SYNC_OUTBOUND_CAPABILITY_DISABLED,
@@ -71,6 +70,16 @@ def _create_database(*, tenant: Tenant, suffix: str) -> Database:
         odata_url=f"http://localhost/odata/{suffix}.odata",
         username="admin",
         password="secret",
+    )
+
+
+def _create_service_mapping(*, database: Database, username: str = "svc-user", password: str = "svc-pass") -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username=username,
+        ib_password=password,
+        is_service=True,
     )
 
 
@@ -671,39 +680,139 @@ def test_finalize_step_marks_job_succeeded() -> None:
     assert sync_job.finished_at is not None
 
 
-@pytest.mark.django_db
-def test_inbound_step_fails_closed_when_callbacks_are_not_configured() -> None:
-    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-nocb-{uuid4().hex[:6]}", name="Sync Inbound No Callback")
+@pytest.mark.django_db(transaction=True)
+def test_inbound_step_uses_live_odata_transport_baseline_then_delta_when_callbacks_are_missing() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-exec-inbound-live-{uuid4().hex[:6]}", name="Sync Inbound Live OData")
     database = _create_database(tenant=tenant, suffix="inbound-nocb")
+    _create_service_mapping(database=database)
     _set_runtime(enabled=True, inbound_enabled=True, outbound_enabled=True, default_policy=PoolMasterDataSyncPolicy.IB_MASTER)
-    sync_job = PoolMasterDataSyncJob.objects.create(
-        tenant=tenant,
-        database=database,
-        entity_type=PoolMasterDataEntityType.ITEM,
-        policy=PoolMasterDataSyncPolicy.IB_MASTER,
-        direction=PoolMasterDataSyncDirection.INBOUND,
-        status=PoolMasterDataSyncJobStatus.RUNNING,
-    )
     reset_pool_master_data_sync_inbound_callbacks()
 
-    with pytest.raises(MasterDataSyncConflictError) as exc_info:
-        execute_pool_master_data_sync_inbound_step(
+    live_rows = [
+        {
+            "Ref_Key": "item-existing-001",
+            "DataVersion": "AAAAAAAAAAE=",
+            "Code": "00-000001",
+            "Description": "Existing Item",
+            "Артикул": "SKU-EXISTING-001",
+            "ВидНоменклатуры_Key": "kind-001",
+            "ЕдиницаИзмерения_Key": "unit-001",
+            "НаименованиеПолное": "Existing Item Full",
+            "Комментарий": "",
+            "Услуга": False,
+            "DeletionMark": False,
+            "IsFolder": False,
+        }
+    ]
+    client_inits: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **kwargs):
+            client_inits.append(dict(kwargs))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields)
+            assert entity_name == "Catalog_Номенклатура"
+            start = int(skip or 0)
+            size = int(top or len(live_rows))
+            return [dict(row) for row in live_rows[start : start + size]]
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        baseline_job = PoolMasterDataSyncJob.objects.create(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+            policy=PoolMasterDataSyncPolicy.IB_MASTER,
+            direction=PoolMasterDataSyncDirection.INBOUND,
+            status=PoolMasterDataSyncJobStatus.RUNNING,
+        )
+        baseline_output = execute_pool_master_data_sync_inbound_step(
             input_context={
                 "contract_version": "pool_master_data_sync_workflow.v1",
-                "sync_job_id": str(sync_job.id),
+                "sync_job_id": str(baseline_job.id),
                 "tenant_id": str(tenant.id),
                 "database_id": str(database.id),
                 "entity_type": PoolMasterDataEntityType.ITEM,
                 "sync_policy": PoolMasterDataSyncPolicy.IB_MASTER,
                 "sync_direction": PoolMasterDataSyncDirection.INBOUND,
-                "correlation_id": "corr-inbound-nocb-001",
+                "correlation_id": "corr-inbound-live-baseline-001",
                 "origin_system": "ib",
-                "origin_event_id": "evt-inbound-nocb-001",
+                "origin_event_id": "evt-inbound-live-baseline-001",
+            }
+        )
+        assert baseline_output["inbound"] == {
+            "polled": 0,
+            "applied": 0,
+            "duplicates": 0,
+            "ack_scheduled": True,
+            "next_checkpoint_token": baseline_output["inbound"]["next_checkpoint_token"],
+        }
+
+        live_rows.append(
+            {
+                "Ref_Key": "item-new-001",
+                "DataVersion": "AAAAAAAAAAI=",
+                "Code": "00-000002",
+                "Description": "New Live Item",
+                "Артикул": "SKU-LIVE-001",
+                "ВидНоменклатуры_Key": "kind-001",
+                "ЕдиницаИзмерения_Key": "unit-001",
+                "НаименованиеПолное": "New Live Item Full",
+                "Комментарий": "live delta",
+                "Услуга": False,
+                "DeletionMark": False,
+                "IsFolder": False,
+            }
+        )
+        delta_job = PoolMasterDataSyncJob.objects.create(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+            policy=PoolMasterDataSyncPolicy.IB_MASTER,
+            direction=PoolMasterDataSyncDirection.INBOUND,
+            status=PoolMasterDataSyncJobStatus.RUNNING,
+        )
+        delta_output = execute_pool_master_data_sync_inbound_step(
+            input_context={
+                "contract_version": "pool_master_data_sync_workflow.v1",
+                "sync_job_id": str(delta_job.id),
+                "tenant_id": str(tenant.id),
+                "database_id": str(database.id),
+                "entity_type": PoolMasterDataEntityType.ITEM,
+                "sync_policy": PoolMasterDataSyncPolicy.IB_MASTER,
+                "sync_direction": PoolMasterDataSyncDirection.INBOUND,
+                "correlation_id": "corr-inbound-live-delta-001",
+                "origin_system": "ib",
+                "origin_event_id": "evt-inbound-live-delta-001",
             }
         )
 
-    assert exc_info.value.code == MASTER_DATA_SYNC_CONFLICT_APPLY
-    assert exc_info.value.diagnostics["error_code"] == MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED
+    assert delta_output["inbound"]["polled"] == 1
+    assert delta_output["inbound"]["applied"] == 1
+    imported_item = PoolMasterItem.objects.get(tenant=tenant, canonical_id="item:item-new-001")
+    assert imported_item.name == "New Live Item"
+    assert imported_item.sku == "SKU-LIVE-001"
+    assert imported_item.metadata["ib_ref_keys"][str(database.id)] == "item-new-001"
+    assert imported_item.metadata["item_kind_ref"] == "kind-001"
+
+    checkpoint = PoolMasterDataSourceRecord.objects.filter(
+        tenant=tenant,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        source_database=database,
+        source_ref="item-new-001",
+    ).first()
+    assert checkpoint is not None
+    assert client_inits
+    assert client_inits[0]["verify_tls"] is True
 
 
 @pytest.mark.django_db(transaction=True)

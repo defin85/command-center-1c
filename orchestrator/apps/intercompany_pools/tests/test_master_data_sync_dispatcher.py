@@ -7,17 +7,19 @@ from uuid import uuid4
 import pytest
 from django.utils import timezone
 
-from apps.databases.models import Database
+from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.master_data_sync_dispatcher import (
     MasterDataSyncTransportError,
     dispatch_pending_master_data_sync_outbox,
 )
 from apps.intercompany_pools.models import (
+    PoolMasterDataBinding,
     PoolMasterDataEntityType,
     PoolMasterDataSyncConflict,
     PoolMasterDataSyncConflictStatus,
     PoolMasterDataSyncOutbox,
     PoolMasterDataSyncOutboxStatus,
+    PoolMasterItem,
 )
 from apps.tenancy.models import Tenant
 
@@ -30,6 +32,16 @@ def _create_database(*, tenant: Tenant, suffix: str) -> Database:
         odata_url=f"http://localhost/odata/{suffix}.odata",
         username="admin",
         password="secret",
+    )
+
+
+def _create_service_mapping(*, database: Database, username: str = "svc-user", password: str = "svc-pass") -> None:
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username=username,
+        ib_password=password,
+        is_service=True,
     )
 
 
@@ -168,6 +180,110 @@ def test_dispatcher_respects_batch_size_and_availability_window() -> None:
     refreshed_future = PoolMasterDataSyncOutbox.objects.get(id=row_future.id)
     assert refreshed_first.status == PoolMasterDataSyncOutboxStatus.SENT
     assert refreshed_future.status == PoolMasterDataSyncOutboxStatus.PENDING
+
+
+@pytest.mark.django_db
+def test_dispatcher_uses_live_odata_item_transport_by_default_and_materializes_binding() -> None:
+    tenant = Tenant.objects.create(slug=f"sync-dispatch-live-{uuid4().hex[:6]}", name="Sync Dispatch Live")
+    database = _create_database(tenant=tenant, suffix="live")
+    _create_service_mapping(database=database)
+    item = PoolMasterItem.objects.create(
+        tenant=tenant,
+        canonical_id="item-live-001",
+        name="Live Item",
+        sku="SKU-LIVE-001",
+        metadata={
+            "code": "00-100001",
+            "item_kind_ref": "kind-live-001",
+            "unit_ref": "unit-live-001",
+        },
+    )
+    row = PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-live-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-live-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "item_upsert",
+            "canonical_id": "item-live-001",
+            "payload": {
+                "canonical_id": "item-live-001",
+                "name": "Live Item",
+                "sku": "SKU-LIVE-001",
+                "metadata": dict(item.metadata),
+            },
+            "payload_fingerprint": "fp-live-001",
+        },
+        available_at=timezone.now() - timedelta(seconds=1),
+        attempt_count=0,
+    )
+
+    client_inits: list[dict[str, object]] = []
+    create_calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **kwargs):
+            client_inits.append(dict(kwargs))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields, top, skip)
+            return []
+
+        def create_entity(self, entity_name, entity_data):
+            create_calls.append({"entity_name": entity_name, "entity_data": dict(entity_data)})
+            return {"Ref_Key": "target-live-item-001"}
+
+        def update_entity(self, entity_name, entity_id, entity_data):
+            raise AssertionError(f"unexpected update for {entity_name} {entity_id} {entity_data}")
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        result = dispatch_pending_master_data_sync_outbox(batch_size=10)
+
+    assert result.claimed == 1
+    assert result.sent == 1
+    assert result.failed == 0
+    refreshed_row = PoolMasterDataSyncOutbox.objects.get(id=row.id)
+    assert refreshed_row.status == PoolMasterDataSyncOutboxStatus.SENT
+    binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        canonical_id="item-live-001",
+    )
+    assert binding.ib_ref_key == "target-live-item-001"
+    item.refresh_from_db()
+    assert item.metadata["ib_ref_keys"][str(database.id)] == "target-live-item-001"
+    assert create_calls == [
+        {
+            "entity_name": "Catalog_Номенклатура",
+            "entity_data": {
+                "Description": "Live Item",
+                "НаименованиеПолное": "Live Item",
+                "ВидНоменклатуры_Key": "kind-live-001",
+                "Parent_Key": "00000000-0000-0000-0000-000000000000",
+                "IsFolder": False,
+                "DeletionMark": False,
+                "Услуга": False,
+                "Code": "00-100001",
+                "Артикул": "SKU-LIVE-001",
+                "ЕдиницаИзмерения_Key": "unit-live-001",
+            },
+        }
+    ]
+    assert client_inits
+    assert client_inits[0]["verify_tls"] is True
 
 
 @pytest.mark.django_db

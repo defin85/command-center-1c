@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -29,6 +30,18 @@ class ManualOutboundSnapshotResult:
     candidates: int
     prepared: int
     blocked: int
+
+
+def _build_scoped_origin_event_id(*, origin_event_id: str, canonical_id: str) -> str:
+    base = str(origin_event_id or "").strip() or "manual_outbound_snapshot"
+    scoped = f"{base}:{str(canonical_id or '').strip()}"
+    if len(scoped) <= 128:
+        return scoped
+
+    digest = hashlib.sha256(scoped.encode("utf-8")).hexdigest()[:16]
+    separator = ":scope:"
+    available_base = max(1, 128 - len(separator) - len(digest))
+    return f"{base[:available_base]}{separator}{digest}"
 
 
 def enqueue_manual_outbound_snapshot_for_scope(
@@ -80,7 +93,10 @@ def enqueue_manual_outbound_snapshot_for_scope(
             mutation_kind=mutation_kind,
             payload=payload,
             origin_system=str(origin_system or ""),
-            origin_event_id=f"{origin_event_id}:{canonical_id}",
+            origin_event_id=_build_scoped_origin_event_id(
+                origin_event_id=str(origin_event_id or ""),
+                canonical_id=canonical_id,
+            ),
         )
         if outbox_row is not None:
             prepared += 1

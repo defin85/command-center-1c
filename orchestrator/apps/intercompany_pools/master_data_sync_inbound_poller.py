@@ -397,7 +397,8 @@ def _mark_checkpoint_polled(
     source_checkpoint_token: str,
     next_checkpoint_token: str,
 ) -> None:
-    metadata = dict(checkpoint.metadata or {})
+    latest = PoolMasterDataSyncCheckpoint.objects.filter(id=checkpoint.id).only("metadata").first()
+    metadata = dict(latest.metadata or {}) if latest is not None else dict(checkpoint.metadata or {})
     metadata["source_checkpoint_token"] = str(source_checkpoint_token or "")
     metadata["pending_checkpoint_token"] = str(next_checkpoint_token or "")
     metadata["last_polled_at"] = timezone.now().isoformat()

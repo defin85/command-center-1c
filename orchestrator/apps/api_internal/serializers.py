@@ -242,9 +242,30 @@ class PoolRuntimeOperationRefSerializer(serializers.Serializer):
     """Pinned operation binding provenance for pool runtime bridge payload."""
 
     alias = serializers.CharField(max_length=255)
-    binding_mode = serializers.ChoiceField(choices=["required_alias", "pinned_exposure"])
-    template_exposure_id = serializers.UUIDField()
-    template_exposure_revision = serializers.IntegerField(min_value=1)
+    binding_mode = serializers.ChoiceField(choices=["required_alias", "alias_latest", "pinned_exposure"])
+    template_exposure_id = serializers.UUIDField(required=False, allow_null=True)
+    template_exposure_revision = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+    def validate(self, attrs):
+        binding_mode = str(attrs.get("binding_mode") or "").strip()
+        template_exposure_id = attrs.get("template_exposure_id")
+        template_exposure_revision = attrs.get("template_exposure_revision")
+
+        if binding_mode == "pinned_exposure":
+            errors: dict[str, str] = {}
+            if template_exposure_id is None:
+                errors["template_exposure_id"] = "This field is required for pinned_exposure mode."
+            if template_exposure_revision is None:
+                errors["template_exposure_revision"] = (
+                    "This field is required for pinned_exposure mode."
+                )
+            if errors:
+                raise serializers.ValidationError(errors)
+        else:
+            attrs.pop("template_exposure_id", None)
+            attrs.pop("template_exposure_revision", None)
+
+        return attrs
 
 
 class PoolRuntimePublicationAuthSerializer(serializers.Serializer):
@@ -298,6 +319,9 @@ class PoolRuntimeStepExecutionSerializer(serializers.Serializer):
         operation_type = str(attrs.get("operation_type") or "").strip()
         raw_pool_run_id = str(attrs.get("pool_run_id") or "").strip()
         pool_run_optional_operation_types = {
+            "pool.master_data_sync.inbound",
+            "pool.master_data_sync.dispatch",
+            "pool.master_data_sync.finalize",
             "pool.master_data_sync.launch",
         }
 

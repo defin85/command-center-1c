@@ -9,6 +9,7 @@ OData Client для работы с 1С:Предприятие 8.3 OData API.
 - Health checks
 """
 
+import base64
 import logging
 from typing import Dict, List, Optional, Any
 from urllib.parse import quote
@@ -70,7 +71,8 @@ class ODataClient:
         base_url: str,
         username: str,
         password: str,
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        verify_tls: bool = True,
     ):
         """
         Инициализация OData client.
@@ -84,6 +86,7 @@ class ODataClient:
         self.base_url = base_url.rstrip('/')
         self.username = username
         self.password = password
+        self.verify_tls = bool(verify_tls)
         self.timeout = (
             (self.CONNECT_TIMEOUT, timeout)
             if timeout
@@ -106,8 +109,8 @@ class ODataClient:
         """
         session = requests.Session()
 
-        # Basic auth
-        session.auth = (self.username, self.password)
+        raw_credentials = f"{self.username}:{self.password}".encode("utf-8")
+        basic_credentials = base64.b64encode(raw_credentials).decode("ascii")
 
         # Retry strategy
         retry_strategy = Retry(
@@ -130,7 +133,8 @@ class ODataClient:
         session.headers.update({
             'Accept': 'application/json',
             'Content-Type': 'application/json;odata=nometadata',
-            'User-Agent': 'CommandCenter1C-ODataClient/1.0'
+            'User-Agent': 'CommandCenter1C-ODataClient/1.0',
+            'Authorization': f'Basic {basic_credentials}',
         })
 
         return session
@@ -201,7 +205,8 @@ class ODataClient:
                 url=url,
                 json=json_data,
                 params=params,
-                timeout=self.timeout
+                timeout=self.timeout,
+                verify=self.verify_tls,
             )
 
             # Check HTTP status

@@ -35,6 +35,11 @@ from .master_data_sync_inbound_poller import (
     MasterDataSyncSelectChangesResult,
     process_master_data_sync_inbound_batch,
 )
+from .master_data_sync_live_odata_transport import (
+    MasterDataSyncLiveODataError,
+    notify_changes_received_from_live_odata,
+    select_changes_from_live_odata,
+)
 from .master_data_sync_policy import resolve_pool_master_data_sync_policy
 from .master_data_sync_runtime_settings import require_pool_master_data_sync_runtime_settings
 from .master_data_sync_workflow_contract import validate_master_data_sync_workflow_input_context
@@ -1073,14 +1078,33 @@ def _process_pool_master_data_sync_inbound_batch(
 ):
     select_changes = _INBOUND_SELECT_CHANGES_CALLBACK
     notify_changes_received = _INBOUND_NOTIFY_CHANGES_RECEIVED_CALLBACK
-    if select_changes is None or notify_changes_received is None:
-        raise InboundPollerTransportError(
-            code=MASTER_DATA_SYNC_INBOUND_CALLBACKS_NOT_CONFIGURED,
-            detail=(
-                "Inbound transport callbacks are not configured. "
-                "Configure select_changes and notify_changes_received before running inbound workflow step."
-            ),
-        )
+    if select_changes is None:
+        def select_changes(*, checkpoint_token, tenant_id, database_id, entity_type, **kwargs):
+            _ = kwargs
+            try:
+                return select_changes_from_live_odata(
+                    checkpoint_token=checkpoint_token,
+                    tenant_id=tenant_id,
+                    database_id=database_id,
+                    entity_type=entity_type,
+                )
+            except MasterDataSyncLiveODataError as exc:
+                raise InboundPollerTransportError(code=exc.code, detail=exc.detail) from exc
+
+    if notify_changes_received is None:
+        def notify_changes_received(*, checkpoint_token, next_checkpoint_token, tenant_id, database_id, entity_type, **kwargs):
+            _ = kwargs
+            try:
+                return notify_changes_received_from_live_odata(
+                    checkpoint_token=checkpoint_token,
+                    next_checkpoint_token=next_checkpoint_token,
+                    tenant_id=tenant_id,
+                    database_id=database_id,
+                    entity_type=entity_type,
+                )
+            except MasterDataSyncLiveODataError as exc:
+                raise InboundPollerTransportError(code=exc.code, detail=exc.detail) from exc
+
     apply_change = _INBOUND_APPLY_CHANGE_CALLBACK
     if apply_change is None:
         def apply_change(*, change, tenant_id, database_id, entity_type, dedupe_fingerprint, **kwargs):

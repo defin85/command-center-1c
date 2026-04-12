@@ -112,13 +112,18 @@ def _build_transport_apply(
     ib_apply: Callable[[PoolMasterDataSyncOutbox], dict | None] | None,
 ) -> Callable[[PoolMasterDataSyncOutbox], dict | None]:
     if ib_apply is None:
-        def _not_configured(_outbox: PoolMasterDataSyncOutbox) -> dict | None:
-            raise MasterDataSyncTransportError(
-                code="MASTER_DATA_SYNC_TRANSPORT_NOT_CONFIGURED",
-                detail="IB apply transport is not configured for dispatcher",
-            )
+        from .master_data_sync_live_odata_transport import (
+            MasterDataSyncLiveODataError,
+            apply_outbox_to_live_odata,
+        )
 
-        ib_apply = _not_configured
+        def _default_live_odata_apply(outbox: PoolMasterDataSyncOutbox) -> dict | None:
+            try:
+                return apply_outbox_to_live_odata(outbox=outbox)
+            except MasterDataSyncLiveODataError as exc:
+                raise MasterDataSyncTransportError(code=exc.code, detail=exc.detail) from exc
+
+        ib_apply = _default_live_odata_apply
 
     def _apply(outbox: PoolMasterDataSyncOutbox) -> dict | None:
         return apply_master_data_outbox_to_ib(outbox=outbox, ib_apply=ib_apply)
