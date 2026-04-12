@@ -25,7 +25,9 @@ from apps.intercompany_pools.models import (
     PoolMasterDataSyncLaunchMode,
     PoolMasterDataSyncLaunchRequest,
     PoolMasterDataSyncLaunchStatus,
+    PoolMasterDataSyncOutbox,
     PoolMasterDataSyncPolicy,
+    PoolMasterItem,
 )
 from apps.operations.services import EnqueueResult
 from apps.templates.workflow.models import WorkflowExecution
@@ -76,10 +78,11 @@ def _create_launch_request(
     tenant: Tenant,
     database_ids: list[str],
     entity_scope: list[str],
+    mode: str = PoolMasterDataSyncLaunchMode.INBOUND,
 ) -> PoolMasterDataSyncLaunchRequest:
     return PoolMasterDataSyncLaunchRequest.objects.create(
         tenant=tenant,
-        mode=PoolMasterDataSyncLaunchMode.INBOUND,
+        mode=mode,
         target_mode="database_set",
         database_ids=database_ids,
         entity_scope=entity_scope,
@@ -246,6 +249,81 @@ def test_run_sync_launch_fanout_records_scheduled_coalesced_skipped_and_failed_o
     assert counters["coalesced"] == 1
     assert counters["skipped"] == 1
     assert counters["failed"] == 1
+
+
+@pytest.mark.django_db
+def test_run_sync_launch_fanout_for_manual_outbound_seeds_canonical_snapshot_before_trigger() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"sync-launch-outbound-{uuid4().hex[:6]}",
+        name="Sync Launch Outbound Snapshot",
+    )
+    cluster = _create_cluster(tenant=tenant, suffix="outbound")
+    database = _create_database(tenant=tenant, cluster=cluster, suffix="outbound")
+    launch_request = _create_launch_request(
+        tenant=tenant,
+        database_ids=[str(database.id)],
+        entity_scope=[PoolMasterDataEntityType.ITEM],
+        mode=PoolMasterDataSyncLaunchMode.OUTBOUND,
+    )
+    launch_item = launch_request.items.create(database=database, entity_type=PoolMasterDataEntityType.ITEM)
+    PoolMasterItem.objects.create(
+        tenant=tenant,
+        canonical_id="item-launch-001",
+        name="Launch Snapshot Item",
+        sku="LS-001",
+        unit="pcs",
+        metadata={"seed": "runtime"},
+    )
+    scheduled_job = _create_sync_job(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.ITEM,
+        status=PoolMasterDataSyncJobStatus.RUNNING,
+        direction=PoolMasterDataSyncDirection.OUTBOUND,
+    )
+
+    def _trigger(**kwargs) -> PoolMasterDataSyncTriggerResult:
+        outbox_row = PoolMasterDataSyncOutbox.objects.get(
+            tenant=tenant,
+            database=database,
+            entity_type=PoolMasterDataEntityType.ITEM,
+        )
+        assert outbox_row.origin_system == "manual_sync_launch"
+        assert outbox_row.origin_event_id.startswith(f"manual-sync-launch:{launch_request.id}:{launch_item.id}:")
+        assert outbox_row.payload["canonical_id"] == "item-launch-001"
+        assert outbox_row.payload["payload"]["name"] == "Launch Snapshot Item"
+        return PoolMasterDataSyncTriggerResult(
+            sync_job=scheduled_job,
+            created_job=True,
+            started_workflow=True,
+            skipped=False,
+            skip_reason=None,
+            policy=PoolMasterDataSyncPolicy.BIDIRECTIONAL,
+            policy_source="database_scope",
+            start_result=SimpleNamespace(
+                enqueue_status="queued",
+                enqueue_error=None,
+                sync_job=scheduled_job,
+            ),
+        )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_launch_service.trigger_pool_master_data_outbound_sync_job",
+        side_effect=_trigger,
+    ):
+        refreshed = run_pool_master_data_sync_launch_request_fanout(
+            launch_request_id=str(launch_request.id)
+        )
+
+    launch_item.refresh_from_db()
+    assert launch_item.status == PoolMasterDataSyncLaunchItemStatus.SCHEDULED
+    assert launch_item.child_job_id == scheduled_job.id
+    assert launch_item.metadata["manual_outbound_snapshot"] == {
+        "candidates": 1,
+        "prepared": 1,
+        "blocked": 0,
+    }
+    assert refreshed.metadata["aggregate_counters"]["scheduled"] == 1
 
 
 @pytest.mark.django_db

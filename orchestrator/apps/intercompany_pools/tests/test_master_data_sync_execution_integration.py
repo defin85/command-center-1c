@@ -414,24 +414,6 @@ def test_sync_runtime_moves_item_from_source_ib_to_cc_and_then_to_target_ib() ->
                 }
             ]
 
-            outbound_outbox = enqueue_master_data_sync_outbox_intent(
-                tenant_id=str(tenant.id),
-                database_id=str(target_database.id),
-                entity_type=PoolMasterDataEntityType.ITEM,
-                canonical_id=str(imported_item.canonical_id),
-                mutation_kind="item_upsert",
-                payload={
-                    "canonical_id": str(imported_item.canonical_id),
-                    "name": str(imported_item.name),
-                    "sku": str(imported_item.sku),
-                    "unit": str(imported_item.unit),
-                    "metadata": dict(imported_item.metadata or {}),
-                },
-                origin_system="manual_sync_launch",
-                origin_event_id="manual-sync-launch:e2e-item-001",
-            )
-            assert outbound_outbox is not None
-
             launch_request = create_pool_master_data_sync_launch_request(
                 tenant=tenant,
                 mode="outbound",
@@ -461,6 +443,21 @@ def test_sync_runtime_moves_item_from_source_ib_to_cc_and_then_to_target_ib() ->
             launch_item = refreshed_launch.items.get()
             assert launch_item.status == PoolMasterDataSyncLaunchItemStatus.SCHEDULED
             assert launch_item.child_job is not None
+            assert launch_item.metadata["manual_outbound_snapshot"] == {
+                "candidates": 1,
+                "prepared": 1,
+                "blocked": 0,
+            }
+
+            outbound_outbox = PoolMasterDataSyncOutbox.objects.get(
+                tenant=tenant,
+                database=target_database,
+                entity_type=PoolMasterDataEntityType.ITEM,
+            )
+            assert outbound_outbox.status == PoolMasterDataSyncOutboxStatus.PENDING
+            assert outbound_outbox.origin_system == "manual_sync_launch"
+            assert outbound_outbox.payload["canonical_id"] == str(imported_item.canonical_id)
+            assert outbound_outbox.payload["payload"]["name"] == "Imported OData Item"
 
             def _dispatch_to_target(**kwargs):
                 def _ib_apply(outbox):

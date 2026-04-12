@@ -17,6 +17,7 @@ from .master_data_registry import (
     POOL_MASTER_DATA_CAPABILITY_SYNC_RECONCILE,
     supports_pool_master_data_capability,
 )
+from .master_data_sync_outbound_snapshot import enqueue_manual_outbound_snapshot_for_scope
 from .master_data_sync_conflicts import MasterDataSyncConflictError
 from .master_data_sync_execution import (
     PoolMasterDataSyncTriggerResult,
@@ -371,7 +372,7 @@ def _process_launch_item(
     origin_event_id = f"manual-sync-launch:{launch_request.id}:{item.id}"
 
     try:
-        result = _trigger_item(
+        result, trigger_metadata = _trigger_item(
             launch_request=launch_request,
             item=item,
             correlation_id=correlation_id,
@@ -407,7 +408,10 @@ def _process_launch_item(
             reason_code=str(result.skip_reason or ""),
             reason_detail=str(result.skip_reason or ""),
             child_job=result.sync_job,
-            metadata=_build_result_metadata(result=result, outcome="skipped"),
+            metadata=_merge_launch_item_metadata(
+                _build_result_metadata(result=result, outcome="skipped"),
+                trigger_metadata,
+            ),
         )
         return
 
@@ -423,9 +427,12 @@ def _process_launch_item(
             reason_code="",
             reason_detail="",
             child_job=result.sync_job,
-            metadata=_build_result_metadata(
-                result=result,
-                outcome="scheduled" if result.created_job else "coalesced",
+            metadata=_merge_launch_item_metadata(
+                _build_result_metadata(
+                    result=result,
+                    outcome="scheduled" if result.created_job else "coalesced",
+                ),
+                trigger_metadata,
             ),
         )
         return
@@ -437,7 +444,10 @@ def _process_launch_item(
         reason_code=reason_code,
         reason_detail=reason_detail,
         child_job=result.sync_job,
-        metadata=_build_result_metadata(result=result, outcome="failed"),
+        metadata=_merge_launch_item_metadata(
+            _build_result_metadata(result=result, outcome="failed"),
+            trigger_metadata,
+        ),
     )
 
 
@@ -447,7 +457,7 @@ def _trigger_item(
     item: PoolMasterDataSyncLaunchItem,
     correlation_id: str,
     origin_event_id: str,
-) -> PoolMasterDataSyncTriggerResult:
+) -> tuple[PoolMasterDataSyncTriggerResult, dict[str, Any]]:
     common_kwargs = {
         "tenant_id": str(launch_request.tenant_id),
         "database_id": str(item.database_id),
@@ -457,17 +467,36 @@ def _trigger_item(
         "correlation_id": correlation_id,
     }
     if launch_request.mode == PoolMasterDataSyncLaunchMode.INBOUND:
-        return trigger_pool_master_data_inbound_sync_job(**common_kwargs)
+        return trigger_pool_master_data_inbound_sync_job(**common_kwargs), {}
     if launch_request.mode == PoolMasterDataSyncLaunchMode.OUTBOUND:
-        return trigger_pool_master_data_outbound_sync_job(
-            **common_kwargs,
-            canonical_id="",
+        snapshot_result = enqueue_manual_outbound_snapshot_for_scope(
+            tenant_id=str(launch_request.tenant_id),
+            database_id=str(item.database_id),
+            entity_type=str(item.entity_type),
+            origin_system="manual_sync_launch",
+            origin_event_id=origin_event_id,
+        )
+        return (
+            trigger_pool_master_data_outbound_sync_job(
+                **common_kwargs,
+                canonical_id="",
+            ),
+            {
+                "manual_outbound_snapshot": {
+                    "candidates": int(snapshot_result.candidates),
+                    "prepared": int(snapshot_result.prepared),
+                    "blocked": int(snapshot_result.blocked),
+                }
+            },
         )
     if launch_request.mode == PoolMasterDataSyncLaunchMode.RECONCILE:
-        return trigger_pool_master_data_reconcile_sync_job(
-            **common_kwargs,
-            reconcile_window_id=f"manual-launch:{launch_request.id}",
-            reconcile_window_deadline_at="",
+        return (
+            trigger_pool_master_data_reconcile_sync_job(
+                **common_kwargs,
+                reconcile_window_id=f"manual-launch:{launch_request.id}",
+                reconcile_window_deadline_at="",
+            ),
+            {},
         )
     raise ValueError(f"{SYNC_LAUNCH_MODE_INVALID}: unsupported launch mode '{launch_request.mode}'")
 
@@ -528,6 +557,14 @@ def _build_result_metadata(
             str(result.start_result.enqueue_error or "")
         )
     return sanitize_master_data_sync_value(payload)
+
+
+def _merge_launch_item_metadata(*payloads: Mapping[str, Any] | None) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    for payload in payloads:
+        if isinstance(payload, Mapping):
+            merged.update(dict(payload))
+    return sanitize_master_data_sync_value(merged)
 
 
 def _extract_result_failure(*, result: PoolMasterDataSyncTriggerResult) -> tuple[str, str]:
