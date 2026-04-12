@@ -8,6 +8,11 @@ from django.utils import timezone
 
 from apps.databases.models import Database, InfobaseUserMapping
 from apps.databases.odata import ODataClient, resolve_database_odata_verify_tls
+from apps.databases.odata.exceptions import (
+    ODataConnectionError,
+    ODataRequestError,
+    ODataTimeoutError,
+)
 
 from .master_data_registry import normalize_pool_master_data_entity_type
 from .master_data_sync_inbound_poller import (
@@ -125,6 +130,11 @@ _VAT_PROFILE_BY_CODE = {
     str(profile.vat_code).strip().upper(): profile
     for profile in _VAT_PROFILES
 }
+_WRITE_PROBE_RECOVERY_ERRORS = (
+    ODataConnectionError,
+    ODataRequestError,
+    ODataTimeoutError,
+)
 
 
 def select_changes_from_live_odata(
@@ -947,51 +957,79 @@ def _apply_party_outbox(
     catalog_kind = _resolve_party_catalog_kind(
         payload=payload,
         payload_metadata=payload_metadata,
-        database_id=str(database.id),
+        database=database,
+        canonical_id=canonical_id,
     )
-    if catalog_kind != _PARTY_KIND_COUNTERPARTY:
+    if catalog_kind == _PARTY_KIND_COUNTERPARTY:
+        entity_name = _PARTY_COUNTERPARTY_ENTITY_NAME
+        entity_payload = _build_counterparty_entity_payload(payload=payload)
+    elif catalog_kind == _PARTY_KIND_ORGANIZATION:
+        entity_name = _PARTY_ORGANIZATION_ENTITY_NAME
+        entity_payload = _build_organization_entity_payload(payload=payload)
+    else:
         raise MasterDataSyncLiveODataError(
             code=MASTER_DATA_SYNC_ODATA_PARTY_ROLE_UNSUPPORTED,
             detail=(
-                "Live OData outbound transport currently supports only counterparty party sync; "
+                "Live OData outbound transport could not resolve a supported party catalog role; "
                 f"got catalog_kind='{catalog_kind or 'unknown'}' for canonical_id='{canonical_id}'."
             ),
         )
-
-    entity_payload = _build_counterparty_entity_payload(payload=payload)
     with _build_odata_client(database=database) as client:
         target_ref_key = _resolve_party_target_ref_key(
+            database=database,
+            canonical_id=canonical_id,
             client=client,
             payload=payload,
             payload_metadata=payload_metadata,
             database_id=str(database.id),
             catalog_kind=catalog_kind,
         )
-        if target_ref_key:
-            client.update_entity(
-                _PARTY_COUNTERPARTY_ENTITY_NAME,
-                _guid_literal(target_ref_key),
-                entity_payload,
-            )
-            applied_ref_key = target_ref_key
-            created = False
-        else:
-            created_payload = client.create_entity(_PARTY_COUNTERPARTY_ENTITY_NAME, entity_payload)
-            applied_ref_key = str(created_payload.get("Ref_Key") or "").strip()
-            if not applied_ref_key:
-                raise MasterDataSyncLiveODataError(
-                    code=MASTER_DATA_SYNC_ODATA_PARTY_REF_MISSING,
-                    detail=(
-                        f"OData create for canonical party '{canonical_id}' did not return Ref_Key "
-                        f"for database '{database.id}'."
-                    ),
+        try:
+            if target_ref_key:
+                client.update_entity(
+                    entity_name,
+                    _guid_literal(target_ref_key),
+                    entity_payload,
                 )
-            created = True
+                applied_ref_key = target_ref_key
+                created = False
+            else:
+                created_payload = client.create_entity(entity_name, entity_payload)
+                applied_ref_key = str(created_payload.get("Ref_Key") or "").strip()
+                if not applied_ref_key:
+                    raise MasterDataSyncLiveODataError(
+                        code=MASTER_DATA_SYNC_ODATA_PARTY_REF_MISSING,
+                        detail=(
+                            f"OData create for canonical party '{canonical_id}' did not return Ref_Key "
+                            f"for database '{database.id}'."
+                        ),
+                    )
+                created = True
+        except _WRITE_PROBE_RECOVERY_ERRORS as exc:
+            recovered_ref = _recover_party_ref_after_write_error(
+                database=database,
+                canonical_id=canonical_id,
+                client=client,
+                payload=payload,
+                payload_metadata=payload_metadata,
+                database_id=str(database.id),
+                catalog_kind=catalog_kind,
+            )
+            if not recovered_ref:
+                raise MasterDataSyncLiveODataError(
+                    code=MASTER_DATA_SYNC_ODATA_PARTY_APPLY_FAILED,
+                    detail=(
+                        f"Live OData party write failed for canonical_id='{canonical_id}' "
+                        f"in database '{database.id}': {exc}"
+                    ),
+                ) from exc
+            applied_ref_key = recovered_ref
+            created = not bool(target_ref_key)
 
     return {
         "status": "applied",
         "created": created,
-        "entity_name": _PARTY_COUNTERPARTY_ENTITY_NAME,
+        "entity_name": entity_name,
         "canonical_id": canonical_id,
         "ib_ref_key": applied_ref_key,
         "ib_catalog_kind": catalog_kind,
@@ -1175,6 +1213,26 @@ def _build_counterparty_entity_payload(*, payload: Mapping[str, Any]) -> dict[st
     return entity_payload
 
 
+def _build_organization_entity_payload(*, payload: Mapping[str, Any]) -> dict[str, Any]:
+    entity_payload = {
+        "Description": str(payload.get("name") or "").strip(),
+        "НаименованиеПолное": str(payload.get("full_name") or "").strip() or str(payload.get("name") or "").strip(),
+        "НаименованиеСокращенное": str(payload.get("name") or "").strip(),
+        "Parent_Key": _ZERO_GUID,
+        "IsFolder": False,
+        "DeletionMark": False,
+        "ОбособленноеПодразделение": False,
+        "ЮридическоеФизическоеЛицо": "ЮридическоеЛицо",
+    }
+    inn = str(payload.get("inn") or "").strip()
+    if inn:
+        entity_payload["ИНН"] = inn
+    kpp = str(payload.get("kpp") or "").strip()
+    if kpp:
+        entity_payload["КПП"] = kpp
+    return entity_payload
+
+
 def _build_contract_entity_payload(
     *,
     payload: Mapping[str, Any],
@@ -1245,6 +1303,8 @@ def _resolve_item_target_ref_key(
 
 def _resolve_party_target_ref_key(
     *,
+    database: Database,
+    canonical_id: str,
     client: ODataClient,
     payload: Mapping[str, Any],
     payload_metadata: Mapping[str, Any],
@@ -1258,11 +1318,24 @@ def _resolve_party_target_ref_key(
     )
     if direct_ref:
         return direct_ref
+    existing_ref = _resolve_target_party_binding_ref(
+        database=database,
+        canonical_id=canonical_id,
+        catalog_kind=catalog_kind,
+    )
+    if existing_ref:
+        return existing_ref
     inn = str(payload.get("inn") or "").strip()
     kpp = str(payload.get("kpp") or "").strip()
-    if inn and kpp:
-        matched_ref = _find_unique_counterparty_by_inn_kpp(
+    entity_name = (
+        _PARTY_ORGANIZATION_ENTITY_NAME
+        if catalog_kind == _PARTY_KIND_ORGANIZATION
+        else _PARTY_COUNTERPARTY_ENTITY_NAME
+    )
+    if inn:
+        matched_ref = _find_unique_party_by_inn_kpp(
             client=client,
+            entity_name=entity_name,
             inn=inn,
             kpp=kpp,
         )
@@ -1273,9 +1346,31 @@ def _resolve_party_target_ref_key(
         return ""
     return _find_unique_ref_by_field(
         client=client,
-        entity_name=_PARTY_COUNTERPARTY_ENTITY_NAME,
+        entity_name=entity_name,
         field_name="Description",
         field_value=party_name,
+        include_is_folder=catalog_kind != _PARTY_KIND_ORGANIZATION,
+    )
+
+
+def _recover_party_ref_after_write_error(
+    *,
+    database: Database,
+    canonical_id: str,
+    client: ODataClient,
+    payload: Mapping[str, Any],
+    payload_metadata: Mapping[str, Any],
+    database_id: str,
+    catalog_kind: str,
+) -> str:
+    return _resolve_party_target_ref_key(
+        database=database,
+        canonical_id=canonical_id,
+        client=client,
+        payload=payload,
+        payload_metadata=payload_metadata,
+        database_id=database_id,
+        catalog_kind=catalog_kind,
     )
 
 
@@ -1318,7 +1413,8 @@ def _resolve_party_catalog_kind(
     *,
     payload: Mapping[str, Any],
     payload_metadata: Mapping[str, Any],
-    database_id: str,
+    database: Database,
+    canonical_id: str,
 ) -> str:
     explicit_kind = str(payload_metadata.get("party_catalog_kind") or "").strip().lower()
     if explicit_kind in {_PARTY_KIND_COUNTERPARTY, _PARTY_KIND_ORGANIZATION}:
@@ -1326,17 +1422,72 @@ def _resolve_party_catalog_kind(
 
     database_ref_entry = _read_database_ref_entry(
         payload_metadata=payload_metadata,
-        database_id=database_id,
+        database_id=str(database.id),
     )
     if isinstance(database_ref_entry, Mapping):
-        for kind in (_PARTY_KIND_COUNTERPARTY, _PARTY_KIND_ORGANIZATION):
+        for kind in (_PARTY_KIND_ORGANIZATION, _PARTY_KIND_COUNTERPARTY):
             if str(database_ref_entry.get(kind) or "").strip():
                 return kind
 
-    if bool(payload.get("is_counterparty", True)) and not bool(payload.get("is_our_organization")):
-        return _PARTY_KIND_COUNTERPARTY
-    if bool(payload.get("is_our_organization")) and not bool(payload.get("is_counterparty", False)):
+    binding_kind = _resolve_existing_party_catalog_kind(
+        database=database,
+        canonical_id=canonical_id,
+    )
+    if binding_kind:
+        return binding_kind
+
+    is_our_organization = bool(payload.get("is_our_organization"))
+    is_counterparty = bool(payload.get("is_counterparty", True))
+    if is_our_organization:
         return _PARTY_KIND_ORGANIZATION
+    if is_counterparty:
+        return _PARTY_KIND_COUNTERPARTY
+    return ""
+
+
+def _resolve_existing_party_catalog_kind(
+    *,
+    database: Database,
+    canonical_id: str,
+) -> str:
+    if not canonical_id:
+        return ""
+    binding = (
+        PoolMasterDataBinding.objects.filter(
+            tenant_id=str(database.tenant_id),
+            entity_type=PoolMasterDataEntityType.PARTY,
+            canonical_id=str(canonical_id),
+            database=database,
+            ib_catalog_kind__in=[_PARTY_KIND_COUNTERPARTY, _PARTY_KIND_ORGANIZATION],
+        )
+        .exclude(ib_ref_key="")
+        .order_by("-updated_at", "-created_at")
+        .only("ib_catalog_kind")
+        .first()
+    )
+    if binding is not None:
+        return str(binding.ib_catalog_kind or "").strip().lower()
+
+    party = (
+        PoolMasterParty.objects.filter(
+            tenant_id=str(database.tenant_id),
+            canonical_id=str(canonical_id),
+        )
+        .only("metadata")
+        .first()
+    )
+    if party is None:
+        return ""
+    metadata = dict(party.metadata or {})
+    database_entry = _read_database_ref_entry(
+        payload_metadata=metadata,
+        database_id=str(database.id),
+    )
+    if not isinstance(database_entry, Mapping):
+        return ""
+    for kind in (_PARTY_KIND_ORGANIZATION, _PARTY_KIND_COUNTERPARTY):
+        if str(database_entry.get(kind) or "").strip():
+            return kind
     return ""
 
 
@@ -1484,11 +1635,15 @@ def _find_unique_ref_by_field(
     entity_name: str,
     field_name: str,
     field_value: str,
+    include_is_folder: bool = True,
 ) -> str:
+    select_fields = ["Ref_Key", field_name, "DeletionMark"]
+    if include_is_folder:
+        select_fields.append("IsFolder")
     rows = _load_entity_rows_for_lookup(
         client=client,
         entity_name=entity_name,
-        select_fields=["Ref_Key", field_name, "DeletionMark", "IsFolder"],
+        select_fields=select_fields,
     )
     matches = [
         row
@@ -1500,26 +1655,41 @@ def _find_unique_ref_by_field(
     return str(matches[0].get("Ref_Key") or "").strip()
 
 
-def _find_unique_counterparty_by_inn_kpp(
+def _find_unique_party_by_inn_kpp(
     *,
     client: ODataClient,
+    entity_name: str,
     inn: str,
     kpp: str,
 ) -> str:
+    select_fields = ["Ref_Key", "ИНН", "КПП", "DeletionMark"]
+    if entity_name != _PARTY_ORGANIZATION_ENTITY_NAME:
+        select_fields.append("IsFolder")
     rows = _load_entity_rows_for_lookup(
         client=client,
-        entity_name=_PARTY_COUNTERPARTY_ENTITY_NAME,
-        select_fields=["Ref_Key", "ИНН", "КПП", "DeletionMark", "IsFolder"],
+        entity_name=entity_name,
+        select_fields=select_fields,
     )
-    matches = [
+    inn_matches = [
         row
         for row in rows
         if str(row.get("ИНН") or "").strip() == str(inn or "").strip()
-        and str(row.get("КПП") or "").strip() == str(kpp or "").strip()
     ]
-    if len(matches) != 1:
+    if not inn_matches:
         return ""
-    return str(matches[0].get("Ref_Key") or "").strip()
+    if kpp:
+        exact_matches = [
+            row
+            for row in inn_matches
+            if str(row.get("КПП") or "").strip() == str(kpp or "").strip()
+        ]
+        if len(exact_matches) == 1:
+            return str(exact_matches[0].get("Ref_Key") or "").strip()
+        if exact_matches:
+            return ""
+    if len(inn_matches) != 1:
+        return ""
+    return str(inn_matches[0].get("Ref_Key") or "").strip()
 
 
 def _load_entity_rows_for_lookup(

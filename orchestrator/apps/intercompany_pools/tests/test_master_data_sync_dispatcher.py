@@ -8,11 +8,13 @@ import pytest
 from django.utils import timezone
 
 from apps.databases.models import Database, InfobaseUserMapping
+from apps.databases.odata.exceptions import ODataRequestError
 from apps.intercompany_pools.master_data_sync_dispatcher import (
     MasterDataSyncTransportError,
     dispatch_pending_master_data_sync_outbox,
 )
 from apps.intercompany_pools.models import (
+    PoolMasterBindingSyncStatus,
     PoolMasterContract,
     PoolMasterDataBinding,
     PoolMasterDataEntityType,
@@ -510,6 +512,323 @@ def test_dispatcher_uses_live_odata_transport_for_party_contract_and_tax_profile
     ]
     assert client_inits
     assert client_inits[0]["verify_tls"] is True
+
+
+@pytest.mark.django_db
+def test_dispatcher_uses_live_odata_transport_for_organization_and_dual_role_parties() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"sync-dispatch-live-party-role-{uuid4().hex[:6]}",
+        name="Sync Dispatch Live Party Role",
+    )
+    database = _create_database(tenant=tenant, suffix="live-party-role")
+    _create_service_mapping(database=database)
+
+    organization_party = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-org-001",
+        name="Live Org Party",
+        full_name="Live Organization LLC",
+        inn="7701999001",
+        kpp="770101111",
+        is_counterparty=False,
+        is_our_organization=True,
+        metadata={},
+    )
+    dual_role_party = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-dual-001",
+        name="Live Dual Party",
+        full_name="Live Dual Party LLC",
+        inn="7701999002",
+        kpp="770101222",
+        is_counterparty=True,
+        is_our_organization=True,
+        metadata={},
+    )
+    PoolMasterDataBinding.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id=str(dual_role_party.canonical_id),
+        ib_ref_key="existing-dual-001",
+        ib_catalog_kind="counterparty",
+        sync_status=PoolMasterBindingSyncStatus.RESOLVED,
+    )
+
+    now = timezone.now() - timedelta(seconds=1)
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-party-org-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-party-org-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "party_upsert",
+            "canonical_id": str(organization_party.canonical_id),
+            "payload": {
+                "canonical_id": str(organization_party.canonical_id),
+                "name": str(organization_party.name),
+                "full_name": str(organization_party.full_name),
+                "inn": str(organization_party.inn),
+                "kpp": str(organization_party.kpp),
+                "is_counterparty": False,
+                "is_our_organization": True,
+                "metadata": {},
+            },
+            "payload_fingerprint": "fp-party-org-live-001",
+        },
+        available_at=now,
+        attempt_count=0,
+    )
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-party-dual-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-party-dual-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "party_upsert",
+            "canonical_id": str(dual_role_party.canonical_id),
+            "payload": {
+                "canonical_id": str(dual_role_party.canonical_id),
+                "name": str(dual_role_party.name),
+                "full_name": str(dual_role_party.full_name),
+                "inn": str(dual_role_party.inn),
+                "kpp": str(dual_role_party.kpp),
+                "is_counterparty": True,
+                "is_our_organization": True,
+                "metadata": {},
+            },
+            "payload_fingerprint": "fp-party-dual-live-001",
+        },
+        available_at=now,
+        attempt_count=0,
+    )
+
+    create_calls: list[dict[str, object]] = []
+    update_calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields, top, skip)
+            if entity_name == "Catalog_Контрагенты":
+                return [
+                    {
+                        "Ref_Key": "existing-dual-001",
+                        "ИНН": "7701999002",
+                        "КПП": "770101222",
+                        "DeletionMark": False,
+                        "IsFolder": False,
+                        "Description": "Live Dual Party",
+                    }
+                ]
+            return []
+
+        def create_entity(self, entity_name, entity_data):
+            create_calls.append({"entity_name": entity_name, "entity_data": dict(entity_data)})
+            if entity_name == "Catalog_Организации":
+                return {"Ref_Key": "target-org-001"}
+            raise AssertionError(f"unexpected create for {entity_name}")
+
+        def update_entity(self, entity_name, entity_id, entity_data):
+            update_calls.append(
+                {
+                    "entity_name": entity_name,
+                    "entity_id": entity_id,
+                    "entity_data": dict(entity_data),
+                }
+            )
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        result = dispatch_pending_master_data_sync_outbox(batch_size=10)
+
+    assert result.claimed == 2
+    assert result.sent == 2
+    assert result.failed == 0
+
+    org_binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id="party-org-001",
+        ib_catalog_kind="organization",
+    )
+    assert org_binding.ib_ref_key == "target-org-001"
+
+    dual_binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id="party-dual-001",
+        ib_catalog_kind="counterparty",
+    )
+    assert dual_binding.ib_ref_key == "existing-dual-001"
+
+    organization_party.refresh_from_db()
+    dual_role_party.refresh_from_db()
+    assert organization_party.metadata["ib_ref_keys"][str(database.id)]["organization"] == "target-org-001"
+    assert dual_role_party.metadata["ib_ref_keys"][str(database.id)]["counterparty"] == "existing-dual-001"
+
+    assert create_calls == [
+        {
+            "entity_name": "Catalog_Организации",
+            "entity_data": {
+                "Description": "Live Org Party",
+                "НаименованиеПолное": "Live Organization LLC",
+                "НаименованиеСокращенное": "Live Org Party",
+                "Parent_Key": "00000000-0000-0000-0000-000000000000",
+                "IsFolder": False,
+                "DeletionMark": False,
+                "ОбособленноеПодразделение": False,
+                "ЮридическоеФизическоеЛицо": "ЮридическоеЛицо",
+                "ИНН": "7701999001",
+                "КПП": "770101111",
+            },
+        }
+    ]
+    assert update_calls == [
+        {
+            "entity_name": "Catalog_Контрагенты",
+            "entity_id": "guid'existing-dual-001'",
+            "entity_data": {
+                "Description": "Live Dual Party",
+                "НаименованиеПолное": "Live Dual Party LLC",
+                "Parent_Key": "00000000-0000-0000-0000-000000000000",
+                "IsFolder": False,
+                "DeletionMark": False,
+                "ЮридическоеФизическоеЛицо": "ЮридическоеЛицо",
+                "ИНН": "7701999002",
+                "КПП": "770101222",
+            },
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_dispatcher_recovers_party_organization_write_after_500_when_probe_finds_created_ref() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"sync-dispatch-live-party-recover-{uuid4().hex[:6]}",
+        name="Sync Dispatch Live Party Recover",
+    )
+    database = _create_database(tenant=tenant, suffix="live-party-recover")
+    _create_service_mapping(database=database)
+
+    organization_party = PoolMasterParty.objects.create(
+        tenant=tenant,
+        canonical_id="party-org-recover-001",
+        name="Recover Org Party",
+        full_name="Recover Organization LLC",
+        inn="7702999001",
+        kpp="770201111",
+        is_counterparty=False,
+        is_our_organization=True,
+        metadata={},
+    )
+    PoolMasterDataSyncOutbox.objects.create(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        status=PoolMasterDataSyncOutboxStatus.PENDING,
+        dedupe_key=f"dedupe-party-org-recover-{uuid4().hex[:8]}",
+        origin_system="manual_sync_launch",
+        origin_event_id=f"evt-party-org-recover-{uuid4().hex[:8]}",
+        payload={
+            "mutation_kind": "party_upsert",
+            "canonical_id": str(organization_party.canonical_id),
+            "payload": {
+                "canonical_id": str(organization_party.canonical_id),
+                "name": str(organization_party.name),
+                "full_name": str(organization_party.full_name),
+                "inn": str(organization_party.inn),
+                "kpp": str(organization_party.kpp),
+                "is_counterparty": False,
+                "is_our_organization": True,
+                "metadata": {},
+            },
+            "payload_fingerprint": "fp-party-org-recover-001",
+        },
+        available_at=timezone.now() - timedelta(seconds=1),
+        attempt_count=0,
+    )
+
+    organization_rows: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return None
+
+        def get_entities(self, entity_name, filter_query=None, select_fields=None, top=None, skip=None):
+            _ = (filter_query, select_fields, top, skip)
+            if entity_name == "Catalog_Организации":
+                return list(organization_rows)
+            return []
+
+        def create_entity(self, entity_name, entity_data):
+            assert entity_name == "Catalog_Организации"
+            organization_rows[:] = [
+                {
+                    "Ref_Key": "target-org-recovered-001",
+                    "ИНН": "7702999001",
+                    "КПП": "770201111",
+                    "Description": "Recover Org Party",
+                    "DeletionMark": False,
+                }
+            ]
+            raise ODataRequestError(
+                message="1C returned 500 after write",
+                status_code=500,
+                response_text="boom",
+            )
+
+        def update_entity(self, entity_name, entity_id, entity_data):
+            raise AssertionError(f"unexpected update for {entity_name} {entity_id} {entity_data}")
+
+    with patch(
+        "apps.intercompany_pools.master_data_sync_live_odata_transport.ODataClient",
+        _FakeODataClient,
+    ):
+        result = dispatch_pending_master_data_sync_outbox(batch_size=10)
+
+    assert result.claimed == 1
+    assert result.sent == 1
+    assert result.failed == 0
+
+    binding = PoolMasterDataBinding.objects.get(
+        tenant=tenant,
+        database=database,
+        entity_type=PoolMasterDataEntityType.PARTY,
+        canonical_id="party-org-recover-001",
+        ib_catalog_kind="organization",
+    )
+    assert binding.ib_ref_key == "target-org-recovered-001"
+
+    organization_party.refresh_from_db()
+    assert (
+        organization_party.metadata["ib_ref_keys"][str(database.id)]["organization"]
+        == "target-org-recovered-001"
+    )
 
 
 @pytest.mark.django_db
