@@ -114,9 +114,9 @@
        class="button{% if original.is_valid %} default{% endif %}"
        style="{% if not original.is_valid %}background: #ba2121; color: white;{% endif %}">
         {% if original.is_valid %}
-            Re-validate DAG
+            {% trans "Re-validate DAG" %}
         {% else %}
-            Validate DAG
+            {% trans "Validate DAG" %}
         {% endif %}
     </a>
 </li>
@@ -137,15 +137,15 @@
 {{ block.super }}
 {% if original %}
 <fieldset class="module aligned">
-    <h2>Validation Status</h2>
+    <h2>{% trans "Validation Status" %}</h2>
     <div style="padding: 10px;">
         {% if original.is_valid %}
             <span style="color: #28a745; font-weight: bold;">
-                DAG is valid and ready for execution.
+                {% trans "DAG is valid and ready for execution." %}
             </span>
         {% else %}
             <span style="color: #dc3545; font-weight: bold;">
-                DAG validation required. Click "Validate DAG" button above.
+                {% trans 'DAG validation required. Click "Validate DAG" button above.' %}
             </span>
         {% endif %}
     </div>
@@ -295,7 +295,7 @@
             showCopySuccess(button);
         } catch (err) {
             console.error('Fallback copy failed:', err);
-            alert('Copy failed. JSON:\n' + text);
+            alert('{% trans "Copy failed." %}\n' + text);
         }
 
         document.body.removeChild(textarea);
@@ -305,7 +305,7 @@
         const originalText = button.textContent;
 
         button.classList.add('copy-success');
-        button.textContent = 'Copied!';
+        button.textContent = '{% trans "Copied!" %}';
 
         setTimeout(function() {
             button.classList.remove('copy-success');

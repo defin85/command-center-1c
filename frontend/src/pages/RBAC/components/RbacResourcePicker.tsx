@@ -2,6 +2,7 @@ import { Select } from 'antd'
 import type { UIEvent } from 'react'
 
 import type { ClusterRef, DatabaseRef } from '../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../i18n'
 import { RbacClusterDatabasePicker, type RbacClusterDatabasePickerI18n } from './RbacClusterDatabasePicker'
 
 type ResourceKey = 'clusters' | 'databases' | 'operation-templates' | 'workflow-templates' | 'artifacts'
@@ -32,6 +33,7 @@ export function RbacResourcePicker(props: {
   clusterDatabasePickerI18n?: RbacClusterDatabasePickerI18n
 }) {
   const width = props.width ?? 360
+  const { t } = useRbacTranslation()
 
   if (props.resourceKey === 'clusters') {
     return (
@@ -41,7 +43,7 @@ export function RbacResourcePicker(props: {
         value={props.value}
         onChange={props.onChange}
         disabled={props.disabled}
-        placeholder={props.placeholder ?? 'Cluster'}
+        placeholder={props.placeholder ?? t(($) => $.permissions.resourceCluster)}
         width={width}
         i18n={props.clusterDatabasePickerI18n}
       />
@@ -56,7 +58,7 @@ export function RbacResourcePicker(props: {
         value={props.value}
         onChange={props.onChange}
         disabled={props.disabled}
-        placeholder={props.placeholder ?? 'Database'}
+        placeholder={props.placeholder ?? t(($) => $.permissions.resourceDatabase)}
         width={width}
         databaseLabelById={props.databaseLabelById}
         onDatabasesLoaded={props.onDatabasesLoaded}
@@ -68,7 +70,7 @@ export function RbacResourcePicker(props: {
   return (
     <Select
       style={{ width }}
-      placeholder={props.placeholder ?? 'Resource'}
+      placeholder={props.placeholder ?? t(($) => $.permissions.resourceGeneric)}
       allowClear={props.allowClear}
       disabled={props.disabled}
       value={props.value}

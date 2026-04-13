@@ -5,12 +5,15 @@ import { createLocaleFormatters } from '../formatters'
 const TIMESTAMP = '2026-03-10T12:00:00Z'
 
 describe('locale formatters', () => {
-  it('formats date, number, list, and relative time through Intl for the active locale', () => {
+  it('formats date, time, number, list, and relative time through Intl for the active locale', () => {
     const ru = createLocaleFormatters('ru')
     const en = createLocaleFormatters('en')
 
     expect(ru.dateTime(TIMESTAMP, { timeZone: 'UTC' })).toBe(
       new Intl.DateTimeFormat('ru', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }).format(new Date(TIMESTAMP)),
+    )
+    expect(ru.time(TIMESTAMP, { timeZone: 'UTC' })).toBe(
+      new Intl.DateTimeFormat('ru', { timeStyle: 'short', timeZone: 'UTC' }).format(new Date(TIMESTAMP)),
     )
     expect(en.number(12345.67)).toBe(new Intl.NumberFormat('en').format(12345.67))
     expect(ru.list(['alpha', 'beta', 'gamma'], { style: 'long', type: 'conjunction' })).toBe(
@@ -23,6 +26,7 @@ describe('locale formatters', () => {
     const formatters = createLocaleFormatters('ru')
 
     expect(formatters.dateTime(null)).toBe('—')
+    expect(formatters.time(undefined, { fallback: 'n/a' })).toBe('n/a')
     expect(formatters.date(undefined, { fallback: 'n/a' })).toBe('n/a')
     expect(formatters.number(Number.NaN)).toBe('—')
     expect(formatters.list([], { fallback: 'empty' })).toBe('empty')

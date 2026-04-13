@@ -301,6 +301,30 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it.each([
+    'src/pages/Dashboard/Dashboard.tsx',
+    'src/pages/Clusters/Clusters.tsx',
+    'src/pages/RBAC/RBACPage.tsx',
+    'src/pages/RBAC/tabs/AuditTab.tsx',
+    'src/pages/RBAC/tabs/EffectiveAccessTab.tsx',
+    'src/pages/RBAC/tabs/RolesTab.tsx',
+    'src/pages/RBAC/tabs/UserRolesTab.tsx',
+  ])('rejects raw locale formatting in first-wave pilot route module %s', async (filePath) => {
+    const messages = await lintSnippet(
+      filePath,
+      `
+        export default function GovernedPilotRoute() {
+          return <div>{new Date('2026-03-10T12:00:00Z').toLocaleString()}</div>
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries'
+        && message.message.includes('useLocaleFormatters')
+    ))).toBe(true)
+  })
+
   it('rejects route-local Ant locale providers in migrated governed modules', async () => {
     const messages = await lintSnippet(
       'src/components/layout/MainLayout.tsx',

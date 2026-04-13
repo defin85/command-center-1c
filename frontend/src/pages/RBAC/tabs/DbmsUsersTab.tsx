@@ -3,19 +3,21 @@ import { App, Alert, Button, Card, Form, Input, Select, Space, Switch, Tag, Typo
 import type { ColumnsType } from 'antd/es/table'
 
 import type { DbmsUserMapping } from '../../../api/generated/model/dbmsUserMapping'
-import { useDbmsUsers, useCreateDbmsUser, useDeleteDbmsUser, useResetDbmsUserPassword, useSetDbmsUserPassword, useUpdateDbmsUser } from '../../../api/queries/databases'
+import { useCreateDbmsUser, useDbmsUsers, useDeleteDbmsUser, useResetDbmsUserPassword, useSetDbmsUserPassword, useUpdateDbmsUser } from '../../../api/queries/databases'
 import { useRbacRefDatabases, useRbacUsers } from '../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../i18n'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { usePaginatedRefSelectOptions } from '../hooks/usePaginatedRefSelectOptions'
-import { getDbmsAuthTypeLabel, getDbmsPasswordConfiguredLabel, validateDbmsUserId } from '../utils/dbmsUsers'
+import { validateDbmsUserId } from '../utils/dbmsUsers'
 
 const { Text } = Typography
 
 export function DbmsUsersTab(props: { enabled: boolean }) {
   const { enabled } = props
   const { modal, message } = App.useApp()
+  const { t } = useRbacTranslation()
 
   const REF_PAGE_SIZE = 50
 
@@ -82,6 +84,15 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
     dbmsUserForm.setFieldValue('user_id', null)
   }, [dbmsUserFormIsService, dbmsUserForm])
 
+  const getDbmsAuthTypeLabel = useCallback((authType: string | undefined): string => {
+    const key = (authType ?? 'local') as 'local' | 'service' | 'other'
+    return t(($) => $.dbmsUsers.authTypes[key])
+  }, [t])
+
+  const getDbmsPasswordConfiguredLabel = useCallback((configured: boolean): string => (
+    configured ? t(($) => $.dbmsUsers.values.set) : t(($) => $.dbmsUsers.values.unset)
+  ), [t])
+
   const handleEdit = useCallback((record: DbmsUserMapping) => {
     setSelectedDatabaseId(record.database_id)
     setEditingDbmsUser(record)
@@ -107,7 +118,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
     const values = await dbmsUserForm.validateFields()
     const dbUsername = values.db_username?.trim()
     if (!dbUsername) {
-      message.error('Введите DBMS username')
+      message.error(t(($) => $.dbmsUsers.messages.usernameRequired))
       return
     }
     const isService = Boolean(values.is_service)
@@ -128,39 +139,39 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
     }
 
     if (!values.database_id) {
-      message.error('Выберите базу')
+      message.error(t(($) => $.dbmsUsers.messages.databaseRequired))
       return
     }
     createDbmsUser.mutate(
       { database_id: values.database_id, ...payloadBase },
       { onSuccess: handleResetForm }
     )
-  }, [createDbmsUser, dbmsUserForm, editingDbmsUser, handleResetForm, message, updateDbmsUser])
+  }, [createDbmsUser, dbmsUserForm, editingDbmsUser, handleResetForm, message, t, updateDbmsUser])
 
   const handleDelete = useCallback((record: DbmsUserMapping) => {
     confirmWithTracking(modal, {
-      title: `Удалить DBMS mapping ${record.db_username}?`,
-      content: 'Запись будет удалена только в Command Center.',
-      okText: 'Удалить',
-      cancelText: 'Отмена',
+      title: t(($) => $.dbmsUsers.confirm.deleteTitle, { username: record.db_username }),
+      content: t(($) => $.dbmsUsers.confirm.deleteDescription),
+      okText: t(($) => $.dbmsUsers.actions.delete),
+      cancelText: t(($) => $.dbmsUsers.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: () => deleteDbmsUser.mutate({ id: record.id, databaseId: record.database_id }),
     })
-  }, [deleteDbmsUser, modal])
+  }, [deleteDbmsUser, modal, t])
 
   const handlePasswordSet = useCallback((record: DbmsUserMapping) => {
     let password = ''
     confirmWithTracking(modal, {
-      title: `Установить пароль для ${record.db_username}?`,
-      okText: 'Установить',
-      cancelText: 'Отмена',
+      title: t(($) => $.dbmsUsers.confirm.setPasswordTitle, { username: record.db_username }),
+      okText: t(($) => $.dbmsUsers.confirm.setPassword),
+      cancelText: t(($) => $.dbmsUsers.confirm.cancel),
       okButtonProps: { 'data-testid': 'rbac-dbms-user-set-password-ok' },
       content: (
         <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          <Text type="secondary">Текущий пароль не отображается.</Text>
+          <Text type="secondary">{t(($) => $.dbmsUsers.messages.setPasswordCurrentHidden)}</Text>
           <Input.Password
             data-testid="rbac-dbms-user-set-password-input"
-            placeholder="Новый пароль"
+            placeholder={t(($) => $.dbmsUsers.form.newPasswordPlaceholder)}
             onChange={(e) => {
               password = e.target.value
             }}
@@ -170,35 +181,35 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
       onOk: async () => {
         const trimmed = password.trim()
         if (!trimmed) {
-          message.error('Введите пароль')
+          message.error(t(($) => $.dbmsUsers.messages.passwordRequired))
           throw new Error('Password is empty')
         }
         await setDbmsUserPassword.mutateAsync({ id: record.id, password: trimmed })
       },
     })
-  }, [message, modal, setDbmsUserPassword])
+  }, [message, modal, setDbmsUserPassword, t])
 
   const handlePasswordReset = useCallback((record: DbmsUserMapping) => {
     confirmWithTracking(modal, {
-      title: `Сбросить пароль для ${record.db_username}?`,
-      content: 'Пароль будет очищен.',
-      okText: 'Сбросить',
-      cancelText: 'Отмена',
+      title: t(($) => $.dbmsUsers.confirm.resetPasswordTitle, { username: record.db_username }),
+      content: t(($) => $.dbmsUsers.confirm.resetPasswordDescription),
+      okText: t(($) => $.dbmsUsers.confirm.resetPassword),
+      cancelText: t(($) => $.dbmsUsers.confirm.cancel),
       okButtonProps: { danger: true, 'data-testid': 'rbac-dbms-user-reset-password-ok' },
       onOk: async () => {
         await resetDbmsUserPassword.mutateAsync({ id: record.id, databaseId: record.database_id })
       },
     })
-  }, [modal, resetDbmsUserPassword])
+  }, [modal, resetDbmsUserPassword, t])
 
   const columns: ColumnsType<DbmsUserMapping> = useMemo(() => [
     {
-      title: 'Пользователь DBMS',
+      title: t(($) => $.dbmsUsers.columns.dbmsUser),
       key: 'db_username',
       render: (_: unknown, row) => <span>{row.db_username}</span>,
     },
     {
-      title: 'Пользователь CC',
+      title: t(($) => $.dbmsUsers.columns.commandCenterUser),
       key: 'cc_user',
       render: (_: unknown, row) => (
         row.user
@@ -207,34 +218,34 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
               {row.user.username} <Text type="secondary">#{row.user.id}</Text>
             </span>
           )
-          : '-'
+          : t(($) => $.dbmsUsers.values.empty)
       ),
     },
     {
-      title: 'Аутентификация',
+      title: t(($) => $.dbmsUsers.columns.authType),
       key: 'auth_type',
       render: (_: unknown, row) => <Tag>{getDbmsAuthTypeLabel(row.auth_type)}</Tag>,
     },
     {
-      title: 'Сервисный',
+      title: t(($) => $.dbmsUsers.columns.service),
       key: 'is_service',
       render: (_: unknown, row) => (
         <Tag color={row.is_service ? 'blue' : 'default'}>
-          {row.is_service ? 'Да' : 'Нет'}
+          {row.is_service ? t(($) => $.dbmsUsers.values.yes) : t(($) => $.dbmsUsers.values.no)}
         </Tag>
       ),
     },
     {
-      title: 'Пароль',
+      title: t(($) => $.dbmsUsers.columns.password),
       key: 'password',
       render: (_: unknown, row) => (
         <Tag color={row.db_password_configured ? 'green' : 'default'}>
-          {getDbmsPasswordConfiguredLabel(row.db_password_configured)}
+          {getDbmsPasswordConfiguredLabel(Boolean(row.db_password_configured))}
         </Tag>
       ),
     },
     {
-      title: 'Действия',
+      title: t(($) => $.dbmsUsers.columns.actions),
       key: 'actions',
       render: (_: unknown, row) => (
         <Space size="small">
@@ -243,7 +254,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
             data-testid={`rbac-dbms-user-edit-${row.id}`}
             onClick={() => handleEdit(row)}
           >
-            Редактировать
+            {t(($) => $.dbmsUsers.actions.edit)}
           </Button>
           <Button
             size="small"
@@ -251,7 +262,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
             data-testid={`rbac-dbms-user-set-password-${row.id}`}
             onClick={() => handlePasswordSet(row)}
           >
-            Установить пароль
+            {t(($) => $.dbmsUsers.actions.setPassword)}
           </Button>
           <Button
             danger
@@ -260,7 +271,7 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
             data-testid={`rbac-dbms-user-reset-password-${row.id}`}
             onClick={() => handlePasswordReset(row)}
           >
-            Сбросить пароль
+            {t(($) => $.dbmsUsers.actions.resetPassword)}
           </Button>
           <Button
             danger
@@ -269,31 +280,34 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
             data-testid={`rbac-dbms-user-delete-${row.id}`}
             onClick={() => handleDelete(row)}
           >
-            Удалить
+            {t(($) => $.dbmsUsers.actions.delete)}
           </Button>
         </Space>
       ),
     },
   ], [
     deleteDbmsUser.isPending,
+    getDbmsAuthTypeLabel,
+    getDbmsPasswordConfiguredLabel,
     handleDelete,
     handleEdit,
     handlePasswordReset,
     handlePasswordSet,
     resetDbmsUserPassword.isPending,
     setDbmsUserPassword.isPending,
+    t,
   ])
 
   const table = useTableToolkit({
     tableId: 'rbac_dbms_users',
     columns,
     fallbackColumns: [
-      { key: 'db_username', label: 'Пользователь DBMS', groupKey: 'core', groupLabel: 'Основное' },
-      { key: 'cc_user', label: 'Пользователь CC', groupKey: 'core', groupLabel: 'Основное' },
-      { key: 'auth_type', label: 'Аутентификация', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'is_service', label: 'Сервисный', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'password', label: 'Пароль', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
+      { key: 'db_username', label: t(($) => $.dbmsUsers.columns.dbmsUser), groupKey: 'core', groupLabel: t(($) => $.dbmsUsers.groups.core) },
+      { key: 'cc_user', label: t(($) => $.dbmsUsers.columns.commandCenterUser), groupKey: 'core', groupLabel: t(($) => $.dbmsUsers.groups.core) },
+      { key: 'auth_type', label: t(($) => $.dbmsUsers.columns.authType), groupKey: 'meta', groupLabel: t(($) => $.dbmsUsers.groups.metadata) },
+      { key: 'is_service', label: t(($) => $.dbmsUsers.columns.service), groupKey: 'meta', groupLabel: t(($) => $.dbmsUsers.groups.metadata) },
+      { key: 'password', label: t(($) => $.dbmsUsers.columns.password), groupKey: 'meta', groupLabel: t(($) => $.dbmsUsers.groups.metadata) },
+      { key: 'actions', label: t(($) => $.dbmsUsers.columns.actions), groupKey: 'actions', groupLabel: t(($) => $.dbmsUsers.groups.actions) },
     ],
     initialPageSize: 25,
   })
@@ -327,15 +341,15 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
     <Alert
       type="warning"
       showIcon
-      message="Недостаточно прав для управления DBMS mappings"
+      message={t(($) => $.dbmsUsers.accessDenied)}
     />
   ) : (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Card title="Пользователи DBMS" size="small">
+      <Card title={t(($) => $.dbmsUsers.title)} size="small">
         {!selectedDatabaseId && (
           <Alert
             type="info"
-            message="Выберите базу, чтобы посмотреть DBMS mappings"
+            message={t(($) => $.dbmsUsers.selectDatabaseInfo)}
             style={{ marginBottom: 12 }}
           />
         )}
@@ -346,12 +360,12 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
           loading={dbmsUsersQuery.isLoading}
           rowKey="id"
           columns={columns}
-          searchPlaceholder="Поиск пользователей DBMS"
+          searchPlaceholder={t(($) => $.dbmsUsers.searchPlaceholder)}
           toolbarActions={(
             <Space>
               <Select
                 style={{ width: 320 }}
-                placeholder="База"
+                placeholder={t(($) => $.dbmsUsers.toolbar.databasePlaceholder)}
                 allowClear
                 data-testid="rbac-dbms-users-toolbar-database"
                 value={selectedDatabaseId}
@@ -374,10 +388,10 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                 value={dbmsAuthFilter}
                 onChange={setDbmsAuthFilter}
                 options={[
-                  { label: 'Аутентификация: любая', value: 'any' },
-                  { label: 'Аутентификация: local', value: 'local' },
-                  { label: 'Аутентификация: service', value: 'service' },
-                  { label: 'Аутентификация: другое', value: 'other' },
+                  { label: t(($) => $.dbmsUsers.toolbar.authAny), value: 'any' },
+                  { label: t(($) => $.dbmsUsers.toolbar.authLocal), value: 'local' },
+                  { label: t(($) => $.dbmsUsers.toolbar.authService), value: 'service' },
+                  { label: t(($) => $.dbmsUsers.toolbar.authOther), value: 'other' },
                 ]}
               />
               <Select
@@ -385,9 +399,9 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                 value={dbmsServiceFilter}
                 onChange={setDbmsServiceFilter}
                 options={[
-                  { label: 'Сервисный: любой', value: 'any' },
-                  { label: 'Сервисный: да', value: 'true' },
-                  { label: 'Сервисный: нет', value: 'false' },
+                  { label: t(($) => $.dbmsUsers.toolbar.serviceAny), value: 'any' },
+                  { label: t(($) => $.dbmsUsers.toolbar.serviceYes), value: 'true' },
+                  { label: t(($) => $.dbmsUsers.toolbar.serviceNo), value: 'false' },
                 ]}
               />
               <Select
@@ -395,9 +409,9 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                 value={dbmsHasUserFilter}
                 onChange={setDbmsHasUserFilter}
                 options={[
-                  { label: 'CC пользователь: любой', value: 'any' },
-                  { label: 'CC пользователь: привязан', value: 'true' },
-                  { label: 'CC пользователь: не привязан', value: 'false' },
+                  { label: t(($) => $.dbmsUsers.toolbar.userAny), value: 'any' },
+                  { label: t(($) => $.dbmsUsers.toolbar.userAssigned), value: 'true' },
+                  { label: t(($) => $.dbmsUsers.toolbar.userUnassigned), value: 'false' },
                 ]}
               />
               <Button
@@ -406,14 +420,14 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                 disabled={!selectedDatabaseId}
                 loading={dbmsUsersQuery.isFetching}
               >
-                Обновить
+                {t(($) => $.dbmsUsers.toolbar.refresh)}
               </Button>
             </Space>
           )}
         />
       </Card>
 
-      <Card title={editingDbmsUser ? 'Редактировать DBMS mapping' : 'Добавить DBMS mapping'} size="small">
+      <Card title={editingDbmsUser ? t(($) => $.dbmsUsers.form.editTitle) : t(($) => $.dbmsUsers.form.createTitle)} size="small">
         <Form
           form={dbmsUserForm}
           layout="vertical"
@@ -421,13 +435,13 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
         >
           <Space size="large" align="start" wrap>
             <Form.Item
-              label="База"
+              label={t(($) => $.dbmsUsers.form.database)}
               name="database_id"
-              rules={[{ required: true, message: 'Выберите базу' }]}
+              rules={[{ required: true, message: t(($) => $.dbmsUsers.form.databaseRequired) }]}
             >
               <Select
                 style={{ width: 320 }}
-                placeholder="База"
+                placeholder={t(($) => $.dbmsUsers.form.databasePlaceholder)}
                 data-testid="rbac-dbms-user-form-database"
                 showSearch
                 filterOption={false}
@@ -441,17 +455,17 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
               />
             </Form.Item>
             <Form.Item
-              label="Логин DBMS"
+              label={t(($) => $.dbmsUsers.form.username)}
               name="db_username"
-              rules={[{ required: true, message: 'Укажите логин DBMS' }]}
+              rules={[{ required: true, message: t(($) => $.dbmsUsers.form.usernameRequired) }]}
             >
-              <Input data-testid="rbac-dbms-user-form-db-username" placeholder="db_user" />
+              <Input data-testid="rbac-dbms-user-form-db-username" placeholder={t(($) => $.dbmsUsers.form.usernamePlaceholder)} />
             </Form.Item>
-            <Form.Item label="Сервисный аккаунт" name="is_service" valuePropName="checked">
+            <Form.Item label={t(($) => $.dbmsUsers.form.serviceAccount)} name="is_service" valuePropName="checked">
               <Switch data-testid="rbac-dbms-user-form-is-service" />
             </Form.Item>
             <Form.Item
-              label="Пользователь CC"
+              label={t(($) => $.dbmsUsers.form.user)}
               name="user_id"
               rules={[
                 ({ getFieldValue }) => ({
@@ -460,9 +474,9 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                     const result = validateDbmsUserId(isService, value)
                     if (result === 'ok') return Promise.resolve()
                     if (result === 'must_be_empty') {
-                      return Promise.reject(new Error('Для сервисного аккаунта пользователь CC не должен быть указан'))
+                      return Promise.reject(new Error(t(($) => $.dbmsUsers.form.userMustBeEmpty)))
                     }
-                    return Promise.reject(new Error('Выберите пользователя CC'))
+                    return Promise.reject(new Error(t(($) => $.dbmsUsers.form.userRequired)))
                   },
                 }),
               ]}
@@ -471,38 +485,40 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                 showSearch
                 allowClear
                 data-testid="rbac-dbms-user-form-user-id"
-                placeholder={dbmsUserFormIsService ? 'Недоступно для service mapping' : 'Выберите пользователя'}
+                placeholder={dbmsUserFormIsService
+                  ? t(($) => $.dbmsUsers.form.userDisabledPlaceholder)
+                  : t(($) => $.dbmsUsers.form.userPlaceholder)}
                 filterOption={false}
-                onSearch={(value) => setUserSearch(value)}
+                onSearch={setUserSearch}
                 options={userOptions}
                 loading={usersQuery.isFetching}
                 style={{ width: 240 }}
                 disabled={Boolean(dbmsUserFormIsService)}
               />
             </Form.Item>
-            <Form.Item label="Тип аутентификации" name="auth_type">
+            <Form.Item label={t(($) => $.dbmsUsers.form.authType)} name="auth_type">
               <Select
                 style={{ width: 180 }}
                 options={[
-                  { label: 'Локальная', value: 'local' },
-                  { label: 'Сервисная', value: 'service' },
-                  { label: 'Другая', value: 'other' },
+                  { label: t(($) => $.dbmsUsers.authTypes.local), value: 'local' },
+                  { label: t(($) => $.dbmsUsers.authTypes.service), value: 'service' },
+                  { label: t(($) => $.dbmsUsers.authTypes.other), value: 'other' },
                 ]}
               />
             </Form.Item>
           </Space>
-          <Form.Item label="Пароль">
+          <Form.Item label={t(($) => $.dbmsUsers.form.password)}>
             <Space size="small" wrap>
               <Tag color={editingDbmsUser?.db_password_configured ? 'green' : 'default'}>
                 {getDbmsPasswordConfiguredLabel(Boolean(editingDbmsUser?.db_password_configured))}
               </Tag>
-              <Text type="secondary">Текущий пароль не отображается.</Text>
+              <Text type="secondary">{t(($) => $.dbmsUsers.messages.setPasswordCurrentHidden)}</Text>
               {editingDbmsUser && (
                 <Button
                   onClick={() => handlePasswordSet(editingDbmsUser)}
                   loading={setDbmsUserPassword.isPending}
                 >
-                  Установить пароль
+                  {t(($) => $.dbmsUsers.actions.setPassword)}
                 </Button>
               )}
               {editingDbmsUser && (
@@ -511,13 +527,13 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
                   onClick={() => handlePasswordReset(editingDbmsUser)}
                   loading={resetDbmsUserPassword.isPending}
                 >
-                  Сбросить пароль
+                  {t(($) => $.dbmsUsers.actions.resetPassword)}
                 </Button>
               )}
             </Space>
           </Form.Item>
-          <Form.Item label="Комментарий" name="notes">
-            <Input placeholder="Комментарий (опционально)" />
+          <Form.Item label={t(($) => $.dbmsUsers.form.notes)} name="notes">
+            <Input placeholder={t(($) => $.dbmsUsers.form.notesPlaceholder)} />
           </Form.Item>
           <Space>
             <Button
@@ -526,11 +542,11 @@ export function DbmsUsersTab(props: { enabled: boolean }) {
               onClick={handleSave}
               loading={createDbmsUser.isPending || updateDbmsUser.isPending}
             >
-              {editingDbmsUser ? 'Сохранить' : 'Добавить'}
+              {editingDbmsUser ? t(($) => $.dbmsUsers.form.save) : t(($) => $.dbmsUsers.form.add)}
             </Button>
             {editingDbmsUser && (
               <Button data-testid="rbac-dbms-user-form-cancel" onClick={handleResetForm}>
-                Отменить редактирование
+                {t(($) => $.dbmsUsers.form.cancelEdit)}
               </Button>
             )}
           </Space>

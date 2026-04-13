@@ -18,7 +18,8 @@ import {
   WifiOutlined,
 } from '@ant-design/icons'
 import type { ServiceMetrics, ServiceStatus } from '../../types/serviceMesh'
-import { STATUS_COLORS, STATUS_TEXT } from '../../types/serviceMesh'
+import { STATUS_COLORS } from '../../types/serviceMesh'
+import { useDashboardTranslation, useLocaleFormatters } from '../../i18n'
 import './SystemHealthCard.css'
 
 interface SystemHealthCardProps {
@@ -45,11 +46,12 @@ function getStatusIcon(status: ServiceStatus): React.ReactNode {
   }
 }
 
-/**
- * Format timestamp to relative time
- */
-function formatTimestamp(timestamp: string | null): string {
-  if (!timestamp) return 'N/A'
+function formatTimestamp(
+  timestamp: string | null,
+  formatters: ReturnType<typeof useLocaleFormatters>,
+  fallback: string,
+): string {
+  if (!timestamp) return fallback
 
   try {
     const date = new Date(timestamp)
@@ -57,12 +59,12 @@ function formatTimestamp(timestamp: string | null): string {
     const diffMs = now.getTime() - date.getTime()
     const diffSec = Math.floor(diffMs / 1000)
 
-    if (diffSec < 5) return 'Just now'
-    if (diffSec < 60) return `${diffSec}s ago`
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
-    return date.toLocaleTimeString()
+    if (diffSec < 5) return formatters.relativeTime(0, 'second')
+    if (diffSec < 60) return formatters.relativeTime(-diffSec, 'second')
+    if (diffSec < 3600) return formatters.relativeTime(-Math.floor(diffSec / 60), 'minute')
+    return formatters.time(date)
   } catch {
-    return 'N/A'
+    return fallback
   }
 }
 
@@ -73,6 +75,9 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   isConnected,
   connectionError,
 }) => {
+  const { t } = useDashboardTranslation()
+  const formatters = useLocaleFormatters()
+
   // Calculate totals
   const totalOpsPerMinute = services.reduce((sum, s) => sum + s.opsPerMinute, 0)
   const totalActiveOps = services.reduce((sum, s) => sum + s.activeOperations, 0)
@@ -96,12 +101,12 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
               {getStatusIcon(overallHealth)}
             </div>
             <div className="system-health-card__status-info">
-              <div className="system-health-card__status-label">System Status</div>
+              <div className="system-health-card__status-label">{t(($) => $.systemHealthCard.systemStatus)}</div>
               <div
                 className="system-health-card__status-value"
                 style={{ color: STATUS_COLORS[overallHealth] }}
               >
-                {STATUS_TEXT[overallHealth]}
+                {t(($) => $.systemHealthCard.overallStatus[overallHealth])}
               </div>
             </div>
           </div>
@@ -110,9 +115,8 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         {/* Total Ops/Min */}
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title="Total Ops/min"
-            value={totalOpsPerMinute}
-            precision={1}
+            title={t(($) => $.systemHealthCard.totalOpsPerMinute)}
+            value={formatters.number(totalOpsPerMinute, { maximumFractionDigits: 1 })}
             valueStyle={{ fontSize: 20 }}
           />
         </Col>
@@ -120,8 +124,8 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         {/* Active Operations */}
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title="Active Ops"
-            value={totalActiveOps}
+            title={t(($) => $.systemHealthCard.activeOps)}
+            value={formatters.number(totalActiveOps)}
             valueStyle={{ fontSize: 20 }}
           />
         </Col>
@@ -129,10 +133,9 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         {/* Avg Latency */}
         <Col xs={12} sm={8} md={4}>
           <Statistic
-            title="Avg P95"
-            value={avgLatency}
+            title={t(($) => $.systemHealthCard.avgP95)}
+            value={formatters.number(avgLatency, { maximumFractionDigits: 0 })}
             suffix="ms"
-            precision={0}
             valueStyle={{ fontSize: 20 }}
           />
         </Col>
@@ -140,16 +143,16 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
         {/* Service Status Summary */}
         <Col xs={12} sm={8} md={4}>
           <div className="system-health-card__services">
-            <div className="system-health-card__services-label">Services</div>
+            <div className="system-health-card__services-label">{t(($) => $.systemHealthCard.services)}</div>
             <div className="system-health-card__services-tags">
               {healthyCount > 0 && (
-                <Tag color="success">{healthyCount} OK</Tag>
+                <Tag color="success">{formatters.number(healthyCount)} {t(($) => $.systemHealthCard.ok)}</Tag>
               )}
               {degradedCount > 0 && (
-                <Tag color="warning">{degradedCount} Warn</Tag>
+                <Tag color="warning">{formatters.number(degradedCount)} {t(($) => $.systemHealthCard.warn)}</Tag>
               )}
               {criticalCount > 0 && (
-                <Tag color="error">{criticalCount} Crit</Tag>
+                <Tag color="error">{formatters.number(criticalCount)} {t(($) => $.systemHealthCard.crit)}</Tag>
               )}
             </div>
           </div>
@@ -163,8 +166,10 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
                 connectionError
                   ? connectionError
                   : isConnected
-                  ? `Last update: ${formatTimestamp(timestamp)}`
-                  : 'Connecting\u2026'
+                  ? t(($) => $.systemHealthCard.lastUpdate, {
+                    value: formatTimestamp(timestamp, formatters, t(($) => $.systemHealthCard.unavailable)),
+                  })
+                  : t(($) => $.systemHealthCard.connecting)
               }
             >
               <span>

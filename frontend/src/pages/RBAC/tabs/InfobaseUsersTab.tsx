@@ -2,8 +2,9 @@ import { useCallback, useMemo, useState } from 'react'
 import { App, Alert, Button, Card, Form, Input, Select, Space, Switch, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import { useInfobaseUsers, useCreateInfobaseUser, useDeleteInfobaseUser, useResetInfobaseUserPassword, useSetInfobaseUserPassword, useUpdateInfobaseUser, type InfobaseUserMapping } from '../../../api/queries/databases'
+import { useCreateInfobaseUser, useDeleteInfobaseUser, useInfobaseUsers, useResetInfobaseUserPassword, useSetInfobaseUserPassword, useUpdateInfobaseUser, type InfobaseUserMapping } from '../../../api/queries/databases'
 import { useRbacRefDatabases, useRbacUsers } from '../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../i18n'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { confirmWithTracking } from '../../../observability/confirmWithTracking'
@@ -11,21 +12,10 @@ import { usePaginatedRefSelectOptions } from '../hooks/usePaginatedRefSelectOpti
 
 const { Text } = Typography
 
-const IB_AUTH_TYPE_LABELS: Record<string, string> = {
-  local: 'Локальная',
-  ad: 'AD',
-  service: 'Сервисная',
-  other: 'Другая',
-}
-
-function getIbAuthTypeLabel(authType: string | undefined): string {
-  const key = authType ?? 'local'
-  return IB_AUTH_TYPE_LABELS[key] || key
-}
-
 export function InfobaseUsersTab(props: { enabled: boolean }) {
   const { enabled } = props
   const { modal } = App.useApp()
+  const { t } = useRbacTranslation()
 
   const REF_PAGE_SIZE = 50
 
@@ -88,6 +78,11 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
     notes?: string
   }>()
 
+  const getIbAuthTypeLabel = useCallback((authType: string | undefined): string => {
+    const key = (authType ?? 'local') as 'local' | 'ad' | 'service' | 'other'
+    return t(($) => $.infobaseUsers.authTypes[key])
+  }, [t])
+
   const handleEdit = useCallback((record: InfobaseUserMapping) => {
     setSelectedDatabaseId(record.database_id)
     setEditingIbUser(record)
@@ -117,8 +112,8 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
     const ibUsername = values.ib_username?.trim()
     if (!ibUsername) {
       modal.warning({
-        title: 'Введите имя пользователя ИБ',
-        content: 'Укажите ib_username перед сохранением.',
+        title: t(($) => $.infobaseUsers.warnings.missingUsernameTitle),
+        content: t(($) => $.infobaseUsers.warnings.missingUsernameDescription),
       })
       return
     }
@@ -142,8 +137,8 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
 
     if (!values.database_id) {
       modal.warning({
-        title: 'Выберите базу',
-        content: 'Укажите базу данных перед сохранением.',
+        title: t(($) => $.infobaseUsers.warnings.missingDatabaseTitle),
+        content: t(($) => $.infobaseUsers.warnings.missingDatabaseDescription),
       })
       return
     }
@@ -151,26 +146,26 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
       { database_id: values.database_id, ...payloadBase, ib_password: values.ib_password?.trim() || undefined },
       { onSuccess: handleResetForm }
     )
-  }, [createInfobaseUser, editingIbUser, handleResetForm, ibUserForm, modal, updateInfobaseUser])
+  }, [createInfobaseUser, editingIbUser, handleResetForm, ibUserForm, modal, t, updateInfobaseUser])
 
   const handleDelete = useCallback((record: InfobaseUserMapping) => {
     confirmWithTracking(modal, {
-      title: `Удалить пользователя ИБ ${record.ib_username}?`,
-      content: 'Запись будет удалена только в Command Center.',
-      okText: 'Удалить',
-      cancelText: 'Отмена',
+      title: t(($) => $.infobaseUsers.confirm.deleteTitle, { username: record.ib_username }),
+      content: t(($) => $.infobaseUsers.confirm.deleteDescription),
+      okText: t(($) => $.infobaseUsers.confirm.delete),
+      cancelText: t(($) => $.infobaseUsers.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: () => deleteInfobaseUser.mutate({ id: record.id, databaseId: record.database_id }),
     })
-  }, [deleteInfobaseUser, modal])
+  }, [deleteInfobaseUser, modal, t])
 
   const handlePasswordUpdate = useCallback(async () => {
     if (!editingIbUser) return
     const password = ibUserForm.getFieldValue('ib_password')?.trim()
     if (!password) {
       modal.warning({
-        title: 'Введите пароль',
-        content: 'Укажите новый пароль ИБ перед сохранением.',
+        title: t(($) => $.infobaseUsers.warnings.missingPasswordTitle),
+        content: t(($) => $.infobaseUsers.warnings.missingPasswordDescription),
       })
       return
     }
@@ -178,33 +173,33 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
       { id: editingIbUser.id, password },
       { onSuccess: () => ibUserForm.setFieldsValue({ ib_password: '' }) }
     )
-  }, [editingIbUser, ibUserForm, modal, setInfobaseUserPassword])
+  }, [editingIbUser, ibUserForm, modal, setInfobaseUserPassword, t])
 
   const handlePasswordReset = useCallback(() => {
     if (!editingIbUser) return
     confirmWithTracking(modal, {
-      title: `Сбросить пароль для ${editingIbUser.ib_username}?`,
-      content: 'Пароль будет очищен.',
-      okText: 'Сбросить',
-      cancelText: 'Отмена',
+      title: t(($) => $.infobaseUsers.confirm.resetPasswordTitle, { username: editingIbUser.ib_username }),
+      content: t(($) => $.infobaseUsers.confirm.resetPasswordDescription),
+      okText: t(($) => $.infobaseUsers.confirm.reset),
+      cancelText: t(($) => $.infobaseUsers.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: () => resetInfobaseUserPassword.mutate({ id: editingIbUser.id, databaseId: editingIbUser.database_id }),
     })
-  }, [editingIbUser, modal, resetInfobaseUserPassword])
+  }, [editingIbUser, modal, resetInfobaseUserPassword, t])
 
   const columns: ColumnsType<InfobaseUserMapping> = useMemo(() => [
     {
-      title: 'Пользователь ИБ',
+      title: t(($) => $.infobaseUsers.columns.infobaseUser),
       key: 'ib_username',
       render: (_: unknown, row) => <span>{row.ib_username}</span>,
     },
     {
-      title: 'Имя в ИБ',
+      title: t(($) => $.infobaseUsers.columns.displayName),
       key: 'ib_display_name',
-      render: (_: unknown, row) => <span>{row.ib_display_name || '-'}</span>,
+      render: (_: unknown, row) => <span>{row.ib_display_name || t(($) => $.infobaseUsers.values.empty)}</span>,
     },
     {
-      title: 'Пользователь CC',
+      title: t(($) => $.infobaseUsers.columns.commandCenterUser),
       key: 'cc_user',
       render: (_: unknown, row) => (
         row.user
@@ -213,15 +208,15 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
               {row.user.username} <Text type="secondary">#{row.user.id}</Text>
             </span>
           )
-          : '-'
+          : t(($) => $.infobaseUsers.values.empty)
       ),
     },
     {
-      title: 'Роли',
+      title: t(($) => $.infobaseUsers.columns.roles),
       key: 'roles',
       render: (_: unknown, row) => {
         const roles = row.ib_roles ?? []
-        if (roles.length === 0) return '-'
+        if (roles.length === 0) return t(($) => $.infobaseUsers.values.empty)
         return (
           <Space size={4} wrap>
             {roles.slice(0, 6).map((role) => <Tag key={role}>{role}</Tag>)}
@@ -231,35 +226,35 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
       },
     },
     {
-      title: 'Аутентификация',
+      title: t(($) => $.infobaseUsers.columns.authType),
       key: 'auth_type',
       render: (_: unknown, row) => <Tag>{getIbAuthTypeLabel(row.auth_type)}</Tag>,
     },
     {
-      title: 'Сервисный',
+      title: t(($) => $.infobaseUsers.columns.service),
       key: 'is_service',
       render: (_: unknown, row) => (
         <Tag color={row.is_service ? 'blue' : 'default'}>
-          {row.is_service ? 'Да' : 'Нет'}
+          {row.is_service ? t(($) => $.infobaseUsers.values.yes) : t(($) => $.infobaseUsers.values.no)}
         </Tag>
       ),
     },
     {
-      title: 'Пароль',
+      title: t(($) => $.infobaseUsers.columns.password),
       key: 'password',
       render: (_: unknown, row) => (
         <Tag color={row.ib_password_configured ? 'green' : 'default'}>
-          {row.ib_password_configured ? 'Задан' : 'Не задан'}
+          {row.ib_password_configured ? t(($) => $.infobaseUsers.values.set) : t(($) => $.infobaseUsers.values.unset)}
         </Tag>
       ),
     },
     {
-      title: 'Действия',
+      title: t(($) => $.infobaseUsers.columns.actions),
       key: 'actions',
       render: (_: unknown, row) => (
         <Space size="small">
           <Button size="small" onClick={() => handleEdit(row)}>
-            Редактировать
+            {t(($) => $.infobaseUsers.actions.edit)}
           </Button>
           <Button
             danger
@@ -267,25 +262,25 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
             loading={deleteInfobaseUser.isPending}
             onClick={() => handleDelete(row)}
           >
-            Удалить
+            {t(($) => $.infobaseUsers.actions.delete)}
           </Button>
         </Space>
       ),
     },
-  ], [deleteInfobaseUser.isPending, handleDelete, handleEdit])
+  ], [deleteInfobaseUser.isPending, getIbAuthTypeLabel, handleDelete, handleEdit, t])
 
   const table = useTableToolkit({
     tableId: 'rbac_ib_users',
     columns,
     fallbackColumns: [
-      { key: 'ib_username', label: 'Пользователь ИБ', groupKey: 'core', groupLabel: 'Основное' },
-      { key: 'ib_display_name', label: 'Имя в ИБ', groupKey: 'core', groupLabel: 'Основное' },
-      { key: 'cc_user', label: 'Пользователь CC', groupKey: 'core', groupLabel: 'Основное' },
-      { key: 'roles', label: 'Роли', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'auth_type', label: 'Аутентификация', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'is_service', label: 'Сервисный', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'password', label: 'Пароль', groupKey: 'meta', groupLabel: 'Метаданные' },
-      { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Действия' },
+      { key: 'ib_username', label: t(($) => $.infobaseUsers.columns.infobaseUser), groupKey: 'core', groupLabel: t(($) => $.infobaseUsers.groups.core) },
+      { key: 'ib_display_name', label: t(($) => $.infobaseUsers.columns.displayName), groupKey: 'core', groupLabel: t(($) => $.infobaseUsers.groups.core) },
+      { key: 'cc_user', label: t(($) => $.infobaseUsers.columns.commandCenterUser), groupKey: 'core', groupLabel: t(($) => $.infobaseUsers.groups.core) },
+      { key: 'roles', label: t(($) => $.infobaseUsers.columns.roles), groupKey: 'meta', groupLabel: t(($) => $.infobaseUsers.groups.metadata) },
+      { key: 'auth_type', label: t(($) => $.infobaseUsers.columns.authType), groupKey: 'meta', groupLabel: t(($) => $.infobaseUsers.groups.metadata) },
+      { key: 'is_service', label: t(($) => $.infobaseUsers.columns.service), groupKey: 'meta', groupLabel: t(($) => $.infobaseUsers.groups.metadata) },
+      { key: 'password', label: t(($) => $.infobaseUsers.columns.password), groupKey: 'meta', groupLabel: t(($) => $.infobaseUsers.groups.metadata) },
+      { key: 'actions', label: t(($) => $.infobaseUsers.columns.actions), groupKey: 'actions', groupLabel: t(($) => $.infobaseUsers.groups.actions) },
     ],
     initialPageSize: 25,
   })
@@ -310,11 +305,11 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Card title="Пользователи ИБ" size="small">
+      <Card title={t(($) => $.infobaseUsers.title)} size="small">
         {!selectedDatabaseId && (
           <Alert
             type="info"
-            message="Выберите базу, чтобы посмотреть маппинги пользователей ИБ"
+            message={t(($) => $.infobaseUsers.selectDatabaseInfo)}
             style={{ marginBottom: 12 }}
           />
         )}
@@ -325,12 +320,12 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
           loading={ibUsersQuery.isLoading}
           rowKey="id"
           columns={columns}
-          searchPlaceholder="Поиск пользователей ИБ"
+          searchPlaceholder={t(($) => $.infobaseUsers.searchPlaceholder)}
           toolbarActions={(
             <Space>
               <Select
                 style={{ width: 320 }}
-                placeholder="База"
+                placeholder={t(($) => $.infobaseUsers.toolbar.databasePlaceholder)}
                 allowClear
                 value={selectedDatabaseId}
                 onChange={(value) => {
@@ -352,11 +347,11 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
                 value={ibAuthFilter}
                 onChange={setIbAuthFilter}
                 options={[
-                  { label: 'Аутентификация: любая', value: 'any' },
-                  { label: 'Аутентификация: local', value: 'local' },
-                  { label: 'Аутентификация: AD', value: 'ad' },
-                  { label: 'Аутентификация: service', value: 'service' },
-                  { label: 'Аутентификация: другое', value: 'other' },
+                  { label: t(($) => $.infobaseUsers.toolbar.authAny), value: 'any' },
+                  { label: t(($) => $.infobaseUsers.toolbar.authLocal), value: 'local' },
+                  { label: t(($) => $.infobaseUsers.toolbar.authAd), value: 'ad' },
+                  { label: t(($) => $.infobaseUsers.toolbar.authService), value: 'service' },
+                  { label: t(($) => $.infobaseUsers.toolbar.authOther), value: 'other' },
                 ]}
               />
               <Select
@@ -364,9 +359,9 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
                 value={ibServiceFilter}
                 onChange={setIbServiceFilter}
                 options={[
-                  { label: 'Сервисный: любой', value: 'any' },
-                  { label: 'Сервисный: да', value: 'true' },
-                  { label: 'Сервисный: нет', value: 'false' },
+                  { label: t(($) => $.infobaseUsers.toolbar.serviceAny), value: 'any' },
+                  { label: t(($) => $.infobaseUsers.toolbar.serviceYes), value: 'true' },
+                  { label: t(($) => $.infobaseUsers.toolbar.serviceNo), value: 'false' },
                 ]}
               />
               <Select
@@ -374,9 +369,9 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
                 value={ibHasUserFilter}
                 onChange={setIbHasUserFilter}
                 options={[
-                  { label: 'CC пользователь: любой', value: 'any' },
-                  { label: 'CC пользователь: привязан', value: 'true' },
-                  { label: 'CC пользователь: не привязан', value: 'false' },
+                  { label: t(($) => $.infobaseUsers.toolbar.userAny), value: 'any' },
+                  { label: t(($) => $.infobaseUsers.toolbar.userAssigned), value: 'true' },
+                  { label: t(($) => $.infobaseUsers.toolbar.userUnassigned), value: 'false' },
                 ]}
               />
               <Button
@@ -384,14 +379,14 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
                 disabled={!selectedDatabaseId}
                 loading={ibUsersQuery.isFetching}
               >
-                Обновить
+                {t(($) => $.infobaseUsers.toolbar.refresh)}
               </Button>
             </Space>
           )}
         />
       </Card>
 
-      <Card title={editingIbUser ? 'Редактировать пользователя ИБ' : 'Добавить пользователя ИБ'} size="small">
+      <Card title={editingIbUser ? t(($) => $.infobaseUsers.form.editTitle) : t(($) => $.infobaseUsers.form.createTitle)} size="small">
         <Form
           form={ibUserForm}
           layout="vertical"
@@ -399,13 +394,13 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
         >
           <Space size="large" align="start" wrap>
             <Form.Item
-              label="База"
+              label={t(($) => $.infobaseUsers.form.database)}
               name="database_id"
-              rules={[{ required: true, message: 'Выберите базу' }]}
+              rules={[{ required: true, message: t(($) => $.infobaseUsers.form.databaseRequired) }]}
             >
               <Select
                 style={{ width: 320 }}
-                placeholder="База"
+                placeholder={t(($) => $.infobaseUsers.form.databasePlaceholder)}
                 showSearch
                 filterOption={false}
                 onSearch={setDatabasesRefSearch}
@@ -418,65 +413,65 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
               />
             </Form.Item>
             <Form.Item
-              label="Логин ИБ"
+              label={t(($) => $.infobaseUsers.form.username)}
               name="ib_username"
-              rules={[{ required: true, message: 'Укажите логин ИБ' }]}
+              rules={[{ required: true, message: t(($) => $.infobaseUsers.form.usernameRequired) }]}
             >
-              <Input placeholder="ib_user" />
+              <Input placeholder={t(($) => $.infobaseUsers.form.usernamePlaceholder)} />
             </Form.Item>
-            <Form.Item label="Имя" name="ib_display_name">
-              <Input placeholder="Имя (опционально)" />
+            <Form.Item label={t(($) => $.infobaseUsers.form.displayName)} name="ib_display_name">
+              <Input placeholder={t(($) => $.infobaseUsers.form.displayNamePlaceholder)} />
             </Form.Item>
-            <Form.Item label="Пользователь CC" name="user_id">
+            <Form.Item label={t(($) => $.infobaseUsers.form.user)} name="user_id">
               <Select
                 showSearch
                 allowClear
-                placeholder="Пользователь (опционально)"
+                placeholder={t(($) => $.infobaseUsers.form.userPlaceholder)}
                 filterOption={false}
-                onSearch={(value) => setUserSearch(value)}
+                onSearch={setUserSearch}
                 options={userOptions}
                 loading={usersQuery.isFetching}
                 style={{ width: 240 }}
               />
             </Form.Item>
-            <Form.Item label="Тип аутентификации" name="auth_type">
+            <Form.Item label={t(($) => $.infobaseUsers.form.authType)} name="auth_type">
               <Select
                 style={{ width: 180 }}
                 options={[
-                  { label: 'Локальная', value: 'local' },
-                  { label: 'AD', value: 'ad' },
-                  { label: 'Сервисная', value: 'service' },
-                  { label: 'Другая', value: 'other' },
+                  { label: t(($) => $.infobaseUsers.authTypes.local), value: 'local' },
+                  { label: t(($) => $.infobaseUsers.authTypes.ad), value: 'ad' },
+                  { label: t(($) => $.infobaseUsers.authTypes.service), value: 'service' },
+                  { label: t(($) => $.infobaseUsers.authTypes.other), value: 'other' },
                 ]}
               />
             </Form.Item>
-            <Form.Item label="Сервисный аккаунт" name="is_service" valuePropName="checked">
+            <Form.Item label={t(($) => $.infobaseUsers.form.serviceAccount)} name="is_service" valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>
-          <Form.Item label="Роли (ИБ)" name="ib_roles">
-            <Select mode="tags" tokenSeparators={[',']} placeholder="Роли (через запятую)" />
+          <Form.Item label={t(($) => $.infobaseUsers.form.roles)} name="ib_roles">
+            <Select mode="tags" tokenSeparators={[',']} placeholder={t(($) => $.infobaseUsers.form.rolesPlaceholder)} />
           </Form.Item>
           <Form.Item
-            label={editingIbUser ? 'Новый пароль ИБ' : 'Пароль ИБ'}
+            label={editingIbUser ? t(($) => $.infobaseUsers.form.passwordEdit) : t(($) => $.infobaseUsers.form.passwordCreate)}
             name="ib_password"
             help={(
               <Space size="small">
                 {editingIbUser ? (
-                  <span>Нажмите “Обновить пароль”, чтобы применить изменения.</span>
+                  <span>{t(($) => $.infobaseUsers.form.passwordHelpEdit)}</span>
                 ) : (
-                  <span>Можно задать пароль при создании (опционально).</span>
+                  <span>{t(($) => $.infobaseUsers.form.passwordHelpCreate)}</span>
                 )}
                 <Tag color={editingIbUser?.ib_password_configured ? 'green' : 'default'}>
-                  {editingIbUser?.ib_password_configured ? 'Задан' : 'Не задан'}
+                  {editingIbUser?.ib_password_configured ? t(($) => $.infobaseUsers.values.set) : t(($) => $.infobaseUsers.values.unset)}
                 </Tag>
               </Space>
             )}
           >
-            <Input.Password placeholder="Введите пароль" />
+            <Input.Password placeholder={t(($) => $.infobaseUsers.form.passwordPlaceholder)} />
           </Form.Item>
-          <Form.Item label="Комментарий" name="notes">
-            <Input placeholder="Комментарий (опционально)" />
+          <Form.Item label={t(($) => $.infobaseUsers.form.notes)} name="notes">
+            <Input placeholder={t(($) => $.infobaseUsers.form.notesPlaceholder)} />
           </Form.Item>
           <Space>
             <Button
@@ -484,14 +479,14 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
               onClick={handleSave}
               loading={createInfobaseUser.isPending || updateInfobaseUser.isPending}
             >
-              {editingIbUser ? 'Сохранить' : 'Добавить'}
+              {editingIbUser ? t(($) => $.infobaseUsers.form.save) : t(($) => $.infobaseUsers.form.add)}
             </Button>
             {editingIbUser && (
               <Button
                 onClick={handlePasswordUpdate}
                 loading={setInfobaseUserPassword.isPending}
               >
-                Обновить пароль
+                {t(($) => $.infobaseUsers.form.updatePassword)}
               </Button>
             )}
             {editingIbUser && (
@@ -500,11 +495,11 @@ export function InfobaseUsersTab(props: { enabled: boolean }) {
                 onClick={handlePasswordReset}
                 loading={resetInfobaseUserPassword.isPending}
               >
-                Сбросить пароль
+                {t(($) => $.infobaseUsers.form.resetPassword)}
               </Button>
             )}
             {editingIbUser && (
-              <Button onClick={handleResetForm}>Отменить редактирование</Button>
+              <Button onClick={handleResetForm}>{t(($) => $.infobaseUsers.form.cancelEdit)}</Button>
             )}
           </Space>
         </Form>

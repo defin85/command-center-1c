@@ -7,8 +7,11 @@ export { ensureNamespaces, i18n } from './runtime'
 export {
   useAppTranslation,
   useCommonTranslation,
+  useDashboardTranslation,
   useErrorsTranslation,
+  useClustersTranslation,
   usePlatformTranslation,
+  useRbacTranslation,
   useShellTranslation,
   useSystemStatusTranslation,
 } from './useAppTranslation'

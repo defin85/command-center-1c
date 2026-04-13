@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
-import { App, Alert, Badge, Button, Card, Form, Input, Modal, Popover, Segmented, Select, Space, Table, Typography, Tag } from 'antd'
+import { App, Alert, Badge, Button, Card, Form, Input, Modal, Popover, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
+import { useRbacTranslation } from '../../../i18n'
 import { useRbacUsersWithRoles, useRoles, useSetUserRoles, type RbacRole, type UserWithRolesRef } from '../../../api/queries/rbac'
 import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 
@@ -16,6 +17,7 @@ const EMPTY_ROLES: RbacRole[] = []
 export function UserRolesTab(props: { canManageRbac: boolean }) {
   const { canManageRbac } = props
   const { modal, message } = App.useApp()
+  const { t } = useRbacTranslation()
 
   const rolesQuery = useRoles({ limit: 500, offset: 0 }, { enabled: canManageRbac })
   const roles = rolesQuery.data?.roles ?? EMPTY_ROLES
@@ -94,17 +96,17 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
     })
   }, [userRolesEditorForm])
 
-  const renderLimitedRoleTags = useCallback((roles: Array<{ id: number; name: string }>) => {
-    if (!roles || roles.length === 0) {
+  const renderLimitedRoleTags = useCallback((value: Array<{ id: number; name: string }>) => {
+    if (!value || value.length === 0) {
       return <Tag color="default">-</Tag>
     }
 
-    const shown = roles.slice(0, 3)
-    const rest = roles.slice(3)
+    const shown = value.slice(0, 3)
+    const rest = value.slice(3)
 
     const content = (
       <Space size={4} wrap>
-        {roles.map((role) => (
+        {value.map((role) => (
           <Tag key={role.id}>{role.name}</Tag>
         ))}
       </Space>
@@ -116,15 +118,15 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
           <Tag key={role.id}>{role.name}</Tag>
         ))}
         {rest.length > 0 && (
-          <Popover content={content} title="Роли" trigger="click">
+          <Popover content={content} title={t(($) => $.userRoles.popoverTitle)} trigger="click">
             <Button type="link" size="small" style={{ paddingInline: 0, height: 22 }}>
-              ещё {rest.length}
+              {t(($) => $.userRoles.more, { count: rest.length })}
             </Button>
           </Popover>
         )}
       </Space>
     )
-  }, [])
+  }, [t])
 
   const renderRoleIdTags = useCallback((ids: number[]) => {
     if (ids.length === 0) {
@@ -139,15 +141,15 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
           <Tag key={id}>{roleNameById.get(id) ?? `#${id}`}</Tag>
         ))}
         {ids.length > max && (
-          <Text type="secondary">+{ids.length - max} ещё</Text>
+          <Text type="secondary">{t(($) => $.roles.more, { count: ids.length - max })}</Text>
         )}
       </Space>
     )
-  }, [roleNameById])
+  }, [roleNameById, t])
 
   const userRolesColumns: ColumnsType<UserWithRolesRef> = useMemo(() => [
     {
-      title: 'Пользователь',
+      title: t(($) => $.userRoles.columns.user),
       key: 'user',
       render: (_: unknown, row) => (
         <span>
@@ -156,14 +158,14 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
       ),
     },
     {
-      title: 'Роли',
+      title: t(($) => $.userRoles.columns.roles),
       key: 'roles',
       render: (_: unknown, row) => {
-        const roles = row.roles ?? []
+        const value = row.roles ?? []
         return (
           <Space size={8} wrap>
-            <Badge count={roles.length} showZero />
-            {renderLimitedRoleTags(roles)}
+            <Badge count={value.length} showZero />
+            {renderLimitedRoleTags(value)}
           </Space>
         )
       },
@@ -174,22 +176,30 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
       width: 120,
       render: (_: unknown, row) => (
         <Button size="small" data-testid={`rbac-user-roles-edit-${row.id}`} onClick={() => openUserRolesEditor(row)}>
-          Изменить
+          {t(($) => $.userRoles.columns.edit)}
         </Button>
       ),
     },
-  ], [openUserRolesEditor, renderLimitedRoleTags])
+  ], [openUserRolesEditor, renderLimitedRoleTags, t])
+
+  const modeLabel = (mode: 'replace' | 'add' | 'remove') => (
+    mode === 'replace'
+      ? t(($) => $.userRoles.modes.replace)
+      : mode === 'add'
+        ? t(($) => $.userRoles.modes.add)
+        : t(($) => $.userRoles.modes.remove)
+  )
 
   return (
     <>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <Card title="Роли пользователей" size="small">
+        <Card title={t(($) => $.userRoles.title)} size="small">
           <Space wrap style={{ marginBottom: 12 }}>
             <Segmented
               value={userRolesViewMode}
               options={[
-                { label: 'Пользователь → Роли', value: 'user-to-roles' },
-                { label: 'Роль → Пользователи', value: 'role-to-users' },
+                { label: t(($) => $.userRoles.viewModes.userToRoles), value: 'user-to-roles' },
+                { label: t(($) => $.userRoles.viewModes.roleToUsers), value: 'role-to-users' },
               ]}
               onChange={(value) => {
                 setUserRolesViewMode(value as UserRolesViewMode)
@@ -198,7 +208,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
             />
 
             <Input
-              placeholder="Поиск пользователя"
+              placeholder={t(($) => $.userRoles.userSearchPlaceholder)}
               style={{ width: 240 }}
               value={userRolesList.search}
               onChange={(e) => setUserRolesList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
@@ -206,7 +216,9 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
 
             <Select
               style={{ width: 360 }}
-              placeholder={userRolesViewMode === 'role-to-users' ? 'Роль (обязательно)' : 'Фильтр по роли (опционально)'}
+              placeholder={userRolesViewMode === 'role-to-users'
+                ? t(($) => $.userRoles.roleRequiredPlaceholder)
+                : t(($) => $.userRoles.roleOptionalPlaceholder)}
               allowClear={userRolesViewMode !== 'role-to-users'}
               value={userRolesList.role_id}
               onChange={(value) => setUserRolesList((prev) => ({ ...prev, role_id: value ?? undefined, page: 1 }))}
@@ -217,7 +229,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
 
             {userRolesViewMode === 'role-to-users' && selectedRoleForUserRoles && (
               <Space size={6}>
-                <Text type="secondary">Пользователей в роли:</Text>
+                <Text type="secondary">{t(($) => $.userRoles.usersInRole)}</Text>
                 <Badge count={selectedRoleForUserRoles.users_count} showZero />
               </Space>
             )}
@@ -227,7 +239,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
               loading={userRolesUsersQuery.isFetching}
               disabled={userRolesViewMode === 'role-to-users' && !userRolesList.role_id}
             >
-              Обновить
+              {t(($) => $.userRoles.refresh)}
             </Button>
 
             {userRolesTableHintDismissed && (
@@ -240,7 +252,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                   setUserRolesTableHintDismissed(false)
                 }}
               >
-                Показать подсказку
+                {t(($) => $.userRoles.showHint)}
               </Button>
             )}
           </Space>
@@ -251,18 +263,12 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
               type="info"
               showIcon
               closable
-              message="Как читать таблицу"
+              message={t(($) => $.userRoles.hintTitle)}
               description={(
                 <Space direction="vertical" size={4}>
-                  <Text>
-                    <Text code>Пользователь → Роли</Text>: строка = пользователь, в колонке “Роли” показываются первые 3 (остальное — через “ещё N”).
-                  </Text>
-                  <Text>
-                    <Text code>Роль → Пользователи</Text>: выберите роль — появится список пользователей с этой ролью.
-                  </Text>
-                  <Text type="secondary">
-                    “Изменить” открывает назначение ролей. Перед применением показывается список изменений; режим “Заменить” с пустым списком снимает все роли.
-                  </Text>
+                  <Text>{t(($) => $.userRoles.hintUserToRoles, { moreLabel: t(($) => $.userRoles.more, { count: 2 }) })}</Text>
+                  <Text>{t(($) => $.userRoles.hintRoleToUsers)}</Text>
+                  <Text type="secondary">{t(($) => $.userRoles.hintEditNote)}</Text>
                 </Space>
               )}
               afterClose={() => {
@@ -277,8 +283,8 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
               style={{ marginBottom: 12 }}
               type="info"
               showIcon
-              message="Выберите роль"
-              description="Режим “Роль → Пользователи” показывает пользователей, у которых назначена выбранная роль."
+              message={t(($) => $.userRoles.selectRoleTitle)}
+              description={t(($) => $.userRoles.selectRoleDescription)}
             />
           )}
 
@@ -287,7 +293,7 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
               style={{ marginBottom: 12 }}
               type="warning"
               showIcon
-              message="Не удалось загрузить пользователей и роли"
+              message={t(($) => $.userRoles.loadFailed)}
             />
           )}
 
@@ -309,11 +315,13 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
       </Space>
 
       <Modal
-        title={userRolesEditorUser ? `Роли пользователя: ${userRolesEditorUser.username} #${userRolesEditorUser.id}` : 'Роли пользователя'}
+        title={userRolesEditorUser
+          ? t(($) => $.userRoles.modalTitle, { username: userRolesEditorUser.username, id: userRolesEditorUser.id })
+          : t(($) => $.userRoles.modalFallbackTitle)}
         open={userRolesEditorOpen}
         width={760}
-        okText="Продолжить"
-        cancelText="Отмена"
+        okText={t(($) => $.userRoles.continue)}
+        cancelText={t(($) => $.userRoles.cancel)}
         okButtonProps={{
           'data-testid': 'rbac-user-roles-editor-ok',
           disabled: !userRolesEditorCanSubmit,
@@ -330,11 +338,11 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
       >
         <div data-testid="rbac-user-roles-editor">
           {!userRolesEditorUser ? (
-            <Alert type="warning" showIcon message="Пользователь не выбран" />
+            <Alert type="warning" showIcon message={t(($) => $.userRoles.userNotSelected)} />
           ) : (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <div>
-                <Text type="secondary">Текущие роли:</Text>{' '}
+                <Text type="secondary">{t(($) => $.userRoles.currentRoles)}</Text>{' '}
                 {renderLimitedRoleTags(userRolesEditorUser.roles ?? [])}
               </div>
 
@@ -342,8 +350,8 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                 <Alert
                   type="info"
                   showIcon
-                  message="Режим “Заменить” — итоговый список ролей"
-                  description="Можно оставить пустым, чтобы снять все роли у пользователя."
+                  message={t(($) => $.userRoles.replaceInfoTitle)}
+                  description={t(($) => $.userRoles.replaceInfoDescription)}
                 />
               )}
 
@@ -359,19 +367,17 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                   const reason = String(values.reason ?? '').trim()
 
                   if (!reason) {
-                    message.error('Причина обязательна')
+                    message.error(t(($) => $.userRoles.reasonRequired))
                     return
                   }
                   if (mode !== 'replace' && selectedRoleIds.length === 0) {
-                    message.error('Выберите роли')
+                    message.error(t(($) => $.userRoles.rolesRequired))
                     return
                   }
 
                   const currentRoleIds = (userRolesEditorUser.roles ?? []).map((r) => r.id).sort((a, b) => a - b)
                   const currentRoleIdSet = new Set(currentRoleIds)
                   const selectedRoleIdSet = new Set(selectedRoleIds)
-
-                  const modeLabel = mode === 'replace' ? 'Заменить' : (mode === 'add' ? 'Добавить' : 'Убрать')
 
                   const computeDiff = () => {
                     if (mode === 'replace') {
@@ -395,9 +401,9 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                   const isReplaceRemoveAll = mode === 'replace' && selectedRoleIds.length === 0 && currentRoleIds.length > 0
 
                   confirmWithTracking(modal, {
-                    title: isReplaceRemoveAll ? 'Снять все роли у пользователя?' : 'Применить роли пользователю?',
-                    okText: 'Применить',
-                    cancelText: 'Отмена',
+                    title: isReplaceRemoveAll ? t(($) => $.userRoles.confirmRemoveAllTitle) : t(($) => $.userRoles.confirmApplyTitle),
+                    okText: t(($) => $.userRoles.confirmApply),
+                    cancelText: t(($) => $.userRoles.confirmCancel),
                     okButtonProps: { danger: isReplaceRemoveAll, 'data-testid': 'rbac-user-roles-confirm-ok' },
                     cancelButtonProps: { 'data-testid': 'rbac-user-roles-confirm-cancel' },
                     content: (
@@ -408,44 +414,44 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                               <Alert
                                 type="warning"
                                 showIcon
-                                message={`Будут сняты все роли (${currentRoleIds.length}).`}
-                                description="Это эквивалентно режиму “Заменить” с пустым списком ролей."
+                                message={t(($) => $.userRoles.removeAllWarningTitle, { count: currentRoleIds.length })}
+                                description={t(($) => $.userRoles.removeAllWarningDescription)}
                               />
                             </div>
                           )}
 
                           <div>
-                            <Text type="secondary">Пользователь:</Text>{' '}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.user)}</Text>{' '}
                             <Text>{userRolesEditorUser.username} #{userRolesEditorUser.id}</Text>
                           </div>
                           <div>
-                            <Text type="secondary">Режим:</Text> <Tag>{modeLabel}</Tag>
+                            <Text type="secondary">{t(($) => $.userRoles.labels.mode)}</Text> <Tag>{modeLabel(mode)}</Tag>
                           </div>
 
                           <div data-testid="rbac-user-roles-confirm-selected-count">
-                            <Text type="secondary">Выбрано:</Text> <Text>{selectedRoleIds.length}</Text>
+                            <Text type="secondary">{t(($) => $.userRoles.labels.selectedCount)}</Text> <Text>{selectedRoleIds.length}</Text>
                           </div>
                           <div data-testid="rbac-user-roles-confirm-selected-roles">
-                            <Text type="secondary">Выбранные роли:</Text> {renderRoleIdTags(selectedRoleIds)}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.selectedRoles)}</Text> {renderRoleIdTags(selectedRoleIds)}
                           </div>
 
                           <div data-testid="rbac-user-roles-confirm-current-roles">
-                            <Text type="secondary">Текущие роли:</Text> {renderRoleIdTags(currentRoleIds)}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.currentRoles)}</Text> {renderRoleIdTags(currentRoleIds)}
                           </div>
 
                           <div data-testid="rbac-user-roles-confirm-diff-added">
-                            <Text type="secondary">Добавится:</Text> {renderRoleIdTags(diff.added)}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.added)}</Text> {renderRoleIdTags(diff.added)}
                           </div>
                           <div data-testid="rbac-user-roles-confirm-diff-removed">
-                            <Text type="secondary">Уберётся:</Text> {renderRoleIdTags(diff.removed)}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.removed)}</Text> {renderRoleIdTags(diff.removed)}
                           </div>
                           <div data-testid="rbac-user-roles-confirm-next-count">
-                            <Text type="secondary">Итого после применения:</Text>{' '}
+                            <Text type="secondary">{t(($) => $.userRoles.labels.nextCount)}</Text>{' '}
                             <Text>{diff.next.length}</Text>
                           </div>
 
                           <div data-testid="rbac-user-roles-confirm-reason">
-                            <Text type="secondary">Причина:</Text> <Text>{reason}</Text>
+                            <Text type="secondary">{t(($) => $.userRoles.labels.reason)}</Text> <Text>{reason}</Text>
                           </div>
                         </Space>
                       </div>
@@ -458,27 +464,27 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                           mode,
                           reason,
                         })
-                        message.success('Роли применены')
+                        message.success(t(($) => $.userRoles.appliedSuccess))
                         setUserRolesEditorOpen(false)
                         setUserRolesEditorUser(null)
                         userRolesEditorForm.resetFields()
                         userRolesUsersQuery.refetch()
                       } catch {
-                        message.error('Не удалось применить роли')
+                        message.error(t(($) => $.userRoles.appliedFailed))
                         throw new Error('Failed to apply roles')
                       }
                     },
                   })
                 }}
               >
-                <Form.Item label="Режим" name="mode">
+                <Form.Item label={t(($) => $.userRoles.form.mode)} name="mode">
                   <Select
                     data-testid="rbac-user-roles-editor-mode"
                     style={{ width: 240 }}
                     options={[
-                      { label: 'Заменить', value: 'replace' },
-                      { label: 'Добавить', value: 'add' },
-                      { label: 'Убрать', value: 'remove' },
+                      { label: t(($) => $.userRoles.modes.replace), value: 'replace' },
+                      { label: t(($) => $.userRoles.modes.add), value: 'add' },
+                      { label: t(($) => $.userRoles.modes.remove), value: 'remove' },
                     ]}
                   />
                 </Form.Item>
@@ -486,8 +492,8 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                 <Form.Item
                   label={
                     userRolesEditorModeValue === 'replace'
-                      ? 'Роли (итоговый список)'
-                      : (userRolesEditorModeValue === 'add' ? 'Роли для добавления' : 'Роли для удаления')
+                      ? t(($) => $.userRoles.form.rolesReplace)
+                      : (userRolesEditorModeValue === 'add' ? t(($) => $.userRoles.form.rolesAdd) : t(($) => $.userRoles.form.rolesRemove))
                   }
                   name="group_ids"
                 >
@@ -498,8 +504,8 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                     style={{ width: '100%' }}
                     placeholder={
                       userRolesEditorModeValue === 'replace'
-                        ? 'Выберите роли (можно очистить, чтобы снять все)'
-                        : (userRolesEditorModeValue === 'add' ? 'Выберите роли' : 'Выберите роли из текущих')
+                        ? t(($) => $.userRoles.form.placeholderReplace)
+                        : (userRolesEditorModeValue === 'add' ? t(($) => $.userRoles.form.placeholderAdd) : t(($) => $.userRoles.form.placeholderRemove))
                     }
                     options={userRolesEditorModeValue === 'remove'
                       ? (userRolesEditorUser.roles ?? []).map((r) => ({ label: `${r.name} #${r.id}`, value: r.id }))
@@ -510,11 +516,11 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
                 </Form.Item>
 
                 <Form.Item
-                  label="Причина"
+                  label={t(($) => $.userRoles.form.reason)}
                   name="reason"
-                  rules={[{ required: true, message: 'Укажите причину' }]}
+                  rules={[{ required: true, message: t(($) => $.userRoles.reasonRequired) }]}
                 >
-                  <Input data-testid="rbac-user-roles-editor-reason" placeholder="Причина (обязательно)" />
+                  <Input data-testid="rbac-user-roles-editor-reason" placeholder={t(($) => $.userRoles.form.reasonPlaceholder)} />
                 </Form.Item>
               </Form>
             </Space>

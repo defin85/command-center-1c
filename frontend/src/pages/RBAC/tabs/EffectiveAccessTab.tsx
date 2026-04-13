@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Select, Space, Table, Typography, Tag } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { EffectiveAccessArtifactItem } from '../../../api/generated/model/effectiveAccessArtifactItem'
@@ -12,8 +12,18 @@ import type { EffectiveAccessOperationTemplateItem } from '../../../api/generate
 import type { EffectiveAccessOperationTemplateSourceItem } from '../../../api/generated/model/effectiveAccessOperationTemplateSourceItem'
 import type { EffectiveAccessWorkflowTemplateItem } from '../../../api/generated/model/effectiveAccessWorkflowTemplateItem'
 import type { EffectiveAccessWorkflowTemplateSourceItem } from '../../../api/generated/model/effectiveAccessWorkflowTemplateSourceItem'
-import { useEffectiveAccess, useRbacRefArtifacts, useRbacRefClusters, useRbacRefDatabases, useRbacRefOperationTemplates, useRbacRefWorkflowTemplates, useRbacUsers, type ClusterRef } from '../../../api/queries/rbac'
+import {
+  useEffectiveAccess,
+  useRbacRefArtifacts,
+  useRbacRefClusters,
+  useRbacRefDatabases,
+  useRbacRefOperationTemplates,
+  useRbacRefWorkflowTemplates,
+  useRbacUsers,
+  type ClusterRef,
+} from '../../../api/queries/rbac'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
+import { useRbacTranslation } from '../../../i18n'
 import { RbacResourcePicker } from '../components/RbacResourcePicker'
 import { usePaginatedRefSelectOptions } from '../hooks/usePaginatedRefSelectOptions'
 import { getEffectiveAccessSourceTagColor } from '../utils/effectiveAccessSourceTag'
@@ -27,20 +37,21 @@ const EMPTY_CLUSTER_REFS: ClusterRef[] = []
 
 export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
   const { canManageRbac } = props
+  const { t } = useRbacTranslation()
 
   const REF_PAGE_SIZE = 50
 
   const clusterDatabasePickerI18n = useMemo(() => ({
-    clearText: 'Очистить',
-    modalTitleClusters: 'Выбор кластера',
-    modalTitleDatabases: 'Выбор базы',
-    treeTitle: 'Ресурсы',
-    searchPlaceholderClusters: 'Поиск кластеров',
-    searchPlaceholderDatabases: 'Поиск баз',
-    loadingText: 'Загрузка…',
-    loadMoreText: 'Загрузить ещё…',
-    clearSelectionText: 'Снять выбор',
-  }), [])
+    clearText: t(($) => $.effectiveAccess.picker.clearText),
+    modalTitleClusters: t(($) => $.effectiveAccess.picker.modalTitleClusters),
+    modalTitleDatabases: t(($) => $.effectiveAccess.picker.modalTitleDatabases),
+    treeTitle: t(($) => $.effectiveAccess.picker.treeTitle),
+    searchPlaceholderClusters: t(($) => $.effectiveAccess.picker.searchPlaceholderClusters),
+    searchPlaceholderDatabases: t(($) => $.effectiveAccess.picker.searchPlaceholderDatabases),
+    loadingText: t(($) => $.effectiveAccess.picker.loading),
+    loadMoreText: t(($) => $.effectiveAccess.picker.loadMore),
+    clearSelectionText: t(($) => $.effectiveAccess.picker.clearSelectionText),
+  }), [t])
 
   const clustersRefQuery = useRbacRefClusters({ limit: 1000, offset: 0 }, { enabled: canManageRbac })
   const clusters = clustersRefQuery.data?.clusters ?? EMPTY_CLUSTER_REFS
@@ -189,20 +200,15 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
     }
   })()
 
-  const effectiveResourcePlaceholder = (() => {
-    switch (effectiveResourceKey) {
-      case 'clusters':
-        return 'Кластер (опционально)'
-      case 'databases':
-        return 'База (опционально)'
-      case 'operation-templates':
-        return 'Шаблон операции (опционально)'
-      case 'workflow-templates':
-        return 'Шаблон рабочего процесса (опционально)'
-      case 'artifacts':
-        return 'Артефакт (опционально)'
-    }
-  })()
+  const effectiveResourcePlaceholder = effectiveResourceKey === 'clusters'
+    ? t(($) => $.effectiveAccess.resourcePlaceholders.clusters)
+    : effectiveResourceKey === 'databases'
+      ? t(($) => $.effectiveAccess.resourcePlaceholders.databases)
+      : effectiveResourceKey === 'operation-templates'
+        ? t(($) => $.effectiveAccess.resourcePlaceholders.operationTemplates)
+        : effectiveResourceKey === 'workflow-templates'
+          ? t(($) => $.effectiveAccess.resourcePlaceholders.workflowTemplates)
+          : t(($) => $.effectiveAccess.resourcePlaceholders.artifacts)
 
   const effectiveIncludeClusters = effectiveResourceKey === 'clusters'
   const effectiveIncludeDatabases = effectiveResourceKey === 'databases'
@@ -222,16 +228,16 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
     enabled: canManageRbac && Boolean(selectedEffectiveUserId),
   })
 
-  const effectiveSourceLabel = (source: string) => {
-    if (source === 'direct') return 'прямое'
-    if (source === 'group') return 'группа'
-    if (source === 'cluster') return 'кластер'
+  const effectiveSourceLabel = useCallback((source: string) => {
+    if (source === 'direct') return t(($) => $.effectiveAccess.sources.direct)
+    if (source === 'group') return t(($) => $.effectiveAccess.sources.group)
+    if (source === 'cluster') return t(($) => $.effectiveAccess.sources.cluster)
     return source
-  }
+  }, [t])
 
   const effectiveClustersColumns: ColumnsType<EffectiveAccessClusterItem> = useMemo(() => [
     {
-      title: 'Кластер',
+      title: t(($) => $.effectiveAccess.columns.cluster),
       key: 'cluster',
       render: (_: unknown, row) => (
         <span>
@@ -239,12 +245,12 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         </span>
       ),
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
+  ], [t])
 
   const effectiveDatabasesColumns: ColumnsType<EffectiveAccessDatabaseItem> = useMemo(() => [
     {
-      title: 'База',
+      title: t(($) => $.effectiveAccess.columns.database),
       key: 'database',
       render: (_: unknown, row) => (
         <span>
@@ -252,18 +258,18 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         </span>
       ),
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => {
         const source = row.source
         const color = source === 'direct' ? 'blue' : source === 'group' ? 'purple' : 'gold'
-        return <Tag color={color}>{source === 'cluster' ? 'через кластер' : effectiveSourceLabel(source)}</Tag>
+        return <Tag color={color}>{source === 'cluster' ? t(($) => $.effectiveAccess.sources.viaCluster) : effectiveSourceLabel(source)}</Tag>
       },
     },
     {
-      title: 'Через кластер',
+      title: t(($) => $.effectiveAccess.columns.viaCluster),
       key: 'via_cluster_id',
       render: (_: unknown, row) => {
         if (row.source !== 'cluster') return '-'
@@ -277,11 +283,11 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         )
       },
     },
-  ], [clusterNameById])
+  ], [clusterNameById, effectiveSourceLabel, t])
 
   const effectiveOperationTemplatesColumns: ColumnsType<EffectiveAccessOperationTemplateItem> = useMemo(() => [
     {
-      title: 'Шаблон операции',
+      title: t(($) => $.effectiveAccess.columns.operationTemplate),
       key: 'template',
       render: (_: unknown, row) => (
         <span>
@@ -289,17 +295,17 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         </span>
       ),
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel, t])
 
   const effectiveWorkflowTemplatesColumns: ColumnsType<EffectiveAccessWorkflowTemplateItem> = useMemo(() => [
     {
-      title: 'Шаблон рабочего процесса',
+      title: t(($) => $.effectiveAccess.columns.workflowTemplate),
       key: 'template',
       render: (_: unknown, row) => (
         <span>
@@ -307,17 +313,17 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         </span>
       ),
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel, t])
 
   const effectiveArtifactsColumns: ColumnsType<EffectiveAccessArtifactItem> = useMemo(() => [
     {
-      title: 'Артефакт',
+      title: t(($) => $.effectiveAccess.columns.artifact),
       key: 'artifact',
       render: (_: unknown, row) => (
         <span>
@@ -325,32 +331,32 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         </span>
       ),
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-  ], [])
+  ], [effectiveSourceLabel, t])
 
   const effectiveClusterSourcesColumns: ColumnsType<EffectiveAccessClusterSourceItem> = useMemo(() => [
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel, t])
 
   const effectiveDatabaseSourcesColumns: ColumnsType<EffectiveAccessDatabaseSourceItem> = useMemo(() => [
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
     {
-      title: 'Через кластер',
+      title: t(($) => $.effectiveAccess.columns.viaCluster),
       key: 'via_cluster_id',
       render: (_: unknown, row) => {
         if (row.source !== 'cluster') return '-'
@@ -364,42 +370,42 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
         )
       },
     },
-  ], [clusterNameById])
+  ], [clusterNameById, effectiveSourceLabel, t])
 
   const effectiveOperationTemplateSourcesColumns: ColumnsType<EffectiveAccessOperationTemplateSourceItem> = useMemo(() => [
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel, t])
 
   const effectiveWorkflowTemplateSourcesColumns: ColumnsType<EffectiveAccessWorkflowTemplateSourceItem> = useMemo(() => [
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel, t])
 
   const effectiveArtifactSourcesColumns: ColumnsType<EffectiveAccessArtifactSourceItem> = useMemo(() => [
     {
-      title: 'Источник',
+      title: t(($) => $.effectiveAccess.columns.source),
       key: 'source',
       render: (_: unknown, row) => <Tag color={getEffectiveAccessSourceTagColor(row.source)}>{effectiveSourceLabel(row.source)}</Tag>,
     },
-    { title: 'Уровень', dataIndex: 'level', key: 'level' },
-  ], [])
+    { title: t(($) => $.effectiveAccess.columns.level), dataIndex: 'level', key: 'level' },
+  ], [effectiveSourceLabel, t])
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Card title="Эффективный доступ" size="small">
+      <Card title={t(($) => $.effectiveAccess.title)} size="small">
         <Space wrap align="start">
           <Select
             style={{ width: 260 }}
-            placeholder="Пользователь"
+            placeholder={t(($) => $.effectiveAccess.userPlaceholder)}
             allowClear
             showSearch
             filterOption={false}
@@ -417,11 +423,11 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
             style={{ width: 260 }}
             value={effectiveResourceKey}
             options={[
-              { label: 'Кластеры', value: 'clusters' },
-              { label: 'Базы', value: 'databases' },
-              { label: 'Шаблоны операций', value: 'operation-templates' },
-              { label: 'Шаблоны рабочих процессов', value: 'workflow-templates' },
-              { label: 'Артефакты', value: 'artifacts' },
+              { label: t(($) => $.effectiveAccess.resourceOptions.clusters), value: 'clusters' },
+              { label: t(($) => $.effectiveAccess.resourceOptions.databases), value: 'databases' },
+              { label: t(($) => $.effectiveAccess.resourceOptions.operationTemplates), value: 'operation-templates' },
+              { label: t(($) => $.effectiveAccess.resourceOptions.workflowTemplates), value: 'workflow-templates' },
+              { label: t(($) => $.effectiveAccess.resourceOptions.artifacts), value: 'artifacts' },
             ]}
             onChange={(value) => setEffectiveResourceKey(value as RbacPermissionsResourceKey)}
           />
@@ -446,7 +452,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
             loading={effectiveAccessQuery.isFetching}
             disabled={!selectedEffectiveUserId}
           >
-            Обновить
+            {t(($) => $.effectiveAccess.refresh)}
           </Button>
         </Space>
 
@@ -454,11 +460,11 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           <Alert
             style={{ marginTop: 12 }}
             type="info"
-            message="Выберите пользователя для просмотра"
+            message={t(($) => $.effectiveAccess.selectUserTitle)}
             description={(
               <Space direction="vertical" size={4}>
-                <Text>Выберите пользователя и тип ресурса. Опционально укажите конкретный ресурс для фильтра.</Text>
-                <Text type="secondary">Раскрытие строки показывает источники (прямое/группа/через кластер/{'\u2026'})</Text>
+                <Text>{t(($) => $.effectiveAccess.selectUserDescription)}</Text>
+                <Text type="secondary">{t(($) => $.effectiveAccess.selectUserNote)}</Text>
               </Space>
             )}
           />
@@ -468,7 +474,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           <Alert
             style={{ marginTop: 12 }}
             type="warning"
-            message="Не удалось загрузить эффективный доступ"
+            message={t(($) => $.effectiveAccess.loadFailed)}
           />
         )}
       </Card>
@@ -476,7 +482,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
       {selectedEffectiveUserId && (
         <>
           {effectiveResourceKey === 'clusters' && (
-            <Card title="Кластеры" size="small">
+            <Card title={t(($) => $.effectiveAccess.cards.clusters)} size="small">
               <Table
                 size="small"
                 rowKey={(row) => row.cluster.id}
@@ -503,7 +509,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           )}
 
           {effectiveResourceKey === 'databases' && (
-            <Card title="Базы" size="small">
+            <Card title={t(($) => $.effectiveAccess.cards.databases)} size="small">
               <Table
                 size="small"
                 rowKey={(row) => row.database.id}
@@ -541,7 +547,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           )}
 
           {effectiveResourceKey === 'operation-templates' && (
-            <Card title="Шаблоны операций" size="small">
+            <Card title={t(($) => $.effectiveAccess.cards.operationTemplates)} size="small">
               <Table
                 size="small"
                 rowKey={(row) => row.template.id}
@@ -568,7 +574,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           )}
 
           {effectiveResourceKey === 'workflow-templates' && (
-            <Card title="Шаблоны рабочих процессов" size="small">
+            <Card title={t(($) => $.effectiveAccess.cards.workflowTemplates)} size="small">
               <Table
                 size="small"
                 rowKey={(row) => row.template.id}
@@ -595,7 +601,7 @@ export function EffectiveAccessTab(props: { canManageRbac: boolean }) {
           )}
 
           {effectiveResourceKey === 'artifacts' && (
-            <Card title="Артефакты" size="small">
+            <Card title={t(($) => $.effectiveAccess.cards.artifacts)} size="small">
               <Table
                 size="small"
                 rowKey={(row) => row.artifact.id}

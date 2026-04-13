@@ -3,6 +3,7 @@ import { App, Alert, Button, Card, Input, Space, Table, Tag, Typography } from '
 import type { ColumnsType } from 'antd/es/table'
 
 import { useAdminAuditLog, type AdminAuditLogItem } from '../../../api/queries/rbac'
+import { useLocaleFormatters } from '../../../i18n'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
 import { ReasonModal } from './ReasonModal'
 import { getUndoCommand, type UndoCommand } from './rbacAuditUndo'
@@ -45,6 +46,7 @@ export function RbacAuditPanel(props: {
   i18n?: RbacAuditPanelI18n
 }) {
   const { modal, message } = App.useApp()
+  const formatters = useLocaleFormatters()
   const i18n = props.i18n ?? EMPTY_I18N
   const [search, setSearch] = useState<string>('')
   const [page, setPage] = useState<number>(1)
@@ -68,7 +70,7 @@ export function RbacAuditPanel(props: {
       title: i18n.columnCreatedAt ?? 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (value: string) => value ? new Date(value).toLocaleString() : '-',
+      render: (value: string) => formatters.dateTime(value, { fallback: '-' }),
     },
     {
       title: i18n.columnActor ?? 'Actor',
@@ -141,7 +143,7 @@ export function RbacAuditPanel(props: {
         </Space>
       ),
     },
-  ], [i18n, modal, props.enabled, props.undoLabel])
+  ], [formatters, i18n, modal, props.enabled, props.undoLabel])
 
   return (
     <Card title={props.title ?? 'Admin Audit'} size="small">

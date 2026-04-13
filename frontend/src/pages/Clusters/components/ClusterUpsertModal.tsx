@@ -12,6 +12,7 @@ import {
   DEFAULT_RPHOST_PORT_FROM,
   DEFAULT_RPHOST_PORT_TO,
 } from '../../../api/queries/clusters'
+import { useClustersTranslation } from '../../../i18n'
 
 const { TextArea } = Input
 
@@ -34,46 +35,48 @@ export function ClusterUpsertModal({
   onSubmit: () => void
   onOpenCredentials: (cluster: Cluster) => void
 }) {
+  const { t } = useClustersTranslation()
+
   return (
     <ModalFormShell
       open={open}
       onClose={onCancel}
       onSubmit={onSubmit}
-      title={editingCluster ? 'Edit Cluster' : 'Add New Cluster'}
-      subtitle="1C cluster connection and management settings"
+      title={editingCluster ? t(($) => $.upsertModal.editTitle) : t(($) => $.upsertModal.createTitle)}
+      subtitle={t(($) => $.upsertModal.subtitle)}
       width={600}
       confirmLoading={confirmLoading}
-      submitText={editingCluster ? 'Update' : 'Create'}
+      submitText={editingCluster ? t(($) => $.actions.update) : t(($) => $.actions.createSubmit)}
       forceRender
     >
       <Form form={form} layout="vertical">
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Form.Item
-            label="Cluster Name"
+            label={t(($) => $.upsertModal.clusterName)}
             name="name"
-            rules={[{ required: true, message: 'Please enter cluster name' }]}
+            rules={[{ required: true, message: t(($) => $.upsertModal.clusterNameRequired) }]}
             htmlFor="cluster-name"
           >
-            <Input id="cluster-name" placeholder="Production Cluster" />
+            <Input id="cluster-name" placeholder={t(($) => $.upsertModal.productionClusterPlaceholder)} />
           </Form.Item>
 
-          <Form.Item label="Description" name="description" htmlFor="cluster-description">
-            <TextArea id="cluster-description" rows={3} placeholder="Optional description" />
+          <Form.Item label={t(($) => $.upsertModal.description)} name="description" htmlFor="cluster-description">
+            <TextArea id="cluster-description" rows={3} placeholder={t(($) => $.upsertModal.descriptionPlaceholder)} />
           </Form.Item>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 140px' }}>
             <Form.Item
-              label="RAS Host"
+              label={t(($) => $.upsertModal.rasHost)}
               name="ras_host"
-              rules={[{ required: true, message: 'Please enter RAS host' }]}
+              rules={[{ required: true, message: t(($) => $.upsertModal.rasHostRequired) }]}
               htmlFor="cluster-ras-host"
             >
               <Input id="cluster-ras-host" placeholder={defaultRasHostPlaceholder} />
             </Form.Item>
             <Form.Item
-              label="RAS Port"
+              label={t(($) => $.upsertModal.rasPort)}
               name="ras_port"
-              rules={[{ required: true, message: 'Please enter RAS port' }]}
+              rules={[{ required: true, message: t(($) => $.upsertModal.rasPortRequired) }]}
               htmlFor="cluster-ras-port"
             >
               <InputNumber
@@ -88,17 +91,17 @@ export function ClusterUpsertModal({
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 140px' }}>
             <Form.Item
-              label="RMNGR Host"
+              label={t(($) => $.upsertModal.rmngrHost)}
               name="rmngr_host"
-              rules={[{ required: true, message: 'Please enter RMNGR host' }]}
+              rules={[{ required: true, message: t(($) => $.upsertModal.rmngrHostRequired) }]}
               htmlFor="cluster-rmngr-host"
             >
               <Input id="cluster-rmngr-host" placeholder="localhost" />
             </Form.Item>
             <Form.Item
-              label="RMNGR Port"
+              label={t(($) => $.upsertModal.rmngrPort)}
               name="rmngr_port"
-              rules={[{ required: true, message: 'Please enter RMNGR port' }]}
+              rules={[{ required: true, message: t(($) => $.upsertModal.rmngrPortRequired) }]}
               htmlFor="cluster-rmngr-port"
             >
               <InputNumber
@@ -112,10 +115,10 @@ export function ClusterUpsertModal({
           </div>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 140px' }}>
-            <Form.Item label="RAGENT Host" name="ragent_host" htmlFor="cluster-ragent-host">
+            <Form.Item label={t(($) => $.upsertModal.ragentHost)} name="ragent_host" htmlFor="cluster-ragent-host">
               <Input id="cluster-ragent-host" placeholder="localhost" />
             </Form.Item>
-            <Form.Item label="RAGENT Port" name="ragent_port" htmlFor="cluster-ragent-port">
+            <Form.Item label={t(($) => $.upsertModal.ragentPort)} name="ragent_port" htmlFor="cluster-ragent-port">
               <InputNumber
                 id="cluster-ragent-port"
                 min={1}
@@ -127,7 +130,7 @@ export function ClusterUpsertModal({
           </div>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-            <Form.Item label="RPHOST Port From" name="rphost_port_from" htmlFor="cluster-rphost-port-from">
+            <Form.Item label={t(($) => $.upsertModal.rphostPortFrom)} name="rphost_port_from" htmlFor="cluster-rphost-port-from">
               <InputNumber
                 id="cluster-rphost-port-from"
                 min={1}
@@ -136,7 +139,7 @@ export function ClusterUpsertModal({
                 placeholder={String(DEFAULT_RPHOST_PORT_FROM)}
               />
             </Form.Item>
-            <Form.Item label="RPHOST Port To" name="rphost_port_to" htmlFor="cluster-rphost-port-to">
+            <Form.Item label={t(($) => $.upsertModal.rphostPortTo)} name="rphost_port_to" htmlFor="cluster-rphost-port-to">
               <InputNumber
                 id="cluster-rphost-port-to"
                 min={1}
@@ -148,9 +151,9 @@ export function ClusterUpsertModal({
           </div>
 
           <Form.Item
-            label="Cluster Service URL"
+            label={t(($) => $.upsertModal.clusterServiceUrl)}
             name="cluster_service_url"
-            rules={[{ required: true, message: 'Please enter cluster service URL' }]}
+            rules={[{ required: true, message: t(($) => $.upsertModal.clusterServiceUrlRequired) }]}
             htmlFor="cluster-service-url"
           >
             <Input id="cluster-service-url" placeholder={DEFAULT_CLUSTER_SERVICE_URL} />
@@ -158,39 +161,39 @@ export function ClusterUpsertModal({
 
           {editingCluster ? (
             <Form.Item
-              label="Cluster Credentials"
+              label={t(($) => $.upsertModal.clusterCredentials)}
               htmlFor="cluster-credentials-button"
-              extra="Use Credentials to update or reset username/password."
+              extra={t(($) => $.upsertModal.clusterCredentialsHelp)}
             >
               <Button
                 id="cluster-credentials-button"
                 icon={<KeyOutlined />}
                 onClick={() => editingCluster && onOpenCredentials(editingCluster)}
               >
-                Open Credentials
+                {t(($) => $.upsertModal.openCredentials)}
               </Button>
             </Form.Item>
           ) : (
             <>
-              <Form.Item label="Cluster Admin User" name="cluster_user" htmlFor="cluster-admin-user">
-                <Input id="cluster-admin-user" placeholder="Optional cluster admin username" />
+              <Form.Item label={t(($) => $.upsertModal.clusterAdminUser)} name="cluster_user" htmlFor="cluster-admin-user">
+                <Input id="cluster-admin-user" placeholder={t(($) => $.upsertModal.optionalClusterAdminUsername)} />
               </Form.Item>
-              <Form.Item label="Cluster Admin Password" name="cluster_pwd" htmlFor="cluster-admin-password">
+              <Form.Item label={t(($) => $.upsertModal.clusterAdminPassword)} name="cluster_pwd" htmlFor="cluster-admin-password">
                 <Input.Password
                   id="cluster-admin-password"
-                  placeholder="Optional cluster admin password"
+                  placeholder={t(($) => $.upsertModal.optionalClusterAdminPassword)}
                   autoComplete="new-password"
                 />
               </Form.Item>
             </>
           )}
 
-          <Form.Item label="Status" name="status" htmlFor="cluster-status">
+          <Form.Item label={t(($) => $.upsertModal.status)} name="status" htmlFor="cluster-status">
             <Select id="cluster-status">
-              <Select.Option value="active">Active</Select.Option>
-              <Select.Option value="inactive">Inactive</Select.Option>
-              <Select.Option value="maintenance">Maintenance</Select.Option>
-              <Select.Option value="error">Error</Select.Option>
+              <Select.Option value="active">{t(($) => $.statusOptions.active)}</Select.Option>
+              <Select.Option value="inactive">{t(($) => $.statusOptions.inactive)}</Select.Option>
+              <Select.Option value="maintenance">{t(($) => $.statusOptions.maintenance)}</Select.Option>
+              <Select.Option value="error">{t(($) => $.statusOptions.error)}</Select.Option>
             </Select>
           </Form.Item>
         </Space>

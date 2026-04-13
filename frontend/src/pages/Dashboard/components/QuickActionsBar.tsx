@@ -11,6 +11,7 @@ import {
   DashboardOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { useDashboardTranslation } from '../../../i18n'
 
 export interface QuickActionsBarProps {
   onNewOperation: () => void
@@ -21,6 +22,7 @@ export interface QuickActionsBarProps {
  */
 export const QuickActionsBar = ({ onNewOperation }: QuickActionsBarProps) => {
   const navigate = useNavigate()
+  const { t } = useDashboardTranslation()
 
   return (
     <Space>
@@ -29,19 +31,19 @@ export const QuickActionsBar = ({ onNewOperation }: QuickActionsBarProps) => {
         icon={<PlusOutlined />}
         onClick={onNewOperation}
       >
-        New Operation
+        {t(($) => $.quickActions.newOperation)}
       </Button>
       <Button
         icon={<UnorderedListOutlined />}
         onClick={() => navigate('/operations')}
       >
-        View All Operations
+        {t(($) => $.quickActions.viewAllOperations)}
       </Button>
       <Button
         icon={<DashboardOutlined />}
         onClick={() => navigate('/system-status')}
       >
-        System Status
+        {t(($) => $.quickActions.systemStatus)}
       </Button>
     </Space>
   )

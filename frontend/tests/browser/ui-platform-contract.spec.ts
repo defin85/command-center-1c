@@ -2643,6 +2643,12 @@ async function setupUiPlatformMocks(
       return fulfillJson(route, tenantContext)
     }
 
+    if (method === 'GET' && path === '/api/v2/system/config/') {
+      return fulfillJson(route, {
+        ras_default_server: `${CLUSTER_RECORD.ras_host}:${CLUSTER_RECORD.ras_port}`,
+      })
+    }
+
     if (method === 'GET' && path === '/api/v2/databases/list-databases/') {
       if (counts) {
         counts.databaseLists += 1
@@ -4508,7 +4514,7 @@ test('UI platform: /operations renders zero-task diagnostics as empty state inst
 test('UI platform: /clusters restores selected cluster context and opens edit flow in a canonical modal shell', async ({ page }) => {
   const counts = createRequestCounts()
 
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, counts })
 
@@ -4521,9 +4527,9 @@ test('UI platform: /clusters restores selected cluster context and opens edit fl
   })
   const editModal = page.getByRole('dialog')
   await expect(editModal).toBeVisible()
-  await expect(editModal.getByLabel('Cluster Name')).toHaveValue(CLUSTER_RECORD.name)
+  await expect(editModal.getByLabel('Имя кластера')).toHaveValue(CLUSTER_RECORD.name)
   await expect(editModal.getByLabel('RAS Host')).toHaveValue(CLUSTER_RECORD.ras_host)
-  await expect(editModal.getByRole('button', { name: 'Update' })).toBeVisible()
+  await expect(editModal.getByRole('button', { name: 'Обновить' })).toBeVisible()
   await expect.poll(() => counts.clusterLists).toBe(1)
   await expect.poll(() => counts.clusterDetails).toBe(1)
   await expectNoHorizontalOverflow(page)
@@ -4532,7 +4538,7 @@ test('UI platform: /clusters restores selected cluster context and opens edit fl
 test('Runtime contract: /clusters hands off to /databases without replaying shell reads', async ({ page }) => {
   const counts = createRequestCounts()
 
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, counts })
 
@@ -4543,11 +4549,11 @@ test('Runtime contract: /clusters hands off to /databases without replaying shel
   await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
-  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Открыть базы' })).toBeVisible()
   await expect.poll(() => counts.clusterLists).toBe(1)
   await expect.poll(() => counts.clusterDetails).toBe(1)
 
-  await page.getByRole('button', { name: 'Open Databases' }).click()
+  await page.getByRole('button', { name: 'Открыть базы' }).click()
 
   await expect(page).toHaveURL(/\/databases\?cluster=cluster-1(?:&.*)?$/)
   await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible({
@@ -4561,7 +4567,7 @@ test('Runtime contract: /clusters hands off to /databases without replaying shel
 test('Runtime contract: /clusters ignores same-route menu re-entry and keeps selected cluster context stable', async ({ page }) => {
   const counts = createRequestCounts()
 
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, counts })
 
@@ -4571,7 +4577,7 @@ test('Runtime contract: /clusters ignores same-route menu re-entry and keeps sel
 
   const clustersMenuItem = page.getByRole('menuitem', { name: /Clusters/i })
 
-  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Открыть базы' })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
@@ -4586,7 +4592,7 @@ test('Runtime contract: /clusters ignores same-route menu re-entry and keeps sel
   await page.waitForTimeout(750)
 
   await expect(page).toHaveURL(initialUrl)
-  await expect(page.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Открыть базы' })).toBeVisible()
   await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
   await expect(counts.bootstrap).toBe(1)
   await expect(counts.clusterLists).toBe(initialClusterListReads)
@@ -4595,7 +4601,7 @@ test('Runtime contract: /clusters ignores same-route menu re-entry and keeps sel
 })
 
 test('UI platform: /clusters opens inspect detail in a mobile-safe drawer without page-wide overflow', async ({ page }) => {
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true })
   await page.setViewportSize({ width: 390, height: 844 })
@@ -4610,14 +4616,14 @@ test('UI platform: /clusters opens inspect detail in a mobile-safe drawer withou
   const detailDrawer = page.getByRole('dialog')
   await expect(detailDrawer).toBeVisible()
   await expect(page.locator('.ant-drawer-content-wrapper:visible')).toHaveCount(1)
-  await expect(detailDrawer.getByRole('button', { name: 'Open Databases' })).toBeVisible()
+  await expect(detailDrawer.getByRole('button', { name: 'Открыть базы' })).toBeVisible()
   await expect(detailDrawer.getByText('Primary RAS cluster for shared services')).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await expectNoScopedHorizontalOverflow(detailDrawer, 'Clusters detail drawer')
 })
 
 test('Runtime contract: /clusters normalizes unauthorized mutating deep-links to inspect state', async ({ page }) => {
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: false, clusterAccessLevel: 'VIEW' })
 
@@ -4628,9 +4634,9 @@ test('Runtime contract: /clusters normalizes unauthorized mutating deep-links to
   await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
-  await expect(page.getByRole('button', { name: 'Update' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Обновить' })).toHaveCount(0)
   await expect(page.getByText('Primary RAS cluster for shared services')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Edit' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Редактировать' })).toBeDisabled()
   await expect.poll(() => {
     const currentUrl = new URL(page.url())
     return {
@@ -4646,7 +4652,7 @@ test('Runtime contract: /clusters normalizes unauthorized mutating deep-links to
 })
 
 test('UI platform: /clusters keeps detail loading fail-closed until the detail snapshot arrives', async ({ page }) => {
-  await setupAuth(page)
+  await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
   await setupUiPlatformMocks(page, { isStaff: true, clusterDetailDelayMs: 1500 })
 
@@ -4658,9 +4664,9 @@ test('UI platform: /clusters keeps detail loading fail-closed until the detail s
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await page.waitForTimeout(200)
-  await expect(page.getByText('No databases returned for this cluster detail snapshot.')).toHaveCount(0)
-  await expect(page.getByText('Cluster metadata')).toHaveCount(0)
-  await expect(page.getByText('Database preview')).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(page.getByText('Для этого snapshot кластера базы не вернулись.')).toHaveCount(0)
+  await expect(page.getByText('Метаданные кластера')).toHaveCount(0)
+  await expect(page.getByText('Превью баз')).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
   await expect(page.getByText('db-services')).toBeVisible()
 })
 

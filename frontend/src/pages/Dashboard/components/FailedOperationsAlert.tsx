@@ -7,13 +7,9 @@
 import { Card, Alert, List, Button, Badge, Typography, Space } from 'antd'
 import { WarningOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
-import dayjs from 'dayjs'
-import relativeTime from 'dayjs/plugin/relativeTime'
 import type { DashboardOperation } from '../types'
 import { getOperationTypeLabel } from '../../Operations/utils'
-
-// Enable relative time plugin
-dayjs.extend(relativeTime)
+import { useDashboardTranslation, useLocaleFormatters } from '../../../i18n'
 
 const { Text } = Typography
 
@@ -32,6 +28,33 @@ const truncateText = (text: string, maxLength: number): string => {
   return `${text.slice(0, maxLength)}\u2026`
 }
 
+const getRelativeCreatedAtLabel = (
+  value: string,
+  formatters: ReturnType<typeof useLocaleFormatters>,
+) => {
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) {
+    return formatters.dateTime(value)
+  }
+
+  const seconds = Math.round((timestamp - Date.now()) / 1000)
+  const absoluteSeconds = Math.abs(seconds)
+
+  if (absoluteSeconds < 60) {
+    return formatters.relativeTime(seconds, 'second')
+  }
+
+  if (absoluteSeconds < 3600) {
+    return formatters.relativeTime(Math.round(seconds / 60), 'minute')
+  }
+
+  if (absoluteSeconds < 86400) {
+    return formatters.relativeTime(Math.round(seconds / 3600), 'hour')
+  }
+
+  return formatters.relativeTime(Math.round(seconds / 86400), 'day')
+}
+
 /**
  * FailedOperationsAlert - Warning card for failed operations
  */
@@ -40,6 +63,8 @@ export const FailedOperationsAlert = ({
   maxDisplay = 5,
 }: FailedOperationsAlertProps) => {
   const navigate = useNavigate()
+  const { t } = useDashboardTranslation()
+  const formatters = useLocaleFormatters()
 
   // Don't render if no failed operations
   if (operations.length === 0) {
@@ -54,7 +79,7 @@ export const FailedOperationsAlert = ({
       title={
         <Space>
           <WarningOutlined style={{ color: '#ff4d4f' }} />
-          <span>Failed Operations</span>
+          <span>{t(($) => $.failedOperations.title)}</span>
           <Badge count={operations.length} style={{ backgroundColor: '#ff4d4f' }} />
         </Space>
       }
@@ -64,7 +89,9 @@ export const FailedOperationsAlert = ({
         type="error"
         showIcon
         icon={<ExclamationCircleOutlined />}
-        message={`${operations.length} operation(s) require attention`}
+        message={t(($) => $.failedOperations.requiresAttention, {
+          count: formatters.number(operations.length),
+        })}
         description={
           <>
             <List
@@ -76,7 +103,7 @@ export const FailedOperationsAlert = ({
                     <Space>
                       <Text strong>{getOperationTypeLabel(operation.operation_type)}</Text>
                       <Text type="secondary">
-                        {dayjs(operation.created_at).fromNow()}
+                        {getRelativeCreatedAtLabel(operation.created_at, formatters)}
                       </Text>
                     </Space>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -88,7 +115,9 @@ export const FailedOperationsAlert = ({
             />
             {hasMore && (
               <Text type="secondary" style={{ fontSize: 12 }}>
-                and {operations.length - maxDisplay} more{'\u2026'}
+                {t(($) => $.failedOperations.andMore, {
+                  count: formatters.number(operations.length - maxDisplay),
+                })}
               </Text>
             )}
           </>
@@ -100,7 +129,7 @@ export const FailedOperationsAlert = ({
         onClick={() => navigate('/operations?status=failed')}
         style={{ padding: 0, marginTop: 8 }}
       >
-        View All Failed
+        {t(($) => $.failedOperations.viewAllFailed)}
       </Button>
     </Card>
   )

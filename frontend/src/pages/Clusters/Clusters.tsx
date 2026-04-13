@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App, Button, Checkbox, Form, Input, List, Pagination, Select, Space, Typography } from 'antd'
+import { App, Button, Checkbox, Flex, Form, Input, List, Pagination, Select, Space, Typography } from 'antd'
 import {
   PlusOutlined,
   SearchOutlined,
@@ -43,16 +43,11 @@ import { ClusterCredentialsModal } from './components/ClusterCredentialsModal'
 import { ClusterUpsertModal } from './components/ClusterUpsertModal'
 import { ClusterWorkspaceDetailPanel } from './components/ClusterWorkspaceDetailPanel'
 import { resolveClusterWorkspaceContext } from './clusterWorkspaceState'
+import { useClustersTranslation, useLocaleFormatters } from '../../i18n'
 
 const { Text } = Typography
 
 const PAGE_SIZE = 20
-const CLUSTER_STATUS_OPTIONS: Array<{ value: ClusterStatus; label: string }> = [
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'error', label: 'Error' },
-]
 
 const parsePositiveInt = (value: string | null, fallback: number) => {
   const parsed = Number.parseInt(value || '', 10)
@@ -60,7 +55,8 @@ const parsePositiveInt = (value: string | null, fallback: number) => {
 }
 
 const buildCatalogButtonStyle = (selected: boolean) => ({
-  width: '100%',
+  flex: 1,
+  minWidth: 0,
   justifyContent: 'flex-start',
   height: 'auto',
   paddingBlock: 12,
@@ -72,12 +68,10 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
   boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
 })
 
-const formatLastSync = (value: string | null) => (
-  value ? new Date(value).toLocaleString() : 'Never'
-)
-
 export const Clusters = () => {
   const { message } = App.useApp()
+  const { t } = useClustersTranslation()
+  const formatters = useLocaleFormatters()
   const authz = useAuthz()
   const [searchParams, setSearchParams] = useSearchParams()
   const [form] = Form.useForm()
@@ -88,6 +82,12 @@ export const Clusters = () => {
   const canResetSync = authz.isStaff
   const canDiscover = authz.isStaff
   const canCreateCluster = authz.isStaff
+  const clusterStatusOptions = useMemo<Array<{ value: ClusterStatus; label: string }>>(() => ([
+    { value: 'active', label: t(($) => $.statusOptions.active) },
+    { value: 'inactive', label: t(($) => $.statusOptions.inactive) },
+    { value: 'maintenance', label: t(($) => $.statusOptions.maintenance) },
+    { value: 'error', label: t(($) => $.statusOptions.error) },
+  ]), [t])
 
   const page = parsePositiveInt(searchParams.get('page'), 1)
   const search = searchParams.get('q') ?? ''
@@ -163,8 +163,8 @@ export const Clusters = () => {
   const selectedClusterError = selectedClusterIdFromUrl && selectedClusterQuery.isError
     ? (
       selectedCluster
-        ? 'Failed to load selected cluster detail snapshot.'
-        : 'Selected cluster is outside the current catalog slice.'
+        ? t(($) => $.detail.selectedSnapshotFailed)
+        : t(($) => $.detail.selectedOutsideSlice)
     )
     : null
 
@@ -274,12 +274,12 @@ export const Clusters = () => {
           { id: selectedCluster.id, data: values },
           {
             onSuccess: (response) => {
-              message.success(response.cluster ? 'Cluster updated successfully' : 'Cluster updated successfully')
+              message.success(t(($) => $.messages.clusterUpdated))
               updateSearchParams({ cluster: response.cluster.id, context: null })
               form.resetFields()
             },
             onError: (error: Error) => {
-              message.error('Operation failed: ' + error.message)
+              message.error(t(($) => $.messages.operationFailed, { message: error.message }))
             },
           },
         )
@@ -288,18 +288,18 @@ export const Clusters = () => {
 
       createCluster.mutate(values, {
         onSuccess: (response) => {
-          message.success(response.message || 'Cluster created successfully')
+          message.success(t(($) => $.messages.clusterCreated))
           updateSearchParams({ cluster: response.cluster.id, context: null, page: '1' })
           form.resetFields()
         },
         onError: (error: Error) => {
-          message.error('Operation failed: ' + error.message)
+          message.error(t(($) => $.messages.operationFailed, { message: error.message }))
         },
       })
     } catch {
       // validation errors are shown by antd form
     }
-  }, [activeContext, createCluster, form, message, selectedCluster, updateCluster, updateSearchParams])
+  }, [activeContext, createCluster, form, message, selectedCluster, t, updateCluster, updateSearchParams])
 
   const handleCredentialsSave = useCallback(async () => {
     if (!selectedCluster) return
@@ -316,21 +316,21 @@ export const Clusters = () => {
     if (password) payload.password = password
 
     if (!payload.username && !payload.password) {
-      message.info('No credential changes to save')
+      message.info(t(($) => $.messages.noCredentialChanges))
       return
     }
 
     updateClusterCredentials.mutate(payload, {
-      onSuccess: (response) => {
-        message.success(response.message || 'Cluster credentials updated')
+      onSuccess: () => {
+        message.success(t(($) => $.messages.credentialsUpdated))
         credentialsForm.resetFields()
         clearSecondaryContext()
       },
       onError: (error: Error) => {
-        message.error('Failed to update credentials: ' + error.message)
+        message.error(t(($) => $.messages.credentialsUpdateFailed, { message: error.message }))
       },
     })
-  }, [clearSecondaryContext, credentialsForm, message, selectedCluster, updateClusterCredentials])
+  }, [clearSecondaryContext, credentialsForm, message, selectedCluster, t, updateClusterCredentials])
 
   const handleCredentialsReset = useCallback(() => {
     if (!selectedCluster) return
@@ -338,17 +338,17 @@ export const Clusters = () => {
     updateClusterCredentials.mutate(
       { cluster_id: selectedCluster.id, reset: true },
       {
-        onSuccess: (response) => {
-          message.success(response.message || 'Cluster credentials reset')
+        onSuccess: () => {
+          message.success(t(($) => $.messages.credentialsReset))
           credentialsForm.resetFields()
           clearSecondaryContext()
         },
         onError: (error: Error) => {
-          message.error('Failed to reset credentials: ' + error.message)
+          message.error(t(($) => $.messages.credentialsResetFailed, { message: error.message }))
         },
       },
     )
-  }, [clearSecondaryContext, credentialsForm, message, selectedCluster, updateClusterCredentials])
+  }, [clearSecondaryContext, credentialsForm, message, selectedCluster, t, updateClusterCredentials])
 
   const getErrorStatus = (error: unknown): number | undefined => {
     const maybe = error as { response?: { status?: number } } | null
@@ -358,18 +358,20 @@ export const Clusters = () => {
   const handleResetSyncStatus = useCallback(async (clusterId: string, clusterName?: string) => {
     try {
       setResettingClusterId(clusterId)
-      const result = await resetSyncStatus.mutateAsync({ cluster_id: clusterId })
-      message.success(result.message || `Reset sync status for ${clusterName ?? clusterId}`)
+      await resetSyncStatus.mutateAsync({ cluster_id: clusterId })
+      message.success(t(($) => $.messages.resetSyncSuccess, { name: clusterName ?? clusterId }))
     } catch (error: unknown) {
       if (getErrorStatus(error) === 403) {
-        message.error('Reset sync status requires staff access')
+        message.error(t(($) => $.messages.resetSyncRequiresStaff))
         return
       }
-      message.error(`Reset sync status failed: ${error instanceof Error ? error.message : 'unknown error'}`)
+      message.error(t(($) => $.messages.resetSyncFailed, {
+        message: error instanceof Error ? error.message : t(($) => $.discoverModal.unknownError),
+      }))
     } finally {
       setResettingClusterId(null)
     }
-  }, [message, resetSyncStatus])
+  }, [message, resetSyncStatus, t])
 
   const handleBulkResetSyncStatus = useCallback(async () => {
     if (selectedClusterIds.length === 0) {
@@ -381,7 +383,7 @@ export const Clusters = () => {
     let success = 0
     let failed = 0
 
-    message.loading({ content: `Resetting ${ids.length} cluster(s)…`, key })
+    message.loading({ content: t(($) => $.messages.resettingMany, { count: formatters.number(ids.length) }), key })
 
     for (let index = 0; index < ids.length; index += 1) {
       const clusterId = ids[index]
@@ -392,48 +394,71 @@ export const Clusters = () => {
         failed += 1
       }
 
-      message.loading({ content: `Resetting… (${index + 1}/${ids.length})`, key })
+      message.loading({
+        content: t(($) => $.messages.resettingProgress, {
+          current: formatters.number(index + 1),
+          total: formatters.number(ids.length),
+        }),
+        key,
+      })
     }
 
     if (failed === 0) {
-      message.success({ content: `Reset sync status: ${success}/${ids.length} succeeded`, key })
+      message.success({
+        content: t(($) => $.messages.resettingAllSuccess, {
+          success: formatters.number(success),
+          total: formatters.number(ids.length),
+        }),
+        key,
+      })
     } else {
-      message.warning({ content: `Reset sync status: ${success} ok, ${failed} failed`, key })
+      message.warning({
+        content: t(($) => $.messages.resettingPartial, {
+          success: formatters.number(success),
+          failed: formatters.number(failed),
+        }),
+        key,
+      })
     }
-  }, [message, resetSyncStatus, selectedClusterIds])
+  }, [formatters, message, resetSyncStatus, selectedClusterIds, t])
 
   const handleDelete = useCallback((clusterId: string) => {
     deleteCluster.mutate(clusterId, {
       onSuccess: () => {
-        message.success('Cluster deleted successfully')
+        message.success(t(($) => $.messages.clusterDeleted))
         setSelectedClusterIds((current) => current.filter((value) => value !== clusterId))
         if (selectedClusterIdFromUrl === clusterId) {
           updateSearchParams({ cluster: null, context: null })
         }
       },
       onError: (error: Error) => {
-        message.error('Failed to delete cluster: ' + error.message)
+        message.error(t(($) => $.messages.clusterDeleteFailed, { message: error.message }))
       },
     })
-  }, [deleteCluster, message, selectedClusterIdFromUrl, updateSearchParams])
+  }, [deleteCluster, message, selectedClusterIdFromUrl, t, updateSearchParams])
 
   const handleSync = useCallback((clusterId: string, clusterName: string) => {
-    message.loading({ content: `Syncing ${clusterName}…`, key: 'cluster-sync' })
+    message.loading({ content: t(($) => $.messages.syncingCluster, { name: clusterName }), key: 'cluster-sync' })
     syncCluster.mutate(clusterId, {
       onSuccess: (result) => {
         const dbInfo = result.databases_found !== undefined
-          ? `. Found ${result.databases_found} databases.`
+          ? t(($) => $.messages.syncFoundDatabasesDetails, {
+            count: formatters.number(result.databases_found),
+          })
           : ''
         message.success({
-          content: `${result.message}${dbInfo}`,
+          content: t(($) => $.messages.syncSuccess, { details: dbInfo }),
           key: 'cluster-sync',
         })
       },
       onError: (error: Error) => {
-        message.error({ content: 'Sync failed: ' + error.message, key: 'cluster-sync' })
+        message.error({
+          content: t(($) => $.messages.syncFailed, { message: error.message }),
+          key: 'cluster-sync',
+        })
       },
     })
-  }, [message, syncCluster])
+  }, [formatters, message, syncCluster, t])
 
   const renderClusterListItem = useCallback((cluster: Cluster) => {
     const selected = cluster.id === selectedClusterIdFromUrl
@@ -441,7 +466,7 @@ export const Clusters = () => {
 
     return (
       <List.Item key={cluster.id}>
-        <Space align="start" size="middle" style={{ width: '100%' }}>
+        <Flex align="flex-start" gap={16} style={{ width: '100%' }}>
           {canResetSync ? (
             <Checkbox
               checked={checked}
@@ -461,33 +486,43 @@ export const Clusters = () => {
             style={buildCatalogButtonStyle(selected)}
             onClick={() => updateSearchParams({ cluster: cluster.id, context: 'inspect' })}
           >
-            <Space direction="vertical" size={4} style={{ width: '100%', alignItems: 'flex-start' }}>
-              <Space wrap size={[8, 8]}>
+            <Flex vertical gap={4} style={{ width: '100%' }}>
+              <Flex wrap gap={8}>
                 <Text strong>{cluster.name}</Text>
                 <StatusBadge status={cluster.status ?? 'unknown'} label={cluster.status_display} />
-              </Space>
-              <Space wrap size={[8, 8]}>
+              </Flex>
+              <Flex wrap gap={8}>
                 <Text type="secondary">{cluster.ras_server}</Text>
-                <Text type="secondary">{cluster.databases_count} databases</Text>
-                <Text type="secondary">Last sync: {formatLastSync(cluster.last_sync)}</Text>
-              </Space>
-            </Space>
+                <Text type="secondary">
+                  {t(($) => $.labels.databasesCount, {
+                    count: formatters.number(cluster.databases_count),
+                  })}
+                </Text>
+              </Flex>
+              <Text type="secondary" style={{ whiteSpace: 'normal' }}>
+                {t(($) => $.labels.lastSync, {
+                  value: formatters.dateTime(cluster.last_sync, {
+                    fallback: t(($) => $.values.never),
+                  }),
+                })}
+              </Text>
+            </Flex>
           </Button>
-        </Space>
+        </Flex>
       </List.Item>
     )
-  }, [canResetSync, selectedClusterIdFromUrl, selectedClusterIds, updateSearchParams])
+  }, [canResetSync, formatters, selectedClusterIdFromUrl, selectedClusterIds, t, updateSearchParams])
 
-  const detailTitle = selectedCluster ? selectedCluster.name : 'Cluster context'
-  const detailDrawerTitle = selectedCluster ? `${selectedCluster.name}` : 'Cluster context'
+  const detailTitle = selectedCluster ? selectedCluster.name : t(($) => $.detail.contextTitle)
+  const detailDrawerTitle = selectedCluster ? `${selectedCluster.name}` : t(($) => $.detail.contextTitle)
   const detailOpen = Boolean(selectedClusterIdFromUrl) && activeContext === 'inspect'
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Clusters"
-          subtitle="Manage RAS clusters through the shared platform workspace."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Space wrap>
               {canResetSync ? (
@@ -498,7 +533,7 @@ export const Clusters = () => {
                   }}
                   disabled={selectedClusterIds.length === 0 || resetSyncStatus.isPending}
                 >
-                  Reset Sync ({selectedClusterIds.length})
+                  {`${t(($) => $.actions.resetSync)} (${formatters.number(selectedClusterIds.length)})`}
                 </Button>
               ) : null}
               <Button
@@ -506,7 +541,7 @@ export const Clusters = () => {
                 onClick={() => updateSearchParams({ context: 'discover' })}
                 disabled={!canDiscover}
               >
-                Discover Clusters
+                {t(($) => $.actions.discover)}
               </Button>
               <Button
                 type="primary"
@@ -514,7 +549,7 @@ export const Clusters = () => {
                 onClick={() => updateSearchParams({ context: 'create' })}
                 disabled={!canCreateCluster}
               >
-                Add Cluster
+                {t(($) => $.actions.create)}
               </Button>
             </Space>
           )}
@@ -527,10 +562,10 @@ export const Clusters = () => {
         detailDrawerTitle={detailDrawerTitle}
         list={(
           <EntityList
-            title="Cluster catalog"
+            title={t(($) => $.catalog.title)}
             loading={clustersQuery.isLoading}
-            error={clustersQuery.isError ? 'Failed to load clusters' : null}
-            emptyDescription="No clusters match the current filters."
+            error={clustersQuery.isError ? t(($) => $.catalog.error) : null}
+            emptyDescription={t(($) => $.catalog.empty)}
             dataSource={clusters}
             renderItem={renderClusterListItem}
             toolbar={(
@@ -538,17 +573,17 @@ export const Clusters = () => {
                 <Space wrap style={{ width: '100%' }}>
                   <Input.Search
                     allowClear
-                    placeholder="Search clusters"
+                    placeholder={t(($) => $.catalog.searchPlaceholder)}
                     value={search}
                     onChange={(event) => updateSearchParams({ q: event.target.value, page: '1' })}
                     style={{ minWidth: 240 }}
                   />
                   <Select
                     allowClear
-                    placeholder="Filter by status"
+                    placeholder={t(($) => $.catalog.filterPlaceholder)}
                     value={status}
                     onChange={(value) => updateSearchParams({ status: value ?? null, page: '1' })}
-                    options={CLUSTER_STATUS_OPTIONS}
+                    options={clusterStatusOptions}
                     style={{ minWidth: 200 }}
                   />
                 </Space>
@@ -569,7 +604,7 @@ export const Clusters = () => {
             loading={selectedClusterLoading}
             error={selectedClusterError}
             empty={!selectedClusterIdFromUrl}
-            emptyDescription="Select a cluster to inspect and manage it."
+            emptyDescription={t(($) => $.detail.empty)}
           >
             {selectedCluster ? (
               <ClusterWorkspaceDetailPanel

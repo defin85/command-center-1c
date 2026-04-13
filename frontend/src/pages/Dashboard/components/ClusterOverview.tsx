@@ -12,6 +12,7 @@ import type { ClusterStats } from '../types'
 import { TableToolkit } from '../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { useMemo } from 'react'
+import { useDashboardTranslation } from '../../../i18n'
 
 export interface ClusterOverviewProps {
   /** Cluster statistics */
@@ -35,39 +36,45 @@ const getStatusColor = (status: ClusterStats['status']): string => {
 /**
  * Get status label
  */
-const getStatusLabel = (status: ClusterStats['status']): string => {
-  const labels: Record<ClusterStats['status'], string> = {
-    healthy: 'Healthy',
-    degraded: 'Degraded',
-    critical: 'Critical',
-  }
-  return labels[status]
-}
-
-/**
- * ClusterOverview - Compact cluster health table
- */
 export const ClusterOverview = ({
   clusters,
   loading = false,
 }: ClusterOverviewProps) => {
   const navigate = useNavigate()
+  const { t } = useDashboardTranslation()
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'databases', label: 'Databases', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
-  ], [])
+    {
+      key: 'name',
+      label: t(($) => $.clusterOverview.columns.name),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.clusterOverview.groups.core),
+    },
+    {
+      key: 'databases',
+      label: t(($) => $.clusterOverview.columns.databases),
+      groupKey: 'core',
+      groupLabel: t(($) => $.clusterOverview.groups.core),
+    },
+    {
+      key: 'status',
+      label: t(($) => $.clusterOverview.columns.status),
+      sortable: true,
+      groupKey: 'status',
+      groupLabel: t(($) => $.clusterOverview.groups.status),
+    },
+  ], [t])
 
   const columns: ColumnsType<ClusterStats> = useMemo(() => ([
     {
-      title: 'Name',
+      title: t(($) => $.clusterOverview.columns.name),
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
     },
     {
-      title: 'Databases',
+      title: t(($) => $.clusterOverview.columns.databases),
       key: 'databases',
       width: 150,
       render: (_value, record) => {
@@ -85,15 +92,15 @@ export const ClusterOverview = ({
       },
     },
     {
-      title: 'Status',
+      title: t(($) => $.clusterOverview.columns.status),
       dataIndex: 'status',
       key: 'status',
       width: 100,
       render: (status: ClusterStats['status']) => (
-        <Tag color={getStatusColor(status)}>{getStatusLabel(status)}</Tag>
+        <Tag color={getStatusColor(status)}>{t(($) => $.clusterOverview.status[status])}</Tag>
       ),
     },
-  ]), [])
+  ]), [t])
 
   const table = useTableToolkit({
     tableId: 'dashboard_clusters',
@@ -195,7 +202,7 @@ export const ClusterOverview = ({
         title={
           <>
             <ClusterOutlined style={{ marginRight: 8 }} />
-            Clusters Overview
+            {t(($) => $.clusterOverview.title)}
           </>
         }
         size="small"
@@ -210,7 +217,7 @@ export const ClusterOverview = ({
       title={
         <>
           <ClusterOutlined style={{ marginRight: 8 }} />
-          Clusters Overview
+          {t(($) => $.clusterOverview.title)}
         </>
       }
       size="small"
@@ -222,9 +229,9 @@ export const ClusterOverview = ({
         rowKey="id"
         columns={columns}
         size="small"
-        searchPlaceholder="Search clusters"
+        searchPlaceholder={t(($) => $.clusterOverview.searchPlaceholder)}
         onRow={(record) => ({
-          onClick: () => navigate(`/clusters?id=${record.id}`),
+          onClick: () => navigate(`/clusters?cluster=${record.id}`),
           style: { cursor: 'pointer' },
         })}
       />

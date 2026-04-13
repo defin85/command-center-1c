@@ -27,6 +27,7 @@ import { useDashboardStats } from './hooks'
 import SystemHealthCard from '../../components/service-mesh/SystemHealthCard'
 import RecentOperationsTable from '../../components/service-mesh/RecentOperationsTable'
 import { DashboardPage, ErrorState, PageHeader } from '../../components/platform'
+import { useDashboardTranslation, useLocaleFormatters } from '../../i18n'
 
 // Hooks
 import { useServiceMesh } from '../../hooks/useServiceMesh'
@@ -38,6 +39,8 @@ import './Dashboard.css'
 
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate()
+  const { t } = useDashboardTranslation()
+  const formatters = useLocaleFormatters()
 
   // Dashboard statistics with polling
   const {
@@ -86,19 +89,19 @@ export const Dashboard: React.FC = () => {
     return (
       <DashboardPage
         header={(
-          <PageHeader title="Dashboard" />
+          <PageHeader title={t(($) => $.page.title)} />
         )}
       >
         <ErrorState
-          message="Error loading dashboard"
+          message={t(($) => $.page.errorMessage)}
           description={error}
           action={(
-            <Tooltip title="Refresh dashboard">
+            <Tooltip title={t(($) => $.page.refreshTooltip)}>
               <Button
                 type="text"
                 icon={<ReloadOutlined />}
                 onClick={refresh}
-                aria-label="Refresh dashboard"
+                aria-label={t(($) => $.page.refreshAriaLabel)}
               />
             </Tooltip>
           )}
@@ -111,15 +114,17 @@ export const Dashboard: React.FC = () => {
     <DashboardPage
       header={(
         <PageHeader
-          title="Dashboard"
-          subtitle={lastUpdated ? `Last updated: ${lastUpdated.toLocaleTimeString('ru-RU')}` : undefined}
+          title={t(($) => $.page.title)}
+          subtitle={lastUpdated ? t(($) => $.page.lastUpdated, {
+            value: formatters.time(lastUpdated),
+          }) : undefined}
           actions={(
-            <Tooltip title="Refresh dashboard">
+            <Tooltip title={t(($) => $.page.refreshTooltip)}>
               <Button
                 type="text"
                 icon={<ReloadOutlined spin={loading} />}
                 onClick={refresh}
-                aria-label="Refresh dashboard"
+                aria-label={t(($) => $.page.refreshAriaLabel)}
                 disabled={loading}
               />
             </Tooltip>

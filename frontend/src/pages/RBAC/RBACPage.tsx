@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuthz } from '../../authz/useAuthz'
 import { useCanManageRbac } from '../../api/queries/rbac'
 import { EntityDetails, EntityList, PageHeader, WorkspacePage } from '../../components/platform'
+import { useRbacTranslation } from '../../i18n'
 import { AuditTab } from './tabs/AuditTab'
 import { DbmsUsersTab } from './tabs/DbmsUsersTab'
 import { EffectiveAccessTab } from './tabs/EffectiveAccessTab'
@@ -27,28 +28,8 @@ const parseRbacMode = (value: string | null): RbacMode => (
   value === 'roles' ? 'roles' : 'assignments'
 )
 
-const buildRbacSectionLabel = (key: string): string => {
-  switch (key) {
-    case 'roles':
-      return 'Роли'
-    case 'permissions':
-      return 'Доступ к объектам'
-    case 'user-roles':
-      return 'Роли пользователей'
-    case 'effective-access':
-      return 'Эффективный доступ'
-    case 'audit':
-      return 'Аудит'
-    case 'ib-users':
-      return 'Пользователи ИБ'
-    case 'dbms-users':
-      return 'Пользователи DBMS'
-    default:
-      return key
-  }
-}
-
 export function RBACPage() {
+  const { t } = useRbacTranslation()
   const [permissionLevelsHintDismissed, setPermissionLevelsHintDismissed] = useState<boolean>(() => (
     localStorage.getItem(LS_RBAC_LEVELS_HINT_DISMISSED) === '1'
   ))
@@ -108,12 +89,12 @@ export function RBACPage() {
   const items = useMemo(() => ([
     {
       key: 'roles',
-      label: 'Роли',
+      label: t(($) => $.page.tabs.roles),
       children: <RolesTab canManageRbac={canManageRbac} onOpenAssignmentsForRole={openAssignmentsForRole} />,
     },
     {
       key: 'permissions',
-      label: 'Доступ к объектам',
+      label: t(($) => $.page.tabs.permissions),
       children: (
         <PermissionsTab
           canManageRbac={canManageRbac}
@@ -131,28 +112,28 @@ export function RBACPage() {
     },
     {
       key: 'user-roles',
-      label: 'Роли пользователей',
+      label: t(($) => $.page.tabs.userRoles),
       children: <UserRolesTab canManageRbac={canManageRbac} />,
     },
     {
       key: 'effective-access',
-      label: 'Эффективный доступ',
+      label: t(($) => $.page.tabs.effectiveAccess),
       children: <EffectiveAccessTab canManageRbac={canManageRbac} />,
     },
     {
       key: 'audit',
-      label: 'Аудит',
+      label: t(($) => $.page.tabs.audit),
       children: <AuditTab canManageRbac={canManageRbac} />,
     },
     ...(isStaff ? [
       {
         key: 'ib-users',
-        label: 'Пользователи ИБ',
+        label: t(($) => $.page.tabs.ibUsers),
         children: <InfobaseUsersTab enabled={isStaff} />,
       },
       {
         key: 'dbms-users',
-        label: 'Пользователи DBMS',
+        label: t(($) => $.page.tabs.dbmsUsers),
         children: <DbmsUsersTab enabled={isStaff} />,
       },
     ] : []),
@@ -165,6 +146,7 @@ export function RBACPage() {
     rbacPermissionsPrincipalType,
     rbacPermissionsResourceKey,
     rbacPermissionsViewMode,
+    t,
   ])
 
   const visibleItems = useMemo(() => {
@@ -236,21 +218,21 @@ export function RBACPage() {
 
   const header = (
     <PageHeader
-      title="RBAC"
-      subtitle="Привилегированный governance workspace для ролей, назначений и аудита."
+      title={t(($) => $.page.title)}
+      subtitle={t(($) => $.page.subtitle)}
       actions={(
         <Space wrap>
           <Button
             type={rbacMode === 'assignments' ? 'primary' : 'default'}
             onClick={() => handleModeChange('assignments')}
           >
-            Назначения
+            {t(($) => $.page.modes.assignments)}
           </Button>
           <Button
             type={rbacMode === 'roles' ? 'primary' : 'default'}
             onClick={() => handleModeChange('roles')}
           >
-            Роли
+            {t(($) => $.page.modes.roles)}
           </Button>
         </Space>
       )}
@@ -260,7 +242,7 @@ export function RBACPage() {
   if (canManageRbacQuery.isLoading) {
     return (
       <WorkspacePage header={header}>
-        <EntityDetails title="RBAC" loading>
+        <EntityDetails title={t(($) => $.page.loadingTitle)} loading>
           <div />
         </EntityDetails>
       </WorkspacePage>
@@ -272,8 +254,8 @@ export function RBACPage() {
       <WorkspacePage header={header}>
         <Alert
           type="warning"
-          message="Нет доступа к RBAC"
-          description="Требуется capability: databases.manage_rbac"
+          message={t(($) => $.page.noAccessTitle)}
+          description={t(($) => $.page.noAccessDescription)}
           showIcon
         />
       </WorkspacePage>
@@ -293,31 +275,31 @@ export function RBACPage() {
           }}
           message={(
             <Space size={8}>
-              <Text>Подсказка по уровням VIEW / OPERATE / MANAGE / ADMIN</Text>
+              <Text>{t(($) => $.page.hints.title)}</Text>
               <Button
                 type="link"
                 size="small"
                 style={{ paddingInline: 0, height: 20 }}
                 onClick={() => setPermissionLevelsHintExpanded((prev) => !prev)}
               >
-                {permissionLevelsHintExpanded ? 'Свернуть' : 'Показать'}
+                {permissionLevelsHintExpanded ? t(($) => $.page.hints.collapse) : t(($) => $.page.hints.expand)}
               </Button>
             </Space>
           )}
           description={permissionLevelsHintExpanded ? (
             <Space direction="vertical" size={4}>
-              <Text><Tag>VIEW</Tag> видеть/читать (списки/детали/метаданные).</Text>
-              <Text><Tag>OPERATE</Tag> выполнять операции, без изменения конфигурации.</Text>
-              <Text><Tag>MANAGE</Tag> менять настройки/конфигурацию объекта.</Text>
-              <Text><Tag>ADMIN</Tag> самый высокий уровень, включая разрушительные действия.</Text>
+              <Text><Tag>VIEW</Tag> {t(($) => $.page.hints.view)}</Text>
+              <Text><Tag>OPERATE</Tag> {t(($) => $.page.hints.operate)}</Text>
+              <Text><Tag>MANAGE</Tag> {t(($) => $.page.hints.manage)}</Text>
+              <Text><Tag>ADMIN</Tag> {t(($) => $.page.hints.admin)}</Text>
             </Space>
           ) : undefined}
         />
       )}
 
       <EntityList
-        title={rbacMode === 'roles' ? 'Управление ролями' : 'Управление назначениями'}
-        extra={<Text type="secondary">mode={rbacMode}</Text>}
+        title={rbacMode === 'roles' ? t(($) => $.page.rolesManagement) : t(($) => $.page.assignmentsManagement)}
+        extra={<Text type="secondary">{t(($) => $.page.modeMeta, { value: rbacMode })}</Text>}
         dataSource={visibleItems}
         renderItem={(item) => (
           <div style={{ paddingBlock: 4 }}>
@@ -326,16 +308,16 @@ export function RBACPage() {
               onClick={() => handleSelectTab(String(item.key))}
               data-testid={`rbac-tab-${String(item.key)}`}
             >
-              {buildRbacSectionLabel(String(item.key))}
+              {item.label}
             </Button>
           </div>
         )}
       />
 
       <EntityDetails
-        title={activeItem?.label ?? 'RBAC section'}
+        title={activeItem?.label ?? t(($) => $.page.title)}
         empty={!activeItem}
-        emptyDescription="Выберите раздел RBAC workspace."
+        emptyDescription={t(($) => $.page.sectionPlaceholder)}
       >
         {activeItem?.children}
       </EntityDetails>

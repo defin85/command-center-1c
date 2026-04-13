@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Button, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
@@ -14,6 +14,7 @@ import type {
   WorkflowTemplateGroupPermission,
   WorkflowTemplatePermission,
 } from '../../../../api/queries/rbac'
+import { useLocaleFormatters, useRbacTranslation } from '../../../../i18n'
 
 const { Text } = Typography
 
@@ -50,532 +51,455 @@ export function usePermissionColumns(params: {
     revokeWorkflowTemplate,
     revokeWorkflowTemplateGroup,
   } = params
+  const { t } = useRbacTranslation()
+  const formatters = useLocaleFormatters()
+
+  const emptyValue = t(($) => $.permissions.values.empty)
+
+  const renderEntity = useCallback((label: string | undefined, id: number | undefined) => (
+    <span>
+      {label}
+      {typeof id === 'number' ? (
+        <>
+          {' '}
+          <Text type="secondary">#{id}</Text>
+        </>
+      ) : null}
+    </span>
+  ), [])
+
+  const renderGrantedAt = useCallback((value: string | undefined) => (
+    value ? formatters.dateTime(value) : emptyValue
+  ), [emptyValue, formatters])
+
+  const renderGrantedBy = useCallback((row: { granted_by?: { username?: string; id?: number } | null }) => (
+    row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : emptyValue
+  ), [emptyValue])
+
+  const revokeButton = useCallback((
+    loading: boolean,
+    title: string,
+    onConfirm: (reason: string) => Promise<void>,
+  ) => (
+    <Button
+      danger
+      size="small"
+      loading={loading}
+      onClick={() => {
+        void confirmReason(title, onConfirm)
+      }}
+    >
+      {t(($) => $.permissions.actions.revoke)}
+    </Button>
+  ), [confirmReason, t])
 
   const clusterColumns: ColumnsType<ClusterPermission> = useMemo(
     () => [
       {
-        title: 'Пользователь',
+        title: t(($) => $.permissions.columns.user),
         key: 'user_id',
-        render: (_, row) => (
-          <span>
-            {row.user?.username} <Text type="secondary">#{row.user?.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.user?.username, row.user?.id),
       },
-      { title: 'Кластер', dataIndex: ['cluster', 'name'], key: 'cluster' },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
-      { title: 'Выдано', dataIndex: 'granted_at', key: 'granted_at' },
+      { title: t(($) => $.permissions.columns.cluster), dataIndex: ['cluster', 'name'], key: 'cluster' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
+        dataIndex: 'granted_at',
+        key: 'granted_at',
+        render: renderGrantedAt,
+      },
+      {
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
         render: (_, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeCluster.isPending}
-            onClick={() => {
-              if (!row.user?.id || !row.cluster?.id) return
-              confirmReason('Отозвать доступ пользователя к кластеру?', async (reason) => {
-                await revokeCluster.mutateAsync({ user_id: row.user.id, cluster_id: row.cluster.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+          !row.user?.id || !row.cluster?.id
+            ? null
+            : revokeButton(
+              revokeCluster.isPending,
+              t(($) => $.permissions.confirmTitles.revokeUserCluster),
+              async (reason) => revokeCluster.mutateAsync({ user_id: row.user.id, cluster_id: row.cluster.id, reason }),
+            )
         ),
       },
     ],
-    [confirmReason, revokeCluster]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeCluster, t],
   )
 
   const databaseColumns: ColumnsType<DatabasePermission> = useMemo(
     () => [
       {
-        title: 'Пользователь',
+        title: t(($) => $.permissions.columns.user),
         key: 'user_id',
-        render: (_, row) => (
-          <span>
-            {row.user?.username} <Text type="secondary">#{row.user?.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.user?.username, row.user?.id),
       },
-      { title: 'База', dataIndex: ['database', 'name'], key: 'database' },
-      { title: 'ID базы', dataIndex: ['database', 'id'], key: 'database_id' },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
-      { title: 'Выдано', dataIndex: 'granted_at', key: 'granted_at' },
+      { title: t(($) => $.permissions.columns.database), dataIndex: ['database', 'name'], key: 'database' },
+      { title: t(($) => $.permissions.columns.databaseId), dataIndex: ['database', 'id'], key: 'database_id' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
+        dataIndex: 'granted_at',
+        key: 'granted_at',
+        render: renderGrantedAt,
+      },
+      {
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
         render: (_, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeDatabase.isPending}
-            onClick={() => {
-              if (!row.user?.id || !row.database?.id) return
-              confirmReason('Отозвать доступ пользователя к базе?', async (reason) => {
-                await revokeDatabase.mutateAsync({ user_id: row.user.id, database_id: row.database.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+          !row.user?.id || !row.database?.id
+            ? null
+            : revokeButton(
+              revokeDatabase.isPending,
+              t(($) => $.permissions.confirmTitles.revokeUserDatabase),
+              async (reason) => revokeDatabase.mutateAsync({ user_id: row.user.id, database_id: row.database.id, reason }),
+            )
         ),
       },
     ],
-    [confirmReason, revokeDatabase]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeDatabase, t],
   )
 
   const clusterGroupColumns: ColumnsType<ClusterGroupPermission> = useMemo(
     () => [
       {
-        title: 'Группа',
+        title: t(($) => $.permissions.columns.group),
         key: 'group',
-        render: (_: unknown, row) => (
-          <span>
-            {row.group.name} <Text type="secondary">#{row.group.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.group.name, row.group.id),
       },
       {
-        title: 'Кластер',
+        title: t(($) => $.permissions.columns.cluster),
         key: 'cluster',
-        render: (_: unknown, row) => (
-          <span>
-            {row.cluster.name} <Text type="secondary">#{row.cluster.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.cluster.name, row.cluster.id),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeClusterGroup.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ группы к кластеру?', async (reason) => {
-                await revokeClusterGroup.mutateAsync({ group_id: row.group.id, cluster_id: row.cluster.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeClusterGroup.isPending,
+          t(($) => $.permissions.confirmTitles.revokeGroupCluster),
+          async (reason) => revokeClusterGroup.mutateAsync({ group_id: row.group.id, cluster_id: row.cluster.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeClusterGroup]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeClusterGroup, t],
   )
 
   const databaseGroupColumns: ColumnsType<DatabaseGroupPermission> = useMemo(
     () => [
       {
-        title: 'Группа',
+        title: t(($) => $.permissions.columns.group),
         key: 'group',
-        render: (_: unknown, row) => (
-          <span>
-            {row.group.name} <Text type="secondary">#{row.group.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.group.name, row.group.id),
       },
       {
-        title: 'База',
+        title: t(($) => $.permissions.columns.database),
         key: 'database',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.database.name} <Text type="secondary">#{row.database.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeDatabaseGroup.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ группы к базе?', async (reason) => {
-                await revokeDatabaseGroup.mutateAsync({ group_id: row.group.id, database_id: row.database.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeDatabaseGroup.isPending,
+          t(($) => $.permissions.confirmTitles.revokeGroupDatabase),
+          async (reason) => revokeDatabaseGroup.mutateAsync({ group_id: row.group.id, database_id: row.database.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeDatabaseGroup]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeDatabaseGroup, t],
   )
 
   const operationTemplateUserColumns: ColumnsType<OperationTemplatePermission> = useMemo(
     () => [
       {
-        title: 'Пользователь',
+        title: t(($) => $.permissions.columns.user),
         key: 'user',
-        render: (_: unknown, row) => (
-          <span>
-            {row.user.username} <Text type="secondary">#{row.user.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.user.username, row.user.id),
       },
       {
-        title: 'Шаблон операции',
+        title: t(($) => $.permissions.columns.operationTemplate),
         key: 'template',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.template.name} <Text type="secondary">#{row.template.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeOperationTemplate.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ пользователя к шаблону операции?', async (reason) => {
-                await revokeOperationTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeOperationTemplate.isPending,
+          t(($) => $.permissions.confirmTitles.revokeUserOperationTemplate),
+          async (reason) => revokeOperationTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeOperationTemplate]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeOperationTemplate, t],
   )
 
   const operationTemplateGroupColumns: ColumnsType<OperationTemplateGroupPermission> = useMemo(
     () => [
       {
-        title: 'Группа',
+        title: t(($) => $.permissions.columns.group),
         key: 'group',
-        render: (_: unknown, row) => (
-          <span>
-            {row.group.name} <Text type="secondary">#{row.group.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.group.name, row.group.id),
       },
       {
-        title: 'Шаблон операции',
+        title: t(($) => $.permissions.columns.operationTemplate),
         key: 'template',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.template.name} <Text type="secondary">#{row.template.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeOperationTemplateGroup.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ группы к шаблону операции?', async (reason) => {
-                await revokeOperationTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeOperationTemplateGroup.isPending,
+          t(($) => $.permissions.confirmTitles.revokeGroupOperationTemplate),
+          async (reason) => revokeOperationTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeOperationTemplateGroup]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeOperationTemplateGroup, t],
   )
 
   const workflowTemplateUserColumns: ColumnsType<WorkflowTemplatePermission> = useMemo(
     () => [
       {
-        title: 'Пользователь',
+        title: t(($) => $.permissions.columns.user),
         key: 'user',
-        render: (_: unknown, row) => (
-          <span>
-            {row.user.username} <Text type="secondary">#{row.user.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.user.username, row.user.id),
       },
       {
-        title: 'Шаблон рабочего процесса',
+        title: t(($) => $.permissions.columns.workflowTemplate),
         key: 'template',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.template.name} <Text type="secondary">#{row.template.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeWorkflowTemplate.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ пользователя к шаблону рабочего процесса?', async (reason) => {
-                await revokeWorkflowTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeWorkflowTemplate.isPending,
+          t(($) => $.permissions.confirmTitles.revokeUserWorkflowTemplate),
+          async (reason) => revokeWorkflowTemplate.mutateAsync({ user_id: row.user.id, template_id: row.template.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeWorkflowTemplate]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeWorkflowTemplate, t],
   )
 
   const workflowTemplateGroupColumns: ColumnsType<WorkflowTemplateGroupPermission> = useMemo(
     () => [
       {
-        title: 'Группа',
+        title: t(($) => $.permissions.columns.group),
         key: 'group',
-        render: (_: unknown, row) => (
-          <span>
-            {row.group.name} <Text type="secondary">#{row.group.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.group.name, row.group.id),
       },
       {
-        title: 'Шаблон рабочего процесса',
+        title: t(($) => $.permissions.columns.workflowTemplate),
         key: 'template',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.template.name} <Text type="secondary">#{row.template.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeWorkflowTemplateGroup.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ группы к шаблону рабочего процесса?', async (reason) => {
-                await revokeWorkflowTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeWorkflowTemplateGroup.isPending,
+          t(($) => $.permissions.confirmTitles.revokeGroupWorkflowTemplate),
+          async (reason) => revokeWorkflowTemplateGroup.mutateAsync({ group_id: row.group.id, template_id: row.template.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeWorkflowTemplateGroup]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeWorkflowTemplateGroup, t],
   )
 
   const artifactUserColumns: ColumnsType<ArtifactPermission> = useMemo(
     () => [
       {
-        title: 'Пользователь',
+        title: t(($) => $.permissions.columns.user),
         key: 'user',
-        render: (_: unknown, row) => (
-          <span>
-            {row.user.username} <Text type="secondary">#{row.user.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.user.username, row.user.id),
       },
       {
-        title: 'Артефакт',
+        title: t(($) => $.permissions.columns.artifact),
         key: 'artifact',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.artifact.name} <Text type="secondary">#{row.artifact.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeArtifact.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ пользователя к артефакту?', async (reason) => {
-                await revokeArtifact.mutateAsync({ user_id: row.user.id, artifact_id: row.artifact.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeArtifact.isPending,
+          t(($) => $.permissions.confirmTitles.revokeUserArtifact),
+          async (reason) => revokeArtifact.mutateAsync({ user_id: row.user.id, artifact_id: row.artifact.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeArtifact]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeArtifact, t],
   )
 
   const artifactGroupColumns: ColumnsType<ArtifactGroupPermission> = useMemo(
     () => [
       {
-        title: 'Группа',
+        title: t(($) => $.permissions.columns.group),
         key: 'group',
-        render: (_: unknown, row) => (
-          <span>
-            {row.group.name} <Text type="secondary">#{row.group.id}</Text>
-          </span>
-        ),
+        render: (_, row) => renderEntity(row.group.name, row.group.id),
       },
       {
-        title: 'Артефакт',
+        title: t(($) => $.permissions.columns.artifact),
         key: 'artifact',
-        render: (_: unknown, row) => (
+        render: (_, row) => (
           <span>
             {row.artifact.name} <Text type="secondary">#{row.artifact.id}</Text>
           </span>
         ),
       },
-      { title: 'Уровень', dataIndex: 'level', key: 'level' },
+      { title: t(($) => $.permissions.columns.level), dataIndex: 'level', key: 'level' },
       {
-        title: 'Выдано',
+        title: t(($) => $.permissions.columns.grantedAt),
         dataIndex: 'granted_at',
         key: 'granted_at',
-        render: (value: string | undefined) => value ? new Date(value).toLocaleString() : '-',
+        render: renderGrantedAt,
       },
       {
-        title: 'Кем выдано',
+        title: t(($) => $.permissions.columns.grantedBy),
         key: 'granted_by',
-        render: (_: unknown, row) => (row.granted_by ? `${row.granted_by.username} #${row.granted_by.id}` : '-'),
+        render: (_, row) => renderGrantedBy(row),
       },
-      { title: 'Комментарий', dataIndex: 'notes', key: 'notes' },
+      { title: t(($) => $.permissions.columns.notes), dataIndex: 'notes', key: 'notes' },
       {
-        title: 'Действия',
+        title: t(($) => $.permissions.columns.actions),
         key: 'actions',
-        render: (_: unknown, row) => (
-          <Button
-            danger
-            size="small"
-            loading={revokeArtifactGroup.isPending}
-            onClick={() => {
-              confirmReason('Отозвать доступ группы к артефакту?', async (reason) => {
-                await revokeArtifactGroup.mutateAsync({ group_id: row.group.id, artifact_id: row.artifact.id, reason })
-              })
-            }}
-          >
-            Отозвать
-          </Button>
+        render: (_, row) => revokeButton(
+          revokeArtifactGroup.isPending,
+          t(($) => $.permissions.confirmTitles.revokeGroupArtifact),
+          async (reason) => revokeArtifactGroup.mutateAsync({ group_id: row.group.id, artifact_id: row.artifact.id, reason }),
         ),
       },
     ],
-    [confirmReason, revokeArtifactGroup]
+    [renderEntity, renderGrantedAt, renderGrantedBy, revokeButton, revokeArtifactGroup, t],
   )
 
   return {

@@ -2,6 +2,7 @@ import type { UIEvent } from 'react'
 import { useMemo, useState } from 'react'
 
 import { useRbacRefArtifacts, useRbacRefClusters, useRbacRefDatabases, useRbacRefOperationTemplates, useRbacRefWorkflowTemplates, type ClusterRef } from '../../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../../i18n'
 import { usePaginatedRefSelectOptions } from '../../hooks/usePaginatedRefSelectOptions'
 import { ensureSelectOptionsContain } from '../../utils/selectOptions'
 import type { RbacPermissionsResourceKey } from './types'
@@ -24,20 +25,21 @@ export function useRbacResourceRefs(params: {
   selectedResourceId: string | undefined
 }) {
   const { enabled, resourceKey, selectedResourceIds, selectedResourceId } = params
+  const { t } = useRbacTranslation()
 
   const REF_PAGE_SIZE = 50
 
   const clusterDatabasePickerI18n = useMemo(() => ({
-    clearText: 'Очистить',
-    modalTitleClusters: 'Выбор кластера',
-    modalTitleDatabases: 'Выбор базы',
-    treeTitle: 'Ресурсы',
-    searchPlaceholderClusters: 'Поиск кластеров',
-    searchPlaceholderDatabases: 'Поиск баз',
-    loadingText: 'Загрузка…',
-    loadMoreText: 'Загрузить ещё…',
-    clearSelectionText: 'Снять выбор',
-  }), [])
+    clearText: t(($) => $.permissions.clear),
+    modalTitleClusters: t(($) => $.permissions.selectCluster),
+    modalTitleDatabases: t(($) => $.permissions.selectDatabase),
+    treeTitle: t(($) => $.permissions.resources),
+    searchPlaceholderClusters: t(($) => $.permissions.searchClusters),
+    searchPlaceholderDatabases: t(($) => $.permissions.searchDatabases),
+    loadingText: t(($) => $.permissions.loading),
+    loadMoreText: t(($) => $.permissions.loadMore),
+    clearSelectionText: t(($) => $.permissions.clearSelection),
+  }), [t])
 
   const clustersRefQuery = useRbacRefClusters({ limit: 1000, offset: 0 }, { enabled })
   const clusters = clustersRefQuery.data?.clusters ?? EMPTY_CLUSTER_REFS

@@ -1,5 +1,7 @@
 import { test, expect, type Locator, type Page, type Route } from '@playwright/test'
 
+const TENANT_ID = 'tenant-rbac-smoke'
+
 type MockUser = { id: number; username: string; is_staff?: boolean }
 type MockRole = { id: number; name: string; users_count: number; permissions_count: number; permission_codes: string[] }
 type MockCluster = { id: string; name: string }
@@ -120,6 +122,7 @@ async function setupAuth(page: Page) {
       VITE_WS_HOST: '127.0.0.1:15173',
     }
     localStorage.setItem('auth_token', 'test-token')
+    localStorage.setItem('cc1c_locale_override', 'ru')
   })
 }
 
@@ -135,9 +138,44 @@ async function setupApiMocks(
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+    const requestedLocaleHeader = request.headers()['x-cc1c-locale']
+    const requestedLocale = requestedLocaleHeader === 'ru' || requestedLocaleHeader === 'en'
+      ? requestedLocaleHeader
+      : 'ru'
+    const tenantContext = {
+      active_tenant_id: TENANT_ID,
+      tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+    }
+
+    if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
+      return fulfillJson(route, {
+        me: state.me,
+        tenant_context: tenantContext,
+        access: state.effectiveAccess,
+        capabilities: {
+          can_manage_rbac: true,
+          can_manage_driver_catalogs: true,
+          can_manage_runtime_controls: true,
+        },
+        i18n: {
+          supported_locales: ['ru', 'en'],
+          default_locale: 'ru',
+          requested_locale: requestedLocale,
+          effective_locale: requestedLocale,
+        },
+      })
+    }
 
     if (method === 'GET' && path === '/api/v2/system/me/') {
       return fulfillJson(route, state.me)
+    }
+
+    if (method === 'GET' && path === '/api/v2/tenants/list-my-tenants/') {
+      return fulfillJson(route, tenantContext)
+    }
+
+    if (method === 'POST' && path === '/api/v2/tenants/set-active/') {
+      return fulfillJson(route, { active_tenant_id: TENANT_ID })
     }
 
     if (method === 'GET' && path === '/api/v2/rbac/list-users/') {

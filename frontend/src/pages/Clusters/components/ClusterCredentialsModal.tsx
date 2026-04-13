@@ -3,6 +3,7 @@ import type { FormInstance } from 'antd/es/form'
 
 import type { Cluster } from '../../../api/generated/model/cluster'
 import { ModalFormShell } from '../../../components/platform'
+import { useClustersTranslation } from '../../../i18n'
 
 export function ClusterCredentialsModal({
   open,
@@ -21,14 +22,16 @@ export function ClusterCredentialsModal({
   onSave: () => void
   onReset: () => void
 }) {
+  const { t } = useClustersTranslation()
+
   return (
     <ModalFormShell
       open={open}
       onClose={onCancel}
       onSubmit={onSave}
-      title={cluster ? `Credentials: ${cluster.name}` : 'Credentials'}
-      subtitle="Cluster admin credential override"
-      submitText="Save"
+      title={cluster ? t(($) => $.credentialsModal.title, { name: cluster.name }) : t(($) => $.credentialsModal.titleFallback)}
+      subtitle={t(($) => $.credentialsModal.subtitle)}
+      submitText={t(($) => $.actions.save)}
       confirmLoading={saving}
       forceRender
     >
@@ -39,17 +42,19 @@ export function ClusterCredentialsModal({
             onClick={onReset}
             disabled={!cluster?.cluster_pwd_configured}
           >
-            Reset
+            {t(($) => $.actions.reset)}
           </Button>
         </Space>
         <Form form={form} layout="vertical">
-          <Form.Item label="Cluster Admin User" name="username" htmlFor="cluster-credentials-username">
-            <Input id="cluster-credentials-username" placeholder="Optional cluster admin username" />
+          <Form.Item label={t(($) => $.credentialsModal.clusterAdminUser)} name="username" htmlFor="cluster-credentials-username">
+            <Input id="cluster-credentials-username" placeholder={t(($) => $.credentialsModal.optionalClusterAdminUsername)} />
           </Form.Item>
-          <Form.Item label="Cluster Admin Password" name="password" htmlFor="cluster-credentials-password">
+          <Form.Item label={t(($) => $.credentialsModal.clusterAdminPassword)} name="password" htmlFor="cluster-credentials-password">
             <Input.Password
               id="cluster-credentials-password"
-              placeholder={cluster?.cluster_pwd_configured ? 'Configured' : 'Enter password'}
+              placeholder={cluster?.cluster_pwd_configured
+                ? t(($) => $.credentialsModal.configuredPlaceholder)
+                : t(($) => $.credentialsModal.enterPasswordPlaceholder)}
             />
           </Form.Item>
         </Form>

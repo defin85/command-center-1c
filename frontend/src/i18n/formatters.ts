@@ -40,6 +40,19 @@ export const createLocaleFormatters = (locale: AppLocale) => ({
       }),
     ).format(date)
   },
+  time: (value: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions & FormatterFallbackOptions) => {
+    if (!value) {
+      return options?.fallback ?? '—'
+    }
+    const date = value instanceof Date ? value : new Date(value)
+    return getCachedFormatter(
+      `time:${locale}:${JSON.stringify(options ?? {})}`,
+      () => new Intl.DateTimeFormat(locale, {
+        timeStyle: 'short',
+        ...options,
+      }),
+    ).format(date)
+  },
   date: (value: string | Date | null | undefined, options?: Intl.DateTimeFormatOptions & FormatterFallbackOptions) => {
     if (!value) {
       return options?.fallback ?? '—'

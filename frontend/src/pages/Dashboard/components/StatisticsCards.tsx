@@ -12,6 +12,7 @@ import {
   ArrowUpOutlined,
 } from '@ant-design/icons'
 import type { OperationsStats, DatabasesStats } from '../types'
+import { useDashboardTranslation, useLocaleFormatters } from '../../../i18n'
 
 export interface StatisticsCardsProps {
   operations: OperationsStats
@@ -37,6 +38,9 @@ export const StatisticsCards = ({
   databases,
   loading = false,
 }: StatisticsCardsProps) => {
+  const { t } = useDashboardTranslation()
+  const formatters = useLocaleFormatters()
+
   if (loading) {
     return (
       <Row gutter={16}>
@@ -57,13 +61,13 @@ export const StatisticsCards = ({
       <Col xs={24} sm={12} md={8}>
         <Card>
           <Statistic
-            title="Total Operations"
-            value={operations.total}
+            title={t(($) => $.statistics.totalOperations)}
+            value={formatters.number(operations.total)}
             prefix={<BarChartOutlined />}
             suffix={
               operations.todayCount > 0 ? (
                 <span style={{ fontSize: 14, color: '#52c41a' }}>
-                  <ArrowUpOutlined /> +{operations.todayCount} today
+                  <ArrowUpOutlined /> +{formatters.number(operations.todayCount)} {t(($) => $.statistics.today)}
                 </span>
               ) : undefined
             }
@@ -75,15 +79,15 @@ export const StatisticsCards = ({
       <Col xs={24} sm={12} md={8}>
         <Card>
           <Statistic
-            title="Active Databases"
-            value={databases.active}
+            title={t(($) => $.statistics.activeDatabases)}
+            value={formatters.number(databases.active)}
             prefix={<DatabaseOutlined />}
             suffix={
               <span style={{ fontSize: 14, color: '#8c8c8c' }}>
-                / {databases.total}
+                / {formatters.number(databases.total)}
                 {databases.locked > 0 && (
                   <span style={{ marginLeft: 8, color: '#faad14' }}>
-                    {databases.locked} locked
+                    {formatters.number(databases.locked)} {t(($) => $.statistics.locked)}
                   </span>
                 )}
               </span>
@@ -96,9 +100,11 @@ export const StatisticsCards = ({
       <Col xs={24} sm={24} md={8}>
         <Card>
           <Statistic
-            title="Success Rate"
-            value={operations.successRate}
-            precision={1}
+            title={t(($) => $.statistics.successRate)}
+            value={formatters.number(operations.successRate, {
+              minimumFractionDigits: 1,
+              maximumFractionDigits: 1,
+            })}
             prefix={<CheckCircleOutlined />}
             suffix="%"
             valueStyle={{ color: getSuccessRateColor(operations.successRate) }}

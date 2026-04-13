@@ -1,5 +1,6 @@
 import { Alert, Table } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useRbacTranslation } from '../../../i18n'
 
 type AnyRow = object
 
@@ -15,12 +16,13 @@ export function RbacPermissionsTable<T extends AnyRow = AnyRow>(props: {
   error?: unknown
   errorMessage?: string
 }) {
+  const { t } = useRbacTranslation()
   return (
     <>
       {Boolean(props.error) && (
         <Alert
           type="warning"
-          message={props.errorMessage ?? 'Failed to load permissions'}
+          message={props.errorMessage ?? t(($) => $.permissions.loadFailed)}
           style={{ marginBottom: 12 }}
         />
       )}

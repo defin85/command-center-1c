@@ -10,6 +10,7 @@ import {
     useDiscoverClusters,
     useSystemConfig,
 } from '../../api/queries/clusters'
+import { useClustersTranslation } from '../../i18n'
 
 interface DiscoverClustersModalProps {
     open: boolean
@@ -21,6 +22,7 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
     onClose,
 }) => {
     const { message } = App.useApp()
+    const { t } = useClustersTranslation()
     const [form] = Form.useForm<DiscoverClustersRequest>()
 
     // React Query hooks
@@ -44,7 +46,7 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
 
             discoverClusters.mutate(values, {
                 onSuccess: (response) => {
-                    message.success(`Discovery started. Operation ID: ${response.operation_id}`)
+                    message.success(t(($) => $.messages.discoveryStarted, { id: response.operation_id }))
                     form.resetFields()
                     onClose()
                 },
@@ -63,7 +65,9 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                         }
                         return undefined
                     })()
-                    message.error('Discovery failed: ' + (errorMessage || 'unknown error'))
+                    message.error(t(($) => $.messages.discoveryFailed, {
+                        message: errorMessage || t(($) => $.discoverModal.unknownError),
+                    }))
                 },
             })
         } catch {
@@ -81,27 +85,27 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
             open={open}
             onClose={handleCancel}
             onSubmit={handleDiscover}
-            title="Discover Clusters from RAS Server"
-            subtitle="Probe a RAS endpoint and enqueue discovered clusters"
+            title={t(($) => $.discoverModal.title)}
+            subtitle={t(($) => $.discoverModal.subtitle)}
             confirmLoading={discoverClusters.isPending}
-            submitText="Discover"
+            submitText={t(($) => $.actions.discoverSubmit)}
             forceRender
         >
             <Form form={form} layout="vertical">
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'minmax(0, 1fr) 140px' }}>
                         <Form.Item
-                            label="RAS Host"
+                            label={t(($) => $.discoverModal.rasHost)}
                             name="ras_host"
-                            rules={[{ required: true, message: 'RAS host is required' }]}
+                            rules={[{ required: true, message: t(($) => $.discoverModal.rasHostRequired) }]}
                             htmlFor="discover-ras-host"
                         >
                             <Input id="discover-ras-host" placeholder="localhost" />
                         </Form.Item>
                         <Form.Item
-                            label="RAS Port"
+                            label={t(($) => $.discoverModal.rasPort)}
                             name="ras_port"
-                            rules={[{ required: true, message: 'RAS port is required' }]}
+                            rules={[{ required: true, message: t(($) => $.discoverModal.rasPortRequired) }]}
                             htmlFor="discover-ras-port"
                         >
                             <InputNumber
@@ -114,18 +118,18 @@ export const DiscoverClustersModal: React.FC<DiscoverClustersModalProps> = ({
                         </Form.Item>
                     </div>
                     <Form.Item
-                        label="Cluster Service URL"
+                        label={t(($) => $.discoverModal.clusterServiceUrl)}
                         name="cluster_service_url"
-                        rules={[{ required: true, message: 'Cluster service URL is required' }]}
-                        extra="RAS Adapter service URL (e.g., http://localhost:8188)"
+                        rules={[{ required: true, message: t(($) => $.discoverModal.clusterServiceUrlRequired) }]}
+                        extra={t(($) => $.discoverModal.clusterServiceUrlHelp)}
                         htmlFor="discover-cluster-service-url"
                     >
                         <Input id="discover-cluster-service-url" placeholder="http://localhost:8188" />
                     </Form.Item>
-                    <Form.Item label="Cluster Admin User (optional)" name="cluster_user" htmlFor="discover-cluster-user">
+                    <Form.Item label={t(($) => $.discoverModal.clusterAdminUser)} name="cluster_user" htmlFor="discover-cluster-user">
                         <Input id="discover-cluster-user" placeholder="admin" />
                     </Form.Item>
-                    <Form.Item label="Cluster Admin Password (optional)" name="cluster_pwd" htmlFor="discover-cluster-password">
+                    <Form.Item label={t(($) => $.discoverModal.clusterAdminPassword)} name="cluster_pwd" htmlFor="discover-cluster-password">
                         <Input.Password id="discover-cluster-password" placeholder="password" />
                     </Form.Item>
                 </Space>

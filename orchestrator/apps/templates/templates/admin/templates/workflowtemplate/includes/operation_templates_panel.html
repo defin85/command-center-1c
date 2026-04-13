@@ -1,12 +1,13 @@
+{% load i18n %}
 {# Operation Exposure Reference Panel - для выбора exposed шаблонов при создании DAG #}
 <fieldset class="module aligned collapse" id="operation-exposures-panel">
-    <h2>Operation Exposure Reference</h2>
+    <h2>{% trans "Operation Exposure Reference" %}</h2>
     <div class="panel-content" style="padding: 15px;">
         <!-- Search and Filter -->
         <div class="template-search-container">
-            <input type="text" id="template-search" placeholder="Search by name or ID...">
+            <input type="text" id="template-search" placeholder="{% trans 'Search by name or ID...' %}">
             <select id="template-type-filter">
-                <option value="">All Types</option>
+                <option value="">{% trans "All Types" %}</option>
             </select>
         </div>
 
@@ -23,24 +24,26 @@
                 </div>
                 <div class="template-name">{{ tpl.name }}</div>
                 <div class="template-info">
-                    Target: {{ tpl.target_entity }}
+                    {% trans "Target:" %} {{ tpl.target_entity }}
                 </div>
                 <button type="button" class="copy-json-btn"
                         data-template-id="{{ tpl.id }}"
                         data-template-type="{{ tpl.operation_type }}">
-                    Copy Node JSON
+                    {% trans "Copy Node JSON" %}
                 </button>
             </div>
             {% empty %}
             <div class="no-templates-message">
-                <p>No active published template exposures found.</p>
-                <p>Manage templates in staff UI or via operation-catalog API.</p>
+                <p>{% trans "No active published template exposures found." %}</p>
+                <p>{% trans "Manage templates in staff UI or via operation-catalog API." %}</p>
             </div>
             {% endfor %}
         </div>
 
         <div class="templates-count" id="templates-count">
-            Showing <span id="visible-count">{{ operation_templates|length }}</span> of {{ operation_templates|length }} exposures
+            {% blocktranslate trimmed with total=operation_templates|length %}
+            Showing <span id="visible-count">{{ total }}</span> of {{ total }} exposures
+            {% endblocktranslate %}
         </div>
     </div>
 </fieldset>

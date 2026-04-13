@@ -1,4 +1,5 @@
 import { Select } from 'antd'
+import { useRbacTranslation } from '../../../i18n'
 
 type Option = { label: string; value: number }
 
@@ -17,12 +18,13 @@ export function RbacPrincipalPicker(props: {
   placeholderRole?: string
 }) {
   const width = props.width ?? 240
+  const { t } = useRbacTranslation()
 
   if (props.principalType === 'user') {
     return (
       <Select
         style={{ width }}
-        placeholder={props.placeholderUser ?? 'User'}
+        placeholder={props.placeholderUser ?? t(($) => $.permissions.principalUser)}
         allowClear={props.allowClear}
         disabled={props.disabled}
         value={props.value}
@@ -39,7 +41,7 @@ export function RbacPrincipalPicker(props: {
   return (
     <Select
       style={{ width }}
-      placeholder={props.placeholderRole ?? 'Role'}
+      placeholder={props.placeholderRole ?? t(($) => $.permissions.principalRole)}
       allowClear={props.allowClear}
       disabled={props.disabled}
       value={props.value}
@@ -50,4 +52,3 @@ export function RbacPrincipalPicker(props: {
     />
   )
 }
-

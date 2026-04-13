@@ -14,6 +14,7 @@ import type { ClusterStatistics } from '../../../api/generated/model/clusterStat
 import type { Database } from '../../../api/generated/model/database'
 import { JsonBlock, RouteButton, StatusBadge } from '../../../components/platform'
 import { formatHostPort } from '../../../api/queries/clusters'
+import { useClustersTranslation, useLocaleFormatters } from '../../../i18n'
 
 const { Text, Title } = Typography
 
@@ -37,10 +38,6 @@ type ClusterWorkspaceDetailPanelProps = {
   onOpenDiscover: () => void
 }
 
-const formatLastSync = (value: string | null) => (
-  value ? new Date(value).toLocaleString() : 'Never'
-)
-
 export function ClusterWorkspaceDetailPanel({
   cluster,
   statistics,
@@ -60,6 +57,8 @@ export function ClusterWorkspaceDetailPanel({
   onDelete,
   onOpenDiscover,
 }: ClusterWorkspaceDetailPanelProps) {
+  const { t } = useClustersTranslation()
+  const formatters = useLocaleFormatters()
   const databasesByStatus = statistics?.databases_by_status
   const previewDatabases = databases.slice(0, 6)
 
@@ -68,10 +67,16 @@ export function ClusterWorkspaceDetailPanel({
       <Space wrap size={[8, 8]}>
         <StatusBadge status={cluster.status ?? 'unknown'} label={cluster.status_display} />
         <Text type="secondary">
-          {cluster.databases_count} databases
+          {t(($) => $.labels.databasesCount, {
+            count: formatters.number(cluster.databases_count),
+          })}
         </Text>
         <Text type="secondary">
-          Last sync: {formatLastSync(cluster.last_sync)}
+          {t(($) => $.labels.lastSync, {
+            value: formatters.dateTime(cluster.last_sync, {
+              fallback: t(($) => $.values.never),
+            }),
+          })}
         </Text>
       </Space>
 
@@ -81,28 +86,28 @@ export function ClusterWorkspaceDetailPanel({
           icon={<DatabaseOutlined />}
           to={`/databases?cluster=${cluster.id}`}
         >
-          Open Databases
+          {t(($) => $.actions.openDatabases)}
         </RouteButton>
         <Button
           icon={<EditOutlined />}
           onClick={onOpenEdit}
           disabled={!canManage}
         >
-          Edit
+          {t(($) => $.actions.edit)}
         </Button>
         <Button
           icon={<KeyOutlined />}
           onClick={onOpenCredentials}
           disabled={!canManage}
         >
-          Credentials
+          {t(($) => $.actions.credentials)}
         </Button>
         <Button
           icon={<SearchOutlined />}
           onClick={onOpenDiscover}
           disabled={!canDiscover}
         >
-          Discover
+          {t(($) => $.actions.discover)}
         </Button>
         <Button
           icon={<ReloadOutlined />}
@@ -110,30 +115,30 @@ export function ClusterWorkspaceDetailPanel({
           onClick={onSync}
           disabled={!canOperate}
         >
-          Sync with RAS
+          {t(($) => $.actions.syncWithRas)}
         </Button>
         {canResetSync ? (
           <Popconfirm
-            title="Reset sync status?"
-            description="Use this if cluster sync is stuck."
-            okText="Reset"
-            cancelText="Cancel"
+            title={t(($) => $.confirmations.resetSyncTitle)}
+            description={t(($) => $.confirmations.resetSyncDescription)}
+            okText={t(($) => $.actions.reset)}
+            cancelText={t(($) => $.actions.cancel)}
             onConfirm={onResetSyncStatus}
           >
             <Button
               icon={<UnlockOutlined />}
               loading={resetting}
             >
-              Reset Sync
+              {t(($) => $.actions.resetSync)}
             </Button>
           </Popconfirm>
         ) : null}
         {canAdmin ? (
           <Popconfirm
-            title="Delete cluster?"
-            description="This will also delete all databases in this cluster."
-            okText="Delete"
-            cancelText="Cancel"
+            title={t(($) => $.confirmations.deleteTitle)}
+            description={t(($) => $.confirmations.deleteDescription)}
+            okText={t(($) => $.actions.delete)}
+            cancelText={t(($) => $.actions.cancel)}
             onConfirm={onDelete}
           >
             <Button
@@ -141,7 +146,7 @@ export function ClusterWorkspaceDetailPanel({
               icon={<DeleteOutlined />}
               loading={deleting}
             >
-              Delete
+              {t(($) => $.actions.delete)}
             </Button>
           </Popconfirm>
         ) : null}
@@ -151,83 +156,83 @@ export function ClusterWorkspaceDetailPanel({
         <Alert
           type="info"
           showIcon
-          message="Description"
+          message={t(($) => $.labels.description)}
           description={cluster.description}
         />
       ) : null}
 
       <Descriptions
-        title="Cluster connection"
+        title={t(($) => $.labels.clusterConnection)}
         size="small"
         column={1}
         items={[
           {
             key: 'ras',
-            label: 'RAS',
+            label: t(($) => $.labels.ras),
             children: formatHostPort(cluster.ras_host, cluster.ras_port, cluster.ras_server),
           },
           {
             key: 'rmngr',
-            label: 'RMNGR',
-            children: formatHostPort(cluster.rmngr_host, cluster.rmngr_port, 'Not configured'),
+            label: t(($) => $.labels.rmngr),
+            children: formatHostPort(cluster.rmngr_host, cluster.rmngr_port, t(($) => $.values.notConfigured)),
           },
           {
             key: 'ragent',
-            label: 'RAGENT',
-            children: formatHostPort(cluster.ragent_host, cluster.ragent_port, 'Not configured'),
+            label: t(($) => $.labels.ragent),
+            children: formatHostPort(cluster.ragent_host, cluster.ragent_port, t(($) => $.values.notConfigured)),
           },
           {
             key: 'rphost',
-            label: 'RPHOST range',
+            label: t(($) => $.labels.rphostRange),
             children: `${cluster.rphost_port_from ?? '—'}..${cluster.rphost_port_to ?? '—'}`,
           },
           {
             key: 'service-url',
-            label: 'Cluster service URL',
-            children: cluster.cluster_service_url || 'Not configured',
+            label: t(($) => $.labels.clusterServiceUrl),
+            children: cluster.cluster_service_url || t(($) => $.values.notConfigured),
           },
           {
             key: 'credentials',
-            label: 'Credentials',
-            children: cluster.cluster_pwd_configured ? 'Configured' : 'Missing',
+            label: t(($) => $.labels.credentials),
+            children: cluster.cluster_pwd_configured ? t(($) => $.values.configured) : t(($) => $.values.missing),
           },
         ]}
       />
 
       {statistics ? (
         <Descriptions
-          title="Cluster database health"
+          title={t(($) => $.labels.clusterDatabaseHealth)}
           size="small"
           column={1}
           items={[
             {
               key: 'total',
-              label: 'Total databases',
+              label: t(($) => $.labels.totalDatabases),
               children: statistics.total_databases,
             },
             {
               key: 'healthy',
-              label: 'Healthy databases',
+              label: t(($) => $.labels.healthyDatabases),
               children: statistics.healthy_databases,
             },
             {
               key: 'active',
-              label: 'Active status',
+              label: t(($) => $.labels.activeStatus),
               children: databasesByStatus?.active ?? 0,
             },
             {
               key: 'inactive',
-              label: 'Inactive status',
+              label: t(($) => $.labels.inactiveStatus),
               children: databasesByStatus?.inactive ?? 0,
             },
             {
               key: 'error',
-              label: 'Error status',
+              label: t(($) => $.labels.errorStatus),
               children: databasesByStatus?.error ?? 0,
             },
             {
               key: 'maintenance',
-              label: 'Maintenance status',
+              label: t(($) => $.labels.maintenanceStatus),
               children: databasesByStatus?.maintenance ?? 0,
             },
           ]}
@@ -236,13 +241,13 @@ export function ClusterWorkspaceDetailPanel({
 
       <div>
         <Title level={5} style={{ marginTop: 0 }}>
-          Database preview
+          {t(($) => $.labels.databasePreview)}
         </Title>
         {previewDatabases.length === 0 ? (
           <Alert
             type="warning"
             showIcon
-            message="No databases returned for this cluster detail snapshot."
+            message={t(($) => $.alerts.noDatabasesPreview)}
           />
         ) : (
           <List
@@ -256,7 +261,7 @@ export function ClusterWorkspaceDetailPanel({
                   <Space wrap size={[8, 8]}>
                     <StatusBadge status={database.status ?? 'unknown'} label={database.status_display} />
                     <Text type="secondary">{database.host}:{database.port}</Text>
-                    <Text type="secondary">{database.base_name || 'No base name'}</Text>
+                    <Text type="secondary">{database.base_name || t(($) => $.labels.noBaseName)}</Text>
                   </Space>
                 </Space>
               </List.Item>
@@ -266,7 +271,7 @@ export function ClusterWorkspaceDetailPanel({
       </div>
 
       <JsonBlock
-        title="Cluster metadata"
+        title={t(($) => $.labels.clusterMetadata)}
         value={cluster.metadata ?? {}}
         dataTestId="cluster-metadata-json"
       />

@@ -55,6 +55,7 @@ class TestWorkflowTemplateAdminOperationExposureContext(TestCase):
             email="testadmin@test.com",
             password="testpass123",
             is_staff=True,
+            is_superuser=True,
         )
 
         self.workflow = WorkflowTemplate.objects.create(
@@ -146,3 +147,29 @@ class TestWorkflowTemplateAdminOperationExposureContext(TestCase):
 
         assert response.status_code == 200
         assert response.context_data["custom_key"] == "custom_value"
+
+    def test_change_form_respects_request_locale_override_for_admin_templates(self):
+        _create_template_exposure(alias="tpl-a", label="Alpha", operation_type="backup", target_entity="infobase")
+        self.client.force_login(self.admin_user)
+
+        english_response = self.client.get(
+            f"/admin/templates/workflowtemplate/{self.workflow.id}/change/",
+            HTTP_X_CC1C_LOCALE="en",
+        )
+
+        assert english_response.status_code == 200
+        assert english_response["Content-Language"] == "en"
+        self.assertContains(english_response, "Validation Status")
+        self.assertContains(english_response, "Operation Exposure Reference")
+        self.assertContains(english_response, "Copy Node JSON")
+
+        russian_response = self.client.get(
+            f"/admin/templates/workflowtemplate/{self.workflow.id}/change/",
+            HTTP_X_CC1C_LOCALE="ru",
+        )
+
+        assert russian_response.status_code == 200
+        assert russian_response["Content-Language"] == "ru"
+        self.assertContains(russian_response, "Статус валидации")
+        self.assertContains(russian_response, "Справочник шаблонов операций")
+        self.assertContains(russian_response, "Скопировать JSON узла")

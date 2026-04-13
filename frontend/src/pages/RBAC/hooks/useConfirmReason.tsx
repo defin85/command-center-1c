@@ -1,6 +1,7 @@
 import { Input } from 'antd'
 import { useCallback, type ReactNode } from 'react'
 import { confirmWithTracking } from '../../../observability/confirmWithTracking'
+import { useRbacTranslation } from '../../../i18n'
 
 type ModalRef = {
   update: (config: ModalUpdateConfig) => void
@@ -40,10 +41,11 @@ export type ConfirmReasonLabels = {
 }
 
 export function useConfirmReason(modal: ModalApi, message: MessageApi, labels?: ConfirmReasonLabels) {
-  const placeholder = labels?.placeholder ?? 'Reason (required)'
-  const okText = labels?.okText ?? 'Confirm'
-  const cancelText = labels?.cancelText ?? 'Cancel'
-  const requiredMessage = labels?.requiredMessage ?? 'Reason is required'
+  const { t } = useRbacTranslation()
+  const placeholder = labels?.placeholder ?? t(($) => $.permissions.reasonPlaceholder)
+  const okText = labels?.okText ?? t(($) => $.permissions.confirm)
+  const cancelText = labels?.cancelText ?? t(($) => $.permissions.cancel)
+  const requiredMessage = labels?.requiredMessage ?? t(($) => $.permissions.reasonRequired)
 
   return useCallback((title: string, onConfirm: (reason: string) => Promise<void>) => {
     let value = ''

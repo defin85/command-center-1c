@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { App, Alert, Button, Card, Form, Input, Radio, Segmented, Select, Space, Tooltip, Typography } from 'antd'
 
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
+import { useRbacTranslation } from '../../../i18n'
 import {
   useBulkGrantClusterGroupPermission,
   useBulkGrantDatabaseGroupPermission,
@@ -37,7 +38,7 @@ import { RbacPrincipalPicker } from '../components/RbacPrincipalPicker'
 import { RbacResourceBrowser } from '../components/RbacResourceBrowser'
 import { RbacResourcePicker } from '../components/RbacResourcePicker'
 import { useConfirmReason } from '../hooks/useConfirmReason'
-import { CLUSTER_BULK_I18N, DATABASE_BULK_I18N } from './permissions/bulkI18n'
+import { createClusterBulkI18n, createDatabaseBulkI18n } from './permissions/bulkI18n'
 import { LEVEL_OPTIONS, type PermissionLevelCode, type RbacPermissionsListState, type RbacPermissionsResourceKey } from './permissions/types'
 import { PermissionsAssignmentsTable } from './permissions/PermissionsAssignmentsTable'
 import { usePermissionColumns } from './permissions/usePermissionColumns'
@@ -72,12 +73,15 @@ export function PermissionsTab(props: {
   } = props
 
   const { modal, message } = App.useApp()
+  const { t } = useRbacTranslation()
   const confirmReason = useConfirmReason(modal, message, {
-    placeholder: 'Причина (обязательно)',
-    okText: 'Отозвать',
-    cancelText: 'Отмена',
-    requiredMessage: 'Укажите причину',
+    placeholder: t(($) => $.permissions.reasonPlaceholder),
+    okText: t(($) => $.permissions.actions.revoke),
+    cancelText: t(($) => $.permissions.cancel),
+    requiredMessage: t(($) => $.permissions.reasonRequired),
   })
+  const clusterBulkI18n = useMemo(() => createClusterBulkI18n(t), [t])
+  const databaseBulkI18n = useMemo(() => createDatabaseBulkI18n(t), [t])
 
   const [userSearch, setUserSearch] = useState<string>('')
   const debouncedUserSearch = useDebouncedValue(userSearch, 300)
@@ -337,11 +341,11 @@ export function PermissionsTab(props: {
         }
       }
 
-      message.success('Доступ выдан')
+      message.success(t(($) => $.permissions.granted))
       rbacPermissionsGrantForm.resetFields()
       setRbacPermissionsList((prev) => ({ ...prev, page: 1 }))
     } catch {
-      message.error('Не удалось выдать доступ')
+      message.error(t(($) => $.permissions.grantFailed))
     }
   }
 
@@ -351,34 +355,34 @@ export function PermissionsTab(props: {
         <Alert
           type="info"
           showIcon
-          message="Как выдать доступ на конкретную ИБ"
+          message={t(($) => $.permissions.helpDatabaseTitle)}
           description={(
             <Space direction="vertical" size={4}>
               <Text>
-                1) Выберите режим <Text code>Кто → Где</Text> (подберите пользователя/группу и ИБ в фильтрах), или <Text code>Где → Кто</Text> (выберите ИБ слева и смотрите назначения справа).
+                {t(($) => $.permissions.helpDatabaseStep1)}
               </Text>
               <Text>
-                2) В блоке “Выдать доступ” укажите уровень и причину, затем нажмите “Выдать”.
+                {t(($) => $.permissions.helpDatabaseStep2)}
               </Text>
               <Text type="secondary">
-                3) Перепроверьте вкладку “Эффективный доступ”: строка = итог, раскрытие = источники (прямое/группа/через кластер/...).
+                {t(($) => $.permissions.helpDatabaseStep3)}
               </Text>
             </Space>
           )}
         />
       )}
 
-      <Card title="Объект и субъект" size="small">
+      <Card title={t(($) => $.permissions.objectAndSubjectTitle)} size="small">
         <Space wrap>
           <Select
             style={{ width: 260 }}
             value={rbacPermissionsResourceKey}
             options={[
-              { label: 'Кластеры', value: 'clusters' },
-              { label: 'Базы', value: 'databases' },
-              { label: 'Шаблоны операций', value: 'operation-templates' },
-              { label: 'Шаблоны рабочих процессов', value: 'workflow-templates' },
-              { label: 'Артефакты', value: 'artifacts' },
+              { label: t(($) => $.permissions.resourceOptions.clusters), value: 'clusters' },
+              { label: t(($) => $.permissions.resourceOptions.databases), value: 'databases' },
+              { label: t(($) => $.permissions.resourceOptions.operationTemplates), value: 'operation-templates' },
+              { label: t(($) => $.permissions.resourceOptions.workflowTemplates), value: 'workflow-templates' },
+              { label: t(($) => $.permissions.resourceOptions.artifacts), value: 'artifacts' },
             ]}
             onChange={(value) => {
               const nextKey = value as RbacPermissionsResourceKey
@@ -397,21 +401,21 @@ export function PermissionsTab(props: {
               setRbacPermissionsList((prev) => ({ ...prev, principal_id: undefined, page: 1 }))
             }}
           >
-            <Radio.Button value="user">Пользователь</Radio.Button>
-            <Radio.Button value="role">Группа</Radio.Button>
+            <Radio.Button value="user">{t(($) => $.permissions.principalUser)}</Radio.Button>
+            <Radio.Button value="role">{t(($) => $.permissions.principalRole)}</Radio.Button>
           </Radio.Group>
           <Segmented
             value={rbacPermissionsViewMode}
             options={[
-              { label: 'Кто -> Где', value: 'principal' },
-              { label: 'Где -> Кто', value: 'resource' },
+              { label: t(($) => $.permissions.viewModes.principal), value: 'principal' },
+              { label: t(($) => $.permissions.viewModes.resource), value: 'resource' },
             ]}
             onChange={(value) => setRbacPermissionsViewMode(value as 'principal' | 'resource')}
           />
         </Space>
       </Card>
 
-      <Card title="Выдать доступ" size="small">
+      <Card title={t(($) => $.permissions.grantTitle)} size="small">
         <Form
           form={rbacPermissionsGrantForm}
           layout="inline"
@@ -422,14 +426,16 @@ export function PermissionsTab(props: {
             name="principal_id"
             rules={[{
               required: true,
-              message: rbacPermissionsPrincipalType === 'user' ? 'Выберите пользователя' : 'Выберите группу',
+              message: rbacPermissionsPrincipalType === 'user'
+                ? t(($) => $.permissions.selectUser)
+                : t(($) => $.permissions.selectGroup),
             }]}
           >
             <RbacPrincipalPicker
               principalType={rbacPermissionsPrincipalType}
               allowClear
-              placeholderUser="Пользователь"
-              placeholderRole="Группа"
+              placeholderUser={t(($) => $.permissions.principalUser)}
+              placeholderRole={t(($) => $.permissions.principalRole)}
               userOptions={userOptions}
               userLoading={usersQuery.isFetching}
               onUserSearch={setUserSearch}
@@ -437,14 +443,14 @@ export function PermissionsTab(props: {
             />
           </Form.Item>
 
-          <Form.Item name="resource_id" rules={[{ required: true, message: 'Выберите ресурс' }]}>
-            <Tooltip title="Ресурс — куда выдаём доступ (кластер/база/шаблон/артефакт).">
+          <Form.Item name="resource_id" rules={[{ required: true, message: t(($) => $.permissions.selectResource) }]}>
+            <Tooltip title={t(($) => $.permissions.resourceTooltip)}>
               <span data-testid="rbac-permissions-grant-resource">
                 <RbacResourcePicker
                   resourceKey={rbacPermissionsResourceKey}
                   clusters={clusters}
                   disabled={rbacPermissionsViewMode === 'resource'}
-                  placeholder="Ресурс"
+                  placeholder={t(($) => $.permissions.resourceGeneric)}
                   width={360}
                   databaseLabelById={databasesLabelById.current}
                   onDatabasesLoaded={handleDatabasesLoaded}
@@ -460,13 +466,13 @@ export function PermissionsTab(props: {
           </Form.Item>
 
           <Form.Item name="notes">
-            <Tooltip title="Комментарий к назначению (не причина).">
-              <Input placeholder="Комментарий (опционально)" style={{ width: 220 }} />
+            <Tooltip title={t(($) => $.permissions.notesTooltip)}>
+              <Input placeholder={t(($) => $.permissions.notesPlaceholder)} style={{ width: 220 }} />
             </Tooltip>
           </Form.Item>
 
-          <Form.Item name="reason" rules={[{ required: true, message: 'Укажите причину' }]}>
-            <Input placeholder="Причина (обязательно)" style={{ width: 260 }} />
+          <Form.Item name="reason" rules={[{ required: true, message: t(($) => $.permissions.reasonRequired) }]}>
+            <Input placeholder={t(($) => $.permissions.reasonPlaceholder)} style={{ width: 260 }} />
           </Form.Item>
 
           <Form.Item>
@@ -476,7 +482,7 @@ export function PermissionsTab(props: {
               loading={rbacPermissionsGrantPending}
               disabled={rbacPermissionsViewMode === 'resource' && !rbacPermissionsList.resource_id}
             >
-              Выдать
+              {t(($) => $.permissions.grant)}
             </Button>
           </Form.Item>
         </Form>
@@ -486,13 +492,15 @@ export function PermissionsTab(props: {
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
           {rbacPermissionsResourceKey === 'clusters' || rbacPermissionsResourceKey === 'databases' ? (
             <RbacClusterDatabaseTree
-              title="Ресурсы"
+              title={t(($) => $.permissions.resources)}
               mode={rbacPermissionsResourceKey === 'clusters' ? 'clusters' : 'databases'}
               clusters={clusters}
-              searchPlaceholder={rbacPermissionsResourceKey === 'clusters' ? 'Поиск кластеров' : 'Поиск баз'}
-              loadingText="Загрузка…"
-              loadMoreText="Загрузить ещё…"
-              clearLabel="Снять выбор"
+              searchPlaceholder={rbacPermissionsResourceKey === 'clusters'
+                ? t(($) => $.permissions.searchClusters)
+                : t(($) => $.permissions.searchDatabases)}
+              loadingText={t(($) => $.permissions.loading)}
+              loadMoreText={t(($) => $.permissions.loadMore)}
+              clearLabel={t(($) => $.permissions.clearSelection)}
               value={rbacPermissionsList.resource_id}
               onChange={(id) => {
                 setRbacPermissionsList((prev) => ({ ...prev, resource_id: id, page: 1 }))
@@ -502,8 +510,8 @@ export function PermissionsTab(props: {
             />
           ) : (
             <RbacResourceBrowser
-              title="Ресурсы"
-              searchPlaceholder="Поиск ресурса"
+              title={t(($) => $.permissions.resources)}
+              searchPlaceholder={t(($) => $.permissions.search)}
               searchValue={resourceSearchValue}
               onSearchChange={setResourceSearchValue}
               options={resourceBrowserOptions}
@@ -513,9 +521,9 @@ export function PermissionsTab(props: {
                 rbacPermissionsGrantForm.setFieldValue('resource_id', id)
               }}
               loading={resourceRef.loading}
-              loadingText="Загрузка…"
+              loadingText={t(($) => $.permissions.loading)}
               onScroll={(event) => resourceRef.onPopupScroll?.(event)}
-              clearLabel="Снять выбор"
+              clearLabel={t(($) => $.permissions.clearSelection)}
               clearDisabled={!rbacPermissionsList.resource_id}
               onClear={() => {
                 setRbacPermissionsList((prev) => ({ ...prev, resource_id: undefined, page: 1 }))
@@ -525,18 +533,18 @@ export function PermissionsTab(props: {
           )}
 
           <PermissionsAssignmentsTable
-            title="Назначения"
+            title={t(($) => $.permissions.assignments)}
             style={{ flex: 1, minWidth: 0 }}
             empty={{
               show: !rbacPermissionsList.resource_id,
               description: (
                 <Space direction="vertical" size={4}>
-                  <Text>Выберите ресурс слева.</Text>
+                  <Text>{t(($) => $.permissions.resourceSelectionEmptyTitle)}</Text>
                   <Text type="secondary">
-                    Дальше: в блоке “Выдать доступ” выберите субъект, уровень и укажите причину.
+                    {t(($) => $.permissions.resourceSelectionEmptyStep1)}
                   </Text>
                   <Text type="secondary">
-                    После изменений перепроверьте вкладку “Эффективный доступ”.
+                    {t(($) => $.permissions.resourceSelectionEmptyStep2)}
                   </Text>
                 </Space>
               ),
@@ -544,12 +552,12 @@ export function PermissionsTab(props: {
             toolbar={(
               <>
                 <Text>
-                  <Text strong>Ресурс:</Text> {selectedResourceLabel}
+                  <Text strong>{t(($) => $.permissions.resourceGeneric)}:</Text> {selectedResourceLabel}
                 </Text>
 
                 <Select
                   style={{ width: 140 }}
-                  placeholder="Уровень"
+                  placeholder={t(($) => $.permissions.columns.level)}
                   allowClear
                   value={rbacPermissionsList.level}
                   onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
@@ -557,7 +565,7 @@ export function PermissionsTab(props: {
                 />
 
                 <Input
-                  placeholder="Поиск"
+                  placeholder={t(($) => $.permissions.search)}
                   style={{ width: 220 }}
                   value={rbacPermissionsList.search}
                   onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
@@ -567,7 +575,7 @@ export function PermissionsTab(props: {
                   onClick={() => tableConfig.refetch()}
                   loading={tableConfig.fetching}
                 >
-                  Обновить
+                  {t(($) => $.permissions.refresh)}
                 </Button>
               </>
             )}
@@ -575,7 +583,7 @@ export function PermissionsTab(props: {
             page={rbacPermissionsList.page}
             pageSize={rbacPermissionsList.pageSize}
             onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
-            errorMessage="Не удалось загрузить назначения"
+            errorMessage={t(($) => $.permissions.loadFailed)}
           />
         </div>
       )}
@@ -589,7 +597,7 @@ export function PermissionsTab(props: {
           levelOptions={LEVEL_OPTIONS}
           bulkGrant={bulkGrantClusterGroup}
           bulkRevoke={bulkRevokeClusterGroup}
-          i18n={CLUSTER_BULK_I18N}
+          i18n={clusterBulkI18n}
         />
       )}
 
@@ -602,13 +610,13 @@ export function PermissionsTab(props: {
           levelOptions={LEVEL_OPTIONS}
           bulkGrant={bulkGrantDatabaseGroup}
           bulkRevoke={bulkRevokeDatabaseGroup}
-          i18n={DATABASE_BULK_I18N}
+          i18n={databaseBulkI18n}
         />
       )}
 
       {rbacPermissionsViewMode === 'principal' && (
         <PermissionsAssignmentsTable
-          title="Назначения"
+          title={t(($) => $.permissions.assignments)}
           preamble={(!rbacPermissionsList.principal_id
             && !rbacPermissionsList.resource_id
             && !rbacPermissionsList.level
@@ -616,12 +624,12 @@ export function PermissionsTab(props: {
               <Alert
                 type="info"
                 showIcon
-                message="С чего начать"
+                message={t(($) => $.permissions.gettingStartedTitle)}
                 description={(
                   <Space direction="vertical" size={4}>
-                    <Text>Выберите пользователя/группу и (опционально) ресурс/уровень — так проще найти нужные назначения.</Text>
-                    <Text type="secondary">Для сценария “Где → Кто” переключите режим выше на “Где → Кто”.</Text>
-                    <Text type="secondary">После изменений перепроверьте вкладку “Эффективный доступ”.</Text>
+                    <Text>{t(($) => $.permissions.gettingStartedStep1)}</Text>
+                    <Text type="secondary">{t(($) => $.permissions.gettingStartedStep2)}</Text>
+                    <Text type="secondary">{t(($) => $.permissions.gettingStartedStep3)}</Text>
                   </Space>
                 )}
               />
@@ -633,8 +641,8 @@ export function PermissionsTab(props: {
                 allowClear
                 value={rbacPermissionsList.principal_id}
                 onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, principal_id: value, page: 1 }))}
-                placeholderUser="Пользователь"
-                placeholderRole="Группа"
+                placeholderUser={t(($) => $.permissions.principalUser)}
+                placeholderRole={t(($) => $.permissions.principalRole)}
                 userOptions={userOptions}
                 userLoading={usersQuery.isFetching}
                 onUserSearch={setUserSearch}
@@ -647,7 +655,7 @@ export function PermissionsTab(props: {
                 allowClear
                 value={rbacPermissionsList.resource_id}
                 onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, resource_id: value, page: 1 }))}
-                placeholder="Ресурс"
+                placeholder={t(($) => $.permissions.resourceGeneric)}
                 width={360}
                 databaseLabelById={databasesLabelById.current}
                 onDatabasesLoaded={handleDatabasesLoaded}
@@ -657,7 +665,7 @@ export function PermissionsTab(props: {
 
               <Select
                 style={{ width: 140 }}
-                placeholder="Уровень"
+                placeholder={t(($) => $.permissions.columns.level)}
                 allowClear
                 value={rbacPermissionsList.level}
                 onChange={(value) => setRbacPermissionsList((prev) => ({ ...prev, level: value ?? undefined, page: 1 }))}
@@ -665,7 +673,7 @@ export function PermissionsTab(props: {
               />
 
               <Input
-                placeholder="Поиск"
+                placeholder={t(($) => $.permissions.search)}
                 style={{ width: 220 }}
                 value={rbacPermissionsList.search}
                 onChange={(e) => setRbacPermissionsList((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
@@ -675,7 +683,7 @@ export function PermissionsTab(props: {
                 onClick={() => tableConfig.refetch()}
                 loading={tableConfig.fetching}
               >
-                Обновить
+                {t(($) => $.permissions.refresh)}
               </Button>
             </>
           )}
@@ -683,7 +691,7 @@ export function PermissionsTab(props: {
           page={rbacPermissionsList.page}
           pageSize={rbacPermissionsList.pageSize}
           onPaginationChange={(page, pageSize) => setRbacPermissionsList((prev) => ({ ...prev, page, pageSize }))}
-          errorMessage="Не удалось загрузить назначения"
+          errorMessage={t(($) => $.permissions.loadFailed)}
         />
       )}
     </Space>

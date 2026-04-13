@@ -1,8 +1,23 @@
 import { useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Form, Input, Space, Table, Typography, Tag, Select, Modal } from 'antd'
+import { App, Alert, Button, Card, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 
-import { useArtifactGroupPermissions, useCapabilities, useClusterGroupPermissions, useCreateRole, useDatabaseGroupPermissions, useDeleteRole, useOperationTemplateGroupPermissions, useRoles, useSetRoleCapabilities, useUpdateRole, useWorkflowTemplateGroupPermissions, type Capability, type RbacRole } from '../../../api/queries/rbac'
+import {
+  useArtifactGroupPermissions,
+  useCapabilities,
+  useClusterGroupPermissions,
+  useCreateRole,
+  useDatabaseGroupPermissions,
+  useDeleteRole,
+  useOperationTemplateGroupPermissions,
+  useRoles,
+  useSetRoleCapabilities,
+  useUpdateRole,
+  useWorkflowTemplateGroupPermissions,
+  type Capability,
+  type RbacRole,
+} from '../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../i18n'
 import { ReasonModal } from '../components/ReasonModal'
 
 const { Text } = Typography
@@ -16,6 +31,7 @@ export function RolesTab(props: {
 }) {
   const { canManageRbac, onOpenAssignmentsForRole } = props
   const { message } = App.useApp()
+  const { t } = useRbacTranslation()
 
   const rolesQuery = useRoles({ limit: 500, offset: 0 }, { enabled: canManageRbac })
   const createRole = useCreateRole()
@@ -56,8 +72,11 @@ export function RolesTab(props: {
   }, [roleSearch, roles])
 
   const capabilityOptions = useMemo(() => (
-    capabilities.map((cap) => ({ label: cap.exists ? cap.code : `${cap.code} (нет)`, value: cap.code }))
-  ), [capabilities])
+    capabilities.map((cap) => ({
+      label: cap.exists ? cap.code : `${cap.code} ${t(($) => $.roles.capabilityMissingSuffix)}`,
+      value: cap.code,
+    }))
+  ), [capabilities, t])
 
   const selectedRoleForEditor = roleEditorRoleId
     ? roles.find((role) => role.id === roleEditorRoleId) ?? null
@@ -89,7 +108,7 @@ export function RolesTab(props: {
           <Tag key={code}>{code}</Tag>
         ))}
         {codes.length > max && (
-          <Text type="secondary">+{codes.length - max} ещё</Text>
+          <Text type="secondary">{t(($) => $.roles.more, { count: codes.length - max })}</Text>
         )}
       </Space>
     )
@@ -97,11 +116,11 @@ export function RolesTab(props: {
 
   const rolesColumns: ColumnsType<RbacRole> = useMemo(
     () => [
-      { title: 'Роль', dataIndex: 'name', key: 'name' },
-      { title: 'Пользователи', dataIndex: 'users_count', key: 'users_count' },
-      { title: 'Права', dataIndex: 'permissions_count', key: 'permissions_count' },
+      { title: t(($) => $.roles.columns.role), dataIndex: 'name', key: 'name' },
+      { title: t(($) => $.roles.columns.users), dataIndex: 'users_count', key: 'users_count' },
+      { title: t(($) => $.roles.columns.permissions), dataIndex: 'permissions_count', key: 'permissions_count' },
       {
-        title: 'Действия',
+        title: t(($) => $.roles.columns.actions),
         key: 'actions',
         render: (_: unknown, row) => (
           <Space size="small">
@@ -112,7 +131,7 @@ export function RolesTab(props: {
                 setRoleUsageOpen(true)
               }}
             >
-              Использование
+              {t(($) => $.roles.actions.usage)}
             </Button>
             <Button
               size="small"
@@ -122,17 +141,17 @@ export function RolesTab(props: {
                 setRoleEditorOpen(true)
               }}
             >
-              Права
+              {t(($) => $.roles.actions.permissions)}
             </Button>
             <Button
               size="small"
               onClick={() => {
                 setCloneRoleSourceRoleId(row.id)
-                setCloneRoleName(`${row.name} копия`)
+                setCloneRoleName(`${row.name} ${t(($) => $.roles.cloneNameSuffix)}`)
                 setCloneRoleOpen(true)
               }}
             >
-              Клонировать
+              {t(($) => $.roles.actions.clone)}
             </Button>
             <Button
               size="small"
@@ -142,7 +161,7 @@ export function RolesTab(props: {
                 setRenameRoleOpen(true)
               }}
             >
-              Переименовать
+              {t(($) => $.roles.actions.rename)}
             </Button>
             <Button
               danger
@@ -152,13 +171,13 @@ export function RolesTab(props: {
                 setDeleteRoleOpen(true)
               }}
             >
-              Удалить
+              {t(($) => $.roles.actions.delete)}
             </Button>
           </Space>
         ),
       },
     ],
-    []
+    [t]
   )
 
   const roleUsageEnabled = canManageRbac && Boolean(roleUsageRoleId)
@@ -203,26 +222,26 @@ export function RolesTab(props: {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Card title="Создать роль" size="small">
+      <Card title={t(($) => $.roles.createCardTitle)} size="small">
         <Form
           form={createRoleForm}
           layout="inline"
           onFinish={(values) => createRole.mutate(values, { onSuccess: () => createRoleForm.resetFields() })}
         >
-          <Form.Item name="name" rules={[{ required: true, message: 'Укажите название роли' }]}>
-            <Input placeholder="Название роли" style={{ width: 240 }} />
+          <Form.Item name="name" rules={[{ required: true, message: t(($) => $.roles.roleNameRequired) }]}>
+            <Input placeholder={t(($) => $.roles.roleNamePlaceholder)} style={{ width: 240 }} />
           </Form.Item>
-          <Form.Item name="reason" rules={[{ required: true, message: 'Укажите причину' }]}>
-            <Input placeholder="Причина (обязательно)" style={{ width: 320 }} />
+          <Form.Item name="reason" rules={[{ required: true, message: t(($) => $.roles.reasonRequired) }]}>
+            <Input placeholder={t(($) => $.roles.reasonPlaceholder)} style={{ width: 320 }} />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" loading={createRole.isPending}>
-              Создать
+              {t(($) => $.roles.create)}
             </Button>
           </Form.Item>
           <Form.Item>
             <Button onClick={() => rolesQuery.refetch()} loading={rolesQuery.isFetching}>
-              Обновить
+              {t(($) => $.roles.refresh)}
             </Button>
           </Form.Item>
         </Form>
@@ -230,36 +249,36 @@ export function RolesTab(props: {
           <Alert
             style={{ marginTop: 12 }}
             type="warning"
-            message="Не удалось создать роль"
+            message={t(($) => $.roles.createFailed)}
           />
         )}
       </Card>
 
-      <Card title="Роли" size="small">
+      <Card title={t(($) => $.roles.listTitle)} size="small">
         <Space wrap style={{ marginBottom: 12 }}>
           <Input
-            placeholder="Поиск роли"
+            placeholder={t(($) => $.roles.searchPlaceholder)}
             style={{ width: 280 }}
             value={roleSearch}
             onChange={(e) => setRoleSearch(e.target.value)}
           />
           <Button onClick={() => rolesQuery.refetch()} loading={rolesQuery.isFetching}>
-            Обновить
+            {t(($) => $.roles.refresh)}
           </Button>
         </Space>
         {rolesQuery.error && (
           <Alert
             style={{ marginBottom: 12 }}
             type="warning"
-            message="Не удалось загрузить роли"
+            message={t(($) => $.roles.loadFailed)}
           />
         )}
         {!rolesQuery.isLoading && !rolesQuery.error && visibleRoles.length === 0 ? (
           <Alert
             type="info"
             showIcon
-            message={roleSearch.trim() ? 'Роли не найдены' : 'Ролей пока нет'}
-            description={roleSearch.trim() ? 'Попробуйте изменить поиск.' : 'Создайте роль выше.'}
+            message={roleSearch.trim() ? t(($) => $.roles.emptyFilteredTitle) : t(($) => $.roles.emptyTitle)}
+            description={roleSearch.trim() ? t(($) => $.roles.emptyFilteredDescription) : t(($) => $.roles.emptyDescription)}
           />
         ) : (
           <Table
@@ -274,7 +293,9 @@ export function RolesTab(props: {
       </Card>
 
       <Modal
-        title={selectedRoleForUsage ? `Использование роли: ${selectedRoleForUsage.name}` : 'Использование роли'}
+        title={selectedRoleForUsage
+          ? t(($) => $.roles.usageModalTitle, { name: selectedRoleForUsage.name })
+          : t(($) => $.roles.usageModalFallbackTitle)}
         open={roleUsageOpen}
         onCancel={() => {
           setRoleUsageOpen(false)
@@ -292,19 +313,19 @@ export function RolesTab(props: {
                 setRoleUsageRoleId(null)
               }}
             >
-              Открыть в "Назначения"
+              {t(($) => $.roles.openAssignments)}
             </Button>
             <Button onClick={() => {
               setRoleUsageOpen(false)
               setRoleUsageRoleId(null)
-            }}>Закрыть</Button>
+            }}>{t(($) => $.roles.close)}</Button>
           </Space>
         )}
       >
         {!selectedRoleForUsage && (
           <Alert
             type="warning"
-            message="Роль не найдена"
+            message={t(($) => $.roles.notFound)}
           />
         )}
 
@@ -313,45 +334,45 @@ export function RolesTab(props: {
             {roleUsageHasError && (
               <Alert
                 type="warning"
-                message="Не удалось загрузить использование роли"
+                message={t(($) => $.roles.usageLoadFailed)}
               />
             )}
 
             <Space wrap>
-              <Tag>Пользователей: {selectedRoleForUsage.users_count}</Tag>
-              <Tag>Прав: {selectedRoleForUsage.permissions_count}</Tag>
+              <Tag>{t(($) => $.roles.usageUsersTag, { count: selectedRoleForUsage.users_count })}</Tag>
+              <Tag>{t(($) => $.roles.usagePermissionsTag, { count: selectedRoleForUsage.permissions_count })}</Tag>
             </Space>
 
             <div>
-              <Text strong>Назначения:</Text>
+              <Text strong>{t(($) => $.roles.assignmentsTitle)}</Text>
               <Space wrap style={{ marginTop: 8 }}>
-                <Tag>Кластеры: {roleUsageTotals.clusters}</Tag>
-                <Tag>Базы: {roleUsageTotals.databases}</Tag>
-                <Tag>Шаблоны операций: {roleUsageTotals.operationTemplates}</Tag>
-                <Tag>Шаблоны рабочих процессов: {roleUsageTotals.workflowTemplates}</Tag>
-                <Tag>Артефакты: {roleUsageTotals.artifacts}</Tag>
+                <Tag>{t(($) => $.roles.assignmentTags.clusters, { count: roleUsageTotals.clusters })}</Tag>
+                <Tag>{t(($) => $.roles.assignmentTags.databases, { count: roleUsageTotals.databases })}</Tag>
+                <Tag>{t(($) => $.roles.assignmentTags.operationTemplates, { count: roleUsageTotals.operationTemplates })}</Tag>
+                <Tag>{t(($) => $.roles.assignmentTags.workflowTemplates, { count: roleUsageTotals.workflowTemplates })}</Tag>
+                <Tag>{t(($) => $.roles.assignmentTags.artifacts, { count: roleUsageTotals.artifacts })}</Tag>
               </Space>
               {roleUsageLoading && (
                 <div style={{ marginTop: 8 }}>
-                  <Text type="secondary">Загрузка…</Text>
+                  <Text type="secondary">{t(($) => $.roles.loading)}</Text>
                 </div>
               )}
             </div>
 
             <Text type="secondary">
-              Подсчёт основан на `list-*-group-permissions` (total).
+              {t(($) => $.roles.usageNote)}
             </Text>
           </Space>
         )}
       </Modal>
 
       <ReasonModal
-        title="Клонировать роль"
+        title={t(($) => $.roles.cloneModalTitle)}
         open={cloneRoleOpen}
-        okText="Создать"
-        cancelText="Отмена"
-        reasonPlaceholder="Причина (обязательно)"
-        requiredMessage="Укажите причину"
+        okText={t(($) => $.roles.create)}
+        cancelText={t(($) => $.userRoles.cancel)}
+        reasonPlaceholder={t(($) => $.roles.reasonPlaceholder)}
+        requiredMessage={t(($) => $.roles.reasonRequired)}
         onCancel={() => {
           setCloneRoleOpen(false)
           setCloneRoleSourceRoleId(null)
@@ -364,12 +385,12 @@ export function RolesTab(props: {
           if (!cloneRoleSourceRoleId) return
           const source = roles.find((role) => role.id === cloneRoleSourceRoleId)
           if (!source) {
-            message.error('Исходная роль не найдена')
+            message.error(t(($) => $.roles.sourceRoleNotFound))
             return
           }
           const name = cloneRoleName.trim()
           if (!name) {
-            message.error('Укажите имя роли')
+            message.error(t(($) => $.roles.roleNameRequired))
             return
           }
 
@@ -381,32 +402,36 @@ export function RolesTab(props: {
               mode: 'replace',
               reason,
             })
-            message.success(`Роль склонирована: ${created.name} #${created.id}`)
+            message.success(t(($) => $.roles.clonedSuccess, { name: created.name, id: created.id }))
             setCloneRoleOpen(false)
             setCloneRoleSourceRoleId(null)
           } catch {
-            message.error('Не удалось клонировать роль')
+            message.error(t(($) => $.roles.cloneFailed))
           }
         }}
       >
         <Alert
           type="info"
-          message={cloneRoleSourceRoleId ? `ID исходной роли: ${cloneRoleSourceRoleId}` : 'Выберите исходную роль'}
+          message={cloneRoleSourceRoleId
+            ? t(($) => $.roles.sourceRoleId, { id: cloneRoleSourceRoleId })
+            : t(($) => $.roles.selectSourceRole)}
         />
         <Input
-          placeholder="Название новой роли"
+          placeholder={t(($) => $.roles.newRoleNamePlaceholder)}
           value={cloneRoleName}
           onChange={(e) => setCloneRoleName(e.target.value)}
         />
       </ReasonModal>
 
       <ReasonModal
-        title={selectedRoleForEditor ? `Права роли: ${selectedRoleForEditor.name}` : 'Права роли'}
+        title={selectedRoleForEditor
+          ? t(($) => $.roles.permissionsModalTitle, { name: selectedRoleForEditor.name })
+          : t(($) => $.roles.permissionsModalFallbackTitle)}
         open={roleEditorOpen}
-        okText="Сохранить"
-        cancelText="Отмена"
-        reasonPlaceholder="Причина (обязательно)"
-        requiredMessage="Укажите причину"
+        okText={t(($) => $.dbmsUsers.form.save)}
+        cancelText={t(($) => $.userRoles.cancel)}
+        reasonPlaceholder={t(($) => $.roles.reasonPlaceholder)}
+        requiredMessage={t(($) => $.roles.reasonRequired)}
         onCancel={() => setRoleEditorOpen(false)}
         okButtonProps={{
           disabled: !roleEditorRoleId,
@@ -428,7 +453,7 @@ export function RolesTab(props: {
             style={{ marginBottom: 12 }}
             type="warning"
             showIcon
-            message="Роль не найдена"
+            message={t(($) => $.roles.permissionsNotFound)}
           />
         ) : (
           <Alert
@@ -436,21 +461,24 @@ export function RolesTab(props: {
             type={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0) ? 'info' : 'success'}
             showIcon
             message={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0)
-              ? `Изменения прав: +${roleEditorDiff.added.length} / -${roleEditorDiff.removed.length}`
-              : 'Изменений нет'}
+              ? t(($) => $.roles.permissionsChanged, {
+                added: roleEditorDiff.added.length,
+                removed: roleEditorDiff.removed.length,
+              })
+              : t(($) => $.roles.permissionsUnchanged)}
             description={(
               <Space direction="vertical" size={4}>
                 <div>
-                  <Text type="secondary">Текущих:</Text> <Text>{roleEditorDiff.currentCount}</Text>
+                  <Text type="secondary">{t(($) => $.roles.diffLabels.current)}</Text> <Text>{roleEditorDiff.currentCount}</Text>
                 </div>
                 <div>
-                  <Text type="secondary">Выбрано:</Text> <Text>{roleEditorDiff.nextCount}</Text>
+                  <Text type="secondary">{t(($) => $.roles.diffLabels.selected)}</Text> <Text>{roleEditorDiff.nextCount}</Text>
                 </div>
                 <div>
-                  <Text type="secondary">Добавится:</Text> {renderCodeTags(roleEditorDiff.added)}
+                  <Text type="secondary">{t(($) => $.roles.diffLabels.added)}</Text> {renderCodeTags(roleEditorDiff.added)}
                 </div>
                 <div>
-                  <Text type="secondary">Уберётся:</Text> {renderCodeTags(roleEditorDiff.removed)}
+                  <Text type="secondary">{t(($) => $.roles.diffLabels.removed)}</Text> {renderCodeTags(roleEditorDiff.removed)}
                 </div>
               </Space>
             )}
@@ -459,7 +487,7 @@ export function RolesTab(props: {
         <Select
           mode="multiple"
           style={{ width: '100%' }}
-          placeholder="Права"
+          placeholder={t(($) => $.roles.permissionsPlaceholder)}
           options={capabilityOptions}
           value={roleEditorPermissionCodes}
           onChange={(value) => setRoleEditorPermissionCodes(value)}
@@ -469,12 +497,12 @@ export function RolesTab(props: {
       </ReasonModal>
 
       <ReasonModal
-        title="Переименовать роль"
+        title={t(($) => $.roles.renameModalTitle)}
         open={renameRoleOpen}
-        okText="Сохранить"
-        cancelText="Отмена"
-        reasonPlaceholder="Причина (обязательно)"
-        requiredMessage="Укажите причину"
+        okText={t(($) => $.dbmsUsers.form.save)}
+        cancelText={t(($) => $.userRoles.cancel)}
+        reasonPlaceholder={t(($) => $.roles.reasonPlaceholder)}
+        requiredMessage={t(($) => $.roles.reasonRequired)}
         onCancel={() => setRenameRoleOpen(false)}
         okButtonProps={{
           disabled: !renameRoleRoleId || !renameRoleName.trim(),
@@ -484,23 +512,27 @@ export function RolesTab(props: {
           if (!renameRoleRoleId) return
           const name = renameRoleName.trim()
           if (!name) {
-            message.error('Укажите имя роли')
+            message.error(t(($) => $.roles.roleNameRequired))
             return
           }
           await updateRole.mutateAsync({ group_id: renameRoleRoleId, name, reason })
           setRenameRoleOpen(false)
         }}
       >
-        <Input placeholder="Имя роли" value={renameRoleName} onChange={(e) => setRenameRoleName(e.target.value)} />
+        <Input
+          placeholder={t(($) => $.roles.roleNameInputPlaceholder)}
+          value={renameRoleName}
+          onChange={(e) => setRenameRoleName(e.target.value)}
+        />
       </ReasonModal>
 
       <ReasonModal
-        title="Удалить роль"
+        title={t(($) => $.roles.deleteModalTitle)}
         open={deleteRoleOpen}
-        okText="Удалить"
-        cancelText="Отмена"
-        reasonPlaceholder="Причина (обязательно)"
-        requiredMessage="Укажите причину"
+        okText={t(($) => $.roles.actions.delete)}
+        cancelText={t(($) => $.userRoles.cancel)}
+        reasonPlaceholder={t(($) => $.roles.reasonPlaceholder)}
+        requiredMessage={t(($) => $.roles.reasonRequired)}
         okButtonProps={{ danger: true, disabled: !deleteRoleRoleId, loading: deleteRole.isPending }}
         onCancel={() => setDeleteRoleOpen(false)}
         onOk={async (reason) => {
@@ -511,7 +543,7 @@ export function RolesTab(props: {
       >
         <Alert
           type="warning"
-          message="Роль будет удалена, если нет участников/прав/назначений."
+          message={t(($) => $.roles.deleteWarning)}
         />
       </ReasonModal>
     </Space>

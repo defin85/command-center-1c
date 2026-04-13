@@ -18,6 +18,7 @@ import { transformOperationListResponse } from '../../utils/serviceMeshTransform
 import { getStatusColor } from '../../pages/Operations'
 import { TableToolkit } from '../table/TableToolkit'
 import { useTableToolkit } from '../table/hooks/useTableToolkit'
+import { useDashboardTranslation, useLocaleFormatters } from '../../i18n'
 import './RecentOperationsTable.css'
 
 const api = getV2()
@@ -25,39 +26,30 @@ const api = getV2()
 /** Maximum number of operations to display */
 const DISPLAY_LIMIT = 20
 
-/** Available status options for filtering */
-const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'queued', label: 'Queued' },
-  { value: 'processing', label: 'Processing' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'cancelled', label: 'Cancelled' },
-]
-
 interface RecentOperationsTableProps {
   selectedService: string | null
   onOperationClick?: (operationId: string) => void
 }
 
-/**
- * Format duration
- */
-function formatDuration(seconds: number | null): string {
+function formatDuration(
+  seconds: number | null,
+  formatters: ReturnType<typeof useLocaleFormatters>,
+): string {
   if (seconds === null) return '-'
-  if (seconds < 1) return `${(seconds * 1000).toFixed(0)}ms`
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`
+  if (seconds < 1) return `${formatters.number(seconds * 1000, { maximumFractionDigits: 0 })}ms`
+  if (seconds < 60) {
+    return `${formatters.number(seconds, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
+  }
+  return `${formatters.number(Math.floor(seconds / 60))}m ${formatters.number(Math.floor(seconds % 60))}s`
 }
 
-/**
- * Format timestamp
- */
-function formatTimestamp(timestamp: string | null): string {
+function formatTimestamp(
+  timestamp: string | null,
+  formatters: ReturnType<typeof useLocaleFormatters>,
+): string {
   if (!timestamp) return '-'
   try {
-    const date = new Date(timestamp)
-    return date.toLocaleString('ru-RU', {
+    return formatters.dateTime(timestamp, {
       day: '2-digit',
       month: '2-digit',
       hour: '2-digit',
@@ -73,11 +65,22 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   selectedService,
   onOperationClick,
 }) => {
+  const { t } = useDashboardTranslation()
+  const formatters = useLocaleFormatters()
   const [operations, setOperations] = useState<ServiceOperation[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   // Request ID for race condition protection (requestId pattern)
   const requestIdRef = useRef(0)
+
+  const statusOptions = useMemo(() => ([
+    { value: 'pending', label: t(($) => $.recentOperations.statusOptions.pending) },
+    { value: 'queued', label: t(($) => $.recentOperations.statusOptions.queued) },
+    { value: 'processing', label: t(($) => $.recentOperations.statusOptions.processing) },
+    { value: 'completed', label: t(($) => $.recentOperations.statusOptions.completed) },
+    { value: 'failed', label: t(($) => $.recentOperations.statusOptions.failed) },
+    { value: 'cancelled', label: t(($) => $.recentOperations.statusOptions.cancelled) },
+  ]), [t])
 
   // Fetch operations with race condition protection
   const fetchOperations = async () => {
@@ -109,23 +112,22 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   // Fetch on mount
   useEffect(() => {
     fetchOperations()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'id', label: 'ID', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'service', label: 'Service', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'progress', label: 'Progress', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'durationSeconds', label: 'Duration', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'createdAt', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    { key: 'id', label: t(($) => $.recentOperations.columns.id), sortable: true, groupKey: 'core', groupLabel: t(($) => $.clusterOverview.groups.core) },
+    { key: 'name', label: t(($) => $.recentOperations.columns.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.clusterOverview.groups.core) },
+    { key: 'service', label: t(($) => $.recentOperations.columns.service), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.service) },
+    { key: 'status', label: t(($) => $.recentOperations.columns.status), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.status) },
+    { key: 'progress', label: t(($) => $.recentOperations.columns.progress), groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.progress) },
+    { key: 'durationSeconds', label: t(($) => $.recentOperations.columns.duration), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.columns.duration) },
+    { key: 'createdAt', label: t(($) => $.recentOperations.columns.created), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.columns.created) },
+    { key: 'actions', label: t(($) => $.recentOperations.viewDetails), groupKey: 'actions', groupLabel: t(($) => $.recentOperations.viewDetails) },
+  ], [t])
 
   const columns: ColumnsType<ServiceOperation> = useMemo(() => ([
     {
-      title: 'ID',
+      title: t(($) => $.recentOperations.columns.id),
       dataIndex: 'id',
       key: 'id',
       width: 100,
@@ -136,7 +138,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       ),
     },
     {
-      title: 'Name',
+      title: t(($) => $.recentOperations.columns.name),
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
@@ -147,7 +149,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       ),
     },
     {
-      title: 'Service',
+      title: t(($) => $.recentOperations.columns.service),
       dataIndex: 'service',
       key: 'service',
       width: 100,
@@ -156,16 +158,18 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       ),
     },
     {
-      title: 'Status',
+      title: t(($) => $.recentOperations.columns.status),
       dataIndex: 'status',
       key: 'status',
       width: 100,
       render: (status: string) => (
-        <Tag color={getStatusColor(status)}>{status}</Tag>
+        <Tag color={getStatusColor(status)}>
+          {statusOptions.find((option) => option.value === status)?.label ?? status}
+        </Tag>
       ),
     },
     {
-      title: 'Progress',
+      title: t(($) => $.recentOperations.columns.progress),
       dataIndex: 'progress',
       key: 'progress',
       width: 80,
@@ -176,25 +180,25 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
       ),
     },
     {
-      title: 'Duration',
+      title: t(($) => $.recentOperations.columns.duration),
       dataIndex: 'durationSeconds',
       key: 'durationSeconds',
       width: 90,
-      render: (duration: number | null) => formatDuration(duration),
+      render: (duration: number | null) => formatDuration(duration, formatters),
     },
     {
-      title: 'Created',
+      title: t(($) => $.recentOperations.columns.created),
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 130,
-      render: (timestamp: string | null) => formatTimestamp(timestamp),
+      render: (timestamp: string | null) => formatTimestamp(timestamp, formatters),
     },
     {
       title: '',
       key: 'actions',
       width: 40,
       render: (_value, record: ServiceOperation) => (
-        <Tooltip title="View details">
+        <Tooltip title={t(($) => $.recentOperations.viewDetails)}>
           <Button
             type="text"
             size="small"
@@ -204,7 +208,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
         </Tooltip>
       ),
     },
-  ]), [onOperationClick])
+  ]), [formatters, onOperationClick, statusOptions, t])
 
   const table = useTableToolkit({
     tableId: 'operations_recent',
@@ -330,10 +334,10 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
     <div className="recent-operations-table">
       <div className="recent-operations-table__header">
         <div className="recent-operations-table__title">
-          Recent Operations
+          {t(($) => $.recentOperations.title)}
           {selectedService && (
             <Tag style={{ marginLeft: 8 }}>
-              Filtered: {selectedService}
+              {t(($) => $.recentOperations.filtered, { service: selectedService })}
             </Tag>
           )}
         </div>
@@ -348,22 +352,22 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
         columns={columns}
         size="small"
         scroll={{ y: 240 }}
-        searchPlaceholder="Search Operations"
+        searchPlaceholder={t(($) => $.recentOperations.searchPlaceholder)}
         toolbarActions={(
           <>
             <Select
               mode="multiple"
-              placeholder="Filter by status"
+              placeholder={t(($) => $.recentOperations.filterByStatus)}
               value={statusFilter}
               onChange={setStatusFilter}
-              options={STATUS_OPTIONS}
+              options={statusOptions}
               allowClear
               style={{ width: 200 }}
               size="small"
               maxTagCount="responsive"
             />
             <span className="recent-operations-table__total">
-              {displayTotal} total
+              {t(($) => $.recentOperations.total, { count: formatters.number(displayTotal) })}
             </span>
             <Button
               type="text"
@@ -372,7 +376,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
               onClick={fetchOperations}
               loading={loading}
             >
-              Refresh
+              {t(($) => $.recentOperations.refresh)}
             </Button>
           </>
         )}

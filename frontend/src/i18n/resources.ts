@@ -1,16 +1,22 @@
 import commonEn from './locales/en/common'
+import dashboardEn from './locales/en/dashboard'
 import errorsEn from './locales/en/errors'
+import clustersEn from './locales/en/clusters'
 import platformEn from './locales/en/platform'
+import rbacEn from './locales/en/rbac'
 import shellEn from './locales/en/shell'
 import commonRu from './locales/ru/common'
+import dashboardRu from './locales/ru/dashboard'
 import errorsRu from './locales/ru/errors'
+import clustersRu from './locales/ru/clusters'
 import platformRu from './locales/ru/platform'
+import rbacRu from './locales/ru/rbac'
 import shellRu from './locales/ru/shell'
 import type systemStatusSchema from './locales/ru/systemStatus'
 import type { AppLocale } from './constants'
 
 export const eagerNamespaces = ['common', 'shell', 'platform', 'errors'] as const
-export const lazyNamespaces = ['systemStatus'] as const
+export const lazyNamespaces = ['systemStatus', 'dashboard', 'clusters', 'rbac'] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
 export type TranslationNamespace = (typeof allNamespaces)[number]
@@ -23,6 +29,9 @@ export type AppCatalogSchema = {
   platform: typeof platformRu
   errors: typeof errorsRu
   systemStatus: typeof systemStatusSchema
+  dashboard: typeof dashboardRu
+  clusters: typeof clustersRu
+  rbac: typeof rbacRu
 }
 
 export const defaultNamespace = 'common'

@@ -5,6 +5,7 @@ import type { DataNode, TreeProps } from 'antd/es/tree'
 import { apiClient } from '../../../api/client'
 import type { ClusterRef, DatabaseRef } from '../../../api/queries/rbac'
 import { useDebouncedValue } from '../../../hooks/useDebouncedValue'
+import { useRbacTranslation } from '../../../i18n'
 import { clusterKey, databaseKey, loadMoreKey, parseKey } from '../utils/clusterDatabaseTreeKeys'
 
 const { Text } = Typography
@@ -32,6 +33,7 @@ export function RbacClusterDatabaseTree(props: {
   loadMoreText?: string
   clearLabel?: string
 }) {
+  const { t } = useRbacTranslation()
   const [search, setSearch] = useState<string>('')
   const debouncedSearch = useDebouncedValue(search, 300)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
@@ -57,8 +59,8 @@ export function RbacClusterDatabaseTree(props: {
     return [props.mode === 'clusters' ? clusterKey(props.value) : databaseKey(props.value)]
   }, [props.mode, props.value])
 
-  const loadingText = props.loadingText ?? 'Loading\u2026'
-  const loadMoreText = props.loadMoreText ?? 'Load more\u2026'
+  const loadingText = props.loadingText ?? t(($) => $.permissions.loading)
+  const loadMoreText = props.loadMoreText ?? t(($) => $.permissions.loadMore)
 
   const treeData: DataNode[] = useMemo(() => {
     return filteredClusters.map((cluster) => {
@@ -196,10 +198,12 @@ export function RbacClusterDatabaseTree(props: {
   }
 
   return (
-    <Card title={props.title ?? 'Clusters -> Databases'} size="small" style={{ width: props.width ?? 420 }}>
+    <Card title={props.title ?? t(($) => $.permissions.resources)} size="small" style={{ width: props.width ?? 420 }}>
       <Space direction="vertical" size={8} style={{ width: '100%' }}>
         <Input
-          placeholder={props.searchPlaceholder ?? (props.mode === 'clusters' ? 'Search clusters' : 'Search databases')}
+          placeholder={props.searchPlaceholder ?? (props.mode === 'clusters'
+            ? t(($) => $.permissions.searchClusters)
+            : t(($) => $.permissions.searchDatabases))}
           allowClear
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -225,7 +229,7 @@ export function RbacClusterDatabaseTree(props: {
           />
         </div>
         <Button size="small" disabled={!props.value} onClick={() => props.onChange(undefined)}>
-          {props.clearLabel ?? 'Clear selection'}
+          {props.clearLabel ?? t(($) => $.permissions.clearSelection)}
         </Button>
       </Space>
     </Card>

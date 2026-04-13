@@ -1,6 +1,7 @@
 import type { UIEventHandler } from 'react'
 import { Button, Card, Input, Menu, Space, Typography } from 'antd'
 import type { MenuProps } from 'antd'
+import { useRbacTranslation } from '../../../i18n'
 
 const { Text } = Typography
 
@@ -21,6 +22,7 @@ export function RbacResourceBrowser(props: {
   clearDisabled?: boolean
   onClear?: () => void
 }) {
+  const { t } = useRbacTranslation()
   const items: MenuProps['items'] = props.options.map((opt) => ({ key: opt.value, label: opt.label }))
 
   return (
@@ -44,7 +46,7 @@ export function RbacResourceBrowser(props: {
           />
           {props.loading && (
             <div style={{ padding: 8, textAlign: 'center' }}>
-              <Text type="secondary">{props.loadingText ?? 'Loading\u2026'}</Text>
+              <Text type="secondary">{props.loadingText ?? t(($) => $.permissions.loading)}</Text>
             </div>
           )}
         </div>

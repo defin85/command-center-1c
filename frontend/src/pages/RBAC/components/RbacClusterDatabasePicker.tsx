@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Button, Modal, Space } from 'antd'
 
 import type { ClusterRef, DatabaseRef } from '../../../api/queries/rbac'
+import { useRbacTranslation } from '../../../i18n'
 import { RbacClusterDatabaseTree } from './RbacClusterDatabaseTree'
 
 export type RbacClusterDatabasePickerI18n = {
@@ -29,6 +30,7 @@ export function RbacClusterDatabasePicker(props: {
   i18n?: RbacClusterDatabasePickerI18n
 }) {
   const [open, setOpen] = useState(false)
+  const { t } = useRbacTranslation()
 
   const label = useMemo(() => {
     if (!props.value) return ''
@@ -39,11 +41,13 @@ export function RbacClusterDatabasePicker(props: {
     return props.databaseLabelById?.get(props.value) ?? props.value
   }, [props.value, props.mode, props.clusters, props.databaseLabelById])
 
-  const placeholder = props.placeholder ?? (props.mode === 'clusters' ? 'Select cluster' : 'Select database')
-  const clearText = props.i18n?.clearText ?? 'Clear'
+  const placeholder = props.placeholder ?? (props.mode === 'clusters'
+    ? t(($) => $.permissions.selectCluster)
+    : t(($) => $.permissions.selectDatabase))
+  const clearText = props.i18n?.clearText ?? t(($) => $.permissions.clear)
   const modalTitle = props.mode === 'clusters'
-    ? (props.i18n?.modalTitleClusters ?? 'Select cluster')
-    : (props.i18n?.modalTitleDatabases ?? 'Select database')
+    ? (props.i18n?.modalTitleClusters ?? t(($) => $.permissions.selectCluster))
+    : (props.i18n?.modalTitleDatabases ?? t(($) => $.permissions.selectDatabase))
   const treeSearchPlaceholder = props.mode === 'clusters'
     ? props.i18n?.searchPlaceholderClusters
     : props.i18n?.searchPlaceholderDatabases
