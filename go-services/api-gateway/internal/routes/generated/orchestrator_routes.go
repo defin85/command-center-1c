@@ -37,6 +37,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/databases/get-database/", OperationID: "v2_databases_get_database_retrieve"},
 	{Method: "GET", Path: "/databases/get-extensions-snapshot/", OperationID: "v2_databases_get_extensions_snapshot_retrieve"},
 	{Method: "GET", Path: "/databases/get-metadata-management/", OperationID: "v2_databases_get_metadata_management_retrieve"},
+	{Method: "POST", Path: "/databases/update-pool-master-data-sync-eligibility/", OperationID: "v2_databases_update_pool_master_data_sync_eligibility_create"},
 	{Method: "POST", Path: "/databases/health-check/", OperationID: "v2_databases_health_check_create"},
 	{Method: "GET", Path: "/databases/list-databases/", OperationID: "v2_databases_list_databases_retrieve"},
 	{Method: "GET", Path: "/databases/list-dbms-users/", OperationID: "v2_databases_list_dbms_users_retrieve"},
