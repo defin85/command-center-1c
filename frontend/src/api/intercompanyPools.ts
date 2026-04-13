@@ -700,6 +700,20 @@ export type PoolFactualSummary = {
   checkpoint_total: number
 }
 
+export type PoolFactualOverviewItem = {
+  pool_id: string
+  pool_code: string
+  pool_name: string
+  pool_description: string
+  pool_is_active: boolean
+  summary: PoolFactualSummary
+}
+
+export type PoolFactualOverviewResponse = {
+  items: PoolFactualOverviewItem[]
+  count: number
+}
+
 export type PoolFactualEdgeBalance = {
   id: string
   pool_id: string
@@ -760,6 +774,10 @@ export type PoolFactualWorkspace = {
 
 export type GetPoolFactualWorkspaceParams = {
   poolId: string
+  quarterStart?: string
+}
+
+export type ListPoolFactualOverviewParams = {
   quarterStart?: string
 }
 
@@ -1216,6 +1234,20 @@ export async function getPoolFactualWorkspace(
     { params: query, skipGlobalError: true }
   )
   return response.data
+}
+
+export async function listPoolFactualOverview(
+  params: ListPoolFactualOverviewParams = {}
+): Promise<PoolFactualOverviewItem[]> {
+  const query: Record<string, string> = {}
+  if (params.quarterStart) {
+    query.quarter_start = params.quarterStart
+  }
+  const response = await apiClient.get<PoolFactualOverviewResponse>(
+    '/api/v2/pools/factual/overview/',
+    { params: query, skipGlobalError: true }
+  )
+  return response.data.items ?? []
 }
 
 export async function refreshPoolFactualWorkspace(

@@ -5,6 +5,10 @@ properties:
     format: uuid
   summary:
     $ref: ./PoolFactualSummary.yaml
+  checkpoints:
+    type: array
+    items:
+      $ref: ./PoolFactualRefreshCheckpoint.yaml
   settlements:
     type: array
     items:
@@ -16,6 +20,7 @@ properties:
   review_queue:
     $ref: ./PoolFactualReviewQueue.yaml
 required:
+  - checkpoints
   - edge_balances
   - pool_id
   - review_queue

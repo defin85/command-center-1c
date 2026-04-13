@@ -1,0 +1,22 @@
+type: object
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  pool_code:
+    type: string
+  pool_name:
+    type: string
+  pool_description:
+    type: string
+  pool_is_active:
+    type: boolean
+  summary:
+    $ref: ./PoolFactualSummary.yaml
+required:
+  - pool_id
+  - pool_code
+  - pool_name
+  - pool_description
+  - pool_is_active
+  - summary

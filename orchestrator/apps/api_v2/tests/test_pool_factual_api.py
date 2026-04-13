@@ -281,6 +281,334 @@ def test_build_pool_factual_workspace_summary_exposes_latest_scope_lineage() -> 
 
 
 @pytest.mark.django_db
+def test_list_pool_factual_overview_returns_resolved_quarter_and_summary_per_pool(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    alpha_pool, alpha_leaf, alpha_edge, alpha_database = _create_pool_scope(
+        tenant=default_tenant,
+        suffix="overview-alpha",
+    )
+    beta_pool, beta_leaf, beta_edge, beta_database = _create_pool_scope(
+        tenant=default_tenant,
+        suffix="overview-beta",
+    )
+    synced_at = datetime.now(dt_timezone.utc)
+
+    alpha_receipt_batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        source_reference="alpha-receipt-q1",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=alpha_receipt_batch,
+        status=PoolBatchSettlementStatus.PARTIALLY_CLOSED,
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("80.00"),
+        open_balance=Decimal("40.00"),
+        freshness_at=synced_at,
+    )
+    alpha_sale_batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch_kind=PoolBatchKind.SALE,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        source_reference="alpha-sale-q1",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=alpha_sale_batch,
+        status=PoolBatchSettlementStatus.ATTENTION_REQUIRED,
+        incoming_amount=Decimal("50.00"),
+        outgoing_amount=Decimal("35.00"),
+        open_balance=Decimal("15.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch=alpha_receipt_batch,
+        organization=alpha_leaf,
+        edge=alpha_edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat=Decimal("120.00"),
+        amount_without_vat=Decimal("100.00"),
+        vat_amount=Decimal("20.00"),
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("80.00"),
+        open_balance=Decimal("40.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        database=alpha_database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="overview-alpha-cp",
+        last_synced_at=synced_at,
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+    PoolFactualReviewItem.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch=alpha_receipt_batch,
+        organization=alpha_leaf,
+        edge=alpha_edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        reason=PoolFactualReviewReason.UNATTRIBUTED,
+        status=PoolFactualReviewStatus.PENDING,
+        source_document_ref="Document_РеализацияТоваровУслуг(guid'overview-alpha-sale')",
+    )
+
+    beta_sale_batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        batch_kind=PoolBatchKind.SALE,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 4, 1),
+        source_reference="beta-sale-q2",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=beta_sale_batch,
+        status=PoolBatchSettlementStatus.PARTIALLY_CLOSED,
+        incoming_amount=Decimal("200.00"),
+        outgoing_amount=Decimal("50.00"),
+        open_balance=Decimal("150.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        batch=beta_sale_batch,
+        organization=beta_leaf,
+        edge=beta_edge,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        amount_with_vat=Decimal("200.00"),
+        amount_without_vat=Decimal("166.67"),
+        vat_amount=Decimal("33.33"),
+        incoming_amount=Decimal("200.00"),
+        outgoing_amount=Decimal("50.00"),
+        open_balance=Decimal("150.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        database=beta_database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        source_checkpoint_token="overview-beta-cp",
+        workflow_status="failed",
+        last_error_code="POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING",
+        metadata={
+            "freshness_state": "stale",
+            "source_availability": "blocked_external_sessions",
+            "source_availability_detail": "locked by external sessions",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    response = authenticated_client.get("/api/v2/pools/factual/overview/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+
+    items_by_pool = {item["pool_id"]: item for item in payload["items"]}
+
+    alpha_item = items_by_pool[str(alpha_pool.id)]
+    assert alpha_item["pool_code"] == alpha_pool.code
+    assert alpha_item["summary"]["quarter"] == "2026Q1"
+    assert alpha_item["summary"]["quarter_start"] == "2026-01-01"
+    assert alpha_item["summary"]["incoming_amount"] == "170.00"
+    assert alpha_item["summary"]["outgoing_amount"] == "115.00"
+    assert alpha_item["summary"]["open_balance"] == "55.00"
+    assert alpha_item["summary"]["pending_review_total"] == 1
+    assert alpha_item["summary"]["attention_required_total"] == 1
+    assert alpha_item["summary"]["sync_status"] == "success"
+
+    beta_item = items_by_pool[str(beta_pool.id)]
+    assert beta_item["pool_code"] == beta_pool.code
+    assert beta_item["summary"]["quarter"] == "2026Q2"
+    assert beta_item["summary"]["quarter_start"] == "2026-04-01"
+    assert beta_item["summary"]["incoming_amount"] == "200.00"
+    assert beta_item["summary"]["outgoing_amount"] == "50.00"
+    assert beta_item["summary"]["open_balance"] == "150.00"
+    assert beta_item["summary"]["source_availability"] == "blocked_external_sessions"
+    assert beta_item["summary"]["source_availability_detail"] == "locked by external sessions"
+    assert beta_item["summary"]["sync_status"] == "failed"
+    assert beta_item["summary"]["checkpoints_failed"] == 1
+
+
+@pytest.mark.django_db
+def test_list_pool_factual_overview_aligns_explicit_quarter_start_for_all_rows(
+    authenticated_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    alpha_pool, alpha_leaf, alpha_edge, alpha_database = _create_pool_scope(
+        tenant=default_tenant,
+        suffix="overview-quarter-alpha",
+    )
+    beta_pool, beta_leaf, beta_edge, beta_database = _create_pool_scope(
+        tenant=default_tenant,
+        suffix="overview-quarter-beta",
+    )
+    synced_at = datetime.now(dt_timezone.utc)
+
+    alpha_batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 1, 1),
+        source_reference="alpha-receipt-q1",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=alpha_batch,
+        status=PoolBatchSettlementStatus.PARTIALLY_CLOSED,
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("60.00"),
+        open_balance=Decimal("60.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        batch=alpha_batch,
+        organization=alpha_leaf,
+        edge=alpha_edge,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        amount_with_vat=Decimal("120.00"),
+        amount_without_vat=Decimal("100.00"),
+        vat_amount=Decimal("20.00"),
+        incoming_amount=Decimal("120.00"),
+        outgoing_amount=Decimal("60.00"),
+        open_balance=Decimal("60.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=alpha_pool,
+        database=alpha_database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 1, 1),
+        quarter_end=date(2026, 3, 31),
+        source_checkpoint_token="overview-quarter-alpha-cp",
+        last_synced_at=synced_at,
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    beta_batch = PoolBatch.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.MANUAL,
+        period_start=date(2026, 4, 1),
+        source_reference="beta-receipt-q2",
+    )
+    PoolBatchSettlement.objects.create(
+        tenant=default_tenant,
+        batch=beta_batch,
+        status=PoolBatchSettlementStatus.DISTRIBUTED,
+        incoming_amount=Decimal("90.00"),
+        outgoing_amount=Decimal("40.00"),
+        open_balance=Decimal("50.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualBalanceSnapshot.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        batch=beta_batch,
+        organization=beta_leaf,
+        edge=beta_edge,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        amount_with_vat=Decimal("90.00"),
+        amount_without_vat=Decimal("75.00"),
+        vat_amount=Decimal("15.00"),
+        incoming_amount=Decimal("90.00"),
+        outgoing_amount=Decimal("40.00"),
+        open_balance=Decimal("50.00"),
+        freshness_at=synced_at,
+    )
+    PoolFactualSyncCheckpoint.objects.create(
+        tenant=default_tenant,
+        pool=beta_pool,
+        database=beta_database,
+        lane=PoolFactualLane.READ,
+        quarter_start=date(2026, 4, 1),
+        quarter_end=date(2026, 6, 30),
+        source_checkpoint_token="overview-quarter-beta-cp",
+        last_synced_at=synced_at,
+        metadata={
+            "freshness_state": "fresh",
+            "source_availability": "available",
+            "source_availability_detail": "",
+            "activity": "active",
+            "polling_tier": "active",
+            "poll_interval_seconds": 120,
+            "freshness_target_seconds": 120,
+        },
+    )
+
+    response = authenticated_client.get("/api/v2/pools/factual/overview/?quarter_start=2026-04-15")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+
+    items_by_pool = {item["pool_id"]: item for item in payload["items"]}
+
+    alpha_item = items_by_pool[str(alpha_pool.id)]
+    assert alpha_item["summary"]["quarter"] == "2026Q2"
+    assert alpha_item["summary"]["quarter_start"] == "2026-04-01"
+    assert alpha_item["summary"]["incoming_amount"] == "0.00"
+    assert alpha_item["summary"]["outgoing_amount"] == "0.00"
+    assert alpha_item["summary"]["open_balance"] == "0.00"
+    assert alpha_item["summary"]["sync_status"] == "idle"
+
+    beta_item = items_by_pool[str(beta_pool.id)]
+    assert beta_item["summary"]["quarter"] == "2026Q2"
+    assert beta_item["summary"]["quarter_start"] == "2026-04-01"
+    assert beta_item["summary"]["incoming_amount"] == "90.00"
+    assert beta_item["summary"]["outgoing_amount"] == "40.00"
+    assert beta_item["summary"]["open_balance"] == "50.00"
+
+
+@pytest.mark.django_db
 def test_get_pool_factual_workspace_returns_live_summary_settlements_edges_and_review_queue(
     authenticated_client: APIClient,
     default_tenant: Tenant,

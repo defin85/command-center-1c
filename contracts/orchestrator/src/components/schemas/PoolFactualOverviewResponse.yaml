@@ -1,0 +1,12 @@
+type: object
+properties:
+  items:
+    type: array
+    items:
+      $ref: ./PoolFactualOverviewItem.yaml
+  count:
+    type: integer
+    minimum: 0
+required:
+  - items
+  - count

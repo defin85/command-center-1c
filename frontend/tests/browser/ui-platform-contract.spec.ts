@@ -1327,6 +1327,9 @@ const POOL_FACTUAL_WORKSPACE = {
     quarter: '2026Q1',
     quarter_start: '2026-01-01',
     quarter_end: '2026-03-31',
+    amount_with_vat: '120.00',
+    amount_without_vat: '100.00',
+    vat_amount: '20.00',
     incoming_amount: '170.00',
     outgoing_amount: '115.00',
     open_balance: '55.00',
@@ -1337,9 +1340,40 @@ const POOL_FACTUAL_WORKSPACE = {
     source_availability: 'available',
     source_availability_detail: '',
     last_synced_at: NOW,
+    sync_status: 'success',
+    checkpoints_pending: 0,
+    checkpoints_running: 0,
+    checkpoints_failed: 0,
+    checkpoints_ready: 1,
+    activity: 'active',
+    polling_tier: 'active',
+    poll_interval_seconds: 120,
+    freshness_target_seconds: 120,
+    scope_fingerprint: '',
+    scope_contract_version: '',
+    gl_account_set_revision_id: '',
+    scope_contract: null,
     settlement_total: 2,
     checkpoint_total: 1,
   },
+  checkpoints: [
+    {
+      checkpoint_id: 'checkpoint-ready-1',
+      database_id: DATABASE_ID,
+      database_name: DATABASE_RECORD.name,
+      workflow_status: '',
+      freshness_state: 'stale',
+      last_synced_at: NOW,
+      last_error_code: '',
+      last_error: '',
+      execution_id: null,
+      operation_id: null,
+      activity: 'active',
+      polling_tier: 'active',
+      poll_interval_seconds: 120,
+      freshness_target_seconds: 120,
+    },
+  ],
   settlements: [
     {
       id: 'batch-receipt-1',
@@ -1469,6 +1503,20 @@ const POOL_FACTUAL_WORKSPACE = {
       },
     ],
   },
+}
+
+const POOL_FACTUAL_OVERVIEW = {
+  items: [
+    {
+      pool_id: POOL_WITH_ATTACHMENT.id,
+      pool_code: POOL_WITH_ATTACHMENT.code,
+      pool_name: POOL_WITH_ATTACHMENT.name,
+      pool_description: POOL_WITH_ATTACHMENT.description,
+      pool_is_active: true,
+      summary: POOL_FACTUAL_WORKSPACE.summary,
+    },
+  ],
+  count: 1,
 }
 
 const WORKFLOW_EXECUTION_DETAIL = {
@@ -3445,6 +3493,10 @@ async function setupUiPlatformMocks(
       return fulfillJson(route, POOL_RUN_REPORT)
     }
 
+    if (method === 'GET' && path === '/api/v2/pools/factual/overview/') {
+      return fulfillJson(route, POOL_FACTUAL_OVERVIEW)
+    }
+
     if (method === 'GET' && path === '/api/v2/pools/factual/workspace/') {
       if (url.searchParams.get('pool_id') && url.searchParams.get('pool_id') !== POOL_WITH_ATTACHMENT.id) {
         return fulfillJson(route, { detail: 'Pool factual workspace not found.' }, 404)
@@ -4377,8 +4429,9 @@ test('UI platform: /pools/factual restores compact selection and detail workspac
   await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open factual workspace for Main Pool' })).toBeVisible()
   await expect(page.getByText('Factual operator workspace')).toBeVisible()
-  await expect(page.getByText('Quarter summary')).toBeVisible()
-  await expect(page.getByText('Manual review queue')).toBeVisible()
+  await expect(page.getByText('Overall state')).toBeVisible()
+  await expect(page.getByText('Pool movement')).toBeVisible()
+  await expect(page.getByText('Manual review queue', { exact: true }).last()).toBeVisible()
   await expect(page.getByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.')).toBeVisible()
   await expect(page.getByText('focus=settlement')).toBeVisible()
   await expectNoHorizontalOverflow(page)
@@ -4419,7 +4472,8 @@ test('UI platform: /pools/factual opens review detail in a mobile-safe drawer wi
   const detailDrawer = page.getByRole('dialog').filter({ hasText: 'Factual operator workspace' }).first()
   await expect(detailDrawer).toBeVisible()
   await expect(detailDrawer.getByText('Factual operator workspace')).toBeVisible()
-  await expect(detailDrawer.getByText('Manual review queue')).toBeVisible()
+  await expect(detailDrawer.getByText('Overall state')).toBeVisible()
+  await expect(detailDrawer.getByText('Manual review queue', { exact: true }).last()).toBeVisible()
   await expect(detailDrawer.getByText('review focus')).toBeVisible()
   await expect(detailDrawer.getByRole('button', { name: 'Attribute review item unattributed-pool-main' })).toBeVisible()
   await detailDrawer.getByRole('button', { name: 'Attribute review item unattributed-pool-main' }).click()

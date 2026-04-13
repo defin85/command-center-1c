@@ -476,6 +476,11 @@ urlpatterns = [
         name='pools-document-policy-migrations',
     ),
     path(
+        'pools/factual/overview/',
+        intercompany_pools.list_pool_factual_overview,
+        name='pools-factual-overview',
+    ),
+    path(
         'pools/factual/workspace/',
         intercompany_pools.get_pool_factual_workspace,
         name='pools-factual-workspace',

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Space, Typography } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 
-import type { OrganizationPool } from '../../api/intercompanyPools'
-import { listOrganizationPools } from '../../api/intercompanyPools'
-import { queryKeys } from '../../api/queries/queryKeys'
+import type { PoolFactualOverviewItem } from '../../api/intercompanyPools'
+import { listPoolFactualOverview } from '../../api/intercompanyPools'
 import {
   EntityDetails,
   EntityList,
@@ -14,10 +13,16 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
-import { queryClient } from '../../lib/queryClient'
-import { withQueryPolicy } from '../../lib/queryRuntime'
+import { useLocaleFormatters } from '../../i18n/formatters'
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolFactualWorkspaceDetail } from './PoolFactualWorkspaceDetail'
+import {
+  getPoolFactualCompactSummary,
+  getPoolFactualVerdictLabel,
+  getPoolFactualVerdictPriority,
+  getPoolFactualVerdictTone,
+  resolvePoolFactualVerdict,
+} from './poolFactualHealth'
 import {
   buildPoolCatalogRoute,
   buildPoolRunsRoute,
@@ -56,7 +61,13 @@ const formatShortId = (value: string | null | undefined) => {
   return value.slice(0, 8)
 }
 
+const parseAmount = (value: string | null | undefined) => {
+  const parsed = Number(value ?? '0')
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export function PoolFactualWorkspacePage() {
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
   const runFromUrl = normalizeRouteParam(searchParams.get('run'))
@@ -64,10 +75,10 @@ export function PoolFactualWorkspacePage() {
   const focusFromUrl = normalizeFactualFocus(searchParams.get('focus'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
 
-  const [pools, setPools] = useState<OrganizationPool[]>([])
+  const [overviewItems, setOverviewItems] = useState<PoolFactualOverviewItem[]>([])
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(poolFromUrl)
   const [isDetailOpen, setIsDetailOpen] = useState(detailOpenFromUrl)
-  const [loadingPools, setLoadingPools] = useState(true)
+  const [loadingOverview, setLoadingOverview] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -81,38 +92,37 @@ export function PoolFactualWorkspacePage() {
   useEffect(() => {
     let cancelled = false
 
-    const loadPools = async () => {
-      setLoadingPools(true)
+    const loadOverview = async () => {
+      setLoadingOverview(true)
       setLoadError(null)
 
       try {
-        const data = await queryClient.fetchQuery(withQueryPolicy('interactive', {
-          queryKey: queryKeys.poolCatalog.pools(),
-          queryFn: () => listOrganizationPools(),
-        }))
+        const data = await listPoolFactualOverview({
+          quarterStart: quarterStartFromUrl ?? undefined,
+        })
         if (cancelled) {
           return
         }
-        setPools(data)
+        setOverviewItems(data)
       } catch (error) {
         if (cancelled) {
           return
         }
-        const resolved = resolveApiError(error, 'Failed to load pools for the factual workspace.')
+        const resolved = resolveApiError(error, 'Failed to load factual overview rows.')
         setLoadError(resolved.message)
       } finally {
         if (!cancelled) {
-          setLoadingPools(false)
+          setLoadingOverview(false)
         }
       }
     }
 
-    void loadPools()
+    void loadOverview()
 
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [quarterStartFromUrl])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)
@@ -152,10 +162,32 @@ export function PoolFactualWorkspacePage() {
     }
   }, [focusFromUrl, isDetailOpen, quarterStartFromUrl, runFromUrl, searchParams, selectedPoolId, setSearchParams])
 
-  const selectedPool = useMemo(
-    () => pools.find((pool) => pool.id === selectedPoolId) ?? null,
-    [pools, selectedPoolId]
+  const sortedOverviewItems = useMemo(() => {
+    return [...overviewItems].sort((left, right) => {
+      const leftVerdict = resolvePoolFactualVerdict(left.summary)
+      const rightVerdict = resolvePoolFactualVerdict(right.summary)
+      const priorityDelta = getPoolFactualVerdictPriority(leftVerdict) - getPoolFactualVerdictPriority(rightVerdict)
+      if (priorityDelta !== 0) {
+        return priorityDelta
+      }
+      return left.pool_name.localeCompare(right.pool_name)
+    })
+  }, [overviewItems])
+
+  const selectedOverviewItem = useMemo(
+    () => overviewItems.find((pool) => pool.pool_id === selectedPoolId) ?? null,
+    [overviewItems, selectedPoolId]
   )
+
+  const selectedPool = useMemo(() => (
+    selectedOverviewItem
+      ? {
+          id: selectedOverviewItem.pool_id,
+          code: selectedOverviewItem.pool_code,
+          name: selectedOverviewItem.pool_name,
+        }
+      : null
+  ), [selectedOverviewItem])
 
   const runWorkspaceHref = buildPoolRunsRoute({
     poolId: selectedPoolId,
@@ -203,16 +235,15 @@ export function PoolFactualWorkspacePage() {
       <Alert
         type="info"
         showIcon
-        message="Run-local execution controls stay in Pool Runs"
+        message="Execution controls stay in Pool Runs"
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Use this workspace for factual summary, settlement handoff, and manual review. Create-run, approvals,
-              retry, and run lineage remain in the execution-centric Pool Runs surface, while factual sync checkpoints
-              keep only secondary workflow and operations handoff here.
+              This route answers whether the selected pool is healthy, how much money came in and went out, and where
+              manual follow-up is still required. Create-run, retry, and approvals remain in Pool Runs.
             </Text>
             <Space wrap>
-              <RouteButton to={runWorkspaceHref}>Return to execution lineage</RouteButton>
+              <RouteButton to={runWorkspaceHref}>Open Pool Runs</RouteButton>
               {runFromUrl ? <Text type="secondary">Linked run: {formatShortId(runFromUrl)}</Text> : null}
             </Space>
           </Space>
@@ -226,23 +257,35 @@ export function PoolFactualWorkspacePage() {
         list={(
           <EntityList
             title="Pools"
-            loading={loadingPools}
+            loading={loadingOverview}
             error={loadError}
             emptyDescription="No pools available for factual monitoring yet."
-            dataSource={pools}
+            dataSource={sortedOverviewItems}
             renderItem={(pool) => {
-              const selected = pool.id === selectedPoolId
+              const selected = pool.pool_id === selectedPoolId
+              const verdict = resolvePoolFactualVerdict(pool.summary)
+              const verdictTone = getPoolFactualVerdictTone(verdict)
+              const moneyLine = `In ${formatters.number(parseAmount(pool.summary.incoming_amount), {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} · Out ${formatters.number(parseAmount(pool.summary.outgoing_amount), {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })} · Open ${formatters.number(parseAmount(pool.summary.open_balance), {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}`
               return (
                 <RouteButton
-                  key={pool.id}
+                  key={pool.pool_id}
                   type="text"
                   block
                   to={POOL_FACTUAL_ROUTE}
                   onClick={(event) => {
                     event.preventDefault()
-                    handleSelectPool(pool.id)
+                    handleSelectPool(pool.pool_id)
                   }}
-                  aria-label={`Open factual workspace for ${pool.name}`}
+                  aria-label={`Open factual workspace for ${pool.pool_name}`}
                   aria-pressed={selected}
                   style={{
                     justifyContent: 'flex-start',
@@ -258,11 +301,19 @@ export function PoolFactualWorkspacePage() {
                 >
                   <Space direction="vertical" size={2} style={{ width: '100%', textAlign: 'left' }}>
                     <Space wrap>
-                      <Text strong>{pool.code}</Text>
-                      <StatusBadge status={pool.is_active ? 'active' : 'inactive'} />
+                      <Text strong>{pool.pool_code}</Text>
+                      <StatusBadge status={verdictTone} label={getPoolFactualVerdictLabel(verdict)} />
+                      <StatusBadge status={pool.pool_is_active ? 'active' : 'inactive'} />
                     </Space>
-                    <Text>{pool.name}</Text>
-                    {pool.description ? <Text type="secondary">{pool.description}</Text> : null}
+                    <Text>{pool.pool_name}</Text>
+                    <Text type="secondary">{getPoolFactualCompactSummary(pool.summary)}</Text>
+                    <Text type="secondary">
+                      {pool.summary.quarter}
+                      {' · '}
+                      resolved from {formatters.date(pool.summary.quarter_start)}
+                    </Text>
+                    <Text type="secondary">{moneyLine}</Text>
+                    {pool.pool_description ? <Text type="secondary">{pool.pool_description}</Text> : null}
                   </Space>
                 </RouteButton>
               )
@@ -273,60 +324,20 @@ export function PoolFactualWorkspacePage() {
           <EntityDetails
             title="Factual operator workspace"
             extra={selectedPoolId ? <RouteButton to={poolCatalogHref}>Open pool detail</RouteButton> : null}
-            loading={loadingPools}
+            loading={loadingOverview}
             error={loadError}
             empty={!selectedPoolId}
             emptyDescription="Select a pool to open the factual workspace."
           >
             {selectedPool ? (
-              <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <Alert
-                  type="warning"
-                  showIcon
-                  message="Factual data surfaces are intentionally isolated from run-local controls"
-                  description={(
-                    <Space direction="vertical" size={8}>
-                      <Text>
-                        This workspace is the only entry point for factual balance monitoring and manual review.
-                        Pool Runs keeps execution lineage, safe actions, and retry context.
-                      </Text>
-                      <Space wrap>
-                        <RouteButton to={runWorkspaceHref}>Open linked run context</RouteButton>
-                        <RouteButton to={poolCatalogHref}>Open pool topology context</RouteButton>
-                      </Space>
-                    </Space>
-                  )}
-                />
-
-                <PoolFactualWorkspaceDetail
-                  selectedPool={selectedPool}
-                  focus={focusFromUrl}
-                  runId={runFromUrl}
-                  quarterStart={quarterStartFromUrl}
-                  poolCatalogHref={poolCatalogHref}
-                  runWorkspaceHref={runWorkspaceHref}
-                />
-
-                <Alert
-                  type="success"
-                  showIcon
-                  message="UI governance contract is active"
-                  description={(
-                    <Space direction="vertical" size={8}>
-                      <Text>
-                        The route uses the project platform layer with a compact selection pane. On narrow viewports
-                        the detail surface moves into the built-in drawer path from `MasterDetailShell` instead of
-                        introducing page-wide horizontal overflow.
-                      </Text>
-                      {runFromUrl ? (
-                        <Text type="secondary">
-                          The linked run context is preserved while the workspace stays separate from execution tabs.
-                        </Text>
-                      ) : null}
-                    </Space>
-                  )}
-                />
-              </Space>
+              <PoolFactualWorkspaceDetail
+                selectedPool={selectedPool}
+                focus={focusFromUrl}
+                runId={runFromUrl}
+                quarterStart={quarterStartFromUrl}
+                poolCatalogHref={poolCatalogHref}
+                runWorkspaceHref={runWorkspaceHref}
+              />
             ) : null}
           </EntityDetails>
         )}

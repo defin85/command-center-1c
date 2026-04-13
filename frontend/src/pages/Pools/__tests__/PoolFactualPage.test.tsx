@@ -6,7 +6,7 @@ import { App as AntApp } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
-  OrganizationPool,
+  PoolFactualOverviewItem,
   PoolFactualRefreshResponse,
   PoolFactualReviewActionResponse,
   PoolFactualReviewQueue,
@@ -18,7 +18,7 @@ import { PoolFactualPage } from '../PoolFactualPage'
 import { buildPoolFactualRoute } from '../routes'
 
 
-const mockListOrganizationPools = vi.fn()
+const mockListPoolFactualOverview = vi.fn()
 const mockGetPoolFactualWorkspace = vi.fn()
 const mockRefreshPoolFactualWorkspace = vi.fn()
 const mockApplyPoolFactualReviewAction = vi.fn()
@@ -29,25 +29,12 @@ vi.mock('../../../api/intercompanyPools', async () => {
   )
   return {
     ...actual,
-    listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
+    listPoolFactualOverview: (...args: unknown[]) => mockListPoolFactualOverview(...args),
     getPoolFactualWorkspace: (...args: unknown[]) => mockGetPoolFactualWorkspace(...args),
     refreshPoolFactualWorkspace: (...args: unknown[]) => mockRefreshPoolFactualWorkspace(...args),
     applyPoolFactualReviewAction: (...args: unknown[]) => mockApplyPoolFactualReviewAction(...args),
   }
 })
-
-function buildPool(overrides: Partial<OrganizationPool> = {}): OrganizationPool {
-  return {
-    id: '11111111-1111-1111-1111-111111111111',
-    code: 'pool-alpha',
-    name: 'Pool Alpha',
-    description: 'Primary factual pool',
-    is_active: true,
-    metadata: {},
-    updated_at: '2026-03-27T00:00:00Z',
-    ...overrides,
-  }
-}
 
 function buildReviewItem(overrides: Partial<PoolFactualReviewQueueItem> = {}): PoolFactualReviewQueueItem {
   return {
@@ -94,6 +81,19 @@ function buildReviewQueue(items?: PoolFactualReviewQueueItem[]): PoolFactualRevi
       attention_required_total: resolvedItems.filter((item) => item.attention_required).length,
     },
     items: resolvedItems,
+  }
+}
+
+function buildOverviewItem(overrides: Partial<PoolFactualOverviewItem> = {}): PoolFactualOverviewItem {
+  const poolId = overrides.pool_id ?? '11111111-1111-1111-1111-111111111111'
+  return {
+    pool_id: poolId,
+    pool_code: 'pool-alpha',
+    pool_name: 'Pool Alpha',
+    pool_description: 'Primary factual pool',
+    pool_is_active: true,
+    summary: buildWorkspace({ pool_id: poolId }).summary,
+    ...overrides,
   }
 }
 
@@ -388,23 +388,24 @@ function LocationProbe() {
 describe('PoolFactualPage', () => {
   beforeEach(() => {
     resetQueryClient()
-    mockListOrganizationPools.mockReset()
+    mockListPoolFactualOverview.mockReset()
     mockGetPoolFactualWorkspace.mockReset()
     mockRefreshPoolFactualWorkspace.mockReset()
     mockApplyPoolFactualReviewAction.mockReset()
   })
 
   it('renders live factual summary, settlement, drill-down, and review sections for the selected pool', async () => {
+    const user = userEvent.setup()
     const receiptSettlement = buildWorkspace().settlements[0].settlement
     if (!receiptSettlement) {
       throw new Error('Expected fixture settlement for batch-receipt-1')
     }
-    mockListOrganizationPools.mockResolvedValue([
-      buildPool(),
-      buildPool({
-        id: '22222222-2222-2222-2222-222222222222',
-        code: 'pool-beta',
-        name: 'Pool Beta',
+    mockListPoolFactualOverview.mockResolvedValue([
+      buildOverviewItem(),
+      buildOverviewItem({
+        pool_id: '22222222-2222-2222-2222-222222222222',
+        pool_code: 'pool-beta',
+        pool_name: 'Pool Beta',
       }),
     ])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
@@ -452,15 +453,21 @@ describe('PoolFactualPage', () => {
     expect(screen.getByText('Edge drill-down')).toBeInTheDocument()
     expect(screen.getByText('Manual review queue')).toBeInTheDocument()
     expect(screen.getByText('Linked run: run-001')).toBeInTheDocument()
+    expect(screen.getByText('Overall state')).toBeInTheDocument()
+    expect(screen.getByText('Pool movement')).toBeInTheDocument()
     expect(screen.getByText('Run-linked settlement handoff')).toBeInTheDocument()
-    expect(screen.getByText('Incoming 170.00, outgoing 115.00, open balance 55.00.')).toBeInTheDocument()
+    expect(screen.getAllByText('Needs attention').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('170.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('115.00').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('55.00').length).toBeGreaterThan(0)
     expect(screen.getByText('With VAT 120.00, without VAT 100.00, VAT 20.00.')).toBeInTheDocument()
     expect(
       screen.getByText('Matched run-linked settlement receipt-q1 is partially_closed with open balance 40.00.')
     ).toBeInTheDocument()
     expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
     expect(screen.getByText('Read backlog is clear on the default sync lane.')).toBeInTheDocument()
-    expect(screen.getByText('Pinned scope lineage')).toBeInTheDocument()
+    expect(screen.getByText('Scope lineage')).toBeInTheDocument()
+    await user.click(screen.getByText('Scope lineage'))
     expect(screen.getByText('Fingerprint scope-fp-q1; revision gl_account_set_rev_q1.')).toBeInTheDocument()
     expect(
       screen.getByText('Selector pool:11111111-1111-1111-1111-111111111111:sales_report_v1:2026-01-01.')
@@ -476,7 +483,7 @@ describe('PoolFactualPage', () => {
   })
 
   it('surfaces explicit read backlog details in the factual freshness card', async () => {
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     const workspace = buildWorkspace()
     workspace.summary.backlog_total = 2
     workspace.summary.freshness_state = 'stale'
@@ -506,7 +513,7 @@ describe('PoolFactualPage', () => {
     const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
 
     try {
-      mockListOrganizationPools.mockResolvedValue([buildPool()])
+      mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
       mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
 
       renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111')
@@ -531,12 +538,12 @@ describe('PoolFactualPage', () => {
 
   it('updates the factual route query when the operator selects a pool from the compact master pane', async () => {
     const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([
-      buildPool(),
-      buildPool({
-        id: '22222222-2222-2222-2222-222222222222',
-        code: 'pool-beta',
-        name: 'Pool Beta',
+    mockListPoolFactualOverview.mockResolvedValue([
+      buildOverviewItem(),
+      buildOverviewItem({
+        pool_id: '22222222-2222-2222-2222-222222222222',
+        pool_code: 'pool-beta',
+        pool_name: 'Pool Beta',
       }),
     ])
     mockGetPoolFactualWorkspace.mockImplementation(
@@ -568,22 +575,22 @@ describe('PoolFactualPage', () => {
   })
 
   it('keeps execution controls out of the factual workspace', async () => {
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
 
     await screen.findByText('receipt-q1')
 
-    expect(screen.getByText('Quarter summary')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open Pool Runs' })).toBeInTheDocument()
+    expect(screen.getByText('Pool movement')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Open Pool Runs' }).length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Refresh factual sync' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Create / Upsert Run' })).not.toBeInTheDocument()
     expect(screen.queryByText('Create Run')).not.toBeInTheDocument()
   })
 
   it('shows factual sync checkpoint diagnostics with workflow and operations handoff', async () => {
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
       summary: {
         ...buildWorkspace().summary,
@@ -617,7 +624,7 @@ describe('PoolFactualPage', () => {
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
 
     await screen.findByText('Sync diagnostics')
-    expect(screen.getByText('Pool factual DB 1')).toBeInTheDocument()
+    await screen.findByText('Pool factual DB 1')
     expect(screen.getByText('Error POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open workflow execution execution-failed-1' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open operation monitor operation-failed-1' })).toBeInTheDocument()
@@ -625,7 +632,7 @@ describe('PoolFactualPage', () => {
 
   it('lets the operator trigger a shipped factual refresh path from the workspace', async () => {
     const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace())
     mockRefreshPoolFactualWorkspace.mockResolvedValue(buildRefreshResponse())
 
@@ -660,7 +667,7 @@ describe('PoolFactualPage', () => {
     const clearIntervalSpy = vi.spyOn(window, 'clearInterval').mockImplementation(() => undefined)
 
     try {
-      mockListOrganizationPools.mockResolvedValue([buildPool()])
+      mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
       mockGetPoolFactualWorkspace
         .mockResolvedValueOnce(buildWorkspace({
           summary: {
@@ -726,7 +733,7 @@ describe('PoolFactualPage', () => {
 
   it('opens an attribution modal and updates queue state after choosing explicit targets', async () => {
     const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     const baseWorkspace = buildWorkspace()
     const baseReceiptBatch = baseWorkspace.settlements[0]
     if (!baseReceiptBatch?.settlement) {
@@ -913,7 +920,7 @@ describe('PoolFactualPage', () => {
 
   it('recomputes top-level attention summary when review action refresh fails', async () => {
     const user = userEvent.setup()
-    mockListOrganizationPools.mockResolvedValue([buildPool()])
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
 
     const lateCorrectionDocumentRef = "Document_КорректировкаРеализации(guid'pool-alpha-late')"
     const initialReviewQueue = buildReviewQueue([
@@ -966,7 +973,7 @@ describe('PoolFactualPage', () => {
     await waitFor(() => {
       expect(screen.getByText('0 attention required')).toBeInTheDocument()
     })
-    expect(screen.getByText(/0 item\(s\) currently require manual reconcile\./)).toBeInTheDocument()
+    expect(screen.getByText('Manual intervention is not currently required.')).toBeInTheDocument()
   })
 
   it('builds a focus-aware factual route for settlement handoff from run report', () => {

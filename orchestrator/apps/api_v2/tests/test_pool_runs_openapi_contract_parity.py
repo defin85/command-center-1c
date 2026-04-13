@@ -412,6 +412,27 @@ def test_pool_factual_paths_and_schemas_are_in_contract_with_runtime_serializer_
     paths = contract.get("paths")
     assert isinstance(paths, dict)
 
+    overview_path = "/api/v2/pools/factual/overview/"
+    overview_path_item = paths.get(overview_path)
+    assert isinstance(overview_path_item, dict), f"path missing: {overview_path}"
+    overview_get = overview_path_item.get("get")
+    assert isinstance(overview_get, dict)
+    assert overview_get.get("operationId") == "v2_pools_factual_overview"
+    overview_parameters = overview_get.get("parameters")
+    assert isinstance(overview_parameters, list)
+    assert any(
+        isinstance(item, dict)
+        and item.get("name") == "quarter_start"
+        and item.get("in") == "query"
+        and item.get("required") is False
+        for item in overview_parameters
+    )
+    overview_responses = overview_get.get("responses")
+    assert isinstance(overview_responses, dict)
+    assert overview_responses["200"]["content"]["application/json"]["schema"]["$ref"] == (
+        "#/components/schemas/PoolFactualOverviewResponse"
+    )
+
     workspace_path = "/api/v2/pools/factual/workspace/"
     workspace_path_item = paths.get(workspace_path)
     assert isinstance(workspace_path_item, dict), f"path missing: {workspace_path}"
@@ -504,6 +525,28 @@ def test_pool_factual_paths_and_schemas_are_in_contract_with_runtime_serializer_
     assert isinstance(review_action_response_properties, dict)
     runtime_review_action_response_fields = set(pools_view.PoolFactualReviewActionResponseSerializer().fields.keys())
     assert runtime_review_action_response_fields.issubset(set(review_action_response_properties.keys()))
+
+    overview_query_schema = overview_get.get("parameters")
+    assert isinstance(overview_query_schema, list)
+    runtime_overview_query_fields = set(pools_view.PoolFactualOverviewQuerySerializer().fields.keys())
+    contract_overview_query_fields = {
+        str(item.get("name"))
+        for item in overview_query_schema
+        if isinstance(item, dict) and item.get("in") == "query"
+    }
+    assert runtime_overview_query_fields.issubset(contract_overview_query_fields)
+
+    overview_item_schema = _schema(contract, "PoolFactualOverviewItem")
+    overview_item_properties = overview_item_schema.get("properties")
+    assert isinstance(overview_item_properties, dict)
+    runtime_overview_item_fields = set(pools_view.PoolFactualOverviewItemSerializer().fields.keys())
+    assert runtime_overview_item_fields.issubset(set(overview_item_properties.keys()))
+
+    overview_response_schema = _schema(contract, "PoolFactualOverviewResponse")
+    overview_response_properties = overview_response_schema.get("properties")
+    assert isinstance(overview_response_properties, dict)
+    runtime_overview_response_fields = set(pools_view.PoolFactualOverviewResponseSerializer().fields.keys())
+    assert runtime_overview_response_fields.issubset(set(overview_response_properties.keys()))
 
 
 def test_pool_workflow_binding_write_schema_keeps_server_managed_fields_optional_for_create_requests() -> None:

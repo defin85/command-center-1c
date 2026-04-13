@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiResponse, PolymorphicProxySerializer, extend_schema
 from rest_framework import serializers, status as http_status
@@ -2481,6 +2481,158 @@ def _resolve_pool_factual_quarter_start(
     return _normalize_quarter_start_date(timezone.localdate())
 
 
+def _resolve_pool_factual_quarter_starts_by_pool(
+    *,
+    tenant_id: str,
+    pools: list[OrganizationPool],
+    requested_quarter_start: date | None,
+) -> dict[UUID, date]:
+    if not pools:
+        return {}
+
+    normalized_requested_quarter = (
+        _normalize_quarter_start_date(requested_quarter_start)
+        if requested_quarter_start is not None
+        else None
+    )
+    if normalized_requested_quarter is not None:
+        return {pool.id: normalized_requested_quarter for pool in pools}
+
+    pool_ids = [pool.id for pool in pools]
+
+    def _latest_quarter_candidates(model, *, field_name: str, extra_filters: dict[str, Any] | None = None) -> dict[UUID, date]:
+        queryset = model.objects.filter(tenant_id=tenant_id, pool_id__in=pool_ids)
+        if extra_filters:
+            queryset = queryset.filter(**extra_filters)
+        rows = queryset.values("pool_id").annotate(latest_quarter=Max(field_name))
+        return {
+            row["pool_id"]: _normalize_quarter_start_date(row["latest_quarter"])
+            for row in rows
+            if row.get("latest_quarter") is not None
+        }
+
+    snapshot_candidates = _latest_quarter_candidates(
+        PoolFactualBalanceSnapshot,
+        field_name="quarter_start",
+    )
+    review_candidates = _latest_quarter_candidates(
+        PoolFactualReviewItem,
+        field_name="quarter_start",
+    )
+    checkpoint_candidates = _latest_quarter_candidates(
+        PoolFactualSyncCheckpoint,
+        field_name="quarter_start",
+        extra_filters={"lane": PoolFactualLane.READ},
+    )
+    batch_candidates = _latest_quarter_candidates(
+        PoolBatch,
+        field_name="period_start",
+    )
+
+    fallback_quarter = _normalize_quarter_start_date(timezone.localdate())
+    quarter_starts_by_pool: dict[UUID, date] = {}
+    for pool in pools:
+        candidates = [
+            candidate
+            for candidate in (
+                snapshot_candidates.get(pool.id),
+                review_candidates.get(pool.id),
+                checkpoint_candidates.get(pool.id),
+                batch_candidates.get(pool.id),
+            )
+            if candidate is not None
+        ]
+        quarter_starts_by_pool[pool.id] = max(candidates) if candidates else fallback_quarter
+    return quarter_starts_by_pool
+
+
+def _load_pool_factual_overview_inputs(
+    *,
+    tenant_id: str,
+    pools: list[OrganizationPool],
+    quarter_starts_by_pool: Mapping[UUID, date],
+) -> dict[UUID, dict[str, Any]]:
+    if not pools:
+        return {}
+
+    pool_ids = [pool.id for pool in pools]
+    quarter_starts = sorted({quarter_start for quarter_start in quarter_starts_by_pool.values()})
+    earliest_quarter_start = quarter_starts[0]
+    latest_quarter_end = max(_resolve_quarter_end(quarter_start) for quarter_start in quarter_starts)
+
+    grouped: dict[UUID, dict[str, Any]] = {
+        pool.id: {
+            "settlements": [],
+            "edge_balances": [],
+            "checkpoints": [],
+            "review_items": [],
+        }
+        for pool in pools
+    }
+
+    settlements = list(
+        PoolBatch.objects.filter(
+            tenant_id=tenant_id,
+            pool_id__in=pool_ids,
+            period_start__gte=earliest_quarter_start,
+            period_start__lte=latest_quarter_end,
+        )
+        .select_related("settlement")
+        .order_by("-period_start", "-created_at")
+    )
+    for settlement in settlements:
+        quarter_start = quarter_starts_by_pool.get(settlement.pool_id)
+        if quarter_start is None:
+            continue
+        quarter_end = _resolve_quarter_end(quarter_start)
+        if quarter_start <= settlement.period_start <= quarter_end:
+            grouped[settlement.pool_id]["settlements"].append(settlement)
+
+    edge_balances = list(
+        PoolFactualBalanceSnapshot.objects.filter(
+            tenant_id=tenant_id,
+            pool_id__in=pool_ids,
+            quarter_start__in=quarter_starts,
+        ).order_by("-freshness_at", "-created_at")
+    )
+    for snapshot in edge_balances:
+        if quarter_starts_by_pool.get(snapshot.pool_id) == snapshot.quarter_start:
+            grouped[snapshot.pool_id]["edge_balances"].append(snapshot)
+
+    checkpoints = list(
+        PoolFactualSyncCheckpoint.objects.filter(
+            tenant_id=tenant_id,
+            pool_id__in=pool_ids,
+            lane=PoolFactualLane.READ,
+            quarter_start__in=quarter_starts,
+        )
+        .select_related("database")
+        .order_by("-last_synced_at", "-updated_at")
+    )
+    for checkpoint in checkpoints:
+        if quarter_starts_by_pool.get(checkpoint.pool_id) == checkpoint.quarter_start:
+            grouped[checkpoint.pool_id]["checkpoints"].append(checkpoint)
+
+    review_items = list(
+        PoolFactualReviewItem.objects.filter(
+            tenant_id=tenant_id,
+            pool_id__in=pool_ids,
+            quarter_start__in=quarter_starts,
+        ).order_by("-created_at", "-updated_at")
+    )
+    for review_item in review_items:
+        if quarter_starts_by_pool.get(review_item.pool_id) == review_item.quarter_start:
+            grouped[review_item.pool_id]["review_items"].append(review_item)
+
+    for pool in pools:
+        review_queue = build_pool_factual_review_queue_snapshot(
+            review_items=grouped[pool.id]["review_items"],
+        )
+        grouped[pool.id]["review_queue"] = review_queue
+
+    return grouped
+
+
 def _build_pool_factual_workspace_summary(
     *,
     quarter_start: date,
@@ -3432,6 +3584,18 @@ class PoolFactualWorkspaceQuerySerializer(serializers.Serializer):
         return super().to_internal_value(data)
 
 
+class PoolFactualOverviewQuerySerializer(serializers.Serializer):
+    quarter_start = serializers.DateField(required=False, allow_null=True)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, Mapping):
+            raise serializers.ValidationError("Invalid query type. Expected object.")
+        unknown_fields = sorted({str(field) for field in data.keys() if str(field) not in self.fields})
+        if unknown_fields:
+            raise serializers.ValidationError({field: "Unknown field." for field in unknown_fields})
+        return super().to_internal_value(data)
+
+
 class PoolFactualScopeMemberSerializer(serializers.Serializer):
     canonical_id = serializers.CharField()
     code = serializers.CharField()
@@ -3570,6 +3734,20 @@ class PoolFactualWorkspaceResponseSerializer(serializers.Serializer):
     settlements = PoolBatchSerializer(many=True)
     edge_balances = PoolFactualBalanceSnapshotSerializer(many=True)
     review_queue = PoolFactualReviewQueueSerializer()
+
+
+class PoolFactualOverviewItemSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    pool_code = serializers.CharField()
+    pool_name = serializers.CharField()
+    pool_description = serializers.CharField(required=False, allow_blank=True)
+    pool_is_active = serializers.BooleanField()
+    summary = PoolFactualSummarySerializer()
+
+
+class PoolFactualOverviewResponseSerializer(serializers.Serializer):
+    items = PoolFactualOverviewItemSerializer(many=True)
+    count = serializers.IntegerField(min_value=0)
 
 
 class PoolFactualRefreshResponseSerializer(serializers.Serializer):
@@ -6180,6 +6358,82 @@ def list_or_create_pool_batches(request):
             "created_execution": sale_closing_result.created_execution,
         }
     return Response(payload, status=http_status.HTTP_201_CREATED)
+
+
+@extend_schema(
+    tags=["v2"],
+    operation_id="v2_pools_factual_overview",
+    summary="List pool factual overview rows",
+    parameters=[PoolFactualOverviewQuerySerializer],
+    responses={
+        200: PoolFactualOverviewResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_pool_factual_overview(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = PoolFactualOverviewQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pools = list(
+        OrganizationPool.objects.filter(tenant_id=tenant_id).order_by("code", "name")
+    )
+    quarter_starts_by_pool = _resolve_pool_factual_quarter_starts_by_pool(
+        tenant_id=tenant_id,
+        pools=pools,
+        requested_quarter_start=data.get("quarter_start"),
+    )
+    grouped_inputs = _load_pool_factual_overview_inputs(
+        tenant_id=tenant_id,
+        pools=pools,
+        quarter_starts_by_pool=quarter_starts_by_pool,
+    )
+
+    items: list[dict[str, Any]] = []
+    for pool in pools:
+        inputs = grouped_inputs.get(pool.id) or {
+            "settlements": [],
+            "edge_balances": [],
+            "checkpoints": [],
+            "review_queue": build_pool_factual_review_queue_snapshot(review_items=[]),
+        }
+        quarter_start = quarter_starts_by_pool.get(pool.id, _normalize_quarter_start_date(timezone.localdate()))
+        items.append(
+            {
+                "pool_id": str(pool.id),
+                "pool_code": pool.code,
+                "pool_name": pool.name,
+                "pool_description": pool.description,
+                "pool_is_active": pool.is_active,
+                "summary": _build_pool_factual_workspace_summary(
+                    quarter_start=quarter_start,
+                    settlements=inputs["settlements"],
+                    edge_balances=inputs["edge_balances"],
+                    checkpoints=inputs["checkpoints"],
+                    review_queue=inputs["review_queue"],
+                ),
+            }
+        )
+
+    return Response({"items": items, "count": len(items)}, status=http_status.HTTP_200_OK)
 
 
 @extend_schema(

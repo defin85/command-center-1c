@@ -330,6 +330,8 @@ paths:
     $ref: paths/api_v2_pools_organizations_upsert_.yaml
   /api/v2/pools/batches/:
     $ref: paths/api_v2_pools_batches_.yaml
+  /api/v2/pools/factual/overview/:
+    $ref: paths/api_v2_pools_factual_overview_.yaml
   /api/v2/pools/factual/workspace/:
     $ref: paths/api_v2_pools_factual_workspace_.yaml
   /api/v2/pools/factual/refresh/:
