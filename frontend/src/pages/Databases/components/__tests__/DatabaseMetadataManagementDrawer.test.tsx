@@ -122,6 +122,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
           verified_at: '2026-03-12T00:00:00Z',
           generation_probe_requested_at: null,
           generation_probe_checked_at: null,
+          observed_metadata_fetched_at: '2026-03-12T01:23:45Z',
           observed_metadata_hash: 'b'.repeat(64),
           canonical_metadata_hash: 'a'.repeat(64),
           publication_drift: true,
@@ -164,6 +165,14 @@ describe('DatabaseMetadataManagementDrawer', () => {
     expect(screen.getByText('Pool master-data readiness')).toBeInTheDocument()
     expect(screen.getByText('Verified')).toBeInTheDocument()
     expect(screen.getByText('Drift')).toBeInTheDocument()
+    expect(screen.getByText('Live metadata отличается от canonical snapshot.')).toBeInTheDocument()
+    expect(screen.getByText(/Последний успешный live metadata refresh:/)).toBeInTheDocument()
+    expect(screen.getByText(/Текущий canonical snapshot fetched at:/)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Refresh metadata snapshot может завершиться успешно и всё равно оставить drift: для этой business identity reused shared snapshot, поэтому observed hash обновляется, а canonical остаётся прежним.'
+      )
+    ).toBeInTheDocument()
     expect(screen.getByText('Eligible')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeInTheDocument()

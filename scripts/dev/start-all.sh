@@ -680,11 +680,18 @@ else
     elif [ -z "$PLATFORM_1C_BIN_PATH" ]; then
         echo -e "${YELLOW}⚠️  PLATFORM_1C_BIN_PATH не задан в .env.local${NC}"
         echo -e "${YELLOW}   RAS не будет запущен. Установите путь к платформе 1С:${NC}"
+        linux_platform_example="/opt/1cv8/x86_64/8.3.27.1989"
+        if [[ -d "/opt/1cv8/x86_64" ]]; then
+            detected_linux_platform_example=$(find /opt/1cv8/x86_64 -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -n1)
+            if [[ -n "$detected_linux_platform_example" ]]; then
+                linux_platform_example="$detected_linux_platform_example"
+            fi
+        fi
         if is_wsl; then
-            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/opt/1cv8/x86_64/8.3.27.1859\"${NC}"
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"$linux_platform_example\"${NC}"
             echo -e "${YELLOW}   или PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
         elif [[ "$OS_TYPE" == "linux" ]]; then
-            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/opt/1cv8/x86_64/8.3.27.1859\"${NC}"
+            echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"$linux_platform_example\"${NC}"
         else
             echo -e "${YELLOW}   PLATFORM_1C_BIN_PATH=\"/mnt/c/Program Files/1cv8/8.3.27.1786/bin\"${NC}"
             echo -e "${YELLOW}   или PLATFORM_1C_BIN_PATH=\"C:\\Program Files\\1cv8\\8.3.27.1786\\bin\"${NC}"

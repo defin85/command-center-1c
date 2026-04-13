@@ -78,6 +78,7 @@ def _serialize_configuration_profile_state(*, database: Database) -> dict[str, A
         "verified_at": profile.get("verified_at") or None,
         "generation_probe_requested_at": profile.get("generation_probe_requested_at") or None,
         "generation_probe_checked_at": profile.get("generation_probe_checked_at") or None,
+        "observed_metadata_fetched_at": profile.get("observed_metadata_fetched_at") or None,
         "observed_metadata_hash": str(profile.get("observed_metadata_hash") or ""),
         "canonical_metadata_hash": str(profile.get("canonical_metadata_hash") or ""),
         "publication_drift": bool(profile.get("publication_drift")),

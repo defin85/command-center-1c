@@ -1,7 +1,7 @@
 import { Alert, App, Button, Grid, Radio, Space, Spin, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import type { DatabaseMetadataManagementConfigurationProfile } from '../../../api/generated/model/databaseMetadataManagementConfigurationProfile'
 import type { DatabaseMetadataManagementResponse } from '../../../api/generated/model/databaseMetadataManagementResponse'
@@ -32,7 +32,7 @@ type StatusDescriptor = {
   tone: AlertTone
   label: string
   message: string
-  description?: string
+  description?: ReactNode
 }
 
 type ConfigurationProfileState = DatabaseMetadataManagementConfigurationProfile & {
@@ -40,6 +40,7 @@ type ConfigurationProfileState = DatabaseMetadataManagementConfigurationProfile 
   reverify_blocker_code?: string
   reverify_blocker_message?: string
   reverify_blocking_action?: string
+  observed_metadata_fetched_at?: string | null
 }
 
 type MetadataSummaryItem = {
@@ -172,11 +173,23 @@ const buildSnapshotStatusDescriptor = (
   }
 
   if (snapshot.publication_drift) {
+    const lastObservedRefresh = formatDateTime(profile?.observed_metadata_fetched_at)
+    const canonicalSnapshotFetchedAt = formatDateTime(snapshot.fetched_at)
     return {
       tone: 'warning',
       label: 'Drift',
-      message: 'Обнаружен publication drift между observed и canonical metadata.',
-      description: 'Snapshot доступен, но observed hash отличается от canonical.',
+      message: 'Live metadata отличается от canonical snapshot.',
+      description: (
+        <Space direction="vertical" size={4}>
+          <span>{`Последний успешный live metadata refresh: ${lastObservedRefresh}.`}</span>
+          <span>{`Текущий canonical snapshot fetched at: ${canonicalSnapshotFetchedAt}.`}</span>
+          <span>
+            {snapshot.is_shared_snapshot
+              ? 'Refresh metadata snapshot может завершиться успешно и всё равно оставить drift: для этой business identity reused shared snapshot, поэтому observed hash обновляется, а canonical остаётся прежним.'
+              : 'Refresh metadata snapshot может завершиться успешно и всё равно оставить drift, пока live publication metadata не совпадёт с canonical snapshot.'}
+          </span>
+        </Space>
+      ),
     }
   }
 

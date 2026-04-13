@@ -168,6 +168,7 @@ def test_get_database_metadata_management_returns_profile_and_snapshot_state(cli
     assert payload["configuration_profile"]["publication_drift"] is True
     assert payload["configuration_profile"]["observed_metadata_hash"] == "b" * 64
     assert payload["configuration_profile"]["canonical_metadata_hash"] == "a" * 64
+    assert payload["configuration_profile"]["observed_metadata_fetched_at"] == "2026-03-12T01:00:00+00:00"
     assert payload["configuration_profile"]["reverify_available"] is True
     assert payload["configuration_profile"]["reverify_blocker_code"] == ""
     assert payload["configuration_profile"]["reverify_blocker_message"] == ""

@@ -440,6 +440,7 @@ class DatabaseMetadataManagementConfigurationProfileSerializer(serializers.Seria
     verified_at = serializers.DateTimeField(allow_null=True, required=False)
     generation_probe_requested_at = serializers.DateTimeField(allow_null=True, required=False)
     generation_probe_checked_at = serializers.DateTimeField(allow_null=True, required=False)
+    observed_metadata_fetched_at = serializers.DateTimeField(allow_null=True, required=False)
     observed_metadata_hash = serializers.CharField(allow_blank=True, required=False)
     canonical_metadata_hash = serializers.CharField(allow_blank=True, required=False)
     publication_drift = serializers.BooleanField(required=False)
