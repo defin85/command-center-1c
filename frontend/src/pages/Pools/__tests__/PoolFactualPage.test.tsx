@@ -456,6 +456,12 @@ describe('PoolFactualPage', () => {
     expect(screen.getByText('Overall state')).toBeInTheDocument()
     expect(screen.getByText('Pool movement')).toBeInTheDocument()
     expect(screen.getByText('Run-linked settlement handoff')).toBeInTheDocument()
+    expect(
+      screen.getByText('Overall state').compareDocumentPosition(screen.getByText('Pool movement')) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    expect(
+      screen.getByText('Pool movement').compareDocumentPosition(screen.getByText('Run-linked settlement handoff')) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
     expect(screen.getAllByText('Needs attention').length).toBeGreaterThan(0)
     expect(screen.getAllByText('170.00').length).toBeGreaterThan(0)
     expect(screen.getAllByText('115.00').length).toBeGreaterThan(0)
@@ -495,6 +501,81 @@ describe('PoolFactualPage', () => {
     expect(
       screen.queryAllByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.').length
     ).toBeGreaterThan(0)
+  })
+
+  it('prioritizes freshness warnings over review counters in compact and detail verdict copy', async () => {
+    const warningSummary = {
+      ...buildWorkspace().summary,
+      backlog_total: 3,
+      freshness_state: 'stale',
+      attention_required_total: 4,
+      pending_review_total: 5,
+    }
+    mockListPoolFactualOverview.mockResolvedValue([
+      buildOverviewItem({
+        summary: warningSummary,
+      }),
+    ])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
+      summary: warningSummary,
+    }))
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
+
+    const overviewButton = await screen.findByRole('button', { name: 'Open factual workspace for Pool Alpha' })
+    await screen.findByText('Overall state')
+
+    expect(within(overviewButton).getByText('Data is stale')).toBeInTheDocument()
+    expect(within(overviewButton).queryByText('4 attention required')).not.toBeInTheDocument()
+    expect(screen.getByText('The factual read model is stale for the selected quarter.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open freshness details' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Open manual review queue' })).not.toBeInTheDocument()
+  })
+
+  it('renders explicit zero-incoming copy instead of a completion ratio', async () => {
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem({
+      summary: {
+        ...buildWorkspace().summary,
+        incoming_amount: '0.00',
+        outgoing_amount: '0.00',
+        open_balance: '0.00',
+      },
+    })])
+    mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
+      summary: {
+        ...buildWorkspace().summary,
+        incoming_amount: '0.00',
+        outgoing_amount: '0.00',
+        open_balance: '0.00',
+      },
+    }))
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
+
+    await screen.findByText('Pool movement')
+    expect(screen.getByText('No incoming volume was recorded for this quarter.')).toBeInTheDocument()
+    expect(screen.queryByText(/Outgoing share /)).not.toBeInTheDocument()
+  })
+
+  it('treats workspace load failures as a critical state and offers a retry path', async () => {
+    const user = userEvent.setup()
+    mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
+    mockGetPoolFactualWorkspace
+      .mockRejectedValueOnce(new Error('workspace failed'))
+      .mockResolvedValueOnce(buildWorkspace())
+
+    renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Critical issue').length).toBeGreaterThan(0)
+    })
+    expect(screen.getByText('Failed to load factual workspace data.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry workspace load' }))
+
+    await waitFor(() => {
+      expect(mockGetPoolFactualWorkspace).toHaveBeenCalledTimes(2)
+    })
+    await screen.findByText('receipt-q1')
   })
 
   it('polls the factual workspace on the default 120-second interval', async () => {

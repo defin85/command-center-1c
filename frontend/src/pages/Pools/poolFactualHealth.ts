@@ -1,32 +1,69 @@
 import type { PoolFactualSummary } from '../../api/intercompanyPools'
 
 export type PoolFactualVerdict = 'critical' | 'warning' | 'healthy' | 'unknown'
+export type PoolFactualPrioritySignal =
+  | 'source_unavailable'
+  | 'sync_failed'
+  | 'checkpoint_failed'
+  | 'stale'
+  | 'backlog'
+  | 'attention_required'
+  | 'pending_review'
+  | 'healthy'
+  | 'unsynced'
+  | 'unknown'
 
-export const resolvePoolFactualVerdict = (
+export const resolvePoolFactualPrioritySignal = (
   summary: PoolFactualSummary | null | undefined
-): PoolFactualVerdict => {
+): PoolFactualPrioritySignal => {
   if (!summary) {
     return 'unknown'
   }
-  if (
-    summary.source_availability !== 'available'
-    || summary.sync_status === 'failed'
-    || summary.checkpoints_failed > 0
-  ) {
-    return 'critical'
+  if (summary.source_availability !== 'available') {
+    return 'source_unavailable'
   }
-  if (
-    summary.freshness_state === 'stale'
-    || summary.backlog_total > 0
-    || summary.attention_required_total > 0
-    || summary.pending_review_total > 0
-  ) {
-    return 'warning'
+  if (summary.sync_status === 'failed') {
+    return 'sync_failed'
+  }
+  if (summary.checkpoints_failed > 0) {
+    return 'checkpoint_failed'
+  }
+  if (summary.freshness_state === 'stale') {
+    return 'stale'
+  }
+  if (summary.backlog_total > 0) {
+    return 'backlog'
+  }
+  if (summary.attention_required_total > 0) {
+    return 'attention_required'
+  }
+  if (summary.pending_review_total > 0) {
+    return 'pending_review'
   }
   if (summary.last_synced_at) {
     return 'healthy'
   }
-  return 'unknown'
+  return 'unsynced'
+}
+
+export const resolvePoolFactualVerdict = (
+  summary: PoolFactualSummary | null | undefined
+): PoolFactualVerdict => {
+  switch (resolvePoolFactualPrioritySignal(summary)) {
+    case 'source_unavailable':
+    case 'sync_failed':
+    case 'checkpoint_failed':
+      return 'critical'
+    case 'stale':
+    case 'backlog':
+    case 'attention_required':
+    case 'pending_review':
+      return 'warning'
+    case 'healthy':
+      return 'healthy'
+    default:
+      return 'unknown'
+  }
 }
 
 export const getPoolFactualVerdictPriority = (
@@ -73,78 +110,73 @@ export const getPoolFactualVerdictLabel = (verdict: PoolFactualVerdict) => {
 export const getPoolFactualPrimaryReason = (
   summary: PoolFactualSummary | null | undefined
 ): string => {
-  if (!summary) {
-    return 'Factual state will appear after the workspace payload loads.'
+  switch (resolvePoolFactualPrioritySignal(summary)) {
+    case 'unknown':
+      return 'Factual state will appear after the workspace payload loads.'
+    case 'source_unavailable':
+      return summary?.source_availability_detail || `Source availability is ${summary?.source_availability}.`
+    case 'sync_failed':
+      return 'The factual sync lane failed for the selected quarter.'
+    case 'checkpoint_failed':
+      return `${summary?.checkpoints_failed ?? 0} failed checkpoint(s) are blocking a healthy factual projection.`
+    case 'stale':
+      return 'The factual read model is stale for the selected quarter.'
+    case 'backlog':
+      return `${summary?.backlog_total ?? 0} overdue checkpoint(s) are keeping the read model behind.`
+    case 'attention_required':
+      return `${summary?.attention_required_total ?? 0} settlement or review item(s) require manual intervention.`
+    case 'pending_review':
+      return `${summary?.pending_review_total ?? 0} review item(s) are still waiting in the queue.`
+    case 'healthy':
+      return 'Data is fresh and no manual intervention is currently required.'
+    default:
+      return 'No successful sync has been recorded for this workspace yet.'
   }
-  if (summary.source_availability !== 'available') {
-    return summary.source_availability_detail || `Source availability is ${summary.source_availability}.`
-  }
-  if (summary.checkpoints_failed > 0 || summary.sync_status === 'failed') {
-    return `${summary.checkpoints_failed} failed checkpoint(s) are blocking a healthy factual projection.`
-  }
-  if (summary.attention_required_total > 0) {
-    return `${summary.attention_required_total} settlement or review item(s) require manual intervention.`
-  }
-  if (summary.pending_review_total > 0) {
-    return `${summary.pending_review_total} review item(s) are still waiting in the queue.`
-  }
-  if (summary.backlog_total > 0) {
-    return `${summary.backlog_total} overdue checkpoint(s) are keeping the read model behind.`
-  }
-  if (summary.freshness_state === 'stale') {
-    return 'The factual read model is stale for the selected quarter.'
-  }
-  if (summary.last_synced_at) {
-    return 'Data is fresh and no manual intervention is currently required.'
-  }
-  return 'No successful sync has been recorded for this workspace yet.'
 }
 
 export const getPoolFactualCompactSummary = (
   summary: PoolFactualSummary | null | undefined
 ): string => {
-  const verdict = resolvePoolFactualVerdict(summary)
-  if (!summary) {
-    return 'Awaiting factual data'
-  }
-  if (verdict === 'critical') {
-    if (summary.source_availability !== 'available') {
+  switch (resolvePoolFactualPrioritySignal(summary)) {
+    case 'source_unavailable':
       return 'Source unavailable'
-    }
-    return `${summary.checkpoints_failed} failed sync checkpoint(s)`
+    case 'sync_failed':
+      return 'Sync failed'
+    case 'checkpoint_failed':
+      return `${summary?.checkpoints_failed ?? 0} failed sync checkpoint(s)`
+    case 'stale':
+      return 'Data is stale'
+    case 'backlog':
+      return `${summary?.backlog_total ?? 0} overdue checkpoint(s)`
+    case 'attention_required':
+      return `${summary?.attention_required_total ?? 0} attention required`
+    case 'pending_review':
+      return `${summary?.pending_review_total ?? 0} pending review item(s)`
+    case 'healthy':
+      return 'Data is fresh'
+    default:
+      return 'Awaiting factual data'
   }
-  if (verdict === 'warning') {
-    if (summary.attention_required_total > 0) {
-      return `${summary.attention_required_total} attention required`
-    }
-    if (summary.pending_review_total > 0) {
-      return `${summary.pending_review_total} pending review item(s)`
-    }
-    if (summary.backlog_total > 0) {
-      return `${summary.backlog_total} overdue checkpoint(s)`
-    }
-    return 'Data is stale'
-  }
-  if (verdict === 'healthy') {
-    return 'Data is fresh'
-  }
-  return 'Awaiting factual data'
 }
 
 export const getPoolFactualPrimaryActionLabel = (
   summary: PoolFactualSummary | null | undefined
 ): string => {
-  if (!summary) {
-    return 'Wait for factual data'
+  switch (resolvePoolFactualPrioritySignal(summary)) {
+    case 'source_unavailable':
+    case 'sync_failed':
+    case 'checkpoint_failed':
+      return 'Open sync diagnostics'
+    case 'stale':
+    case 'backlog':
+      return 'Open freshness details'
+    case 'attention_required':
+    case 'pending_review':
+      return 'Open manual review queue'
+    case 'healthy':
+    case 'unsynced':
+      return 'Open settlement handoff'
+    default:
+      return 'Wait for factual data'
   }
-  if (summary.source_availability !== 'available' || summary.checkpoints_failed > 0 || summary.sync_status === 'failed') {
-    return 'Open sync diagnostics'
-  }
-  if (summary.attention_required_total > 0 || summary.pending_review_total > 0) {
-    return 'Open manual review queue'
-  }
-  if (summary.backlog_total > 0 || summary.freshness_state === 'stale') {
-    return 'Open freshness details'
-  }
-  return 'Open settlement handoff'
 }

@@ -4429,11 +4429,38 @@ test('UI platform: /pools/factual restores compact selection and detail workspac
   await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Open factual workspace for Main Pool' })).toBeVisible()
   await expect(page.getByText('Factual operator workspace')).toBeVisible()
-  await expect(page.getByText('Overall state')).toBeVisible()
-  await expect(page.getByText('Pool movement')).toBeVisible()
+  const overallState = page.getByText('Overall state')
+  const poolMovement = page.getByText('Pool movement')
+  const runLinkedHandoff = page.getByText('Run-linked settlement handoff')
+  const syncDiagnostics = page.getByText('Sync diagnostics')
+  const executionControls = page.getByText('Execution controls stay in Pool Runs')
+
+  await expect(overallState).toBeVisible()
+  await expect(poolMovement).toBeVisible()
+  await expect(runLinkedHandoff).toBeVisible()
   await expect(page.getByText('Manual review queue', { exact: true }).last()).toBeVisible()
   await expect(page.getByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.')).toBeVisible()
   await expect(page.getByText('focus=settlement')).toBeVisible()
+
+  const [overallStateBox, poolMovementBox, runLinkedHandoffBox, syncDiagnosticsBox, executionControlsBox] = await Promise.all([
+    overallState.boundingBox(),
+    poolMovement.boundingBox(),
+    runLinkedHandoff.boundingBox(),
+    syncDiagnostics.boundingBox(),
+    executionControls.boundingBox(),
+  ])
+
+  if (!overallStateBox || !poolMovementBox || !runLinkedHandoffBox || !syncDiagnosticsBox || !executionControlsBox) {
+    throw new Error('Expected factual workspace sections to have visible bounding boxes.')
+  }
+
+  expect(overallStateBox.y).toBeLessThan(syncDiagnosticsBox.y)
+  expect(overallStateBox.y).toBeLessThan(poolMovementBox.y)
+  expect(poolMovementBox.y).toBeLessThan(syncDiagnosticsBox.y)
+  expect(poolMovementBox.y).toBeLessThan(runLinkedHandoffBox.y)
+  expect(runLinkedHandoffBox.y).toBeLessThan(syncDiagnosticsBox.y)
+  expect(overallStateBox.y).toBeLessThan(executionControlsBox.y)
+
   await expectNoHorizontalOverflow(page)
 })
 

@@ -232,24 +232,6 @@ export function PoolFactualWorkspacePage() {
         />
       )}
     >
-      <Alert
-        type="info"
-        showIcon
-        message="Execution controls stay in Pool Runs"
-        description={(
-          <Space direction="vertical" size={8}>
-            <Text>
-              This route answers whether the selected pool is healthy, how much money came in and went out, and where
-              manual follow-up is still required. Create-run, retry, and approvals remain in Pool Runs.
-            </Text>
-            <Space wrap>
-              <RouteButton to={runWorkspaceHref}>Open Pool Runs</RouteButton>
-              {runFromUrl ? <Text type="secondary">Linked run: {formatShortId(runFromUrl)}</Text> : null}
-            </Space>
-          </Space>
-        )}
-      />
-
       <MasterDetailShell
         detailOpen={Boolean(selectedPoolId) && isDetailOpen}
         onCloseDetail={handleCloseDetail}
@@ -340,6 +322,24 @@ export function PoolFactualWorkspacePage() {
               />
             ) : null}
           </EntityDetails>
+        )}
+      />
+
+      <Alert
+        type="info"
+        showIcon
+        message="Execution controls stay in Pool Runs"
+        description={(
+          <Space direction="vertical" size={8}>
+            <Text>
+              This route answers whether the selected pool is healthy, how much money came in and went out, and where
+              manual follow-up is still required. Create-run, retry, and approvals remain in Pool Runs.
+            </Text>
+            <Space wrap>
+              <RouteButton to={runWorkspaceHref}>Open Pool Runs</RouteButton>
+              {runFromUrl ? <Text type="secondary">Linked run: {formatShortId(runFromUrl)}</Text> : null}
+            </Space>
+          </Space>
         )}
       />
     </WorkspacePage>

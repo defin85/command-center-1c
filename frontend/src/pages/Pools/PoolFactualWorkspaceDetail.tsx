@@ -24,7 +24,9 @@ import {
   type PoolFactualReviewRow,
 } from './poolFactualReviewQueue'
 import {
+  getPoolFactualPrimaryActionLabel,
   getPoolFactualPrimaryReason,
+  resolvePoolFactualPrioritySignal,
   getPoolFactualVerdictLabel,
   getPoolFactualVerdictTone,
   resolvePoolFactualVerdict,
@@ -320,33 +322,38 @@ const getOverallStateAlertType = (workspaceError: string | null, summary: PoolFa
 }
 
 const resolvePrimaryAction = (summary: PoolFactualSummary | null | undefined) => {
-  if (!summary) {
-    return {
-      label: 'Wait for factual data',
-      targetId: null,
-    }
-  }
-  if (summary.source_availability !== 'available' || summary.checkpoints_failed > 0 || summary.sync_status === 'failed') {
-    return {
-      label: 'Open sync diagnostics',
-      targetId: 'pool-factual-sync-diagnostics',
-    }
-  }
-  if (summary.attention_required_total > 0 || summary.pending_review_total > 0) {
-    return {
-      label: 'Open manual review queue',
-      targetId: 'pool-factual-review-queue',
-    }
-  }
-  if (summary.backlog_total > 0 || summary.freshness_state === 'stale') {
-    return {
-      label: 'Open freshness details',
-      targetId: 'pool-factual-freshness',
-    }
-  }
-  return {
-    label: 'Open settlement handoff',
-    targetId: 'pool-factual-settlement-handoff',
+  const label = getPoolFactualPrimaryActionLabel(summary)
+  switch (resolvePoolFactualPrioritySignal(summary)) {
+    case 'source_unavailable':
+    case 'sync_failed':
+    case 'checkpoint_failed':
+      return {
+        label,
+        targetId: 'pool-factual-sync-diagnostics',
+      }
+    case 'stale':
+    case 'backlog':
+      return {
+        label,
+        targetId: 'pool-factual-freshness',
+      }
+    case 'attention_required':
+    case 'pending_review':
+      return {
+        label,
+        targetId: 'pool-factual-review-queue',
+      }
+    case 'healthy':
+    case 'unsynced':
+      return {
+        label,
+        targetId: 'pool-factual-settlement-handoff',
+      }
+    default:
+      return {
+        label,
+        targetId: null,
+      }
   }
 }
 
@@ -643,11 +650,12 @@ export function PoolFactualWorkspaceDetail({
   ]
 
   const summary = workspace?.summary ?? null
-  const overallVerdict = resolvePoolFactualVerdict(summary)
+  const overallVerdict = workspaceError ? 'critical' : resolvePoolFactualVerdict(summary)
   const overallTone = getPoolFactualVerdictTone(overallVerdict)
-  const overallLabel = workspaceError ? 'Workspace unavailable' : getPoolFactualVerdictLabel(overallVerdict)
+  const overallLabel = getPoolFactualVerdictLabel(overallVerdict)
   const overallReason = workspaceError ?? getPoolFactualPrimaryReason(summary)
   const primaryAction = resolvePrimaryAction(summary)
+  const showRunLinkedSettlementHandoff = Boolean(runId && focus === 'settlement')
   const incomingAmount = parseAmount(summary?.incoming_amount)
   const outgoingAmount = parseAmount(summary?.outgoing_amount)
   const openBalanceAmount = parseAmount(summary?.open_balance)
@@ -669,6 +677,44 @@ export function PoolFactualWorkspaceDetail({
       behavior: 'smooth',
       block: 'start',
     })
+  }
+
+  const reloadWorkspace = async () => {
+    setLoadingWorkspace(true)
+    setWorkspaceError(null)
+    setRefreshError(null)
+    setReviewActionError(null)
+
+    try {
+      const data = await getPoolFactualWorkspace({
+        poolId: selectedPool.id,
+        quarterStart: quarterStart ?? undefined,
+      })
+      setWorkspace(data)
+      setSyncCheckpoints(data.checkpoints ?? [])
+      setRefreshState((current) => {
+        const next = buildRefreshStateFromSummary(
+          data.summary,
+          current?.requestedAt ?? null,
+        )
+        return next ?? current
+      })
+    } catch (error) {
+      const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
+      setWorkspaceError(resolved.message)
+      setSyncCheckpoints([])
+      setWorkspace(null)
+    } finally {
+      setLoadingWorkspace(false)
+    }
+  }
+
+  const handlePrimaryAction = () => {
+    if (workspaceError) {
+      void reloadWorkspace()
+      return
+    }
+    jumpToSection(primaryAction.targetId)
   }
 
   useEffect(() => {
@@ -725,49 +771,15 @@ export function PoolFactualWorkspaceDetail({
               )}
               <Button
                 type="primary"
-                disabled={!primaryAction.targetId}
-                onClick={() => {
-                  jumpToSection(primaryAction.targetId)
-                }}
+                disabled={!workspaceError && !primaryAction.targetId}
+                onClick={handlePrimaryAction}
               >
-                {primaryAction.label}
+                {workspaceError ? 'Retry workspace load' : primaryAction.label}
               </Button>
             </Space>
           </Space>
         )}
       />
-
-      {runId && focus === 'settlement' ? (
-        <div
-          style={{
-            border: '1px solid #d9f7be',
-            borderRadius: 12,
-            padding: 16,
-            background: '#f6ffed',
-          }}
-        >
-          <Space direction="vertical" size={8}>
-            <Space wrap>
-              <Text strong>Run-linked settlement handoff</Text>
-              <StatusBadge status="active" label="focus=settlement" />
-            </Space>
-            <Text type="secondary">
-              {linkedSettlement
-                ? `Matched run-linked settlement ${linkedSettlement.source_reference || formatShortId(linkedSettlement.id)} is ${linkedSettlement.settlement?.status ?? 'pending'} with open balance ${linkedSettlement.settlement?.open_balance ?? '-'}.`
-                : 'This deep link keeps the operator in factual dashboard context while starting from the linked run report and its batch settlement handoff.'}
-            </Text>
-          </Space>
-        </div>
-      ) : null}
-
-      {refreshError ? (
-        <Alert
-          type="error"
-          showIcon
-          message="Factual refresh request failed"
-          description={refreshError}
-        />
-      ) : null}
 
       <div
         style={{
@@ -889,6 +901,15 @@ export function PoolFactualWorkspaceDetail({
         </Space>
       </div>
 
+      {refreshError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Factual refresh request failed"
+          description={refreshError}
+        />
+      ) : null}
+
       <div
         style={{
           display: 'grid',
@@ -896,6 +917,36 @@ export function PoolFactualWorkspaceDetail({
           gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         }}
       >
+        {showRunLinkedSettlementHandoff ? (
+          <div
+            style={{
+              border: '1px solid #d9f7be',
+              borderRadius: 12,
+              padding: 16,
+              background: '#f6ffed',
+            }}
+          >
+            <Text strong>Run-linked settlement handoff</Text>
+            <div style={{ marginTop: 12 }}>
+              <Space direction="vertical" size={8}>
+                <Space wrap>
+                  <StatusBadge status="active" label="focus=settlement" />
+                  {linkedSettlement?.settlement?.status ? (
+                    <StatusBadge
+                      status={getSettlementStatusTone(linkedSettlement.settlement.status)}
+                      label={linkedSettlement.settlement.status}
+                    />
+                  ) : null}
+                </Space>
+                <Text type="secondary">
+                  {linkedSettlement
+                    ? `Matched run-linked settlement ${linkedSettlement.source_reference || formatShortId(linkedSettlement.id)} is ${linkedSettlement.settlement?.status ?? 'pending'} with open balance ${linkedSettlement.settlement?.open_balance ?? '-'}.`
+                    : 'This deep link keeps the operator in factual dashboard context while starting from the linked run report and its batch settlement handoff.'}
+                </Text>
+              </Space>
+            </div>
+          </div>
+        ) : null}
         <div
           id="pool-factual-freshness"
           style={{
