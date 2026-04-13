@@ -8,8 +8,11 @@ properties:
     $ref: ./EffectiveAccessResponse.yaml
   capabilities:
     $ref: ./ShellCapabilities.yaml
+  i18n:
+    $ref: ./SystemBootstrapI18nSummary.yaml
 required:
   - access
   - capabilities
+  - i18n
   - me
   - tenant_context

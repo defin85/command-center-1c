@@ -30,6 +30,7 @@ import {
 import { SystemOverview } from '../../components/SystemOverview'
 import { ServiceStatusCard } from '../../components/ServiceStatusCard'
 import { KNOWN_SERVICES } from '../../constants/services'
+import { useCommonTranslation, useLocaleFormatters, useSystemStatusTranslation } from '../../i18n'
 
 const api = getV2()
 const POLL_INTERVAL_MS = 15000
@@ -76,10 +77,6 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
   boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
 })
 
-const formatTimestamp = (value: string | null | undefined) => (
-  value ? new Date(value).toLocaleString('ru-RU') : '—'
-)
-
 const describeRequestError = (error: unknown, fallback: string): string => {
   if (!axios.isAxiosError(error)) {
     return fallback
@@ -102,17 +99,6 @@ const runtimeStatusBadge = (status: string | null | undefined) => {
   return 'unknown'
 }
 
-const formatActionType = (actionType: RuntimeActionRun['action_type']) => {
-  if (actionType === 'trigger_now') return 'Trigger now'
-  if (actionType === 'tail_logs') return 'Refresh logs excerpt'
-  if (actionType === 'restart') return 'Restart runtime'
-  return 'Run probe'
-}
-
-const formatSupportedActions = (actions: RuntimeInstance['supported_actions']) => (
-  actions.map((action) => formatActionType(action)).join(', ') || '—'
-)
-
 const normalizeRouteServiceKey = (value: string | null | undefined) => (
   String(value || '')
     .trim()
@@ -124,7 +110,65 @@ export const SystemStatus = () => {
   const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
+  const { t: tCommon } = useCommonTranslation()
+  const { t: tSystemStatus, ready: systemStatusReady } = useSystemStatusTranslation()
+  const formatters = useLocaleFormatters()
   const { canManageRuntimeControls, isStaff } = useAuthz()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
+  const systemActorLabel = tCommon(($) => $.values.system)
+
+  const formatTimestamp = useCallback((value: string | null | undefined) => (
+    formatters.dateTime(value, { fallback: unavailableShort })
+  ), [formatters, unavailableShort])
+
+  const formatStatusLabel = useCallback((status: string | null | undefined) => {
+    if (!status) {
+      return tSystemStatus(($) => $.status.unknown)
+    }
+
+    switch (status) {
+      case 'online':
+        return tSystemStatus(($) => $.status.online)
+      case 'offline':
+        return tSystemStatus(($) => $.status.offline)
+      case 'degraded':
+        return tSystemStatus(($) => $.status.degraded)
+      case 'success':
+        return tSystemStatus(($) => $.status.success)
+      case 'running':
+        return tSystemStatus(($) => $.status.running)
+      case 'failed':
+        return tSystemStatus(($) => $.status.failed)
+      case 'enabled':
+        return tSystemStatus(($) => $.status.enabled)
+      case 'disabled':
+        return tSystemStatus(($) => $.status.disabled)
+      case 'accepted':
+        return tSystemStatus(($) => $.status.accepted)
+      case 'skipped':
+        return tSystemStatus(($) => $.status.skipped)
+      default:
+        return status
+    }
+  }, [tSystemStatus])
+
+  const formatActionType = useCallback((actionType: RuntimeActionRun['action_type']) => {
+    switch (actionType) {
+      case 'trigger_now':
+        return tSystemStatus(($) => $.actionType.trigger_now)
+      case 'tail_logs':
+        return tSystemStatus(($) => $.actionType.tail_logs)
+      case 'restart':
+        return tSystemStatus(($) => $.actionType.restart)
+      case 'probe':
+      default:
+        return tSystemStatus(($) => $.actionType.probe)
+    }
+  }, [tSystemStatus])
+
+  const formatSupportedActions = useCallback((actions: RuntimeInstance['supported_actions']) => (
+    actions.map((action) => formatActionType(action)).join(', ') || unavailableShort
+  ), [formatActionType, unavailableShort])
 
   const [health, setHealth] = useState<SystemHealthResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -196,26 +240,27 @@ export const SystemStatus = () => {
         const cooldownMs = Number.isFinite(retryAfterSeconds) ? retryAfterSeconds * 1000 : 30_000
         pollCooldownUntilMsRef.current = Date.now() + cooldownMs
 
-        setError(`Слишком много запросов (429). Повтор через ~${Math.ceil(cooldownMs / 1000)}с`)
+        const cooldownSeconds = Math.ceil(cooldownMs / 1000)
+        setError(tSystemStatus(($) => $.messages.rateLimited, { seconds: String(cooldownSeconds) }))
 
         const now = Date.now()
         if (!opts?.silent && now - lastRateLimitNoticeAtMsRef.current > 10_000) {
           lastRateLimitNoticeAtMsRef.current = now
-          message.warning('API Gateway returned 429; auto-refresh is slowing down')
+          message.warning(tSystemStatus(($) => $.messages.rateLimitedToast))
         }
         return
       }
 
-      setError('Failed to load system status')
+      setError(tSystemStatus(($) => $.messages.failedLoadSystemStatus))
       if (!opts?.silent) {
-        message.error('Failed to load system status')
+        message.error(tSystemStatus(($) => $.messages.failedLoadSystemStatus))
       }
     } finally {
       setLoading(false)
       setRefreshing(false)
       hasLoadedOnceRef.current = true
     }
-  }, [message])
+  }, [message, tSystemStatus])
 
   const fetchRuntimeCatalog = useCallback(async (opts?: { silent?: boolean }) => {
     if (!canManageRuntimeControls) {
@@ -230,13 +275,13 @@ export const SystemStatus = () => {
       const runtimes = await getRuntimeControlCatalog()
       setRuntimeCatalog(runtimes)
     } catch (requestError) {
-      setRuntimeError(describeRequestError(requestError, 'Не удалось загрузить runtime control catalog.'))
+      setRuntimeError(describeRequestError(requestError, tSystemStatus(($) => $.messages.failedLoadRuntimeCatalog)))
     } finally {
       if (!opts?.silent) {
         setRuntimeLoading(false)
       }
     }
-  }, [canManageRuntimeControls])
+  }, [canManageRuntimeControls, tSystemStatus])
 
   const fetchRuntimeDetail = useCallback(async (runtimeId: string, opts?: { silent?: boolean }) => {
     if (!canManageRuntimeControls) {
@@ -254,13 +299,13 @@ export const SystemStatus = () => {
         item.runtime_id === runtime.runtime_id ? { ...item, ...runtime } : item
       )))
     } catch (requestError) {
-      setRuntimeError(describeRequestError(requestError, 'Не удалось загрузить runtime detail.'))
+      setRuntimeError(describeRequestError(requestError, tSystemStatus(($) => $.messages.failedLoadRuntimeDetail)))
     } finally {
       if (!opts?.silent) {
         setRuntimeLoading(false)
       }
     }
-  }, [canManageRuntimeControls])
+  }, [canManageRuntimeControls, tSystemStatus])
 
   const scheduleRuntimeDetailRefresh = useCallback((runtimeId: string) => {
     if (typeof window === 'undefined') {
@@ -363,13 +408,15 @@ export const SystemStatus = () => {
   }, [fetchRuntimeDetail, pollMode, selectedRuntimeSummary?.runtime_id])
 
   const detailError = selectedServiceName && !selectedService && !loading
-    ? 'Selected diagnostics context is outside the current system status snapshot.'
+    ? tSystemStatus(($) => $.messages.diagnosticsOutsideSnapshot)
     : null
   const selectedServiceRouteKey = selectedRuntimeSummary?.runtime_name ?? selectedService?.name ?? null
 
   const headerSubtitle = [
-    pollMode === 'paused' ? 'Auto-refresh paused.' : `Auto-refresh every ${POLL_INTERVAL_MS / 1000}s.`,
-    `Last update: ${formatTimestamp(health?.timestamp)}`,
+    pollMode === 'paused'
+      ? tSystemStatus(($) => $.header.autoRefreshPaused)
+      : tSystemStatus(($) => $.header.autoRefreshEvery, { seconds: String(POLL_INTERVAL_MS / 1000) }),
+    tSystemStatus(($) => $.header.lastUpdate, { value: formatTimestamp(health?.timestamp) }),
   ].join(' ')
 
   const syncRuntimeDesiredState = useCallback((runtimeId: string, desiredState: RuntimeDesiredState) => {
@@ -416,17 +463,19 @@ export const SystemStatus = () => {
           }
           : current
       ))
-      message.success(`${formatActionType(actionType)} accepted`)
+      message.success(tSystemStatus(($) => $.messages.runtimeActionAccepted, {
+        action: formatActionType(actionType),
+      }))
       void fetchRuntimeDetail(selectedRuntimeSummary.runtime_id, { silent: true })
       scheduleRuntimeDetailRefresh(selectedRuntimeSummary.runtime_id)
     } catch (requestError) {
-      const nextError = describeRequestError(requestError, 'Runtime action failed to start.')
+      const nextError = describeRequestError(requestError, tSystemStatus(($) => $.messages.failedStartRuntimeAction))
       setRuntimeError(nextError)
       message.error(nextError)
     } finally {
       setRuntimeMutating(null)
     }
-  }, [fetchRuntimeDetail, message, scheduleRuntimeDetailRefresh, selectedRuntimeSummary, updateSearchParams])
+  }, [fetchRuntimeDetail, formatActionType, message, scheduleRuntimeDetailRefresh, selectedRuntimeSummary, tSystemStatus, updateSearchParams])
 
   const handleSchedulerToggle = useCallback(async (nextEnabled: boolean) => {
     if (!selectedRuntimeSummary) {
@@ -439,15 +488,15 @@ export const SystemStatus = () => {
         scheduler_enabled: nextEnabled,
       })
       syncRuntimeDesiredState(selectedRuntimeSummary.runtime_id, desiredState)
-      message.success('Scheduler desired state updated')
+      message.success(tSystemStatus(($) => $.messages.schedulerStateUpdated))
     } catch (requestError) {
-      const nextError = describeRequestError(requestError, 'Не удалось обновить scheduler desired state.')
+      const nextError = describeRequestError(requestError, tSystemStatus(($) => $.messages.failedUpdateSchedulerState))
       setRuntimeError(nextError)
       message.error(nextError)
     } finally {
       setRuntimeMutating(null)
     }
-  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState])
+  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState, tSystemStatus])
 
   const handleSchedulerJobToggle = useCallback(async (jobName: string, nextEnabled: boolean) => {
     if (!selectedRuntimeSummary) {
@@ -461,15 +510,15 @@ export const SystemStatus = () => {
         jobs: [{ job_name: jobName, enabled: nextEnabled }],
       })
       syncRuntimeDesiredState(selectedRuntimeSummary.runtime_id, desiredState)
-      message.success('Scheduler job desired state updated')
+      message.success(tSystemStatus(($) => $.messages.schedulerJobStateUpdated))
     } catch (requestError) {
-      const nextError = describeRequestError(requestError, 'Не удалось обновить desired state job.')
+      const nextError = describeRequestError(requestError, tSystemStatus(($) => $.messages.failedUpdateSchedulerJobState))
       setRuntimeError(nextError)
       message.error(nextError)
     } finally {
       setRuntimeMutating(null)
     }
-  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState, updateSearchParams])
+  }, [message, selectedRuntimeSummary, syncRuntimeDesiredState, tSystemStatus, updateSearchParams])
 
   const schedulerJobs = useMemo(
     () => selectedRuntime?.desired_state?.jobs ?? [],
@@ -494,7 +543,7 @@ export const SystemStatus = () => {
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <ServiceStatusCard service={selectedService} />
       <JsonBlock
-        title="Service details"
+        title={tSystemStatus(($) => $.sections.serviceDetails)}
         value={selectedService.details ?? {}}
         dataTestId="system-status-service-details"
       />
@@ -504,33 +553,38 @@ export const SystemStatus = () => {
             bordered
             column={1}
             size="small"
-            title="Runtime control summary"
+            title={tSystemStatus(($) => $.sections.runtimeControlSummary)}
           >
-            <Descriptions.Item label="Runtime target">{selectedRuntime.display_name}</Descriptions.Item>
-            <Descriptions.Item label="Provider">{`${selectedRuntime.provider.key} @ ${selectedRuntime.provider.host}`}</Descriptions.Item>
-            <Descriptions.Item label="Observed runtime state">
+            <Descriptions.Item label={tSystemStatus(($) => $.labels.runtimeTarget)}>{selectedRuntime.display_name}</Descriptions.Item>
+            <Descriptions.Item label={tSystemStatus(($) => $.labels.provider)}>{`${selectedRuntime.provider.key} @ ${selectedRuntime.provider.host}`}</Descriptions.Item>
+            <Descriptions.Item label={tSystemStatus(($) => $.labels.observedRuntimeState)}>
               <Space wrap size={[8, 8]}>
                 <StatusBadge
                   status={runtimeStatusBadge(selectedRuntime.observed_state.status)}
-                  label={selectedRuntime.observed_state.status}
+                  label={formatStatusLabel(selectedRuntime.observed_state.status)}
                 />
                 <Text type="secondary">
-                  proc={selectedRuntime.observed_state.process_status}, http={selectedRuntime.observed_state.http_status}
+                  {tSystemStatus(($) => $.labels.procHttp, {
+                    proc: selectedRuntime.observed_state.process_status,
+                    http: selectedRuntime.observed_state.http_status,
+                  })}
                 </Text>
               </Space>
             </Descriptions.Item>
-            <Descriptions.Item label="Supported actions">
+            <Descriptions.Item label={tSystemStatus(($) => $.labels.supportedActions)}>
               {formatSupportedActions(selectedRuntime.supported_actions)}
             </Descriptions.Item>
-            <Descriptions.Item label="Logs surface">
-              {selectedRuntime.logs_available ? 'available' : 'unavailable'}
+            <Descriptions.Item label={tSystemStatus(($) => $.labels.logsSurface)}>
+              {selectedRuntime.logs_available
+                ? tSystemStatus(($) => $.status.available)
+                : tSystemStatus(($) => $.status.unavailable)}
             </Descriptions.Item>
           </Descriptions>
         ) : (
           <Alert
             type="info"
             showIcon
-            message="Runtime controls are unavailable for this service."
+            message={tSystemStatus(($) => $.alerts.runtimeControlsUnavailable)}
           />
         )
       ) : null}
@@ -542,7 +596,7 @@ export const SystemStatus = () => {
       <Alert
         type="info"
         showIcon
-        message="Runtime actions execute asynchronously. Recent actions refresh automatically while polling is enabled."
+        message={tSystemStatus(($) => $.alerts.asyncActionsInfo)}
       />
       <Space wrap>
         <Button
@@ -551,7 +605,7 @@ export const SystemStatus = () => {
           }}
           loading={runtimeMutating === 'probe'}
         >
-          Run probe
+          {tSystemStatus(($) => $.actions.runProbe)}
         </Button>
         <Button
           onClick={() => {
@@ -560,7 +614,7 @@ export const SystemStatus = () => {
           loading={runtimeMutating === 'tail_logs'}
           disabled={!selectedRuntime.logs_available}
         >
-          Refresh logs excerpt
+          {tSystemStatus(($) => $.actions.refreshLogs)}
         </Button>
         <Button
           danger
@@ -568,7 +622,7 @@ export const SystemStatus = () => {
           disabled={!selectedRuntime.supported_actions.includes('restart')}
           loading={runtimeMutating === 'restart'}
         >
-          Restart runtime
+          {tSystemStatus(($) => $.actions.restartRuntime)}
         </Button>
       </Space>
 
@@ -584,19 +638,21 @@ export const SystemStatus = () => {
               <Space direction="vertical" size={6} style={{ width: '100%' }}>
                 <Space wrap size={[8, 8]}>
                   <Text strong>{formatActionType(action.action_type)}</Text>
-                  <StatusBadge status={runtimeStatusBadge(action.status)} label={action.status} />
+                  <StatusBadge status={runtimeStatusBadge(action.status)} label={formatStatusLabel(action.status)} />
                   {action.target_job_name ? <Text code>{action.target_job_name}</Text> : null}
                 </Space>
                 <Space wrap size={[8, 8]}>
-                  <Text type="secondary">Requested: {formatTimestamp(action.requested_at)}</Text>
-                  <Text type="secondary">Finished: {formatTimestamp(action.finished_at)}</Text>
-                  <Text type="secondary">Actor: {action.requested_by_username || 'system'}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.requested, { value: formatTimestamp(action.requested_at) })}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.finished, { value: formatTimestamp(action.finished_at) })}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.actor, { value: action.requested_by_username || systemActorLabel })}</Text>
                   {action.scheduler_job_run_id != null ? (
-                    <Text type="secondary">Scheduler run: #{action.scheduler_job_run_id}</Text>
+                    <Text type="secondary">
+                      {tSystemStatus(($) => $.labels.schedulerRun, { value: String(action.scheduler_job_run_id) })}
+                    </Text>
                   ) : null}
                 </Space>
                 {action.reason ? (
-                  <Text type="secondary">Reason: {action.reason}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.reason, { value: action.reason })}</Text>
                 ) : null}
                 {action.result_excerpt ? (
                   <Paragraph style={{ marginBottom: 0 }}>
@@ -614,7 +670,7 @@ export const SystemStatus = () => {
         <Alert
           type="info"
           showIcon
-          message="No runtime actions recorded yet."
+          message={tSystemStatus(($) => $.empty.noRuntimeActions)}
         />
       )}
     </Space>
@@ -622,15 +678,15 @@ export const SystemStatus = () => {
     <Alert
       type="info"
       showIcon
-      message="Runtime controls are unavailable for this service."
+      message={tSystemStatus(($) => $.alerts.runtimeControlsUnavailable)}
     />
   )
 
   const schedulerTabContent = selectedRuntime?.scheduler_supported && selectedRuntime.desired_state ? (
-    <Space direction="vertical" size="large" style={{ width: '100%' }}>
-      <Space direction="vertical" size={4} style={{ width: '100%' }}>
-        <Space wrap size={[12, 12]} align="center">
-          <Text strong>Global scheduler enablement</Text>
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <Space wrap size={[12, 12]} align="center">
+            <Text strong>{tSystemStatus(($) => $.labels.globalSchedulerEnablement)}</Text>
           <Switch
             checked={selectedRuntime.desired_state.scheduler_enabled}
             loading={runtimeMutating === 'scheduler'}
@@ -640,17 +696,19 @@ export const SystemStatus = () => {
           />
           <StatusBadge
             status={runtimeStatusBadge(selectedRuntime.desired_state.scheduler_enabled ? 'enabled' : 'disabled')}
-            label={selectedRuntime.desired_state.scheduler_enabled ? 'enabled' : 'disabled'}
+            label={selectedRuntime.desired_state.scheduler_enabled
+              ? tSystemStatus(($) => $.status.enabled)
+              : tSystemStatus(($) => $.status.disabled)}
           />
         </Space>
         <Text type="secondary">
-          Enablement applies live. Cadence remains declarative and follows the controlled apply path.
+          {tSystemStatus(($) => $.labels.globalSchedulerDescription)}
         </Text>
       </Space>
 
       {isStaff ? (
         <RouteButton to="/settings/runtime?setting=runtime.scheduler.enabled">
-          Open runtime settings
+          {tSystemStatus(($) => $.actions.openRuntimeSettings)}
         </RouteButton>
       ) : null}
 
@@ -659,15 +717,16 @@ export const SystemStatus = () => {
           type="success"
           showIcon
           data-testid="system-status-selected-scheduler-job"
-          message={`Selected job: ${selectedSchedulerJob.display_name}`}
+          message={tSystemStatus(($) => $.alerts.selectedJob, { name: selectedSchedulerJob.display_name })}
           description={(
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Space direction="vertical" size={4}>
-                <Text type="secondary">Job key: {selectedSchedulerJob.job_name}</Text>
-                <Text type="secondary">Cadence: {selectedSchedulerJob.schedule}</Text>
+                <Text type="secondary">{tSystemStatus(($) => $.labels.jobKey, { value: selectedSchedulerJob.job_name })}</Text>
+                <Text type="secondary">{tSystemStatus(($) => $.labels.cadence, { value: selectedSchedulerJob.schedule })}</Text>
                 <Text type="secondary">
-                  Last run: {formatTimestamp(selectedSchedulerJob.latest_run_started_at)}
-                  {selectedSchedulerJob.latest_run_id != null ? ` (#${selectedSchedulerJob.latest_run_id})` : ''}
+                  {tSystemStatus(($) => $.labels.lastRun, {
+                    value: `${formatTimestamp(selectedSchedulerJob.latest_run_started_at)}${selectedSchedulerJob.latest_run_id != null ? ` (#${selectedSchedulerJob.latest_run_id})` : ''}`,
+                  })}
                 </Text>
               </Space>
               <Space wrap>
@@ -680,13 +739,13 @@ export const SystemStatus = () => {
                   }}
                   loading={runtimeMutating === `trigger_now:${selectedSchedulerJob.job_name}`}
                 >
-                  Trigger now
+                  {tSystemStatus(($) => $.actions.triggerNow)}
                 </Button>
                 {isStaff && SCHEDULER_SETTING_KEYS[selectedSchedulerJob.job_name] ? (
                   <RouteButton
                     to={`/settings/runtime?setting=${encodeURIComponent(SCHEDULER_SETTING_KEYS[selectedSchedulerJob.job_name].schedule)}`}
                   >
-                    Open cadence
+                    {tSystemStatus(($) => $.actions.openCadence)}
                   </RouteButton>
                 ) : null}
               </Space>
@@ -707,16 +766,16 @@ export const SystemStatus = () => {
               <Space wrap size={[8, 8]}>
                 <Text strong>{job.display_name}</Text>
                 {isSelectedJob ? (
-                  <StatusBadge status="active" label="selected" />
+                  <StatusBadge status="active" label={tSystemStatus(($) => $.status.selected)} />
                 ) : null}
                 <StatusBadge
                   status={runtimeStatusBadge(job.enabled ? 'enabled' : 'disabled')}
-                  label={job.enabled ? 'enabled' : 'disabled'}
+                  label={job.enabled ? tSystemStatus(($) => $.status.enabled) : tSystemStatus(($) => $.status.disabled)}
                 />
                 {job.latest_run_status ? (
                   <StatusBadge
                     status={runtimeStatusBadge(job.latest_run_status)}
-                    label={job.latest_run_status}
+                    label={formatStatusLabel(job.latest_run_status)}
                   />
                 ) : null}
               </Space>
@@ -725,10 +784,13 @@ export const SystemStatus = () => {
               <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                 <Text type="secondary">{job.description}</Text>
                 <Space direction="vertical" size={4}>
-                  <Text type="secondary">Cadence: {job.schedule}</Text>
-                  <Text type="secondary">Last run: {formatTimestamp(job.latest_run_started_at)}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.cadence, { value: job.schedule })}</Text>
+                  <Text type="secondary">{tSystemStatus(($) => $.labels.lastRun, { value: formatTimestamp(job.latest_run_started_at) })}</Text>
                   <Text type="secondary">
-                    Apply modes: enablement={job.enablement_apply_mode}, schedule={job.schedule_apply_mode}
+                    {tSystemStatus(($) => $.labels.applyModes, {
+                      enablement: job.enablement_apply_mode,
+                      schedule: job.schedule_apply_mode,
+                    })}
                   </Text>
                 </Space>
                 <Space wrap>
@@ -736,10 +798,10 @@ export const SystemStatus = () => {
                     onClick={() => updateSearchParams({ job: job.job_name })}
                     disabled={isSelectedJob}
                   >
-                    {isSelectedJob ? 'Focused' : 'Focus job'}
+                    {isSelectedJob ? tSystemStatus(($) => $.actions.focused) : tSystemStatus(($) => $.actions.focusJob)}
                   </Button>
                   <Space size="small">
-                    <Text>Enabled</Text>
+                    <Text>{tSystemStatus(($) => $.labels.enablement)}</Text>
                     <Switch
                       checked={job.enabled}
                       loading={runtimeMutating === `job:${job.job_name}`}
@@ -756,11 +818,11 @@ export const SystemStatus = () => {
                     }}
                     loading={runtimeMutating === `trigger_now:${job.job_name}`}
                   >
-                    Trigger now
+                    {tSystemStatus(($) => $.actions.triggerNow)}
                   </Button>
                   {isStaff && settingKeys ? (
                     <RouteButton to={`/settings/runtime?setting=${encodeURIComponent(settingKeys.schedule)}`}>
-                      Open cadence
+                      {tSystemStatus(($) => $.actions.openCadence)}
                     </RouteButton>
                   ) : null}
                 </Space>
@@ -774,7 +836,7 @@ export const SystemStatus = () => {
     <Alert
       type="info"
       showIcon
-      message="This runtime does not expose scheduler controls."
+      message={tSystemStatus(($) => $.alerts.schedulerNotSupported)}
     />
   )
 
@@ -788,27 +850,27 @@ export const SystemStatus = () => {
           loading={runtimeMutating === 'tail_logs'}
           disabled={!selectedRuntime.logs_available}
         >
-          Refresh logs excerpt
+          {tSystemStatus(($) => $.actions.refreshLogs)}
         </Button>
         {selectedRuntime.logs_excerpt?.updated_at ? (
-          <Text type="secondary">Updated: {formatTimestamp(selectedRuntime.logs_excerpt.updated_at)}</Text>
+          <Text type="secondary">{tSystemStatus(($) => $.labels.updated, { value: formatTimestamp(selectedRuntime.logs_excerpt.updated_at) })}</Text>
         ) : null}
       </Space>
       {selectedRuntime.logs_excerpt?.path ? (
-        <Text type="secondary">Path: {selectedRuntime.logs_excerpt.path}</Text>
+        <Text type="secondary">{tSystemStatus(($) => $.labels.path, { value: selectedRuntime.logs_excerpt.path })}</Text>
       ) : null}
       {selectedRuntime.logs_available ? (
         <JsonBlock
-          title="Latest logs excerpt"
+          title={tSystemStatus(($) => $.sections.latestLogsExcerpt)}
           value={selectedRuntime.logs_excerpt?.excerpt ?? ''}
-          emptyLabel="No logs excerpt available yet."
+          emptyLabel={tSystemStatus(($) => $.empty.noLogsExcerpt)}
           dataTestId="system-status-runtime-logs"
         />
       ) : (
         <Alert
           type="info"
           showIcon
-          message="Log surface is unavailable for this runtime."
+          message={tSystemStatus(($) => $.alerts.logSurfaceUnavailable)}
         />
       )}
     </Space>
@@ -816,24 +878,28 @@ export const SystemStatus = () => {
     <Alert
       type="info"
       showIcon
-      message="Runtime controls are unavailable for this service."
+      message={tSystemStatus(($) => $.alerts.runtimeControlsUnavailable)}
     />
   )
 
   const detailTabOptions = [
-    { label: 'Overview', value: 'overview' as const },
-    ...(canManageRuntimeControls ? [{ label: 'Controls', value: 'controls' as const }] : []),
-    ...(canManageRuntimeControls && selectedRuntime?.scheduler_supported ? [{ label: 'Scheduler', value: 'scheduler' as const }] : []),
-    ...(canManageRuntimeControls ? [{ label: 'Logs', value: 'logs' as const }] : []),
+    { label: tSystemStatus(($) => $.tabs.overview), value: 'overview' as const },
+    ...(canManageRuntimeControls ? [{ label: tSystemStatus(($) => $.tabs.controls), value: 'controls' as const }] : []),
+    ...(canManageRuntimeControls && selectedRuntime?.scheduler_supported ? [{ label: tSystemStatus(($) => $.tabs.scheduler), value: 'scheduler' as const }] : []),
+    ...(canManageRuntimeControls ? [{ label: tSystemStatus(($) => $.tabs.logs), value: 'logs' as const }] : []),
   ]
 
   const activeDetailTab = detailTabOptions.some((item) => item.value === selectedDetailTab) ? selectedDetailTab : 'overview'
+
+  if (!systemStatusReady) {
+    return <WorkspacePage>{null}</WorkspacePage>
+  }
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="System status"
+          title={tSystemStatus(($) => $.header.title)}
           subtitle={headerSubtitle}
           actions={(
             <Space wrap>
@@ -841,7 +907,9 @@ export const SystemStatus = () => {
                 icon={pollMode === 'paused' ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
                 onClick={() => updateSearchParams({ poll: pollMode === 'paused' ? null : 'paused' })}
               >
-                {pollMode === 'paused' ? 'Resume auto-refresh' : 'Pause auto-refresh'}
+                {pollMode === 'paused'
+                  ? tSystemStatus(($) => $.actions.resumeAutoRefresh)
+                  : tSystemStatus(($) => $.actions.pauseAutoRefresh)}
               </Button>
               <Button
                 icon={<ReloadOutlined />}
@@ -854,10 +922,10 @@ export const SystemStatus = () => {
                 }}
                 loading={refreshing || runtimeLoading}
               >
-                Refresh
+                {tSystemStatus(($) => $.actions.refresh)}
               </Button>
               <RouteButton to={selectedServiceRouteKey ? `/service-mesh?service=${encodeURIComponent(selectedServiceRouteKey)}` : '/service-mesh'}>
-                Open service mesh
+                {tSystemStatus(($) => $.actions.openServiceMesh)}
               </RouteButton>
             </Space>
           )}
@@ -867,13 +935,13 @@ export const SystemStatus = () => {
       <MasterDetailShell
         detailOpen={Boolean(selectedServiceName)}
         onCloseDetail={() => updateSearchParams({ service: null, tab: null, job: null })}
-        detailDrawerTitle={selectedService ? selectedService.name : 'System diagnostics'}
+        detailDrawerTitle={selectedService ? selectedService.name : tSystemStatus(($) => $.sections.systemDiagnostics)}
         list={(
           <EntityList
-            title="Services"
+            title={tSystemStatus(($) => $.sections.services)}
             loading={loading && !health}
             error={error && !health ? error : null}
-            emptyDescription="No services reported by /api/v2/system/health/."
+            emptyDescription={tSystemStatus(($) => $.empty.services)}
             dataSource={servicesSorted}
             renderItem={(service) => {
               const selected = selectedService?.name === service.name
@@ -887,13 +955,20 @@ export const SystemStatus = () => {
                     <Space direction="vertical" size={4} style={{ width: '100%', alignItems: 'flex-start' }}>
                       <Space wrap size={[8, 8]}>
                         <Text strong>{service.name}</Text>
-                        <StatusBadge status={service.status === 'online' ? 'active' : service.status === 'degraded' ? 'warning' : 'error'} label={service.status} />
+                        <StatusBadge
+                          status={service.status === 'online' ? 'active' : service.status === 'degraded' ? 'warning' : 'error'}
+                          label={formatStatusLabel(service.status)}
+                        />
                       </Space>
                       <Space wrap size={[8, 8]}>
                         <Text type="secondary">{service.type}</Text>
-                        <Text type="secondary">Last check: {formatTimestamp(service.last_check)}</Text>
+                        <Text type="secondary">{tSystemStatus(($) => $.labels.lastCheck, { value: formatTimestamp(service.last_check) })}</Text>
                         <Text type="secondary">
-                          Response: {service.response_time_ms == null ? '—' : `${service.response_time_ms} ms`}
+                          {tSystemStatus(($) => $.labels.response, {
+                            value: service.response_time_ms == null
+                              ? unavailableShort
+                              : `${service.response_time_ms} ms`,
+                          })}
                         </Text>
                       </Space>
                     </Space>
@@ -905,11 +980,11 @@ export const SystemStatus = () => {
         )}
         detail={(
           <EntityDetails
-            title={selectedService ? selectedService.name : 'System overview'}
+            title={selectedService ? selectedService.name : tSystemStatus(($) => $.sections.systemOverview)}
             loading={loading && !health}
             error={detailError}
             empty={!selectedServiceName && !health}
-            emptyDescription="Select a service to inspect its diagnostics context."
+            emptyDescription={tSystemStatus(($) => $.empty.selectServiceDetail)}
           >
             <Space direction="vertical" size="large" style={{ width: '100%' }}>
               {error && health ? (
@@ -921,7 +996,7 @@ export const SystemStatus = () => {
                     <Button size="small" onClick={() => {
                       void fetchHealth({ reason: 'manual' })
                     }}>
-                      Retry
+                      {tCommon(($) => $.actions.retry)}
                     </Button>
                   )}
                 />
@@ -933,7 +1008,11 @@ export const SystemStatus = () => {
                 <Alert
                   type="info"
                   showIcon
-                  message={`System summary: ${health.statistics.online}/${health.statistics.total} services online, ${health.statistics.degraded} degraded.`}
+                  message={tSystemStatus(($) => $.alerts.compactSummary, {
+                    online: String(health.statistics.online),
+                    total: String(health.statistics.total),
+                    degraded: String(health.statistics.degraded),
+                  })}
                 />
               ) : null}
 
@@ -941,7 +1020,7 @@ export const SystemStatus = () => {
                 <Alert
                   type="warning"
                   showIcon
-                  message="Some expected services are missing from /api/v2/system/health/."
+                  message={tSystemStatus(($) => $.alerts.missingServices)}
                   description={missing.map((service) => service.title).join(', ')}
                 />
               ) : null}
@@ -952,7 +1031,7 @@ export const SystemStatus = () => {
                     <Alert
                       type="info"
                       showIcon
-                      message="Loading runtime controls…"
+                      message={tSystemStatus(($) => $.alerts.loadingRuntimeControls)}
                     />
                   ) : null}
                   <Segmented
@@ -972,7 +1051,7 @@ export const SystemStatus = () => {
                 <Alert
                   type="info"
                   showIcon
-                  message="Select a service from the catalog to inspect its diagnostics payload."
+                  message={tSystemStatus(($) => $.empty.selectService)}
                 />
               )}
             </Space>
@@ -994,9 +1073,9 @@ export const SystemStatus = () => {
           setRestartModalOpen(false)
           setRestartReason('')
         }}
-        title="Restart runtime"
+        title={tSystemStatus(($) => $.modal.restartTitle)}
         subtitle={selectedRuntime?.display_name ?? selectedServiceName ?? undefined}
-        submitText="Restart"
+        submitText={tSystemStatus(($) => $.modal.restartSubmit)}
         submitDisabled={!restartReason.trim()}
         confirmLoading={runtimeMutating === 'restart'}
       >
@@ -1004,13 +1083,13 @@ export const SystemStatus = () => {
           <Alert
             type="warning"
             showIcon
-            message="Restart is a dangerous action and requires an explicit operator reason."
+            message={tSystemStatus(($) => $.alerts.restartWarning)}
           />
           <TextArea
             value={restartReason}
             rows={4}
             onChange={(event) => setRestartReason(event.target.value)}
-            placeholder="Explain why this runtime needs a restart"
+            placeholder={tSystemStatus(($) => $.modal.restartReasonPlaceholder)}
           />
         </Space>
       </ModalFormShell>

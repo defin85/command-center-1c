@@ -108,6 +108,7 @@ func TestCORSMiddleware_ExposesCorrelationHeaders(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, w.Code)
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-Request-ID")
 	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-UI-Action-ID")
+	assert.Contains(t, w.Header().Get("Access-Control-Allow-Headers"), "X-CC1C-Locale")
 	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-Request-ID")
 	assert.Contains(t, w.Header().Get("Access-Control-Expose-Headers"), "X-UI-Action-ID")
 }

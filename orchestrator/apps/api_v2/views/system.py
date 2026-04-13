@@ -32,6 +32,7 @@ from apps.api_v2.views.tenants import (
     build_tenant_context_payload,
 )
 from apps.core import permission_codes as perms
+from apps.core.i18n import build_i18n_summary_payload
 from apps.operations.services.prometheus_client import (
     get_prometheus_client,
     SERVICE_CONFIG,
@@ -118,11 +119,26 @@ class ShellCapabilitiesSerializer(serializers.Serializer):
     can_manage_runtime_controls = serializers.BooleanField()
 
 
+class SystemBootstrapI18nSummarySerializer(serializers.Serializer):
+    supported_locales = serializers.ListField(
+        child=serializers.CharField(),
+        help_text="Supported public locale identifiers for the shell.",
+    )
+    default_locale = serializers.CharField(help_text="Deployment default locale.")
+    requested_locale = serializers.CharField(
+        allow_null=True,
+        required=False,
+        help_text="Explicit locale override requested by the SPA, if present.",
+    )
+    effective_locale = serializers.CharField(help_text="Resolved locale for this request.")
+
+
 class SystemBootstrapResponseSerializer(serializers.Serializer):
     me = CurrentUserSerializer()
     tenant_context = ListMyTenantsResponseSerializer()
     access = EffectiveAccessResponseSerializer()
     capabilities = ShellCapabilitiesSerializer()
+    i18n = SystemBootstrapI18nSummarySerializer()
 
 
 def build_current_user_payload(*, user) -> dict[str, object]:
@@ -204,6 +220,7 @@ def system_bootstrap(request):
         'tenant_context': build_tenant_context_payload(user=request.user),
         'access': access_payload,
         'capabilities': build_shell_capabilities_payload(user=request.user),
+        'i18n': build_i18n_summary_payload(request),
     })
 
 class SystemHealthView(APIView):

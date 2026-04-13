@@ -9,6 +9,8 @@ import {
   setUiActionJournalEnabled,
   trackUiAction,
 } from '../../observability/uiActionJournal'
+import { LOCALE_REQUEST_HEADER } from '../../i18n/constants'
+import { setCurrentAppLocale } from '../../i18n/localeStore'
 
 const requestHandlers = (apiClient.interceptors.request as unknown as {
   handlers?: Array<{ fulfilled?: (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig }>
@@ -73,11 +75,14 @@ describe('apiClient observability interceptors', () => {
     localStorage.clear()
     localStorage.setItem('auth_token', 'token-1')
     localStorage.setItem('active_tenant_id', 'tenant-1')
+    localStorage.setItem('cc1c_locale_override', 'en')
+    setCurrentAppLocale('en')
     setUiActionJournalEnabled(true)
     clearUiActionJournal()
   })
 
   afterEach(() => {
+    setCurrentAppLocale('ru')
     setUiActionJournalEnabled(false)
     clearUiActionJournal()
   })
@@ -88,6 +93,7 @@ describe('apiClient observability interceptors', () => {
     expect(config.headers['X-Request-ID']).toMatch(/^req-/)
     expect(config.headers['X-UI-Action-ID']).toMatch(/^uia-/)
     expect(config.headers['X-CC1C-Tenant-ID']).toBe('tenant-1')
+    expect(config.headers[LOCALE_REQUEST_HEADER]).toBe('en')
 
     const retriedConfig = requestHandler(config)
 

@@ -37,7 +37,7 @@ def test_system_bootstrap_returns_shell_context(staff_client, staff_user):
     preference.active_tenant = tenant_b
     preference.save(update_fields=["active_tenant", "updated_at"])
 
-    response = staff_client.get("/api/v2/system/bootstrap/")
+    response = staff_client.get("/api/v2/system/bootstrap/", HTTP_ACCEPT_LANGUAGE="en-US,en;q=0.9")
 
     assert response.status_code == 200
     payload = response.json()
@@ -54,9 +54,17 @@ def test_system_bootstrap_returns_shell_context(staff_client, staff_user):
       "can_manage_driver_catalogs": True,
       "can_manage_runtime_controls": True,
     }
+    assert payload["i18n"] == {
+      "supported_locales": ["ru", "en"],
+      "default_locale": "ru",
+      "requested_locale": None,
+      "effective_locale": "en",
+    }
     assert payload["access"]["user"]["id"] == staff_user.id
     assert payload["access"]["clusters"] == []
     assert payload["access"]["databases"] == []
+    assert response["Content-Language"] == "en"
+    assert "X-CC1C-Locale" in response["Vary"]
 
 
 @pytest.mark.django_db
@@ -73,3 +81,38 @@ def test_system_bootstrap_runtime_control_capability_is_permission_backed():
         "can_manage_driver_catalogs": False,
         "can_manage_runtime_controls": False,
     }
+
+
+@pytest.mark.django_db
+def test_system_bootstrap_explicit_locale_header_overrides_browser_signal(staff_client):
+    response = staff_client.get(
+        "/api/v2/system/bootstrap/",
+        HTTP_X_CC1C_LOCALE="en",
+        HTTP_ACCEPT_LANGUAGE="ru-RU,ru;q=0.9",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["i18n"] == {
+        "supported_locales": ["ru", "en"],
+        "default_locale": "ru",
+        "requested_locale": "en",
+        "effective_locale": "en",
+    }
+    assert response["Content-Language"] == "en"
+
+
+@pytest.mark.django_db
+def test_system_bootstrap_unsupported_language_signal_falls_back_to_default_locale(staff_client):
+    response = staff_client.get(
+        "/api/v2/system/bootstrap/",
+        HTTP_ACCEPT_LANGUAGE="de-DE,de;q=0.9",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["i18n"] == {
+        "supported_locales": ["ru", "en"],
+        "default_locale": "ru",
+        "requested_locale": None,
+        "effective_locale": "ru",
+    }
+    assert response["Content-Language"] == "ru"

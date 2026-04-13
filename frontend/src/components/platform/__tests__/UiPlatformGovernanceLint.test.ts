@@ -285,6 +285,49 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('rejects raw locale formatting in migrated governed modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/SystemStatus/SystemStatus.tsx',
+      `
+        export function SystemStatus() {
+          return <div>{new Date('2026-03-10T12:00:00Z').toLocaleString()}</div>
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries'
+        && message.message.includes('useLocaleFormatters')
+    ))).toBe(true)
+  })
+
+  it('rejects route-local Ant locale providers in migrated governed modules', async () => {
+    const messages = await lintSnippet(
+      'src/components/layout/MainLayout.tsx',
+      `
+        import enUS from 'antd/locale/en_US'
+        import { ConfigProvider } from 'antd'
+
+        export function MainLayout() {
+          return (
+            <ConfigProvider locale={enUS}>
+              <div>layout</div>
+            </ConfigProvider>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries'
+        && message.message.includes('locale packs')
+    ))).toBe(true)
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries'
+        && message.message.includes('ConfigProvider locale')
+    ))).toBe(true)
+  })
+
   it('rejects generic shell violations even when the shell file is not suffixed Modal or Drawer', async () => {
     const messages = await lintSnippet(
       'src/pages/Pools/masterData/GLAccountsTab.tsx',

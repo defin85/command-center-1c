@@ -11,6 +11,7 @@ import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
 import { POOL_EXECUTION_PACKS_ROUTE, POOL_FACTUAL_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
+import { useCommonTranslation, useLocaleState, useShellTranslation } from '../../i18n'
 
 const { Header, Content, Sider } = Layout
 const { useBreakpoint } = Grid
@@ -33,6 +34,9 @@ interface MainLayoutProps {
 }
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
+  const { t: tCommon } = useCommonTranslation()
+  const { t: tShell } = useShellTranslation()
+  const { locale, setLocale, supportedLocales } = useLocaleState()
   const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
@@ -55,8 +59,10 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const canManageRbac = Boolean(capabilities?.can_manage_rbac)
   const canManageDriverCatalogs = Boolean(capabilities?.can_manage_driver_catalogs)
   const databaseStreamLabel = isDatabaseStreamConnecting
-    ? 'Stream: Connecting…'
-    : `Stream: ${isDatabaseStreamConnected ? 'Connected' : 'Fallback'}`
+    ? tShell(($) => $.stream.buttonLabel.connecting)
+    : isDatabaseStreamConnected
+      ? tShell(($) => $.stream.buttonLabel.connected)
+      : tShell(($) => $.stream.buttonLabel.fallback)
   const streamTagStyle = isDatabaseStreamConnected
     ? STREAM_TAG_STYLES.connected
     : STREAM_TAG_STYLES.fallback
@@ -83,7 +89,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     {
       key: 'logout',
       icon: <LogoutOutlined />,
-      label: 'Выйти',
+      label: tCommon(($) => $.actions.logout),
       onClick: handleLogout,
     },
   ]
@@ -95,107 +101,107 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
     {
       key: '/',
       icon: <DashboardOutlined />,
-      label: 'Dashboard',
+      label: tShell(($) => $.navigation.dashboard),
     },
     {
       key: '/system-status',
       icon: <MonitorOutlined />,
-      label: 'System Status',
+      label: tShell(($) => $.navigation.systemStatus),
     },
     {
       key: '/clusters',
       icon: <ClusterOutlined />,
-      label: 'Clusters',
+      label: tShell(($) => $.navigation.clusters),
     },
     {
       key: '/databases',
       icon: <DatabaseOutlined />,
-      label: 'Databases',
+      label: tShell(($) => $.navigation.databases),
     },
     {
       key: '/extensions',
       icon: <AppstoreOutlined />,
-      label: 'Extensions',
+      label: tShell(($) => $.navigation.extensions),
     },
     {
       key: '/operations',
       icon: <ThunderboltOutlined />,
-      label: 'Operations',
+      label: tShell(($) => $.navigation.operations),
     },
     ...(canSeeArtifacts
       ? [{
         key: '/artifacts',
         icon: <InboxOutlined />,
-        label: 'Artifacts',
+        label: tShell(($) => $.navigation.artifacts),
       }]
       : []),
     {
       key: '/workflows',
       icon: <ApartmentOutlined />,
-      label: 'Workflows',
+      label: tShell(($) => $.navigation.workflows),
     },
     {
       key: '/templates',
       icon: <FileTextOutlined />,
-      label: 'Templates',
+      label: tShell(($) => $.navigation.templates),
     },
     {
       key: '/decisions',
       icon: <FileTextOutlined />,
-      label: 'Decisions',
+      label: tShell(($) => $.navigation.decisions),
     },
     {
       key: '/pools/catalog',
       icon: <FileTextOutlined />,
-      label: 'Pool Catalog',
+      label: tShell(($) => $.navigation.poolCatalog),
     },
     {
       key: POOL_TOPOLOGY_TEMPLATES_ROUTE,
       icon: <FileTextOutlined />,
-      label: 'Pool Topology Templates',
+      label: tShell(($) => $.navigation.poolTopologyTemplates),
     },
     {
       key: POOL_EXECUTION_PACKS_ROUTE,
       icon: <FileTextOutlined />,
-      label: 'Pool Execution Packs',
+      label: tShell(($) => $.navigation.poolExecutionPacks),
     },
     {
       key: '/pools/master-data',
       icon: <FileTextOutlined />,
-      label: 'Pool Master Data',
+      label: tShell(($) => $.navigation.poolMasterData),
     },
     {
       key: '/pools/runs',
       icon: <FileTextOutlined />,
-      label: 'Pool Runs',
+      label: tShell(($) => $.navigation.poolRuns),
     },
     {
       key: POOL_FACTUAL_ROUTE,
       icon: <FileTextOutlined />,
-      label: 'Pool Factual',
+      label: tShell(($) => $.navigation.poolFactual),
     },
     {
       key: '/pools/templates',
       icon: <FileTextOutlined />,
-      label: 'Pool Templates',
+      label: tShell(($) => $.navigation.poolTemplates),
     },
     {
       key: '/service-mesh',
       icon: <DeploymentUnitOutlined />,
-      label: 'Service Mesh',
+      label: tShell(($) => $.navigation.serviceMesh),
     },
     ...(canManageRbac
       ? [{
         key: '/rbac',
         icon: <SafetyCertificateOutlined />,
-        label: 'RBAC',
+        label: tShell(($) => $.navigation.rbac),
       }]
       : []),
     ...(canManageUsers
       ? [{
         key: '/users',
         icon: <UserOutlined />,
-        label: 'Users',
+        label: tShell(($) => $.navigation.users),
       }]
       : []),
     ...(canManageAdmin
@@ -203,26 +209,26 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
         {
           key: '/dlq',
           icon: <WarningOutlined />,
-          label: 'DLQ',
+          label: tShell(($) => $.navigation.dlq),
         },
         {
           key: '/settings/runtime',
           icon: <SettingOutlined />,
-          label: 'Runtime Settings',
+          label: tShell(($) => $.navigation.runtimeSettings),
         },
         ...(canManageDriverCatalogs
           ? [
             {
               key: '/settings/command-schemas',
               icon: <SettingOutlined />,
-              label: 'Command Schemas',
+              label: tShell(($) => $.navigation.commandSchemas),
             },
           ]
           : []),
         {
           key: '/settings/timeline',
           icon: <SettingOutlined />,
-          label: 'Timeline Settings',
+          label: tShell(($) => $.navigation.timelineSettings),
         },
       ]
       : []),
@@ -231,7 +237,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <a href="#main-content" className="cc-skip-link" onClick={handleSkipToContent}>
-        Skip to content
+        {tShell(($) => $.skipToContent)}
       </a>
       <Header
         style={{
@@ -247,14 +253,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       >
         <Space size="middle" wrap>
           <Link to="/" style={{ color: 'white', fontSize: '20px', fontWeight: 'bold', textDecoration: 'none' }}>
-            CommandCenter1C
+            {tShell(($) => $.appName)}
           </Link>
           <Popover
             trigger="click"
             placement="bottomLeft"
             content={(
               <Space direction="vertical" size={4}>
-                <Typography.Text strong>Database stream</Typography.Text>
+                <Typography.Text strong>{tShell(($) => $.stream.title)}</Typography.Text>
                 <Tag
                   style={{
                     backgroundColor: streamTagStyle.backgroundColor,
@@ -263,10 +269,10 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
                   }}
                 >
                   {isDatabaseStreamConnecting
-                    ? 'Connecting\u2026'
+                    ? tShell(($) => $.stream.tag.connecting)
                     : isDatabaseStreamConnected
-                      ? 'Connected'
-                      : 'Fallback'}
+                      ? tShell(($) => $.stream.tag.connected)
+                      : tShell(($) => $.stream.tag.fallback)}
                 </Tag>
                 {databaseStreamError && (
                   <Typography.Text type="secondary">{databaseStreamError}</Typography.Text>
@@ -277,13 +283,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
                   disabled={isDatabaseStreamConnecting || databaseStreamCooldownSeconds > 0}
                 >
                   {databaseStreamCooldownSeconds > 0
-                    ? `Retry in ${databaseStreamCooldownSeconds}s`
-                    : 'Reconnect'}
+                    ? tShell(($) => $.stream.retryIn, { seconds: String(databaseStreamCooldownSeconds) })
+                    : tCommon(($) => $.actions.reconnect)}
                 </Button>
               </Space>
             )}
           >
-            <Tooltip title={isDatabaseStreamConnected ? 'Live updates enabled' : (databaseStreamError || 'Live stream unavailable')}>
+            <Tooltip title={isDatabaseStreamConnected ? tShell(($) => $.stream.tooltip.connected) : (databaseStreamError || tShell(($) => $.stream.tooltip.unavailable))}>
               <Button type="text" aria-label={databaseStreamLabel} style={{ padding: 0, height: 'auto' }}>
                 <Tag
                   style={{
@@ -301,9 +307,25 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
           </Popover>
         </Space>
         <Space size="small" wrap>
+          <Select
+            data-testid="shell-locale-select"
+            aria-label={tShell(($) => $.locale.label)}
+            size="small"
+            value={locale}
+            style={{ width: screens.sm ? 136 : 'min(136px, 100%)' }}
+            options={supportedLocales.map((value) => ({
+              value,
+              label: value === 'ru'
+                ? tShell(($) => $.locale.options.ru)
+                : tShell(($) => $.locale.options.en),
+            }))}
+            onChange={(value) => {
+              void setLocale(value)
+            }}
+          />
           {tenants.length > 1 && (
             <Select
-              aria-label="Active tenant"
+              aria-label={tShell(($) => $.tenant.activeLabel)}
               size="small"
               loading={shellBootstrapQuery.isFetching}
               disabled={setActiveTenantMutation.isPending}
@@ -322,7 +344,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             />
           )}
           {me?.is_staff && (
-            <Tag color="blue">Staff</Tag>
+            <Tag color="blue">{tShell(($) => $.tenant.staffBadge)}</Tag>
           )}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Button type="text" icon={<UserOutlined />} style={{ color: 'white' }}>

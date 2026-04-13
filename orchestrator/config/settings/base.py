@@ -83,7 +83,9 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files (required for ASGI/Daphne)
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'apps.core.i18n.RequestLocaleOverrideMiddleware',
     'apps.api_v2.observability.RequestCorrelationMiddleware',
     'apps.operations.middleware.PrometheusMetricsMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -175,7 +177,11 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # Internationalization
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ru'
+LANGUAGES = [
+    ('ru', 'Russian'),
+    ('en', 'English'),
+]
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True

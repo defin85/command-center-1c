@@ -1,5 +1,6 @@
 import { Empty } from 'antd'
 import type { CSSProperties, ReactNode } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 
 type EmptyStateProps = {
   description?: ReactNode
@@ -8,13 +9,15 @@ type EmptyStateProps = {
 }
 
 export function EmptyState({
-  description = 'No data available.',
+  description,
   image = Empty.PRESENTED_IMAGE_SIMPLE,
   style,
 }: EmptyStateProps) {
+  const { t } = usePlatformTranslation()
+
   return (
     <Empty
-      description={description}
+      description={description ?? t(($) => $.emptyState.noDataAvailable)}
       image={image}
       style={style}
     />

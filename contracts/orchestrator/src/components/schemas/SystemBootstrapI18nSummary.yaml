@@ -1,0 +1,29 @@
+type: object
+properties:
+  supported_locales:
+    type: array
+    items:
+      type: string
+      enum:
+        - ru
+        - en
+  default_locale:
+    type: string
+    enum:
+      - ru
+      - en
+  requested_locale:
+    type: string
+    nullable: true
+    enum:
+      - ru
+      - en
+  effective_locale:
+    type: string
+    enum:
+      - ru
+      - en
+required:
+  - supported_locales
+  - default_locale
+  - effective_locale

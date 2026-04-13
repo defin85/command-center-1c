@@ -29,3 +29,14 @@ get:
         Optional tenant context selector. If omitted, tenant is resolved via
         user preference or first membership. For staff users, omission may
         return cross-tenant results on some endpoints.
+    - name: X-CC1C-Locale
+      in: header
+      required: false
+      schema:
+        type: string
+        enum:
+          - ru
+          - en
+      description: >-
+        Optional operator locale override. If omitted, locale is resolved from
+        browser language signal and then falls back to the deployment default.

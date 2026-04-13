@@ -10,6 +10,7 @@ import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useShellBootstrap } from './api/queries/shellBootstrap'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
+import { useCommonTranslation, useErrorsTranslation, useLocaleState, useShellTranslation } from './i18n'
 import {
   captureUiRouteTransition,
   recordUiUnhandledRejection,
@@ -79,18 +80,22 @@ function getShellBootstrapErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message
   }
-  return 'Unable to load the shell runtime context.'
+  return ''
 }
 
 function ShellBootstrapErrorState({ error }: { error: unknown }) {
+  const { t: tCommon } = useCommonTranslation()
+  const { t: tShell } = useShellTranslation()
+  const fallbackMessage = tShell(($) => $.bootstrap.fallbackMessage)
+
   return (
     <Result
       status="error"
-      title="Shell bootstrap failed"
-      subTitle={getShellBootstrapErrorMessage(error)}
+      title={tShell(($) => $.bootstrap.failedTitle)}
+      subTitle={getShellBootstrapErrorMessage(error) || fallbackMessage}
       extra={(
         <Button type="primary" onClick={() => window.location.reload()}>
-          Retry
+          {tCommon(($) => $.actions.retry)}
         </Button>
       )}
     />
@@ -198,6 +203,7 @@ const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React
 // Must be inside AntApp to access notification API
 function GlobalApiErrorHandler() {
   const { notification } = AntApp.useApp()
+  const { t } = useErrorsTranslation()
 
   useEffect(() => {
     const handleApiError = (event: CustomEvent<ApiErrorDetail>) => {
@@ -217,7 +223,7 @@ function GlobalApiErrorHandler() {
       }
 
       notification[type]({
-        message: 'Request Error',
+        message: t(($) => $.notification.title),
         description: message,
         placement: 'topRight',
         duration: 5,
@@ -230,7 +236,7 @@ function GlobalApiErrorHandler() {
     return () => {
       window.removeEventListener(API_ERROR_EVENT, handleApiError as EventListener)
     }
-  }, [notification])
+  }, [notification, t])
 
   return null
 }
@@ -275,6 +281,7 @@ function UiObservabilityBridge({ enabled }: { enabled: boolean }) {
 
 function App() {
   const [authToken, setAuthToken] = useState(() => getAuthToken())
+  const { antdLocale } = useLocaleState()
   // Enable real-time cache invalidation via WebSocket only for authenticated sessions
   useRealtimeInvalidation(Boolean(authToken))
 
@@ -286,19 +293,22 @@ function App() {
 
   return (
     <ErrorBoundary>
-      <ConfigProvider theme={{
-        token: {
-          colorPrimary: '#0b5bd3',
-          colorError: '#b42318',
-          colorTextSecondary: '#4b5563',
-        },
-        components: {
-          Menu: {
-            itemSelectedBg: '#dbeafe',
-            itemSelectedColor: '#0b3d91',
+      <ConfigProvider
+        locale={antdLocale}
+        theme={{
+          token: {
+            colorPrimary: '#0b5bd3',
+            colorError: '#b42318',
+            colorTextSecondary: '#4b5563',
           },
-        },
-      }}>
+          components: {
+            Menu: {
+              itemSelectedBg: '#dbeafe',
+              itemSelectedColor: '#0b3d91',
+            },
+          },
+        }}
+      >
         <AntApp>
           <GlobalApiErrorHandler />
           <AuthzProvider key={authToken ?? 'guest'}>

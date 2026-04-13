@@ -14,6 +14,9 @@ import {
   completeUiHttpRequest,
   startUiHttpRequest,
 } from '../observability/uiActionJournal'
+import { LOCALE_REQUEST_HEADER } from '../i18n/constants'
+import { resolveLocalizedApiErrorMessage } from '../i18n/errorMessages'
+import { getCurrentAppLocale } from '../i18n/localeStore'
 
 const API_BASE_URL = getApiBaseUrl()
 
@@ -197,6 +200,11 @@ apiClient.interceptors.request.use(
       setHeader(config.headers, 'X-CC1C-Tenant-ID', tenantId)
     }
 
+    const locale = getCurrentAppLocale()
+    if (locale) {
+      setHeader(config.headers, LOCALE_REQUEST_HEADER, locale)
+    }
+
     // Remove Content-Type for FormData (axios will set it with boundary)
     if (config.data instanceof FormData) {
       deleteHeader(config.headers, 'Content-Type')
@@ -268,7 +276,10 @@ apiClient.interceptors.response.use(
 
         // Dispatch error event before redirect
         dispatchApiError(createApiErrorDetail({
-          message: 'Session expired. Please log in again.',
+          message: resolveLocalizedApiErrorMessage({
+            code: 'SESSION_EXPIRED',
+            status: 401,
+          }),
           status: 401,
           code: 'SESSION_EXPIRED',
           method: originalRequest?.method,
@@ -363,10 +374,11 @@ apiClient.interceptors.response.use(
       error?: string | { message?: string }
       message?: string
       detail?: string
+      code?: string
     } | undefined
 
     // Build user-friendly error message
-    let message = 'An error occurred'
+    let message = 'Unexpected error.'
     if (errorData?.error) {
       if (typeof errorData.error === 'string') {
         message = errorData.error
@@ -383,15 +395,45 @@ apiClient.interceptors.response.use(
 
     // Map status codes to user-friendly messages
     if (status === 403) {
-      message = 'Access denied. You do not have permission for this action.'
+      message = resolveLocalizedApiErrorMessage({
+        status,
+        code: errorData?.code,
+        detail: errorData?.detail,
+        fallbackMessage: message,
+      })
     } else if (status === 404) {
-      message = 'Resource not found.'
+      message = resolveLocalizedApiErrorMessage({
+        status,
+        code: errorData?.code,
+        detail: errorData?.detail,
+        fallbackMessage: message,
+      })
     } else if (status === 500) {
-      message = 'Server error. Please try again later.'
+      message = resolveLocalizedApiErrorMessage({
+        status,
+        code: errorData?.code,
+        detail: errorData?.detail,
+        fallbackMessage: message,
+      })
     } else if (status === 502 || status === 503 || status === 504) {
-      message = 'Service temporarily unavailable. Please try again.'
+      message = resolveLocalizedApiErrorMessage({
+        status,
+        code: errorData?.code,
+        detail: errorData?.detail,
+        fallbackMessage: message,
+      })
     } else if (!error.response) {
-      message = 'Network error. Please check your connection.'
+      message = resolveLocalizedApiErrorMessage({
+        detail: error.message,
+        fallbackMessage: message,
+      })
+    } else {
+      message = resolveLocalizedApiErrorMessage({
+        status,
+        code: errorData?.code,
+        detail: errorData?.detail,
+        fallbackMessage: message,
+      })
     }
 
     finalizeObservedRequest({
@@ -407,7 +449,7 @@ apiClient.interceptors.response.use(
         dispatchApiError(createApiErrorDetail({
           message,
           status,
-          code: (errorData as { code?: string })?.code,
+          code: errorData?.code,
           details: errorData,
           method: originalRequest?.method,
           path: originalRequest?.url,

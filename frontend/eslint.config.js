@@ -220,6 +220,13 @@ const platformShellRestrictedAntdImports = new Map([
   ['Divider', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe spacing/separators instead of raw `Divider`.'],
 ])
 const routePrimaryShellForbiddenHtmlTags = new Set(['div', 'section', 'main', 'aside', 'article'])
+const localeBoundaryGovernedFileSet = new Set([
+  'src/components/layout/MainLayout.tsx',
+  'src/components/platform/EmptyState.tsx',
+  'src/components/ServiceStatusCard.tsx',
+  'src/components/SystemOverview.tsx',
+  'src/pages/SystemStatus/SystemStatus.tsx',
+])
 
 const normalizeInventoryPath = (value) => value.replace(/\\/g, '/')
 const resolveFrontendRelativePath = (filename) => (
@@ -951,6 +958,78 @@ const uiPlatformLocalPlugin = {
         }
       },
     },
+    'governed-modules-must-use-canonical-i18n-boundaries': {
+      meta: {
+        type: 'problem',
+        schema: [],
+      },
+      create(context) {
+        const filename = typeof context.filename === 'string' ? context.filename : context.getFilename()
+        if (/\.test\.[jt]sx?$/.test(filename)) {
+          return {}
+        }
+
+        const relativeFilename = resolveFrontendRelativePath(filename)
+        if (!localeBoundaryGovernedFileSet.has(relativeFilename)) {
+          return {}
+        }
+
+        const configProviderLocalNames = new Set()
+
+        const reportConfigProviderLocaleOverride = (node) => {
+          if (!configProviderLocalNames.has(getJsxTagRootName(node.name))) {
+            return
+          }
+
+          if (!getJsxAttributeExpression(node.attributes, 'locale')) {
+            return
+          }
+
+          context.report({
+            node,
+            message: 'Governed modules must not create route-local `ConfigProvider locale` owners; keep vendor locale wiring in the shared shell/i18n layer.',
+          })
+        }
+
+        return {
+          ImportDeclaration(node) {
+            const source = typeof node.source.value === 'string' ? node.source.value : ''
+
+            if (/^antd\/locale\//.test(source)) {
+              context.report({
+                node,
+                message: 'Governed modules must not import `antd` locale packs directly; use the canonical locale bridge in `src/i18n/localeBridge.ts`.',
+              })
+            }
+
+            if (source !== 'antd') {
+              return
+            }
+
+            for (const specifier of node.specifiers) {
+              if (specifier.type === 'ImportSpecifier' && specifier.imported.name === 'ConfigProvider') {
+                configProviderLocalNames.add(specifier.local.name)
+              }
+            }
+          },
+          CallExpression(node) {
+            if (
+              node.callee.type === 'MemberExpression'
+              && !node.callee.computed
+              && node.callee.property.type === 'Identifier'
+              && ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'].includes(node.callee.property.name)
+            ) {
+              context.report({
+                node,
+                message: 'Governed modules must use the canonical locale formatter layer (`useLocaleFormatters` / `createLocaleFormatters`) instead of raw `toLocale*` calls.',
+              })
+            }
+          },
+          JSXOpeningElement: reportConfigProviderLocaleOverride,
+          JSXSelfClosingElement: reportConfigProviderLocaleOverride,
+        }
+      },
+    },
   },
 }
 
@@ -1062,6 +1141,7 @@ export default tseslint.config(
       'ui-platform-local/platform-shell-modules-must-exist-in-governance-inventory': 'error',
       'ui-platform-local/compact-master-pane-must-use-entity-list': 'error',
       'ui-platform-local/route-modules-must-keep-platform-primary-composition': 'error',
+      'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries': 'error',
       'no-restricted-syntax': ['error', noStaticModalMethodsRule],
     },
   },

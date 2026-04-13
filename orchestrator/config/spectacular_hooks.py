@@ -40,21 +40,33 @@ def remove_nullable_oneof_nullenum(result: dict[str, Any], generator: Any, reque
 
 def add_tenant_header_parameter(result: dict[str, Any], generator: Any, request: Any, public: bool):
     """
-    Document optional tenant context selection via X-CC1C-Tenant-ID header for API v2.
+    Document optional context headers for API v2.
 
     Runtime behavior is implemented in apps.tenancy.authentication.TenantContextAuthentication.
     """
 
-    tenant_param = {
-        "name": "X-CC1C-Tenant-ID",
-        "in": "header",
-        "required": False,
-        "schema": {"type": "string", "format": "uuid"},
-        "description": (
-            "Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. "
-            "For staff users, omission may return cross-tenant results on some endpoints."
-        ),
-    }
+    header_params = [
+        {
+            "name": "X-CC1C-Tenant-ID",
+            "in": "header",
+            "required": False,
+            "schema": {"type": "string", "format": "uuid"},
+            "description": (
+                "Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. "
+                "For staff users, omission may return cross-tenant results on some endpoints."
+            ),
+        },
+        {
+            "name": "X-CC1C-Locale",
+            "in": "header",
+            "required": False,
+            "schema": {"type": "string", "enum": ["ru", "en"]},
+            "description": (
+                "Optional operator locale override. If omitted, locale is resolved from browser language signal "
+                "and then falls back to the deployment default."
+            ),
+        },
+    ]
 
     paths = result.get("paths")
     if not isinstance(paths, dict):
@@ -73,11 +85,12 @@ def add_tenant_header_parameter(result: dict[str, Any], generator: Any, request:
             params = operation.setdefault("parameters", [])
             if not isinstance(params, list):
                 continue
-            if any(
-                isinstance(p, dict) and p.get("in") == "header" and p.get("name") == tenant_param["name"]
-                for p in params
-            ):
-                continue
-            params.append(deepcopy(tenant_param))
+            for header_param in header_params:
+                if any(
+                    isinstance(p, dict) and p.get("in") == "header" and p.get("name") == header_param["name"]
+                    for p in params
+                ):
+                    continue
+                params.append(deepcopy(header_param))
 
     return result

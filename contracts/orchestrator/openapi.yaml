@@ -12739,6 +12739,15 @@ paths:
             type: string
             format: uuid
           description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: X-CC1C-Locale
+          in: header
+          required: false
+          schema:
+            type: string
+            enum:
+              - ru
+              - en
+          description: Optional operator locale override. If omitted, locale is resolved from browser language signal and then falls back to the deployment default.
   /api/v2/system/runtime-control/catalog/:
     get:
       operationId: v2_system_runtime_control_catalog_list
@@ -27896,6 +27905,36 @@ components:
         - can_manage_driver_catalogs
         - can_manage_runtime_controls
         - can_manage_rbac
+    SystemBootstrapI18nSummary:
+      type: object
+      properties:
+        supported_locales:
+          type: array
+          items:
+            type: string
+            enum:
+              - ru
+              - en
+        default_locale:
+          type: string
+          enum:
+            - ru
+            - en
+        requested_locale:
+          type: string
+          nullable: true
+          enum:
+            - ru
+            - en
+        effective_locale:
+          type: string
+          enum:
+            - ru
+            - en
+      required:
+        - supported_locales
+        - default_locale
+        - effective_locale
     SystemBootstrapResponse:
       type: object
       properties:
@@ -27907,9 +27946,12 @@ components:
           $ref: '#/components/schemas/EffectiveAccessResponse'
         capabilities:
           $ref: '#/components/schemas/ShellCapabilities'
+        i18n:
+          $ref: '#/components/schemas/SystemBootstrapI18nSummary'
       required:
         - access
         - capabilities
+        - i18n
         - me
         - tenant_context
     RuntimeProvider:

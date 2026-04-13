@@ -79,7 +79,7 @@ func CORSMiddleware(cfg *CORSConfig) gin.HandlerFunc {
 		}
 		// If origin is set but not in allowed list - don't set CORS headers (browser will block)
 
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Last-Event-ID, X-Request-ID, X-UI-Action-ID, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Last-Event-ID, X-Request-ID, X-UI-Action-ID, X-CC1C-Locale, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-UI-Action-ID")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
 		c.Writer.Header().Set("Access-Control-Max-Age", "86400") // 24 hours preflight cache

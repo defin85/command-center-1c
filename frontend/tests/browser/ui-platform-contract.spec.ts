@@ -2356,8 +2356,8 @@ function createRequestCounts(): RequestCounts {
   }
 }
 
-async function setupAuth(page: Page) {
-  await page.addInitScript(({ tenantId, serviceMeshMetricsMessage }) => {
+async function setupAuth(page: Page, options?: { localeOverride?: 'ru' | 'en' | null }) {
+  await page.addInitScript(({ tenantId, serviceMeshMetricsMessage, localeOverride }) => {
     window.__CC1C_ENV__ = {
       VITE_BASE_HOST: '127.0.0.1',
       VITE_API_URL: 'http://127.0.0.1:15173',
@@ -2450,9 +2450,17 @@ async function setupAuth(page: Page) {
 
     localStorage.setItem('auth_token', 'test-token')
     localStorage.setItem('active_tenant_id', tenantId)
+    if (localeOverride) {
+      if (!localStorage.getItem('cc1c_locale_override')) {
+        localStorage.setItem('cc1c_locale_override', localeOverride)
+      }
+    } else {
+      localStorage.removeItem('cc1c_locale_override')
+    }
   }, {
     tenantId: TENANT_ID,
     serviceMeshMetricsMessage: SERVICE_MESH_METRICS_MESSAGE,
+    localeOverride: options?.localeOverride ?? null,
   })
 }
 
@@ -2503,6 +2511,7 @@ async function setupUiPlatformMocks(
     selectedUserOutsideCatalogSlice?: boolean
     selectedDlqOutsideCatalogSlice?: boolean
     selectedArtifactOutsideCatalogSlice?: boolean
+    observedLocaleHeaders?: string[]
   },
 ) {
   const counts = options?.counts
@@ -2513,6 +2522,7 @@ async function setupUiPlatformMocks(
   const selectedUserOutsideCatalogSlice = options?.selectedUserOutsideCatalogSlice ?? false
   const selectedDlqOutsideCatalogSlice = options?.selectedDlqOutsideCatalogSlice ?? false
   const selectedArtifactOutsideCatalogSlice = options?.selectedArtifactOutsideCatalogSlice ?? false
+  const observedLocaleHeaders = options?.observedLocaleHeaders
   const currentUser = { id: 1, username: 'ui-platform', is_staff: isStaff }
   const tenantContext = {
     active_tenant_id: TENANT_ID,
@@ -2579,11 +2589,16 @@ async function setupUiPlatformMocks(
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+    const requestedLocaleHeader = request.headers()['x-cc1c-locale']
+    const requestedLocale = requestedLocaleHeader === 'ru' || requestedLocaleHeader === 'en'
+      ? requestedLocaleHeader
+      : undefined
 
     if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
       if (counts) {
         counts.bootstrap += 1
       }
+      observedLocaleHeaders?.push(requestedLocale ?? '')
       return fulfillJson(route, {
         me: currentUser,
         tenant_context: tenantContext,
@@ -2600,6 +2615,12 @@ async function setupUiPlatformMocks(
           can_manage_rbac: isStaff,
           can_manage_driver_catalogs: isStaff,
           can_manage_runtime_controls: canManageRuntimeControls,
+        },
+        i18n: {
+          supported_locales: ['ru', 'en'],
+          default_locale: 'ru',
+          requested_locale: requestedLocale ?? null,
+          effective_locale: requestedLocale ?? 'ru',
         },
       })
     }
@@ -4641,6 +4662,39 @@ test('UI platform: /clusters keeps detail loading fail-closed until the detail s
   await expect(page.getByText('Cluster metadata')).toHaveCount(0)
   await expect(page.getByText('Database preview')).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
   await expect(page.getByText('db-services')).toBeVisible()
+})
+
+test('UI platform: /system-status keeps locale switch and reload aligned with the shell i18n context', async ({ page }) => {
+  const observedLocaleHeaders: string[] = []
+  const localeSelect = page.getByTestId('shell-locale-select')
+  const localeSelectTrigger = localeSelect.locator('.ant-select-selector')
+  const refreshButtonRu = page.locator('button').filter({ hasText: /^Обновить$/ })
+  const refreshButtonEn = page.locator('button').filter({ hasText: /^Refresh$/ })
+
+  await setupAuth(page, { localeOverride: 'ru' })
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { observedLocaleHeaders })
+
+  await page.goto('/system-status', { waitUntil: 'domcontentloaded' })
+
+  await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Язык')
+  await expect(refreshButtonRu).toBeVisible()
+  await expect.poll(() => observedLocaleHeaders[0]).toBe('ru')
+
+  await localeSelectTrigger.click()
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) [title="English"]').click()
+
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+  await expect(refreshButtonEn).toBeVisible()
+  await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+
+  await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+  await expect(refreshButtonEn).toBeVisible()
+  await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
 })
 
 test('UI platform: /system-status restores diagnostics context in a mobile-safe drawer with paused polling', async ({ page }) => {
