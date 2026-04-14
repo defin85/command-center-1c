@@ -68,7 +68,7 @@ export function ClusterWorkspaceDetailPanel({
         <StatusBadge status={cluster.status ?? 'unknown'} label={cluster.status_display} />
         <Text type="secondary">
           {t(($) => $.labels.databasesCount, {
-            count: formatters.number(cluster.databases_count),
+            count: cluster.databases_count,
           })}
         </Text>
         <Text type="secondary">

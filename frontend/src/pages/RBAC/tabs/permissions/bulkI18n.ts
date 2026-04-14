@@ -1,9 +1,6 @@
-import type { AppCatalogSchema } from '../../../../i18n/resources'
+import type { useRbacTranslation } from '../../../../i18n'
 
-type Translate = (
-  selector: ($: AppCatalogSchema['rbac']) => unknown,
-  options?: Record<string, unknown>,
-) => string
+type Translate = ReturnType<typeof useRbacTranslation>['t']
 
 export const createClusterBulkI18n = (t: Translate) => ({
   title: t(($) => $.permissions.bulk.clusters.title),
@@ -28,10 +25,17 @@ export const createClusterBulkI18n = (t: Translate) => ({
   roleRequiredMessage: t(($) => $.permissions.bulk.clusters.roleRequiredMessage),
   reasonRequiredMessage: t(($) => $.permissions.bulk.clusters.reasonRequiredMessage),
   grantSuccessMessage: (result: { created: number; updated: number; skipped: number }) => (
-    t(($) => $.permissions.bulk.clusters.grantSuccessMessage, result)
+    t(($) => $.permissions.bulk.clusters.grantSuccessMessage, {
+      created: String(result.created),
+      updated: String(result.updated),
+      skipped: String(result.skipped),
+    })
   ),
   revokeSuccessMessage: (result: { deleted: number; skipped: number }) => (
-    t(($) => $.permissions.bulk.clusters.revokeSuccessMessage, result)
+    t(($) => $.permissions.bulk.clusters.revokeSuccessMessage, {
+      deleted: String(result.deleted),
+      skipped: String(result.skipped),
+    })
   ),
   grantFailedMessage: t(($) => $.permissions.bulk.clusters.grantFailedMessage),
   revokeFailedMessage: t(($) => $.permissions.bulk.clusters.revokeFailedMessage),
@@ -60,10 +64,17 @@ export const createDatabaseBulkI18n = (t: Translate) => ({
   roleRequiredMessage: t(($) => $.permissions.bulk.databases.roleRequiredMessage),
   reasonRequiredMessage: t(($) => $.permissions.bulk.databases.reasonRequiredMessage),
   grantSuccessMessage: (result: { created: number; updated: number; skipped: number }) => (
-    t(($) => $.permissions.bulk.databases.grantSuccessMessage, result)
+    t(($) => $.permissions.bulk.databases.grantSuccessMessage, {
+      created: String(result.created),
+      updated: String(result.updated),
+      skipped: String(result.skipped),
+    })
   ),
   revokeSuccessMessage: (result: { deleted: number; skipped: number }) => (
-    t(($) => $.permissions.bulk.databases.revokeSuccessMessage, result)
+    t(($) => $.permissions.bulk.databases.revokeSuccessMessage, {
+      deleted: String(result.deleted),
+      skipped: String(result.skipped),
+    })
   ),
   grantFailedMessage: t(($) => $.permissions.bulk.databases.grantFailedMessage),
   revokeFailedMessage: t(($) => $.permissions.bulk.databases.revokeFailedMessage),

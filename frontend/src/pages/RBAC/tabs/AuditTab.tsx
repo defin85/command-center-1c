@@ -88,7 +88,7 @@ export function AuditTab(props: { canManageRbac: boolean }) {
             searchPlaceholder: t(($) => $.audit.searchPlaceholder),
             refreshText: t(($) => $.audit.refresh),
             viewText: t(($) => $.audit.view),
-            detailsModalTitle: (id) => t(($) => $.audit.detailsModalTitle, { id }),
+            detailsModalTitle: (id) => t(($) => $.audit.detailsModalTitle, { id: String(id) }),
             columnCreatedAt: t(($) => $.audit.columns.createdAt),
             columnActor: t(($) => $.audit.columns.actor),
             columnAction: t(($) => $.audit.columns.action),

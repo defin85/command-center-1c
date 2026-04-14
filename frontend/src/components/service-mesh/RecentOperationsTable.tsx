@@ -367,7 +367,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
               maxTagCount="responsive"
             />
             <span className="recent-operations-table__total">
-              {t(($) => $.recentOperations.total, { count: formatters.number(displayTotal) })}
+              {t(($) => $.recentOperations.total, { count: displayTotal })}
             </span>
             <Button
               type="text"

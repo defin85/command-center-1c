@@ -90,7 +90,7 @@ export const FailedOperationsAlert = ({
         showIcon
         icon={<ExclamationCircleOutlined />}
         message={t(($) => $.failedOperations.requiresAttention, {
-          count: formatters.number(operations.length),
+          count: operations.length,
         })}
         description={
           <>
@@ -116,7 +116,7 @@ export const FailedOperationsAlert = ({
             {hasMore && (
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {t(($) => $.failedOperations.andMore, {
-                  count: formatters.number(operations.length - maxDisplay),
+                  count: operations.length - maxDisplay,
                 })}
               </Text>
             )}

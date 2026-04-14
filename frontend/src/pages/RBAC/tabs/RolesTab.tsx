@@ -402,7 +402,7 @@ export function RolesTab(props: {
               mode: 'replace',
               reason,
             })
-            message.success(t(($) => $.roles.clonedSuccess, { name: created.name, id: created.id }))
+            message.success(t(($) => $.roles.clonedSuccess, { name: created.name, id: String(created.id) }))
             setCloneRoleOpen(false)
             setCloneRoleSourceRoleId(null)
           } catch {
@@ -413,7 +413,7 @@ export function RolesTab(props: {
         <Alert
           type="info"
           message={cloneRoleSourceRoleId
-            ? t(($) => $.roles.sourceRoleId, { id: cloneRoleSourceRoleId })
+            ? t(($) => $.roles.sourceRoleId, { id: String(cloneRoleSourceRoleId) })
             : t(($) => $.roles.selectSourceRole)}
         />
         <Input
@@ -462,8 +462,8 @@ export function RolesTab(props: {
             showIcon
             message={(roleEditorDiff.added.length > 0 || roleEditorDiff.removed.length > 0)
               ? t(($) => $.roles.permissionsChanged, {
-                added: roleEditorDiff.added.length,
-                removed: roleEditorDiff.removed.length,
+                added: String(roleEditorDiff.added.length),
+                removed: String(roleEditorDiff.removed.length),
               })
               : t(($) => $.roles.permissionsUnchanged)}
             description={(

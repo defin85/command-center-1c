@@ -383,7 +383,7 @@ export const Clusters = () => {
     let success = 0
     let failed = 0
 
-    message.loading({ content: t(($) => $.messages.resettingMany, { count: formatters.number(ids.length) }), key })
+    message.loading({ content: t(($) => $.messages.resettingMany, { count: ids.length }), key })
 
     for (let index = 0; index < ids.length; index += 1) {
       const clusterId = ids[index]
@@ -443,7 +443,7 @@ export const Clusters = () => {
       onSuccess: (result) => {
         const dbInfo = result.databases_found !== undefined
           ? t(($) => $.messages.syncFoundDatabasesDetails, {
-            count: formatters.number(result.databases_found),
+            count: result.databases_found,
           })
           : ''
         message.success({
@@ -495,7 +495,7 @@ export const Clusters = () => {
                 <Text type="secondary">{cluster.ras_server}</Text>
                 <Text type="secondary">
                   {t(($) => $.labels.databasesCount, {
-                    count: formatters.number(cluster.databases_count),
+                    count: cluster.databases_count,
                   })}
                 </Text>
               </Flex>

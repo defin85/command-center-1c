@@ -316,7 +316,10 @@ export function UserRolesTab(props: { canManageRbac: boolean }) {
 
       <Modal
         title={userRolesEditorUser
-          ? t(($) => $.userRoles.modalTitle, { username: userRolesEditorUser.username, id: userRolesEditorUser.id })
+          ? t(($) => $.userRoles.modalTitle, {
+            username: userRolesEditorUser.username,
+            id: String(userRolesEditorUser.id),
+          })
           : t(($) => $.userRoles.modalFallbackTitle)}
         open={userRolesEditorOpen}
         width={760}
