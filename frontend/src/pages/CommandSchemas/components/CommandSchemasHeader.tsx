@@ -1,5 +1,6 @@
 import { Button, Space, Switch, Typography } from 'antd'
 import { ReloadOutlined, RollbackOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { CommandSchemasMode } from '../model/types'
 
@@ -26,27 +27,29 @@ export function CommandSchemasHeader(props: {
   onOpenPromote: () => void
   onOpenSave: () => void
 }) {
+  const { t } = useAdminSupportTranslation()
+
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
       {props.hideTitle ? <div /> : (
         <div>
-          <Title level={2} style={{ marginBottom: 0 }}>Command Schemas</Title>
-          <Text type="secondary">Human-oriented editor for driver command schemas (MinIO artifacts).</Text>
+          <Title level={2} style={{ marginBottom: 0 }}>{t(($) => $.commandSchemas.header.title)}</Title>
+          <Text type="secondary">{t(($) => $.commandSchemas.header.subtitle)}</Text>
         </div>
       )}
       <Space wrap>
         <Space size="small" align="center">
-          <Text type="secondary">Mode</Text>
+          <Text type="secondary">{t(($) => $.commandSchemas.header.modeLabel)}</Text>
           <Switch
             checked={props.mode === 'raw'}
             onChange={(checked) => props.setMode(checked ? 'raw' : 'guided')}
-            checkedChildren="Raw"
-            unCheckedChildren="Guided"
+            checkedChildren={t(($) => $.commandSchemas.header.raw)}
+            unCheckedChildren={t(($) => $.commandSchemas.header.guided)}
             disabled={props.loading}
           />
         </Space>
         <Button data-testid="command-schemas-refresh" onClick={props.onRefresh} loading={props.loading} icon={<ReloadOutlined />}>
-          Refresh
+          {t(($) => $.commandSchemas.header.refresh)}
         </Button>
         <Button
           data-testid="command-schemas-import-its-open"
@@ -54,7 +57,7 @@ export function CommandSchemasHeader(props: {
           disabled={props.loading || props.saving || props.rollingBack || props.rollbackLoading}
           icon={<UploadOutlined />}
         >
-          Import ITS...
+          {t(($) => $.commandSchemas.header.importIts)}
         </Button>
         <Button
           data-testid="command-schemas-rollback-open"
@@ -62,14 +65,14 @@ export function CommandSchemasHeader(props: {
           disabled={!props.viewLoaded}
           icon={<RollbackOutlined />}
         >
-          Rollback...
+          {t(($) => $.commandSchemas.header.rollback)}
         </Button>
         <Button
           data-testid="command-schemas-promote-open"
           onClick={props.onOpenPromote}
           disabled={!props.viewLoaded || !props.canPromoteLatest || props.loading || props.saving || props.rollingBack || props.rollbackLoading || props.importingIts || props.promoting}
         >
-          Promote latest...
+          {t(($) => $.commandSchemas.header.promoteLatest)}
         </Button>
         {props.mode === 'guided' && (
           <Button
@@ -79,7 +82,7 @@ export function CommandSchemasHeader(props: {
             onClick={props.onOpenSave}
             disabled={!props.viewLoaded || !props.dirty || props.saving}
           >
-            Save...
+            {t(($) => $.commandSchemas.header.save)}
           </Button>
         )}
       </Space>

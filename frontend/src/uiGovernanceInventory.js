@@ -519,6 +519,58 @@ export const platformGovernedRouteInventory = routeGovernanceInventory.filter(
   (entry) => entry.tier === 'platform-governed'
 )
 
+export const platformGovernedRouteModuleFileSet = new Set(
+  platformGovernedRouteInventory
+    .map((entry) => entry.modulePath)
+    .filter((modulePath) => Boolean(modulePath))
+)
+
+export const platformGovernedShellSurfaceFileSet = new Set(
+  shellSurfaceGovernanceInventory
+    .filter((entry) => entry.tier === 'platform-governed')
+    .map((entry) => entry.filePath)
+)
+
+const sharedLocaleBoundaryGovernedFiles = [
+  'src/components/layout/MainLayout.tsx',
+  'src/components/platform/EmptyState.tsx',
+  'src/components/ServiceStatusCard.tsx',
+  'src/components/SystemOverview.tsx',
+  'src/components/service-mesh/RecentOperationsTable.tsx',
+  'src/components/service-mesh/SystemHealthCard.tsx',
+  'src/components/clusters/DiscoverClustersModal.tsx',
+  'src/pages/Dashboard/components/ClusterOverview.tsx',
+  'src/pages/Dashboard/components/FailedOperationsAlert.tsx',
+  'src/pages/Dashboard/components/QuickActionsBar.tsx',
+  'src/pages/Dashboard/components/StatisticsCards.tsx',
+  'src/pages/Clusters/components/ClusterCredentialsModal.tsx',
+  'src/pages/Clusters/components/ClusterUpsertModal.tsx',
+  'src/pages/Clusters/components/ClusterWorkspaceDetailPanel.tsx',
+  'src/pages/RBAC/components/RbacAuditPanel.tsx',
+  'src/pages/RBAC/components/RbacClusterDatabasePicker.tsx',
+  'src/pages/RBAC/components/RbacClusterDatabaseTree.tsx',
+  'src/pages/RBAC/components/RbacPermissionsTable.tsx',
+  'src/pages/RBAC/components/RbacPrincipalPicker.tsx',
+  'src/pages/RBAC/components/RbacResourceBrowser.tsx',
+  'src/pages/RBAC/components/RbacResourcePicker.tsx',
+  'src/pages/RBAC/hooks/useConfirmReason.tsx',
+  'src/pages/RBAC/tabs/AuditTab.tsx',
+  'src/pages/RBAC/tabs/DbmsUsersTab.tsx',
+  'src/pages/RBAC/tabs/EffectiveAccessTab.tsx',
+  'src/pages/RBAC/tabs/InfobaseUsersTab.tsx',
+  'src/pages/RBAC/tabs/PermissionsTab.tsx',
+  'src/pages/RBAC/tabs/RolesTab.tsx',
+  'src/pages/RBAC/tabs/UserRolesTab.tsx',
+  'src/pages/RBAC/tabs/permissions/usePermissionColumns.tsx',
+  'src/pages/RBAC/tabs/permissions/useRbacResourceRefs.tsx',
+]
+
+export const localeBoundaryGovernedFileSet = new Set([
+  ...platformGovernedRouteModuleFileSet,
+  ...platformGovernedShellSurfaceFileSet,
+  ...sharedLocaleBoundaryGovernedFiles,
+])
+
 export const compactMasterPaneRouteInventory = routeGovernanceInventory.filter(
   (entry) => entry.modulePath && entry.masterPaneGovernance?.mode === 'compact-selection'
 )

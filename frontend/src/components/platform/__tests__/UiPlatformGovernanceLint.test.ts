@@ -309,7 +309,10 @@ describe('ui platform governance lint', () => {
     'src/pages/RBAC/tabs/EffectiveAccessTab.tsx',
     'src/pages/RBAC/tabs/RolesTab.tsx',
     'src/pages/RBAC/tabs/UserRolesTab.tsx',
-  ])('rejects raw locale formatting in first-wave pilot route module %s', async (filePath) => {
+    'src/pages/Users/UsersPage.tsx',
+    'src/pages/Operations/OperationsPage.tsx',
+    'src/pages/Artifacts/ArtifactDetailsDrawer.tsx',
+  ])('rejects raw locale formatting in inventory-backed governed module %s', async (filePath) => {
     const messages = await lintSnippet(
       filePath,
       `

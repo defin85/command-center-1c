@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Space } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import { LazyJsonCodeEditor } from '../../../../components/code/LazyJsonCodeEditor'
 import { safeCatalogDriverSchema } from '../../commandSchemasUtils'
@@ -6,9 +7,10 @@ import type { CommandSchemasPageModel } from '../../useCommandSchemasPageModel'
 
 export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   if (!model.view) {
-    return <Alert type="info" showIcon message="Editor data is not loaded yet" />
+    return <Alert type="info" showIcon message={t(($) => $.commandSchemas.driverSchema.editorNotLoaded)} />
   }
 
   const baseSchema = safeCatalogDriverSchema(model.view.catalogs?.base)
@@ -20,11 +22,11 @@ export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasP
         <Alert
           type="warning"
           showIcon
-          message="Base latest differs from approved"
-          description="Guided mode edits overrides against approved base, while Raw mode shows base=latest. Promote latest → approved to make guided/effective reflect it."
+          message={t(($) => $.commandSchemas.driverSchema.latestDiffersTitle)}
+          description={t(($) => $.commandSchemas.driverSchema.latestDiffersDescription)}
           action={(
             <Button size="small" onClick={model.openPromote} disabled={model.promoting || model.loading || model.saving}>
-              Promote latest...
+              {t(($) => $.commandSchemas.driverSchema.promoteLatest)}
             </Button>
           )}
         />
@@ -32,24 +34,24 @@ export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasP
       <Alert
         type="info"
         showIcon
-        message="Driver-level schema"
-        description="Shared connection/options schema for this driver (independent from any selected command)."
+        message={t(($) => $.commandSchemas.driverSchema.schemaTitle)}
+        description={t(($) => $.commandSchemas.driverSchema.schemaDescription)}
       />
       <Card
         size="small"
-        title="Driver schema patch (draft overrides)"
+        title={t(($) => $.commandSchemas.driverSchema.patchTitle)}
         extra={(
           <Space>
-            <Button onClick={model.copyEffectiveDriverSchema}>Copy effective</Button>
+            <Button onClick={model.copyEffectiveDriverSchema}>{t(($) => $.commandSchemas.driverSchema.copyEffective)}</Button>
             <Button
               data-testid="command-schemas-driver-schema-copy-latest"
               onClick={() => { void model.copyLatestBaseDriverSchema() }}
               loading={model.copyLatestDriverSchemaLoading}
               disabled={model.loading || model.saving || model.promoting}
             >
-              Copy latest base
+              {t(($) => $.commandSchemas.driverSchema.copyLatestBase)}
             </Button>
-            <Button danger onClick={model.resetDriverSchemaOverrides}>Reset</Button>
+            <Button danger onClick={model.resetDriverSchemaOverrides}>{t(($) => $.commandSchemas.driverSchema.reset)}</Button>
           </Space>
         )}
       >
@@ -65,7 +67,7 @@ export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasP
           </div>
         )}
       </Card>
-      <Card size="small" title="Base driver schema (read-only)">
+      <Card size="small" title={t(($) => $.commandSchemas.driverSchema.baseReadOnly)}>
         <LazyJsonCodeEditor
           value={JSON.stringify(baseSchema ?? {}, null, 2)}
           onChange={() => {}}
@@ -74,7 +76,7 @@ export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasP
           readOnly
         />
       </Card>
-      <Card size="small" title="Effective driver schema (read-only)">
+      <Card size="small" title={t(($) => $.commandSchemas.driverSchema.effectiveReadOnly)}>
         <LazyJsonCodeEditor
           value={JSON.stringify(effectiveSchema ?? {}, null, 2)}
           onChange={() => {}}
@@ -86,4 +88,3 @@ export function CommandSchemasDriverSchemaEditor(props: { model: CommandSchemasP
     </Space>
   )
 }
-

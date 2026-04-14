@@ -1,5 +1,6 @@
 import { Alert, Form, Select, Space, Switch, Typography } from 'antd'
 import type { ModalFuncProps } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import { displayCommandId, normalizeStringList, safeText } from '../../commandSchemasUtils'
 import type { CommandSchemasPageModel } from '../../useCommandSchemasPageModel'
@@ -8,6 +9,7 @@ const { Text } = Typography
 
 export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   if (!model.selectedCommandId || !model.selectedEffective) {
     return null
@@ -51,17 +53,17 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
         <Alert
           type="warning"
           showIcon
-          message="Permissions/env constraints changed"
-          description="You changed who can run the command and/or in which environments. Review carefully."
+          message={t(($) => $.commandSchemas.permissions.changedTitle)}
+          description={t(($) => $.commandSchemas.permissions.changedDescription)}
         />
       )}
       <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
         <Space direction="vertical" size={0}>
-          <Text strong>Permissions</Text>
-          <Text type="secondary">Optional constraints for roles/envs and min DB level.</Text>
+          <Text strong>{t(($) => $.commandSchemas.permissions.title)}</Text>
+          <Text type="secondary">{t(($) => $.commandSchemas.permissions.subtitle)}</Text>
         </Space>
         <Space size="small">
-          <Text type="secondary">Override</Text>
+          <Text type="secondary">{t(($) => $.commandSchemas.permissions.override)}</Text>
           <Switch
             size="small"
             checked={permissionsOver}
@@ -83,10 +85,10 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
 
               if (permissionsChangedFromBase) {
                 confirm({
-                  title: 'Permissions/env constraints changed',
-                  content: `This will change permissions/env constraints for ${displayId}.`,
-                  okText: 'Apply',
-                  cancelText: 'Cancel',
+                  title: t(($) => $.commandSchemas.permissions.confirmTitle),
+                  content: t(($) => $.commandSchemas.permissions.confirmDescription, { commandId: displayId }),
+                  okText: t(($) => $.commandSchemas.basics.apply),
+                  cancelText: t(($) => $.commandSchemas.basics.cancel),
                   onOk: () => {
                     model.setCommandPatch(model.selectedCommandId, (p) => {
                       delete p.permissions
@@ -105,7 +107,7 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
       </Space>
 
       <Form layout="vertical">
-        <Form.Item label="Allowed roles">
+        <Form.Item label={t(($) => $.commandSchemas.permissions.allowedRoles)}>
           <Select
             mode="tags"
             value={allowedRoles}
@@ -115,10 +117,10 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
               p.permissions.allowed_roles = value
             })}
             tokenSeparators={[',']}
-            placeholder="e.g. staff, operators"
+            placeholder={t(($) => $.commandSchemas.permissions.placeholderAllowedRoles)}
           />
         </Form.Item>
-        <Form.Item label="Denied roles">
+        <Form.Item label={t(($) => $.commandSchemas.permissions.deniedRoles)}>
           <Select
             mode="tags"
             value={deniedRoles}
@@ -128,10 +130,10 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
               p.permissions.denied_roles = value
             })}
             tokenSeparators={[',']}
-            placeholder="e.g. guests"
+            placeholder={t(($) => $.commandSchemas.permissions.placeholderDeniedRoles)}
           />
         </Form.Item>
-        <Form.Item label="Allowed envs">
+        <Form.Item label={t(($) => $.commandSchemas.permissions.allowedEnvs)}>
           <Select
             mode="tags"
             value={allowedEnvs}
@@ -141,10 +143,10 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
               p.permissions.allowed_envs = value
             })}
             tokenSeparators={[',']}
-            placeholder="e.g. prod, stage"
+            placeholder={t(($) => $.commandSchemas.permissions.placeholderAllowedEnvs)}
           />
         </Form.Item>
-        <Form.Item label="Denied envs">
+        <Form.Item label={t(($) => $.commandSchemas.permissions.deniedEnvs)}>
           <Select
             mode="tags"
             value={deniedEnvs}
@@ -154,10 +156,10 @@ export function CommandSchemasPermissionsEditor(props: { model: CommandSchemasPa
               p.permissions.denied_envs = value
             })}
             tokenSeparators={[',']}
-            placeholder="e.g. dev"
+            placeholder={t(($) => $.commandSchemas.permissions.placeholderDeniedEnvs)}
           />
         </Form.Item>
-        <Form.Item label="Min DB level">
+        <Form.Item label={t(($) => $.commandSchemas.permissions.minDbLevel)}>
           <Select
             value={minDbLevel || undefined}
             disabled={!permissionsOver}

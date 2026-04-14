@@ -1,5 +1,6 @@
 import { Tag } from 'antd'
 import type { ReactNode } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 
 type StatusBadgeProps = {
   status: string
@@ -60,7 +61,34 @@ const DEFAULT_STYLES: Record<string, { backgroundColor: string, borderColor: str
 }
 
 export function StatusBadge({ status, label }: StatusBadgeProps) {
+  const { t } = usePlatformTranslation()
   const style = DEFAULT_STYLES[status] ?? DEFAULT_STYLES.unknown
+  const resolvedLabel = label ?? (() => {
+    switch (status) {
+      case 'active':
+        return t(($) => $.statusBadge.active)
+      case 'compatible':
+        return t(($) => $.statusBadge.compatible)
+      case 'published':
+        return t(($) => $.statusBadge.published)
+      case 'deactivated':
+        return t(($) => $.statusBadge.deactivated)
+      case 'inactive':
+        return t(($) => $.statusBadge.inactive)
+      case 'pinned':
+        return t(($) => $.statusBadge.pinned)
+      case 'warning':
+        return t(($) => $.statusBadge.warning)
+      case 'incompatible':
+        return t(($) => $.statusBadge.incompatible)
+      case 'error':
+        return t(($) => $.statusBadge.error)
+      case 'unknown':
+        return t(($) => $.statusBadge.unknown)
+      default:
+        return status
+    }
+  })()
 
   return (
     <Tag
@@ -70,7 +98,7 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
         color: style.color,
       }}
     >
-      {label ?? status}
+      {resolvedLabel}
     </Tag>
   )
 }

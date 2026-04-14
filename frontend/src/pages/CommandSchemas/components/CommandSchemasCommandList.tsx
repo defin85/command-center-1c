@@ -1,4 +1,5 @@
 import { Checkbox, Input, Select, Space, Tag, Typography } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { CommandListItem } from '../commandSchemasUtils'
 
@@ -20,12 +21,14 @@ export function CommandSchemasCommandList(props: {
   selectedCommandId: string
   onSelectCommand: (commandId: string) => void
 }) {
+  const { t } = useAdminSupportTranslation()
+
   return (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
       <Input.Search
         value={props.search}
         onChange={(e) => props.setSearch(e.target.value)}
-        placeholder="Search id/label/description/flags"
+        placeholder={t(($) => $.commandSchemas.list.searchPlaceholder)}
         allowClear
       />
       <Space wrap>
@@ -34,9 +37,9 @@ export function CommandSchemasCommandList(props: {
           onChange={(v) => props.setRiskFilter(v)}
           style={{ width: 140 }}
           options={[
-            { value: 'any', label: 'Risk: any' },
-            { value: 'safe', label: 'Risk: safe' },
-            { value: 'dangerous', label: 'Risk: dangerous' },
+            { value: 'any', label: t(($) => $.commandSchemas.list.riskAny) },
+            { value: 'safe', label: t(($) => $.commandSchemas.list.riskSafe) },
+            { value: 'dangerous', label: t(($) => $.commandSchemas.list.riskDangerous) },
           ]}
         />
         <Select
@@ -44,19 +47,19 @@ export function CommandSchemasCommandList(props: {
           onChange={(v) => props.setScopeFilter(v)}
           style={{ width: 160 }}
           options={[
-            { value: 'any', label: 'Scope: any' },
-            { value: 'per_database', label: 'Scope: per_database' },
-            { value: 'global', label: 'Scope: global' },
+            { value: 'any', label: t(($) => $.commandSchemas.list.scopeAny) },
+            { value: 'per_database', label: t(($) => $.commandSchemas.list.scopePerDatabase) },
+            { value: 'global', label: t(($) => $.commandSchemas.list.scopeGlobal) },
           ]}
         />
         <Checkbox checked={props.onlyModified} onChange={(e) => props.setOnlyModified(e.target.checked)}>
-          Only modified
+          {t(($) => $.commandSchemas.list.onlyModified)}
         </Checkbox>
         <Checkbox checked={props.hideDisabled} onChange={(e) => props.setHideDisabled(e.target.checked)}>
-          Hide disabled
+          {t(($) => $.commandSchemas.list.hideDisabled)}
         </Checkbox>
       </Space>
-      <Text type="secondary">Commands: {props.commandsCount}</Text>
+      <Text type="secondary">{t(($) => $.commandSchemas.list.commandsCount, { count: props.commandsCount })}</Text>
 
       <div style={{ maxHeight: 720, overflow: 'auto', paddingRight: 6 }}>
         {props.groupedCommands.keys.map((groupKey) => (
@@ -73,7 +76,7 @@ export function CommandSchemasCommandList(props: {
                     data-testid={`command-schemas-command-${item.id}`}
                     onClick={() => props.onSelectCommand(item.id)}
                     aria-current={selected ? 'true' : undefined}
-                    aria-label={`Select command ${item.display_id}`}
+                    aria-label={t(($) => $.commandSchemas.list.selectCommandAria, { commandId: item.display_id })}
                     style={{
                       cursor: 'pointer',
                       border: '1px solid #f0f0f0',
@@ -88,10 +91,10 @@ export function CommandSchemasCommandList(props: {
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
                       <Space wrap>
                         <Text strong>{item.display_id}</Text>
-                        {item.has_overrides && <Tag color="blue">overrides</Tag>}
-                        {item.disabled && <Tag>disabled</Tag>}
-                        {item.risk_level === 'dangerous' && <Tag color="red">dangerous</Tag>}
-                        {item.scope === 'global' && <Tag color="geekblue">global</Tag>}
+                        {item.has_overrides && <Tag color="blue">{t(($) => $.commandSchemas.list.overrides)}</Tag>}
+                        {item.disabled && <Tag>{t(($) => $.commandSchemas.list.disabled)}</Tag>}
+                        {item.risk_level === 'dangerous' && <Tag color="red">{t(($) => $.commandSchemas.list.dangerous)}</Tag>}
+                        {item.scope === 'global' && <Tag color="geekblue">{t(($) => $.commandSchemas.list.global)}</Tag>}
                       </Space>
                       {item.description && (
                         <Text type="secondary" ellipsis={{ tooltip: item.description }}>{item.description}</Text>
@@ -107,4 +110,3 @@ export function CommandSchemasCommandList(props: {
     </Space>
   )
 }
-

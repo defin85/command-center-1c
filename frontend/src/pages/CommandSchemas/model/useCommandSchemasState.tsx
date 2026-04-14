@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { DriverCommandParamV2, DriverCommandV2 } from '../../../api/driverCommands'
 import {
@@ -26,6 +27,7 @@ import {
 import type { CommandSchemasEditorTab, CommandSchemasMode, CommandSchemasSideTab, CommandSchemasValidateSummary } from './types'
 
 export function useCommandSchemasState() {
+  const { t } = useAdminSupportTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeMode = (searchParams.get('mode') || '').trim().toLowerCase() === 'raw' ? 'raw' : 'guided'
   const routeDriver = (() => {
@@ -137,12 +139,12 @@ export function useCommandSchemasState() {
       setValidateError(null)
       setValidateSummary(null)
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to load command schemas'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedLoadCommandSchemas)
       setError(text)
     } finally {
       setLoading(false)
     }
-  }, [activeDriver, mode, routeCommandId])
+  }, [activeDriver, mode, routeCommandId, t])
 
   useEffect(() => {
     void fetchView()

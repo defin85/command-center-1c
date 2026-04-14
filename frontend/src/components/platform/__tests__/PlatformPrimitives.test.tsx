@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import * as React from 'react'
+import { changeLanguage } from '@/i18n/runtime'
 
 const { mockTrackUiAction } = vi.hoisted(() => ({
   mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
@@ -18,6 +19,7 @@ import {
   DrawerSurfaceShell,
   DrawerFormShell,
   EntityList,
+  JsonBlock,
   MasterDetailShell,
   ModalFormShell,
   ModalSurfaceShell,
@@ -284,6 +286,32 @@ describe('platform primitives', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1)
   })
 
+  it('localizes shared shell action labels from the platform namespace', async () => {
+    await changeLanguage('en')
+
+    render(
+      <AntApp>
+        <>
+          <ModalFormShell open onClose={vi.fn()} onSubmit={vi.fn()} title="Create profile">
+            <div>Modal form body</div>
+          </ModalFormShell>
+          <ModalSurfaceShell open onClose={vi.fn()} onSubmit={vi.fn()} title="Inspect surface">
+            <div>Modal surface body</div>
+          </ModalSurfaceShell>
+          <DrawerFormShell open onClose={vi.fn()} onSubmit={vi.fn()} title="Drawer workspace">
+            <div>Drawer form body</div>
+          </DrawerFormShell>
+          <JsonBlock title="Payload" value={{ mode: 'strict' }} />
+        </>
+      </AntApp>,
+    )
+
+    expect(screen.getAllByRole('button', { name: 'Save' })).toHaveLength(2)
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Cancel' })).toHaveLength(2)
+    expect(screen.getByText('Copy JSON')).toBeInTheDocument()
+  })
+
   it('degrades MasterDetailShell into list plus Drawer on narrow viewport', async () => {
     const originalInnerWidth = window.innerWidth
     Object.defineProperty(window, 'innerWidth', {
@@ -360,10 +388,26 @@ describe('platform primitives', () => {
       </AntApp>,
     )
 
-    expect(screen.getByText('deactivated')).toHaveStyle({
+    expect(screen.getByText('Deactivated')).toHaveStyle({
       backgroundColor: '#f3f4f6',
       borderColor: '#d1d5db',
       color: '#374151',
     })
+  })
+
+  it('falls back to localized platform status labels when no explicit badge label is provided', async () => {
+    await changeLanguage('ru')
+
+    render(
+      <AntApp>
+        <>
+          <StatusBadge status="active" />
+          <StatusBadge status="unknown" />
+        </>
+      </AntApp>,
+    )
+
+    expect(screen.getByText('Активно')).toBeInTheDocument()
+    expect(screen.getByText('Неизвестно')).toBeInTheDocument()
   })
 })

@@ -9,6 +9,9 @@ const translateSystemStatusFailureMessage = (options?: Record<string, unknown>) 
     options,
   )
 )
+const translateAdminSupportUsersTitle = () => (
+  (i18n.t as unknown as (key: string) => string)('adminSupport:users.page.title')
+)
 
 describe('i18n runtime', () => {
   let originalEnglishSystemStatusCatalog: Record<string, unknown> = {}
@@ -41,5 +44,13 @@ describe('i18n runtime', () => {
     await changeLanguage('en')
 
     expect(translateSystemStatusFailureMessage()).toBe('Не удалось загрузить system status')
+  })
+
+  it('keeps eager admin-support catalogs available in both locales', async () => {
+    await changeLanguage('en')
+    expect(translateAdminSupportUsersTitle()).toBe('Users')
+
+    await changeLanguage('ru')
+    expect(translateAdminSupportUsersTitle()).toBe('Пользователи')
   })
 })

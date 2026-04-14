@@ -10,6 +10,7 @@ import { useAuthz } from '../../authz/useAuthz'
 import { DrawerSurfaceShell, PageHeader, RouteButton, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { useAdminSupportTranslation, useCommonTranslation, useLocaleFormatters } from '../../i18n'
 import { confirmWithTracking } from '../../observability/confirmWithTracking'
 import { trackUiAction } from '../../observability/uiActionJournal'
 
@@ -18,19 +19,57 @@ const { Text } = Typography
 export function DLQPage() {
   const { message, modal } = App.useApp()
   const { isStaff } = useAuthz()
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [retryReason, setRetryReason] = useState<string>('')
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'failed_at', label: 'Failed at', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'operation_id', label: 'Operation', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'error_code', label: 'Error', sortable: true, groupKey: 'details', groupLabel: 'Details' },
-    { key: 'error_message', label: 'Message', groupKey: 'details', groupLabel: 'Details' },
-    { key: 'worker_id', label: 'Worker', sortable: true, groupKey: 'details', groupLabel: 'Details' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    {
+      key: 'failed_at',
+      label: t(($) => $.dlq.table.failedAt),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.dlq.table.operation),
+    },
+    {
+      key: 'operation_id',
+      label: t(($) => $.dlq.table.operation),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.dlq.table.operation),
+    },
+    {
+      key: 'error_code',
+      label: t(($) => $.dlq.table.error),
+      sortable: true,
+      groupKey: 'details',
+      groupLabel: t(($) => $.dlq.table.message),
+    },
+    {
+      key: 'error_message',
+      label: t(($) => $.dlq.table.message),
+      groupKey: 'details',
+      groupLabel: t(($) => $.dlq.table.message),
+    },
+    {
+      key: 'worker_id',
+      label: t(($) => $.dlq.table.worker),
+      sortable: true,
+      groupKey: 'details',
+      groupLabel: t(($) => $.dlq.table.message),
+    },
+    {
+      key: 'actions',
+      label: t(($) => $.dlq.table.actions),
+      groupKey: 'actions',
+      groupLabel: t(($) => $.dlq.table.actions),
+    },
+  ], [t])
   const retryMutation = useRetryDlqMessage()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
 
   const updateSearchParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -80,31 +119,31 @@ export function DLQPage() {
       },
     }, () => retryEntry(entry))
     if (!result) {
-      message.error(`Retry failed: ${entry.dlq_message_id}`)
+      message.error(t(($) => $.dlq.messages.retryFailed, { id: entry.dlq_message_id }))
       return
     }
     if (result.ok) {
-      message.success(`Re-enqueued ${result.id}`)
+      message.success(t(($) => $.dlq.messages.retrySuccess, { id: result.id }))
     } else {
-      message.error(`Retry failed: ${result.id}`)
+      message.error(t(($) => $.dlq.messages.retryFailed, { id: result.id }))
     }
-  }, [message, retryEntry])
+  }, [message, retryEntry, t])
 
   const onBulkRetry = () => {
     const entries = (dlqQuery.data?.messages ?? []).filter((m) => selectedRowKeys.includes(m.dlq_message_id))
     if (entries.length === 0) return
 
     confirmWithTracking(modal, {
-      title: 'Retry selected DLQ messages?',
-      content: `Re-enqueue ${entries.length} message(s) sequentially.`,
-      okText: 'Retry',
-      cancelText: 'Cancel',
+      title: t(($) => $.dlq.confirm.retrySelectedTitle),
+      content: t(($) => $.dlq.confirm.retrySelectedContent, { count: entries.length }),
+      okText: t(($) => $.dlq.confirm.retry),
+      cancelText: t(($) => $.dlq.confirm.cancel),
       onOk: async () => {
         const key = 'bulk-dlq-retry'
         let success = 0
         let failed = 0
 
-        message.loading({ content: `Retrying ${entries.length}\u2026`, key })
+        message.loading({ content: t(($) => $.dlq.messages.bulkLoading, { count: entries.length }), key })
         for (let i = 0; i < entries.length; i++) {
           const result = await retryEntry(entries[i])
           if (result.ok) {
@@ -112,15 +151,33 @@ export function DLQPage() {
           } else {
             failed++
           }
-          message.loading({ content: `Retrying\u2026 (${i + 1}/${entries.length})`, key })
+          message.loading({
+            content: t(($) => $.dlq.messages.bulkProgress, {
+              current: String(i + 1),
+              total: String(entries.length),
+            }),
+            key,
+          })
         }
 
         setSelectedRowKeys([])
 
         if (failed === 0) {
-          message.success({ content: `Retry: ${success}/${entries.length} succeeded`, key })
+          message.success({
+            content: t(($) => $.dlq.messages.bulkSuccess, {
+              success: String(success),
+              total: String(entries.length),
+            }),
+            key,
+          })
         } else {
-          message.warning({ content: `Retry: ${success} ok, ${failed} failed`, key })
+          message.warning({
+            content: t(($) => $.dlq.messages.bulkPartial, {
+              success: String(success),
+              failed: String(failed),
+            }),
+            key,
+          })
         }
       },
     })
@@ -128,14 +185,14 @@ export function DLQPage() {
 
   const columns: ColumnsType<DLQMessage> = useMemo(() => ([
     {
-      title: 'Failed at',
+      title: t(($) => $.dlq.table.failedAt),
       dataIndex: 'failed_at',
       key: 'failed_at',
       width: 190,
-      render: (v: string) => (v ? new Date(v).toLocaleString() : ''),
+      render: (value: string) => formatters.dateTime(value, { fallback: unavailableShort }),
     },
     {
-      title: 'Operation',
+      title: t(($) => $.dlq.table.operation),
       dataIndex: 'operation_id',
       key: 'operation_id',
       width: 320,
@@ -157,8 +214,8 @@ export function DLQPage() {
                   size="small"
                   icon={<RightCircleOutlined />}
                   to={`/operations?tab=monitor&operation=${encodeURIComponent(operationId)}`}
-                  title="Open in Operations Monitor"
-                  aria-label="Open in Operations Monitor"
+                  title={t(($) => $.dlq.table.openInOperations)}
+                  aria-label={t(($) => $.dlq.table.openInOperations)}
                 />
               )}
             </Space>
@@ -175,7 +232,7 @@ export function DLQPage() {
       },
     },
     {
-      title: 'Error',
+      title: t(($) => $.dlq.table.error),
       dataIndex: 'error_code',
       key: 'error_code',
       width: 180,
@@ -185,7 +242,7 @@ export function DLQPage() {
       },
     },
     {
-      title: 'Message',
+      title: t(($) => $.dlq.table.message),
       dataIndex: 'error_message',
       key: 'error_message',
       render: (v: string) => (
@@ -195,14 +252,14 @@ export function DLQPage() {
       ),
     },
     {
-      title: 'Worker',
+      title: t(($) => $.dlq.table.worker),
       dataIndex: 'worker_id',
       key: 'worker_id',
       width: 160,
       render: (v: string) => v || '',
     },
     {
-      title: 'Actions',
+      title: t(($) => $.dlq.table.actions),
       key: 'actions',
       width: 140,
       render: (_value: unknown, record) => (
@@ -212,11 +269,11 @@ export function DLQPage() {
           loading={retryMutation.isPending}
           onClick={() => void onRetry(record)}
         >
-          Retry
+          {t(($) => $.dlq.detail.retry)}
         </Button>
       ),
     },
-  ]), [onRetry, retryMutation.isPending, updateSearchParams])
+  ]), [formatters, onRetry, retryMutation.isPending, t, unavailableShort, updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'dlq',
@@ -255,17 +312,22 @@ export function DLQPage() {
   const selectedMessageError = Boolean(selectedMessageId)
     && selectedMessage === null
     && !selectedMessageLoading
-    ? 'Selected DLQ message could not be restored. Reload the workspace or choose another message from the catalog.'
+    ? t(($) => $.dlq.detail.missing)
     : null
 
   if (!isStaff) {
     return (
       <WorkspacePage
-        header={<PageHeader title="DLQ" subtitle="Dead-letter queue remediation workspace для staff пользователей." />}
+        header={(
+          <PageHeader
+            title={t(($) => $.dlq.page.title)}
+            subtitle={t(($) => $.dlq.page.staffOnlySubtitle)}
+          />
+        )}
       >
         <Alert
           type="warning"
-          message="DLQ доступен только для staff пользователей"
+          message={t(($) => $.dlq.page.staffOnlyMessage)}
         />
       </WorkspacePage>
     )
@@ -275,12 +337,12 @@ export function DLQPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="DLQ"
-          subtitle="Remediation workspace с shell-safe handoff в Operations и URL-backed selected message context."
+          title={t(($) => $.dlq.page.title)}
+          subtitle={t(($) => $.dlq.page.subtitle)}
           actions={(
             <Space wrap>
               <Button icon={<ReloadOutlined />} onClick={() => dlqQuery.refetch()} loading={dlqQuery.isFetching}>
-                Refresh
+                {t(($) => $.dlq.page.refresh)}
               </Button>
               <Button
                 type="primary"
@@ -288,7 +350,7 @@ export function DLQPage() {
                 onClick={onBulkRetry}
                 disabled={selectedRowKeys.length === 0 || retryMutation.isPending}
               >
-                Retry selected ({selectedRowKeys.length})
+                {t(($) => $.dlq.page.retrySelected, { count: selectedRowKeys.length })}
               </Button>
             </Space>
           )}
@@ -298,8 +360,8 @@ export function DLQPage() {
       {showStaffWarning && (
         <Alert
           type="warning"
-          message="Access denied"
-          description="DLQ endpoints require staff access."
+          message={t(($) => $.dlq.page.accessDeniedTitle)}
+          description={t(($) => $.dlq.page.accessDeniedDescription)}
           showIcon
         />
       )}
@@ -315,10 +377,10 @@ export function DLQPage() {
           selectedRowKeys,
           onChange: setSelectedRowKeys,
         }}
-        searchPlaceholder="Search DLQ"
+        searchPlaceholder={t(($) => $.dlq.page.searchPlaceholder)}
         toolbarActions={(
           <Input
-            placeholder="Retry reason (optional)"
+            placeholder={t(($) => $.dlq.page.retryReasonPlaceholder)}
             value={retryReason}
             onChange={(event) => setRetryReason(event.target.value)}
             style={{ width: 260 }}
@@ -333,8 +395,12 @@ export function DLQPage() {
       <DrawerSurfaceShell
         open={Boolean(selectedMessageId)}
         onClose={() => updateSearchParams({ message: null })}
-        title={selectedMessage ? `DLQ message ${selectedMessage.dlq_message_id}` : 'DLQ message'}
-        subtitle={selectedMessage?.operation_id ? `operation=${selectedMessage.operation_id}` : undefined}
+        title={selectedMessage
+          ? t(($) => $.dlq.detail.title, { id: selectedMessage.dlq_message_id })
+          : t(($) => $.dlq.detail.titleFallback)}
+        subtitle={selectedMessage?.operation_id
+          ? t(($) => $.dlq.detail.subtitle, { operationId: selectedMessage.operation_id })
+          : undefined}
         drawerTestId="dlq-message-detail-drawer"
         extra={selectedMessage ? (
           <Space wrap>
@@ -343,7 +409,7 @@ export function DLQPage() {
                 to={`/operations?tab=monitor&operation=${encodeURIComponent(selectedMessage.operation_id)}`}
                 icon={<RightCircleOutlined />}
               >
-                Open in Operations
+                {t(($) => $.dlq.detail.openInOperations)}
               </RouteButton>
             ) : null}
             <Button
@@ -352,7 +418,7 @@ export function DLQPage() {
               loading={retryMutation.isPending}
               onClick={() => { void onRetry(selectedMessage) }}
             >
-              Retry
+              {t(($) => $.dlq.detail.retry)}
             </Button>
           </Space>
         ) : null}
@@ -364,23 +430,23 @@ export function DLQPage() {
         ) : selectedMessageError ? (
           <Alert
             type="error"
-            message="Failed to restore selected message"
+            message={t(($) => $.dlq.detail.failedRestoreTitle)}
             description={selectedMessageError}
             showIcon
           />
         ) : selectedMessage ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text><strong>DLQ ID:</strong> {selectedMessage.dlq_message_id}</Text>
-            <Text><strong>Operation:</strong> {selectedMessage.operation_id || '—'}</Text>
-            <Text><strong>Original message:</strong> {selectedMessage.original_message_id || '—'}</Text>
-            <Text><strong>Worker:</strong> {selectedMessage.worker_id || '—'}</Text>
-            <Text><strong>Failed at:</strong> {selectedMessage.failed_at ? new Date(selectedMessage.failed_at).toLocaleString() : '—'}</Text>
-            <Text><strong>Error code:</strong> {selectedMessage.error_code || '—'}</Text>
-            <Text><strong>Error message:</strong> {selectedMessage.error_message || '—'}</Text>
-            <Text><strong>Retry reason:</strong> {retryReason || '—'}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.dlqId)}:</strong> {selectedMessage.dlq_message_id}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.operation)}:</strong> {selectedMessage.operation_id || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.originalMessage)}:</strong> {selectedMessage.original_message_id || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.worker)}:</strong> {selectedMessage.worker_id || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.failedAt)}:</strong> {formatters.dateTime(selectedMessage.failed_at, { fallback: unavailableShort })}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.errorCode)}:</strong> {selectedMessage.error_code || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.errorMessage)}:</strong> {selectedMessage.error_message || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.dlq.detail.fields.retryReason)}:</strong> {retryReason || unavailableShort}</Text>
           </Space>
         ) : (
-          <Text type="secondary">Select a DLQ message to view details.</Text>
+          <Text type="secondary">{t(($) => $.dlq.detail.empty)}</Text>
         )}
       </DrawerSurfaceShell>
     </WorkspacePage>

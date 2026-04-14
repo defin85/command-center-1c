@@ -1,5 +1,6 @@
 import { Space, Typography } from 'antd'
 import type { CSSProperties, ReactNode } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 
 const { Text, Paragraph } = Typography
 
@@ -28,6 +29,7 @@ export function JsonBlock({
   emptyLabel = '{}',
   style,
 }: JsonBlockProps) {
+  const { t } = usePlatformTranslation()
   const formatted = formatValue(value)
 
   return (
@@ -35,7 +37,7 @@ export function JsonBlock({
       <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
         <Text strong>{title}</Text>
         <Paragraph copyable={{ text: formatted }} style={{ marginBottom: 0 }}>
-          <Text type="secondary">Copy JSON</Text>
+          <Text type="secondary">{t(($) => $.jsonBlock.copyJson)}</Text>
         </Paragraph>
       </Space>
       <pre

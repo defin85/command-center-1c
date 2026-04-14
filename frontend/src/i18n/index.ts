@@ -5,6 +5,7 @@ export { getCurrentAppLocale, getStoredLocaleOverride, normalizeAppLocale, setSt
 export { resolveLocalizedApiErrorMessage } from './errorMessages'
 export { ensureNamespaces, i18n } from './runtime'
 export {
+  useAdminSupportTranslation,
   useAppTranslation,
   useCommonTranslation,
   useDashboardTranslation,

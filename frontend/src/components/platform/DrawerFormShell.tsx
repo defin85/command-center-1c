@@ -1,6 +1,7 @@
 import { Button, Drawer, Grid, Space, Typography } from 'antd'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
@@ -30,7 +31,7 @@ export function DrawerFormShell({
   onSubmit,
   title,
   subtitle,
-  submitText = 'Save',
+  submitText,
   confirmLoading = false,
   submitDisabled = false,
   extra,
@@ -39,6 +40,7 @@ export function DrawerFormShell({
   drawerTestId,
   children,
 }: DrawerFormShellProps) {
+  const { t } = usePlatformTranslation()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -77,8 +79,9 @@ export function DrawerFormShell({
     )
     : undefined
 
+  const resolvedSubmitText = submitText ?? t(($) => $.actions.save)
   const actionName = firstSemanticActionLabel(
-    submitText,
+    resolvedSubmitText,
     title,
     subtitle,
   ) ?? 'Drawer submit'
@@ -97,7 +100,7 @@ export function DrawerFormShell({
         }}
         data-testid={submitButtonTestId}
       >
-        {submitText}
+        {resolvedSubmitText}
       </Button>
     )
     : null

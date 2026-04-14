@@ -180,8 +180,8 @@ describe('RuntimeSettingsPage observability', () => {
     )
 
     await screen.findByText('runtime.scheduler.enabled')
-    expect(screen.getByText('Runtime-control keys остаются read-only без отдельной runtime-control capability.')).toBeInTheDocument()
-    expect(screen.getByText('Эта настройка требует runtime-control capability для изменения.')).toBeInTheDocument()
+    expect(screen.getByText('Runtime-control keys remain read-only without the dedicated runtime-control capability.')).toBeInTheDocument()
+    expect(screen.getByText('This setting requires the runtime-control capability to be changed.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 })

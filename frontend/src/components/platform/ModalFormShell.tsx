@@ -1,5 +1,6 @@
 import { Button, Grid, Modal, Space, Typography, type ButtonProps } from 'antd'
 import type { CSSProperties, ReactNode } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
@@ -32,8 +33,8 @@ export function ModalFormShell({
   onSubmit,
   title,
   subtitle,
-  submitText = 'Save',
-  cancelText = 'Cancel',
+  submitText,
+  cancelText,
   confirmLoading = false,
   width = 880,
   submitButtonTestId,
@@ -44,6 +45,7 @@ export function ModalFormShell({
   bodyStyle,
   children,
 }: ModalFormShellProps) {
+  const { t } = usePlatformTranslation()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -63,8 +65,10 @@ export function ModalFormShell({
     )
     : undefined
 
+  const resolvedSubmitText = submitText ?? t(($) => $.actions.save)
+  const resolvedCancelText = cancelText ?? t(($) => $.actions.cancel)
   const actionName = firstSemanticActionLabel(
-    submitText,
+    resolvedSubmitText,
     title,
     subtitle,
   ) ?? 'Modal submit'
@@ -84,7 +88,7 @@ export function ModalFormShell({
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
       <Space size="small" wrap>{footerStart}</Space>
       <Space size="small" wrap>
-        <Button onClick={onClose}>{cancelText}</Button>
+        <Button onClick={onClose}>{resolvedCancelText}</Button>
         {onSubmit ? (
           <Button
             type="primary"
@@ -95,7 +99,7 @@ export function ModalFormShell({
             }}
             data-testid={submitButtonTestId}
           >
-            {submitText}
+            {resolvedSubmitText}
           </Button>
         ) : null}
       </Space>
@@ -108,8 +112,8 @@ export function ModalFormShell({
       title={modalTitle}
       onCancel={onClose}
       onOk={customFooter ? undefined : handleSubmit}
-      okText={submitText}
-      cancelText={cancelText}
+      okText={resolvedSubmitText}
+      cancelText={resolvedCancelText}
       confirmLoading={confirmLoading}
       forceRender={forceRender}
       destroyOnHidden={destroyOnHidden}

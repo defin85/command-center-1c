@@ -1,5 +1,6 @@
 import { Button, Divider, Form, Input, Select, Space, Switch, Typography } from 'antd'
 import type { ModalFuncProps } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { DriverCommandV2 } from '../../../../api/driverCommands'
 import type { CommandSchemaCommandPatch } from '../../../../api/commandSchemas'
@@ -10,6 +11,7 @@ const { Text } = Typography
 
 export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   if (!model.selectedCommandId || !model.selectedEffective) {
     return null
@@ -38,11 +40,11 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
       <Space align="baseline" wrap style={{ justifyContent: 'space-between', width: '100%' }}>
         <Space direction="vertical" size={0}>
-          <Text type="secondary">Command id</Text>
+          <Text type="secondary">{t(($) => $.commandSchemas.basics.commandId)}</Text>
           <Text code>{displayId}</Text>
         </Space>
         <Button onClick={() => model.resetCommandPatch(model.selectedCommandId)} disabled={!model.selectedPatch}>
-          Reset command
+          {t(($) => $.commandSchemas.basics.resetCommand)}
         </Button>
       </Space>
 
@@ -52,9 +54,9 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
         <Space wrap style={{ width: '100%' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-              <Text>Label</Text>
+              <Text>{t(($) => $.commandSchemas.basics.label)}</Text>
               <Space size="small">
-                <Text type="secondary">Override</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.basics.override)}</Text>
                 <Switch
                   data-testid="command-schemas-basics-label-override"
                   size="small"
@@ -81,9 +83,9 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
           <div style={{ width: 220 }}>
             <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-              <Text>Scope</Text>
+              <Text>{t(($) => $.commandSchemas.basics.scope)}</Text>
               <Space size="small">
-                <Text type="secondary">Override</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.basics.override)}</Text>
                 <Switch
                   size="small"
                   checked={scopeOver}
@@ -112,9 +114,9 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
           <div style={{ width: 220 }}>
             <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-              <Text>Risk</Text>
+              <Text>{t(($) => $.commandSchemas.basics.risk)}</Text>
               <Space size="small">
-                <Text type="secondary">Override</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.basics.override)}</Text>
                 <Switch
                   size="small"
                   checked={riskOver}
@@ -133,15 +135,17 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
                     if (beforeKnown && afterKnown && beforeRisk !== afterRisk) {
                       const nextRisk = afterRisk as DriverCommandV2['risk_level']
-                      const title = nextRisk === 'dangerous' ? 'Confirm risk level: dangerous' : 'Confirm risk level: safe'
+                      const title = nextRisk === 'dangerous'
+                        ? t(($) => $.commandSchemas.basics.confirmRiskDangerousTitle)
+                        : t(($) => $.commandSchemas.basics.confirmRiskSafeTitle)
                       const content = nextRisk === 'dangerous'
-                        ? `You are setting risk_level to "dangerous" for ${displayId}. This may require additional approvals.`
-                        : `You are setting risk_level to "safe" for ${displayId}. Make sure this is correct.`
+                        ? t(($) => $.commandSchemas.basics.confirmRiskDangerousDescription, { commandId: displayId })
+                        : t(($) => $.commandSchemas.basics.confirmRiskSafeDescription, { commandId: displayId })
                       confirm({
                         title,
                         content,
-                        okText: 'Apply',
-                        cancelText: 'Cancel',
+                        okText: t(($) => $.commandSchemas.basics.apply),
+                        cancelText: t(($) => $.commandSchemas.basics.cancel),
                         onOk: () => {
                           model.setCommandPatch(model.selectedCommandId, (p) => {
                             delete p.risk_level
@@ -165,15 +169,17 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
                 const nextRisk = value as DriverCommandV2['risk_level']
                 const prevRisk = currentRisk
                 if (nextRisk && (prevRisk === 'safe' || prevRisk === 'dangerous') && prevRisk !== nextRisk) {
-                  const title = nextRisk === 'dangerous' ? 'Confirm risk level: dangerous' : 'Confirm risk level: safe'
+                  const title = nextRisk === 'dangerous'
+                    ? t(($) => $.commandSchemas.basics.confirmRiskDangerousTitle)
+                    : t(($) => $.commandSchemas.basics.confirmRiskSafeTitle)
                   const content = nextRisk === 'dangerous'
-                    ? `You are setting risk_level to "dangerous" for ${displayId}. This may require additional approvals.`
-                    : `You are setting risk_level to "safe" for ${displayId}. Make sure this is correct.`
+                    ? t(($) => $.commandSchemas.basics.confirmRiskDangerousDescription, { commandId: displayId })
+                    : t(($) => $.commandSchemas.basics.confirmRiskSafeDescription, { commandId: displayId })
                   confirm({
                     title,
                     content,
-                    okText: 'Apply',
-                    cancelText: 'Cancel',
+                    okText: t(($) => $.commandSchemas.basics.apply),
+                    cancelText: t(($) => $.commandSchemas.basics.cancel),
                     onOk: () => {
                       model.setCommandPatch(model.selectedCommandId, (p) => { p.risk_level = nextRisk })
                     },
@@ -191,9 +197,9 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
           <div style={{ width: 220 }}>
             <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-              <Text>Disabled</Text>
+              <Text>{t(($) => $.commandSchemas.basics.disabled)}</Text>
               <Space size="small">
-                <Text type="secondary">Override</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.basics.override)}</Text>
                 <Switch
                   size="small"
                   checked={disabledOver}
@@ -209,10 +215,10 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
                     const afterDisabled = baseDisabled
                     if (beforeDisabled && !afterDisabled) {
                       confirm({
-                        title: 'Enable disabled command?',
-                        content: `You are enabling ${displayId}. This may expose a previously disabled operation.`,
-                        okText: 'Enable',
-                        cancelText: 'Cancel',
+                        title: t(($) => $.commandSchemas.basics.enableDisabledTitle),
+                        content: t(($) => $.commandSchemas.basics.enableDisabledDescription, { commandId: displayId }),
+                        okText: t(($) => $.commandSchemas.basics.enable),
+                        cancelText: t(($) => $.commandSchemas.basics.cancel),
                         onOk: () => {
                           model.setCommandPatch(model.selectedCommandId, (p) => {
                             delete p.disabled
@@ -235,10 +241,10 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
               onChange={(checked) => {
                 if (currentDisabled && !checked) {
                   confirm({
-                    title: 'Enable disabled command?',
-                    content: `You are enabling ${displayId}. This may expose a previously disabled operation.`,
-                    okText: 'Enable',
-                    cancelText: 'Cancel',
+                    title: t(($) => $.commandSchemas.basics.enableDisabledTitle),
+                    content: t(($) => $.commandSchemas.basics.enableDisabledDescription, { commandId: displayId }),
+                    okText: t(($) => $.commandSchemas.basics.enable),
+                    cancelText: t(($) => $.commandSchemas.basics.cancel),
                     onOk: () => {
                       model.setCommandPatch(model.selectedCommandId, (p) => { p.disabled = checked })
                     },
@@ -253,9 +259,9 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
         <div style={{ marginTop: 12 }}>
           <Space align="center" style={{ justifyContent: 'space-between', width: '100%' }}>
-            <Text>Description</Text>
+            <Text>{t(($) => $.commandSchemas.basics.description)}</Text>
             <Space size="small">
-              <Text type="secondary">Override</Text>
+              <Text type="secondary">{t(($) => $.commandSchemas.basics.override)}</Text>
               <Switch
                 size="small"
                 checked={descOver}
@@ -282,7 +288,11 @@ export function CommandSchemasBasicsEditor(props: { model: CommandSchemasPageMod
 
       {model.selectedBase && (
         <Text type="secondary">
-          Base label: {safeText(model.selectedBase.label).trim() || '-'}; scope: {safeText(model.selectedBase.scope)}; risk: {safeText(model.selectedBase.risk_level)}
+          {t(($) => $.commandSchemas.basics.baseSummary, {
+            label: safeText(model.selectedBase.label).trim() || '-',
+            scope: safeText(model.selectedBase.scope),
+            risk: safeText(model.selectedBase.risk_level),
+          })}
         </Text>
       )}
     </Space>

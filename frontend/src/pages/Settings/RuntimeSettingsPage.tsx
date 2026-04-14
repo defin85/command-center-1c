@@ -8,6 +8,7 @@ import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '.
 import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { useAdminSupportTranslation, useCommonTranslation } from '../../i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text } = Typography
@@ -31,10 +32,13 @@ const isRuntimeControlSetting = (key: string) => key.startsWith(RUNTIME_CONTROL_
 
 export function RuntimeSettingsPage() {
   const { isStaff, canManageRuntimeControls } = useAuthz()
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
 
   const canEdit = isStaff
   const selectedSettingKey = (searchParams.get('setting') || '').trim() || null
@@ -67,11 +71,11 @@ export function RuntimeSettingsPage() {
         }))
       )
     } catch (_err) {
-      setError('Не удалось загрузить настройки')
+      setError(t(($) => $.runtimeSettings.errors.loadFailed))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     if (!isStaff) {
@@ -94,7 +98,7 @@ export function RuntimeSettingsPage() {
 
   const saveSetting = useCallback(async (setting: RuntimeSettingRow) => {
     if (!canEditSetting(setting)) {
-      setError('Настройка runtime-control требует отдельной capability.')
+      setError(t(($) => $.runtimeSettings.errors.runtimeControlCapabilityRequired))
       return
     }
     try {
@@ -107,34 +111,68 @@ export function RuntimeSettingsPage() {
         )
       )
     } catch (_err) {
-      setError('Не удалось сохранить настройку')
+      setError(t(($) => $.runtimeSettings.errors.saveFailed))
     }
-  }, [canEditSetting])
+  }, [canEditSetting, t])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'key', label: 'Key', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'description', label: 'Описание', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'value', label: 'Значение', sortable: true, groupKey: 'value', groupLabel: 'Value' },
-    { key: 'default', label: 'Default', sortable: true, groupKey: 'value', groupLabel: 'Value' },
-    { key: 'range', label: 'Диапазон', groupKey: 'value', groupLabel: 'Value' },
-    { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    {
+      key: 'key',
+      label: t(($) => $.runtimeSettings.table.key),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.runtimeSettings.groups.core),
+    },
+    {
+      key: 'description',
+      label: t(($) => $.runtimeSettings.table.description),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.runtimeSettings.groups.core),
+    },
+    {
+      key: 'value',
+      label: t(($) => $.runtimeSettings.table.value),
+      sortable: true,
+      groupKey: 'value',
+      groupLabel: t(($) => $.runtimeSettings.groups.value),
+    },
+    {
+      key: 'default',
+      label: t(($) => $.runtimeSettings.table.default),
+      sortable: true,
+      groupKey: 'value',
+      groupLabel: t(($) => $.runtimeSettings.groups.value),
+    },
+    {
+      key: 'range',
+      label: t(($) => $.runtimeSettings.table.range),
+      groupKey: 'value',
+      groupLabel: t(($) => $.runtimeSettings.groups.value),
+    },
+    {
+      key: 'actions',
+      label: t(($) => $.runtimeSettings.table.actions),
+      groupKey: 'actions',
+      groupLabel: t(($) => $.runtimeSettings.groups.actions),
+    },
+  ], [t])
 
   const columns: ColumnsType<RuntimeSettingRow> = useMemo(() => ([
     {
-      title: 'Key',
+      title: t(($) => $.runtimeSettings.table.key),
       dataIndex: 'key',
       key: 'key',
       width: 280,
       render: (value: string) => <Text code>{value}</Text>,
     },
     {
-      title: 'Описание',
+      title: t(($) => $.runtimeSettings.table.description),
       dataIndex: 'description',
       key: 'description',
     },
     {
-      title: 'Значение',
+      title: t(($) => $.runtimeSettings.table.value),
       dataIndex: 'draftValue',
       key: 'value',
       width: 180,
@@ -146,23 +184,23 @@ export function RuntimeSettingsPage() {
       },
     },
     {
-      title: 'Default',
+      title: t(($) => $.runtimeSettings.table.default),
       dataIndex: 'default',
       key: 'default',
       width: 120,
       render: (value: unknown) => <Tag>{String(value)}</Tag>,
     },
     {
-      title: 'Диапазон',
+      title: t(($) => $.runtimeSettings.table.range),
       key: 'range',
       width: 140,
       render: (_value, record) => {
-        if (record.min_value === null && record.max_value === null) return '-'
-        return `${record.min_value ?? '-'}..${record.max_value ?? '-'}`
+        if (record.min_value === null && record.max_value === null) return unavailableShort
+        return `${record.min_value ?? unavailableShort}..${record.max_value ?? unavailableShort}`
       },
     },
     {
-      title: 'Действия',
+      title: t(($) => $.runtimeSettings.table.actions),
       key: 'actions',
       width: 140,
       render: (_value, record) => (
@@ -172,11 +210,11 @@ export function RuntimeSettingsPage() {
           disabled={!canEditSetting(record)}
           onClick={() => updateSearchParams({ setting: record.key, context: 'setting' })}
         >
-          Edit
+          {t(($) => $.runtimeSettings.table.edit)}
         </Button>
       ),
     },
-  ]), [canEditSetting, updateSearchParams])
+  ]), [canEditSetting, t, unavailableShort, updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'runtime_settings',
@@ -312,11 +350,11 @@ export function RuntimeSettingsPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Runtime Settings"
-          subtitle="Settings workspace с route-addressable selected setting context и canonical edit surface."
+          title={t(($) => $.runtimeSettings.page.title)}
+          subtitle={t(($) => $.runtimeSettings.page.subtitle)}
           actions={(
             <Button onClick={() => void loadSettings()} loading={loading}>
-              Refresh
+              {t(($) => $.runtimeSettings.page.refresh)}
             </Button>
           )}
         />
@@ -325,8 +363,8 @@ export function RuntimeSettingsPage() {
       {!isStaff && (
         <Alert
           type="warning"
-          message="Недостаточно прав"
-          description="Доступ только для staff пользователей."
+          message={t(($) => $.runtimeSettings.page.insufficientPermissionsTitle)}
+          description={t(($) => $.runtimeSettings.page.insufficientPermissionsDescription)}
         />
       )}
 
@@ -334,7 +372,7 @@ export function RuntimeSettingsPage() {
         <Alert
           type="info"
           showIcon
-          message="Runtime-control keys остаются read-only без отдельной runtime-control capability."
+          message={t(($) => $.runtimeSettings.page.runtimeControlReadonly)}
         />
       ) : null}
 
@@ -350,7 +388,7 @@ export function RuntimeSettingsPage() {
           loading={loading}
           rowKey="key"
           columns={columns}
-          searchPlaceholder="Search settings"
+          searchPlaceholder={t(($) => $.runtimeSettings.page.searchPlaceholder)}
           onRow={(record) => ({
             onClick: () => updateSearchParams({ setting: record.key, context: 'setting' }),
             style: { cursor: 'pointer' },
@@ -361,7 +399,7 @@ export function RuntimeSettingsPage() {
       <DrawerSurfaceShell
         open={Boolean(selectedSetting)}
         onClose={() => updateSearchParams({ setting: null, context: null })}
-        title={selectedSetting?.key ?? 'Runtime setting'}
+        title={selectedSetting?.key ?? t(($) => $.runtimeSettings.detail.titleFallback)}
         subtitle={selectedSetting?.description ?? undefined}
         drawerTestId="runtime-settings-detail-drawer"
         extra={selectedSetting ? (
@@ -379,7 +417,7 @@ export function RuntimeSettingsPage() {
               }, () => saveSetting(selectedSetting))
             }}
           >
-            Save
+            {t(($) => $.runtimeSettings.detail.save)}
           </Button>
         ) : null}
       >
@@ -389,12 +427,12 @@ export function RuntimeSettingsPage() {
               <Alert
                 type="warning"
                 showIcon
-                message="Эта настройка требует runtime-control capability для изменения."
+                message={t(($) => $.runtimeSettings.detail.lockedWarning)}
               />
             ) : null}
-            <Text><strong>Current:</strong> {String(selectedSetting.value ?? '—')}</Text>
-            <Text><strong>Default:</strong> {String(selectedSetting.default ?? '—')}</Text>
-            <Text><strong>Range:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? '—' : `${selectedSetting.min_value ?? '-'}..${selectedSetting.max_value ?? '-'}`}</Text>
+            <Text><strong>{t(($) => $.shared.current)}:</strong> {String(selectedSetting.value ?? unavailableShort)}</Text>
+            <Text><strong>{t(($) => $.shared.default)}:</strong> {String(selectedSetting.default ?? unavailableShort)}</Text>
+            <Text><strong>{t(($) => $.shared.range)}:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? unavailableShort : `${selectedSetting.min_value ?? unavailableShort}..${selectedSetting.max_value ?? unavailableShort}`}</Text>
             <div>{renderSettingEditor(selectedSetting)}</div>
           </Space>
         ) : null}

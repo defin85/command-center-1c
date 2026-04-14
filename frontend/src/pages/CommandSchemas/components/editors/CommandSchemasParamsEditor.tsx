@@ -1,4 +1,5 @@
 import { Alert, Card, Input, Select, Space, Switch, Tag, Typography } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { DriverCommandParamV2 } from '../../../../api/driverCommands'
 import { deepCopy, normalizeStringList, safeText } from '../../commandSchemasUtils'
@@ -8,6 +9,7 @@ const { Text } = Typography
 
 export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   if (!model.selectedCommandId || !model.selectedEffective) {
     return null
@@ -22,7 +24,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
 
   const names = Object.keys(effectiveParams).sort()
   if (names.length === 0) {
-    return <Alert type="info" showIcon message="No params for this command" />
+    return <Alert type="info" showIcon message={t(($) => $.commandSchemas.params.noParams)} />
   }
 
   return (
@@ -46,10 +48,10 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
           <Card
             key={name}
             size="small"
-            title={<Space wrap><Text code>{name}</Text>{effectiveParam.required && <Tag color="red">required</Tag>}</Space>}
+            title={<Space wrap><Text code>{name}</Text>{effectiveParam.required && <Tag color="red">{t(($) => $.commandSchemas.sidePanel.required)}</Tag>}</Space>}
             extra={(
               <Space size="small">
-                <Text type="secondary">Override</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.params.override)}</Text>
                 <Switch
                   size="small"
                   checked={paramOver}
@@ -73,7 +75,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
             <Space direction="vertical" style={{ width: '100%' }}>
               <Space wrap>
                 <div style={{ width: 220 }}>
-                  <Text type="secondary">Kind</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.params.kind)}</Text>
                   <Select
                     value={currentKind || undefined}
                     disabled={!paramOver}
@@ -89,7 +91,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
                   />
                 </div>
                 <div style={{ width: 220 }}>
-                  <Text type="secondary">Required</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.params.required)}</Text>
                   <Switch
                     checked={currentRequired}
                     disabled={!paramOver}
@@ -101,7 +103,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
                   />
                 </div>
                 <div style={{ width: 220 }}>
-                  <Text type="secondary">Expects value</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.params.expectsValue)}</Text>
                   <Switch
                     checked={currentExpects}
                     disabled={!paramOver}
@@ -116,7 +118,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
 
               {currentKind === 'flag' && (
                 <div style={{ width: 340 }}>
-                  <Text type="secondary">Flag</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.params.flag)}</Text>
                   <Input
                     value={currentFlag}
                     disabled={!paramOver}
@@ -125,14 +127,14 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
                       if (!p.params_by_name[name]) p.params_by_name[name] = {}
                       p.params_by_name[name].flag = e.target.value
                     })}
-                    placeholder="--flag"
+                    placeholder={t(($) => $.commandSchemas.params.flagPlaceholder)}
                   />
                 </div>
               )}
 
               {currentKind === 'positional' && (
                 <div style={{ width: 220 }}>
-                  <Text type="secondary">Position</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.params.position)}</Text>
                   <Input
                     value={Number.isFinite(currentPosition) ? String(currentPosition) : ''}
                     disabled={!paramOver}
@@ -145,13 +147,13 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
                         p.params_by_name[name].position = Number.isFinite(num) ? num : undefined
                       })
                     }}
-                    placeholder="1"
+                    placeholder={t(($) => $.commandSchemas.params.positionPlaceholder)}
                   />
                 </div>
               )}
 
               <div style={{ width: '100%' }}>
-                <Text type="secondary">Enum</Text>
+                <Text type="secondary">{t(($) => $.commandSchemas.params.enum)}</Text>
                 <Select
                   mode="tags"
                   value={currentEnum}
@@ -162,7 +164,7 @@ export function CommandSchemasParamsEditor(props: { model: CommandSchemasPageMod
                     p.params_by_name[name].enum = value
                   })}
                   tokenSeparators={[',']}
-                  placeholder="Allowed values (optional)"
+                  placeholder={t(($) => $.commandSchemas.params.allowedValuesPlaceholder)}
                 />
               </div>
             </Space>

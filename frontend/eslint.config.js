@@ -6,6 +6,7 @@ import tseslint from 'typescript-eslint'
 import {
   getCompactMasterPaneGovernance,
   getRouteModulesByLintProfile,
+  localeBoundaryGovernedFileSet,
   routeGovernancePathSet,
   shellSurfaceFilePathSet,
 } from './src/uiGovernanceInventory.js'
@@ -220,43 +221,6 @@ const platformShellRestrictedAntdImports = new Map([
   ['Divider', 'Modules using `ModalFormShell` or `DrawerFormShell` must use platform-safe spacing/separators instead of raw `Divider`.'],
 ])
 const routePrimaryShellForbiddenHtmlTags = new Set(['div', 'section', 'main', 'aside', 'article'])
-const localeBoundaryGovernedFileSet = new Set([
-  'src/components/layout/MainLayout.tsx',
-  'src/components/platform/EmptyState.tsx',
-  'src/components/ServiceStatusCard.tsx',
-  'src/components/SystemOverview.tsx',
-  'src/components/service-mesh/RecentOperationsTable.tsx',
-  'src/components/service-mesh/SystemHealthCard.tsx',
-  'src/components/clusters/DiscoverClustersModal.tsx',
-  'src/pages/Dashboard/Dashboard.tsx',
-  'src/pages/Dashboard/components/ClusterOverview.tsx',
-  'src/pages/Dashboard/components/FailedOperationsAlert.tsx',
-  'src/pages/Dashboard/components/QuickActionsBar.tsx',
-  'src/pages/Dashboard/components/StatisticsCards.tsx',
-  'src/pages/Clusters/Clusters.tsx',
-  'src/pages/Clusters/components/ClusterCredentialsModal.tsx',
-  'src/pages/Clusters/components/ClusterUpsertModal.tsx',
-  'src/pages/Clusters/components/ClusterWorkspaceDetailPanel.tsx',
-  'src/pages/RBAC/RBACPage.tsx',
-  'src/pages/RBAC/components/RbacAuditPanel.tsx',
-  'src/pages/RBAC/components/RbacClusterDatabasePicker.tsx',
-  'src/pages/RBAC/components/RbacClusterDatabaseTree.tsx',
-  'src/pages/RBAC/components/RbacPermissionsTable.tsx',
-  'src/pages/RBAC/components/RbacPrincipalPicker.tsx',
-  'src/pages/RBAC/components/RbacResourceBrowser.tsx',
-  'src/pages/RBAC/components/RbacResourcePicker.tsx',
-  'src/pages/RBAC/hooks/useConfirmReason.tsx',
-  'src/pages/RBAC/tabs/AuditTab.tsx',
-  'src/pages/RBAC/tabs/DbmsUsersTab.tsx',
-  'src/pages/RBAC/tabs/EffectiveAccessTab.tsx',
-  'src/pages/RBAC/tabs/InfobaseUsersTab.tsx',
-  'src/pages/RBAC/tabs/PermissionsTab.tsx',
-  'src/pages/RBAC/tabs/RolesTab.tsx',
-  'src/pages/RBAC/tabs/UserRolesTab.tsx',
-  'src/pages/RBAC/tabs/permissions/usePermissionColumns.tsx',
-  'src/pages/RBAC/tabs/permissions/useRbacResourceRefs.tsx',
-  'src/pages/SystemStatus/SystemStatus.tsx',
-])
 
 const normalizeInventoryPath = (value) => value.replace(/\\/g, '/')
 const resolveFrontendRelativePath = (filename) => (

@@ -44,16 +44,22 @@ type ShellSurfaceUsage = {
 import * as governanceInventory from '../../../uiGovernanceInventory.js'
 
 const {
+  localeBoundaryGovernedFileSet,
   compactMasterPaneModes,
   detailMobileFallbackKinds,
   governanceTiers,
+  platformGovernedRouteModuleFileSet,
+  platformGovernedShellSurfaceFileSet,
   routeGovernanceInventory,
   routeStateTransports,
   shellSurfaceGovernanceInventory,
 } = governanceInventory as {
+  localeBoundaryGovernedFileSet: Set<string>
   compactMasterPaneModes: CompactMasterPaneMode[]
   detailMobileFallbackKinds: DetailMobileFallbackKind[]
   governanceTiers: GovernanceTier[]
+  platformGovernedRouteModuleFileSet: Set<string>
+  platformGovernedShellSurfaceFileSet: Set<string>
   routeGovernanceInventory: RouteInventoryEntry[]
   routeStateTransports: RouteStateTransport[]
   shellSurfaceGovernanceInventory: ShellSurfaceEntry[]
@@ -396,6 +402,29 @@ describe('ui governance inventory', () => {
       expect(governanceTiers).toContain(entry.tier)
       expect(existsSync(path.join(frontendRoot, entry.filePath))).toBe(true)
       expect([...entry.shellKinds].sort()).toEqual(actualUsageByFile.get(entry.filePath))
+    }
+  })
+
+  it('keeps locale-boundary coverage inventory-backed for governed routes and shell modules', () => {
+    const governedRouteModules = [...new Set(
+      routeGovernanceInventory
+        .filter((entry) => entry.tier === 'platform-governed' && entry.modulePath)
+        .map((entry) => entry.modulePath as string)
+    )].sort()
+    const governedShellModules = shellSurfaceGovernanceInventory
+      .filter((entry) => entry.tier === 'platform-governed')
+      .map((entry) => entry.filePath)
+      .sort()
+
+    expect([...platformGovernedRouteModuleFileSet].sort()).toEqual(governedRouteModules)
+    expect([...platformGovernedShellSurfaceFileSet].sort()).toEqual(governedShellModules)
+
+    for (const filePath of governedRouteModules) {
+      expect(localeBoundaryGovernedFileSet.has(filePath)).toBe(true)
+    }
+
+    for (const filePath of governedShellModules) {
+      expect(localeBoundaryGovernedFileSet.has(filePath)).toBe(true)
     }
   })
 })

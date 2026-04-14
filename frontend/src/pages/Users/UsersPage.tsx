@@ -7,6 +7,7 @@ import { useAuthz } from '../../authz/useAuthz'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { EntityDetails, ModalFormShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { useAdminSupportTranslation, useCommonTranslation, useLocaleFormatters } from '../../i18n'
 import { useUser, useUsers, useCreateUser, useUpdateUser, useSetUserPassword, type UserSummary } from '../../api/queries'
 import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
@@ -40,6 +41,9 @@ const parseUserContext = (value: string | null): UserContext => {
 export function UsersPage() {
   const { message, modal } = App.useApp()
   const { isStaff } = useAuthz()
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const [form] = Form.useForm<UserFormValues>()
   const [passwordForm] = Form.useForm<{ password: string }>()
@@ -47,6 +51,9 @@ export function UsersPage() {
   const createUser = useCreateUser()
   const updateUser = useUpdateUser()
   const setUserPassword = useSetUserPassword()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
+  const yesLabel = t(($) => $.shared.yes)
+  const noLabel = t(($) => $.shared.no)
 
   const selectedUserId = parseSelectedUserId(searchParams.get('user'))
   const activeContext = parseUserContext(searchParams.get('context'))
@@ -91,12 +98,16 @@ export function UsersPage() {
 
   const toggleActive = useCallback((user: UserSummary) => {
     confirmWithTracking(modal, {
-      title: user.is_active ? 'Deactivate user?' : 'Activate user?',
+      title: user.is_active
+        ? t(($) => $.users.confirm.deactivateTitle)
+        : t(($) => $.users.confirm.activateTitle),
       content: user.is_active
-        ? 'User will not be able to log in.'
-        : 'User will be able to log in again.',
-      okText: user.is_active ? 'Deactivate' : 'Activate',
-      cancelText: 'Cancel',
+        ? t(($) => $.users.confirm.deactivateContent)
+        : t(($) => $.users.confirm.activateContent),
+      okText: user.is_active
+        ? t(($) => $.users.confirm.deactivateOk)
+        : t(($) => $.users.confirm.activateOk),
+      cancelText: t(($) => $.users.confirm.cancel),
       okButtonProps: { danger: user.is_active },
       onOk: () => updateUser.mutate({ id: user.id, is_active: !user.is_active }),
     }, {
@@ -107,80 +118,119 @@ export function UsersPage() {
         next_is_active: !user.is_active,
       },
     })
-  }, [modal, updateUser])
+  }, [modal, t, updateUser])
 
   const fallbackColumns = useMemo(() => [
-    { key: 'username', label: 'Username', groupKey: 'core', groupLabel: 'Core', sortable: true },
-    { key: 'email', label: 'Email', groupKey: 'core', groupLabel: 'Core', sortable: true },
-    { key: 'is_staff', label: 'Staff', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_active', label: 'Active', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'last_login', label: 'Last Login', groupKey: 'time', groupLabel: 'Time', sortable: true },
-    { key: 'date_joined', label: 'Created', groupKey: 'time', groupLabel: 'Time', sortable: true },
-    { key: 'actions', label: 'Action', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    {
+      key: 'username',
+      label: t(($) => $.users.table.username),
+      groupKey: 'core',
+      groupLabel: t(($) => $.users.groups.core),
+      sortable: true,
+    },
+    {
+      key: 'email',
+      label: t(($) => $.users.table.email),
+      groupKey: 'core',
+      groupLabel: t(($) => $.users.groups.core),
+      sortable: true,
+    },
+    {
+      key: 'is_staff',
+      label: t(($) => $.users.table.staff),
+      groupKey: 'meta',
+      groupLabel: t(($) => $.users.groups.meta),
+    },
+    {
+      key: 'is_active',
+      label: t(($) => $.users.table.active),
+      groupKey: 'meta',
+      groupLabel: t(($) => $.users.groups.meta),
+    },
+    {
+      key: 'last_login',
+      label: t(($) => $.users.table.lastLogin),
+      groupKey: 'time',
+      groupLabel: t(($) => $.users.groups.time),
+      sortable: true,
+    },
+    {
+      key: 'date_joined',
+      label: t(($) => $.users.table.created),
+      groupKey: 'time',
+      groupLabel: t(($) => $.users.groups.time),
+      sortable: true,
+    },
+    {
+      key: 'actions',
+      label: t(($) => $.users.table.actions),
+      groupKey: 'actions',
+      groupLabel: t(($) => $.users.groups.actions),
+    },
+  ], [t])
 
   const columns: ColumnsType<UserSummary> = useMemo(() => [
     {
-      title: 'Username',
+      title: t(($) => $.users.table.username),
       dataIndex: 'username',
       key: 'username',
     },
     {
-      title: 'Email',
+      title: t(($) => $.users.table.email),
       dataIndex: 'email',
       key: 'email',
-      render: (value: string) => value || '-',
+      render: (value: string) => value || unavailableShort,
     },
     {
-      title: 'Staff',
+      title: t(($) => $.users.table.staff),
       dataIndex: 'is_staff',
       key: 'is_staff',
       render: (value: boolean) => (
-        <Text type={value ? 'success' : 'secondary'}>{value ? 'Yes' : 'No'}</Text>
+        <Text type={value ? 'success' : 'secondary'}>{value ? yesLabel : noLabel}</Text>
       ),
     },
     {
-      title: 'Active',
+      title: t(($) => $.users.table.active),
       dataIndex: 'is_active',
       key: 'is_active',
       render: (value: boolean) => (
-        <Text type={value ? 'success' : 'secondary'}>{value ? 'Yes' : 'No'}</Text>
+        <Text type={value ? 'success' : 'secondary'}>{value ? yesLabel : noLabel}</Text>
       ),
     },
     {
-      title: 'Last Login',
+      title: t(($) => $.users.table.lastLogin),
       dataIndex: 'last_login',
       key: 'last_login',
-      render: (value: string | null) => value ? new Date(value).toLocaleString() : '-',
+      render: (value: string | null) => formatters.dateTime(value, { fallback: unavailableShort }),
     },
     {
-      title: 'Created',
+      title: t(($) => $.users.table.created),
       dataIndex: 'date_joined',
       key: 'date_joined',
-      render: (value: string) => value ? new Date(value).toLocaleString() : '-',
+      render: (value: string) => formatters.dateTime(value, { fallback: unavailableShort }),
     },
     {
-      title: 'Actions',
+      title: t(($) => $.users.table.actions),
       key: 'actions',
       render: (_: unknown, record) => (
         <Space size="small">
           <Button size="small" onClick={() => openEditModal(record)}>
-            Edit
+            {t(($) => $.users.actions.edit)}
           </Button>
           <Button size="small" onClick={() => openPasswordModal(record)}>
-            Password
+            {t(($) => $.users.actions.password)}
           </Button>
           <Button
             size="small"
             danger={!record.is_active}
             onClick={() => toggleActive(record)}
           >
-            {record.is_active ? 'Deactivate' : 'Activate'}
+            {record.is_active ? t(($) => $.users.actions.deactivate) : t(($) => $.users.actions.activate)}
           </Button>
         </Space>
       ),
     },
-  ], [openEditModal, openPasswordModal, toggleActive])
+  ], [formatters, noLabel, openEditModal, openPasswordModal, t, toggleActive, unavailableShort, yesLabel])
 
   const table = useTableToolkit({
     tableId: 'users',
@@ -218,7 +268,7 @@ export function UsersPage() {
   const selectedUserError = selectedUserId !== null
     && selectedUser === null
     && !selectedUserLoading
-    ? 'Selected user could not be restored. Reload the workspace or choose another user from the catalog.'
+    ? t(($) => $.users.page.detailMissing)
     : null
 
   useEffect(() => {
@@ -248,9 +298,14 @@ export function UsersPage() {
   if (!isStaff) {
     return (
       <WorkspacePage
-        header={<PageHeader title="Users" subtitle="Каталог пользователей доступен только staff-операторам." />}
+        header={(
+          <PageHeader
+            title={t(($) => $.users.page.title)}
+            subtitle={t(($) => $.users.page.staffOnlySubtitle)}
+          />
+        )}
       >
-        <Typography.Text type="warning">Users доступны только для staff пользователей.</Typography.Text>
+        <Typography.Text type="warning">{t(($) => $.users.page.staffOnlyMessage)}</Typography.Text>
       </WorkspacePage>
     )
   }
@@ -291,7 +346,7 @@ export function UsersPage() {
     }
 
     if (!values.password) {
-      message.error('Password is required for new users')
+      message.error(t(($) => $.users.form.newUserPasswordRequired))
       return
     }
 
@@ -328,15 +383,15 @@ export function UsersPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Users"
-          subtitle="Catalog/detail workspace для staff-user management с URL-backed selected context."
+          title={t(($) => $.users.page.title)}
+          subtitle={t(($) => $.users.page.subtitle)}
           actions={(
             <Space wrap>
               <Button onClick={() => usersQuery.refetch()} loading={usersQuery.isFetching}>
-                Refresh
+                {t(($) => $.users.page.refresh)}
               </Button>
               <Button type="primary" onClick={openCreateModal}>
-                Add User
+                {t(($) => $.users.page.addUser)}
               </Button>
             </Space>
           )}
@@ -352,7 +407,7 @@ export function UsersPage() {
         columns={columns}
         tableLayout="fixed"
         scroll={{ x: table.totalColumnsWidth }}
-        searchPlaceholder="Search users"
+        searchPlaceholder={t(($) => $.users.page.searchPlaceholder)}
         onRow={(record) => ({
           onClick: () => updateSearchParams({
             user: String(record.id),
@@ -363,40 +418,42 @@ export function UsersPage() {
       />
 
       <EntityDetails
-        title={selectedUser ? `User: ${selectedUser.username}` : 'User details'}
+        title={selectedUser
+          ? t(($) => $.users.page.detailTitleWithUsername, { username: selectedUser.username })
+          : t(($) => $.users.page.detailTitle)}
         error={selectedUserError}
         loading={selectedUserLoading}
         empty={!selectedUser}
         emptyDescription={selectedUserId
-          ? 'Selected user is not available in the current route state.'
-          : 'Select a user from the catalog or create a new one.'}
+          ? t(($) => $.users.page.detailMissing)
+          : t(($) => $.users.page.detailEmpty)}
         extra={selectedUser ? (
           <Space wrap>
             <Button size="small" onClick={() => openEditModal(selectedUser)}>
-              Edit
+              {t(($) => $.users.actions.edit)}
             </Button>
             <Button size="small" onClick={() => openPasswordModal(selectedUser)}>
-              Password
+              {t(($) => $.users.actions.password)}
             </Button>
             <Button
               size="small"
               danger={!selectedUser.is_active}
               onClick={() => toggleActive(selectedUser)}
             >
-              {selectedUser.is_active ? 'Deactivate' : 'Activate'}
+              {selectedUser.is_active ? t(($) => $.users.actions.deactivate) : t(($) => $.users.actions.activate)}
             </Button>
           </Space>
         ) : null}
       >
         {selectedUser ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text data-testid="users-selected-username"><strong>Username:</strong> {selectedUser.username}</Text>
-            <Text><strong>Email:</strong> {selectedUser.email || '—'}</Text>
-            <Text><strong>Name:</strong> {[selectedUser.first_name, selectedUser.last_name].filter(Boolean).join(' ') || '—'}</Text>
-            <Text><strong>Staff:</strong> {selectedUser.is_staff ? 'Yes' : 'No'}</Text>
-            <Text><strong>Active:</strong> {selectedUser.is_active ? 'Yes' : 'No'}</Text>
-            <Text><strong>Last login:</strong> {selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleString() : '—'}</Text>
-            <Text><strong>Created:</strong> {selectedUser.date_joined ? new Date(selectedUser.date_joined).toLocaleString() : '—'}</Text>
+            <Text data-testid="users-selected-username"><strong>{t(($) => $.users.detailFields.username)}:</strong> {selectedUser.username}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.email)}:</strong> {selectedUser.email || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.name)}:</strong> {[selectedUser.first_name, selectedUser.last_name].filter(Boolean).join(' ') || unavailableShort}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.staff)}:</strong> {selectedUser.is_staff ? yesLabel : noLabel}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.active)}:</strong> {selectedUser.is_active ? yesLabel : noLabel}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.lastLogin)}:</strong> {formatters.dateTime(selectedUser.last_login, { fallback: unavailableShort })}</Text>
+            <Text><strong>{t(($) => $.users.detailFields.created)}:</strong> {formatters.dateTime(selectedUser.date_joined, { fallback: unavailableShort })}</Text>
           </Space>
         ) : null}
       </EntityDetails>
@@ -405,34 +462,36 @@ export function UsersPage() {
         open={activeContext === 'create' || (activeContext === 'edit' && Boolean(selectedUser))}
         onClose={closeUserEditor}
         onSubmit={() => { void handleUserSave() }}
-        title={activeContext === 'edit' && selectedUser ? `Edit User: ${selectedUser.username}` : 'Add User'}
-        submitText={activeContext === 'edit' ? 'Save' : 'Create'}
+        title={activeContext === 'edit' && selectedUser
+          ? t(($) => $.users.form.editTitle, { username: selectedUser.username })
+          : t(($) => $.users.form.addTitle)}
+        submitText={activeContext === 'edit' ? t(($) => $.users.actions.save) : t(($) => $.users.actions.create)}
         confirmLoading={createUser.isPending || updateUser.isPending}
         forceRender
       >
         <Form form={form} layout="vertical" initialValues={{ is_active: true, is_staff: false }}>
-          <Form.Item label="Username" name="username" rules={[{ required: true, message: 'Username is required' }]}>
-            <Input id="users-username" aria-label="Username" />
+          <Form.Item label={t(($) => $.users.form.username)} name="username" rules={[{ required: true, message: t(($) => $.users.form.usernameRequired) }]}>
+            <Input id="users-username" aria-label={t(($) => $.users.form.username)} />
           </Form.Item>
           {activeContext !== 'edit' && (
-            <Form.Item label="Password" name="password" rules={[{ required: true, message: 'Password is required' }]}>
-              <Input.Password id="users-password" aria-label="Password" />
+            <Form.Item label={t(($) => $.users.form.password)} name="password" rules={[{ required: true, message: t(($) => $.users.form.passwordRequired) }]}>
+              <Input.Password id="users-password" aria-label={t(($) => $.users.form.password)} />
             </Form.Item>
           )}
-          <Form.Item label="Email" name="email">
-            <Input id="users-email" aria-label="Email" />
+          <Form.Item label={t(($) => $.users.form.email)} name="email">
+            <Input id="users-email" aria-label={t(($) => $.users.form.email)} />
           </Form.Item>
-          <Form.Item label="First Name" name="first_name">
-            <Input id="users-first-name" aria-label="First Name" />
+          <Form.Item label={t(($) => $.users.form.firstName)} name="first_name">
+            <Input id="users-first-name" aria-label={t(($) => $.users.form.firstName)} />
           </Form.Item>
-          <Form.Item label="Last Name" name="last_name">
-            <Input id="users-last-name" aria-label="Last Name" />
+          <Form.Item label={t(($) => $.users.form.lastName)} name="last_name">
+            <Input id="users-last-name" aria-label={t(($) => $.users.form.lastName)} />
           </Form.Item>
           <Space size="large">
-            <Form.Item label="Staff" name="is_staff" valuePropName="checked">
+            <Form.Item label={t(($) => $.users.form.staff)} name="is_staff" valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item label="Active" name="is_active" valuePropName="checked">
+            <Form.Item label={t(($) => $.users.form.active)} name="is_active" valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>
@@ -443,14 +502,16 @@ export function UsersPage() {
         open={activeContext === 'password' && Boolean(selectedUser)}
         onClose={closePasswordEditor}
         onSubmit={() => { void handlePasswordSave() }}
-        title={selectedUser ? `Set Password: ${selectedUser.username}` : 'Set Password'}
-        submitText="Update"
+        title={selectedUser
+          ? t(($) => $.users.form.passwordTitle, { username: selectedUser.username })
+          : t(($) => $.users.form.passwordTitleFallback)}
+        submitText={t(($) => $.users.actions.update)}
         confirmLoading={setUserPassword.isPending}
         forceRender
       >
         <Form form={passwordForm} layout="vertical">
-          <Form.Item label="New Password" name="password" rules={[{ required: true, message: 'Password is required' }]}>
-            <Input.Password id="users-new-password" aria-label="New Password" />
+          <Form.Item label={t(($) => $.users.form.newPassword)} name="password" rules={[{ required: true, message: t(($) => $.users.form.passwordRequired) }]}>
+            <Input.Password id="users-new-password" aria-label={t(($) => $.users.form.newPassword)} />
           </Form.Item>
         </Form>
       </ModalFormShell>

@@ -1,5 +1,6 @@
 import { Grid, Space, Spin, Table, Tag, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
+import { useAdminSupportTranslation, useCommonTranslation, useLocaleFormatters } from '@/i18n'
 
 import type {
   ExtensionsOverviewDatabaseRow,
@@ -8,6 +9,24 @@ import type {
 
 const { useBreakpoint } = Grid
 const { Text } = Typography
+
+const resolveStatusLabel = (
+  status: string | null | undefined,
+  t: ReturnType<typeof useAdminSupportTranslation>['t'],
+) => {
+  switch (status) {
+    case 'active':
+      return t(($) => $.extensions.status.active)
+    case 'inactive':
+      return t(($) => $.extensions.status.inactive)
+    case 'missing':
+      return t(($) => $.extensions.status.missing)
+    case 'unknown':
+      return t(($) => $.extensions.status.unknown)
+    default:
+      return status || '—'
+  }
+}
 
 type ExtensionsOverviewTableProps = {
   columns: ColumnsType<ExtensionsOverviewRow>
@@ -47,6 +66,9 @@ export function ExtensionsDrilldownTable({
   loading,
   pagination,
 }: ExtensionsDrilldownTableProps) {
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -65,6 +87,8 @@ export function ExtensionsDrilldownTable({
     )
   }
 
+  const unavailable = tCommon(($) => $.values.unavailableShort)
+
   if (isNarrow) {
     return (
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -79,16 +103,18 @@ export function ExtensionsDrilldownTable({
           >
             <Space direction="vertical" size={6} style={{ width: '100%' }}>
               <Text strong>{row.database_name}</Text>
-              <Text type="secondary">{row.cluster_name || row.cluster_id || '—'}</Text>
+              <Text type="secondary">{row.cluster_name || row.cluster_id || unavailable}</Text>
               <Space wrap>
-                <Tag>{row.status}</Tag>
-                <Tag>version: {row.version || '—'}</Tag>
+                <Tag>{resolveStatusLabel(row.status, t)}</Tag>
+                <Tag>{t(($) => $.extensions.table.mobileVersion, { value: row.version || unavailable })}</Tag>
               </Space>
-              <Text>Active: {String(row.flags?.active ?? '—')}</Text>
-              <Text>Safe mode: {String(row.flags?.safe_mode ?? '—')}</Text>
-              <Text>Unsafe action protection: {String(row.flags?.unsafe_action_protection ?? '—')}</Text>
+              <Text>{t(($) => $.extensions.table.mobileActive, { value: String(row.flags?.active ?? unavailable) })}</Text>
+              <Text>{t(($) => $.extensions.table.mobileSafeMode, { value: String(row.flags?.safe_mode ?? unavailable) })}</Text>
+              <Text>{t(($) => $.extensions.table.mobileUnsafeActionProtection, { value: String(row.flags?.unsafe_action_protection ?? unavailable) })}</Text>
               <Text type="secondary">
-                Snapshot: {row.snapshot_updated_at ? new Date(row.snapshot_updated_at).toLocaleString() : '—'}
+                {t(($) => $.extensions.table.mobileSnapshot, {
+                  value: formatters.dateTime(row.snapshot_updated_at, { fallback: unavailable }),
+                })}
               </Text>
             </Space>
           </div>
@@ -152,6 +178,8 @@ type ExtensionsDriftTableProps = {
 }
 
 export function ExtensionsDriftTable({ data }: ExtensionsDriftTableProps) {
+  const { t } = useAdminSupportTranslation()
+
   return (
     <Table
       size="small"
@@ -159,9 +187,9 @@ export function ExtensionsDriftTable({ data }: ExtensionsDriftTableProps) {
       pagination={false}
       dataSource={data}
       columns={[
-        { title: 'Database', dataIndex: 'database_id', key: 'database_id' },
-        { title: 'Base at', dataIndex: 'base_at', key: 'base_at', width: 220 },
-        { title: 'Current at', dataIndex: 'current_at', key: 'current_at', width: 220 },
+        { title: t(($) => $.extensions.drift.database), dataIndex: 'database_id', key: 'database_id' },
+        { title: t(($) => $.extensions.drift.baseAt), dataIndex: 'base_at', key: 'base_at', width: 220 },
+        { title: t(($) => $.extensions.drift.currentAt), dataIndex: 'current_at', key: 'current_at', width: 220 },
       ]}
       scroll={{ x: 700 }}
     />

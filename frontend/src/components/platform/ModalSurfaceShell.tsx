@@ -1,6 +1,7 @@
 import { Grid, Modal, Space, Typography } from 'antd'
 import type { ButtonProps } from 'antd'
 import type { ReactNode } from 'react'
+import { usePlatformTranslation } from '@/i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 import { firstSemanticActionLabel } from '../../observability/semanticActionLabel'
 
@@ -29,7 +30,7 @@ export function ModalSurfaceShell({
   onSubmit,
   title,
   subtitle,
-  submitText = 'Confirm',
+  submitText,
   confirmLoading = false,
   width = 880,
   forceRender = false,
@@ -37,6 +38,7 @@ export function ModalSurfaceShell({
   cancelText,
   children,
 }: ModalSurfaceShellProps) {
+  const { t } = usePlatformTranslation()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -56,8 +58,10 @@ export function ModalSurfaceShell({
     )
     : undefined
 
+  const resolvedSubmitText = submitText ?? t(($) => $.actions.confirm)
+  const resolvedCancelText = cancelText ?? t(($) => $.actions.cancel)
   const actionName = firstSemanticActionLabel(
-    submitText,
+    resolvedSubmitText,
     title,
     subtitle,
   ) ?? 'Modal confirm'
@@ -71,8 +75,8 @@ export function ModalSurfaceShell({
         actionKind: 'modal.confirm',
         actionName,
       }, () => onSubmit()) : undefined}
-      okText={submitText}
-      cancelText={cancelText}
+      okText={resolvedSubmitText}
+      cancelText={resolvedCancelText}
       confirmLoading={confirmLoading}
       forceRender={forceRender}
       destroyOnHidden

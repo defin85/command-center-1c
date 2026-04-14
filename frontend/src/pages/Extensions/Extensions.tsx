@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Grid, Input, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table'
-import dayjs from 'dayjs'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAdminSupportTranslation, useCommonTranslation, useLocaleFormatters } from '@/i18n'
 
 import { getV2 } from '../../api/generated'
 import { useClusters } from '../../api/queries/clusters'
@@ -53,47 +53,7 @@ const statusTagColor = (status: Status): string => {
   return 'default'
 }
 
-const boolTag = (value: boolean | null | undefined) => {
-  if (value === true) return <Tag color="green">on</Tag>
-  if (value === false) return <Tag color="red">off</Tag>
-  return <Text type="secondary">—</Text>
-}
-
 type ObservedState = 'on' | 'off' | 'mixed' | 'unknown'
-
-const observedStateTag = (state: ObservedState | undefined) => {
-  if (!state) return <Text type="secondary">—</Text>
-  if (state === 'on') return <Tag color="green">observed: on</Tag>
-  if (state === 'off') return <Tag color="red">observed: off</Tag>
-  if (state === 'mixed') return <Tag color="gold">observed: mixed</Tag>
-  return <Tag>observed: unknown</Tag>
-}
-
-const flagCell = (flag: ExtensionsFlagAggregate | undefined | null) => {
-  if (!flag) return <Text type="secondary">—</Text>
-
-  const state = (flag.observed?.state as ObservedState | undefined) ?? undefined
-  const tooltip = (
-    <div style={{ maxWidth: 360 }}>
-      <div>Observed: true={flag.observed?.true_count ?? 0}, false={flag.observed?.false_count ?? 0}, unknown={flag.observed?.unknown_count ?? 0}</div>
-      <div>Drift: {flag.drift_count ?? 0}, Unknown drift: {flag.unknown_drift_count ?? 0}</div>
-    </div>
-  )
-
-  const showDrift = (flag.drift_count ?? 0) > 0
-  const showUnknownDrift = (flag.unknown_drift_count ?? 0) > 0
-
-  return (
-    <Tooltip title={tooltip}>
-      <Space size={6} wrap>
-        {boolTag(flag.policy)}
-        {observedStateTag(state)}
-        {showDrift && <Tag color="red">drift: {flag.drift_count}</Tag>}
-        {showUnknownDrift && <Tag color="orange">unknown drift: {flag.unknown_drift_count}</Tag>}
-      </Space>
-    </Tooltip>
-  )
-}
 
 const normalizePolicyBool = (value: unknown): boolean | null => {
   if (value === true) return true
@@ -146,6 +106,9 @@ type TemplateOption = {
 export const Extensions = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
   const { isStaff } = useAuthz()
   const [searchParams, setSearchParams] = useSearchParams()
   const screens = useBreakpoint()
@@ -159,6 +122,75 @@ export const Extensions = () => {
     )
   const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
   const mutatingDisabled = isStaff && !hasTenantContext
+  const unavailable = tCommon(($) => $.values.unavailableShort)
+
+  const formatStatusLabel = useCallback((value: Status | string | null | undefined) => {
+    switch (value) {
+      case 'active':
+        return t(($) => $.extensions.status.active)
+      case 'inactive':
+        return t(($) => $.extensions.status.inactive)
+      case 'missing':
+        return t(($) => $.extensions.status.missing)
+      case 'unknown':
+        return t(($) => $.extensions.status.unknown)
+      default:
+        return value || unavailable
+    }
+  }, [t, unavailable])
+
+  const formatBoolTag = useCallback((value: boolean | null | undefined) => {
+    if (value === true) return <Tag color="green">{t(($) => $.extensions.flags.on)}</Tag>
+    if (value === false) return <Tag color="red">{t(($) => $.extensions.flags.off)}</Tag>
+    return <Text type="secondary">{unavailable}</Text>
+  }, [t, unavailable])
+
+  const formatObservedStateTag = useCallback((state: ObservedState | undefined) => {
+    if (!state) return <Text type="secondary">{unavailable}</Text>
+    if (state === 'on') return <Tag color="green">{t(($) => $.extensions.flags.observedOn)}</Tag>
+    if (state === 'off') return <Tag color="red">{t(($) => $.extensions.flags.observedOff)}</Tag>
+    if (state === 'mixed') return <Tag color="gold">{t(($) => $.extensions.flags.observedMixed)}</Tag>
+    return <Tag>{t(($) => $.extensions.flags.observedUnknown)}</Tag>
+  }, [t, unavailable])
+
+  const renderFlagCell = useCallback((flag: ExtensionsFlagAggregate | undefined | null) => {
+    if (!flag) return <Text type="secondary">{unavailable}</Text>
+
+    const state = (flag.observed?.state as ObservedState | undefined) ?? undefined
+    const tooltip = (
+      <div style={{ maxWidth: 360 }}>
+        <div>{t(($) => $.extensions.flags.counts, {
+          trueCount: String(flag.observed?.true_count ?? 0),
+          falseCount: String(flag.observed?.false_count ?? 0),
+          unknownCount: String(flag.observed?.unknown_count ?? 0),
+        })}</div>
+        <div>{t(($) => $.extensions.flags.driftSummary, {
+          driftCount: String(flag.drift_count ?? 0),
+          unknownDriftCount: String(flag.unknown_drift_count ?? 0),
+        })}</div>
+      </div>
+    )
+
+    const showDrift = (flag.drift_count ?? 0) > 0
+    const showUnknownDrift = (flag.unknown_drift_count ?? 0) > 0
+
+    return (
+      <Tooltip title={tooltip}>
+        <Space size={6} wrap>
+          {formatBoolTag(flag.policy)}
+          {formatObservedStateTag(state)}
+          {showDrift && <Tag color="red">{t(($) => $.extensions.flags.drift, { count: flag.drift_count ?? 0 })}</Tag>}
+          {showUnknownDrift && (
+            <Tag color="orange">{t(($) => $.extensions.flags.unknownDrift, { count: flag.unknown_drift_count ?? 0 })}</Tag>
+          )}
+        </Space>
+      </Tooltip>
+    )
+  }, [formatBoolTag, formatObservedStateTag, t, unavailable])
+
+  const formatDateTime = useCallback((value: string | null | undefined) => (
+    formatters.dateTime(value, { fallback: unavailable })
+  ), [formatters, unavailable])
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<Status | undefined>(undefined)
@@ -397,21 +429,24 @@ export const Extensions = () => {
 
     let reason = ''
     confirmWithTracking(modal, {
-      title: 'Adopt flags policy from database?',
+      title: t(($) => $.extensions.confirm.adoptTitle),
       content: (
         <Space direction="vertical" size="small">
           <div>
-            This will overwrite policy for <Text code>{selectedExtension}</Text> using the observed snapshot from database <Text code>{drawerDatabaseId}</Text>.
+            {t(($) => $.extensions.confirm.adoptDescription, {
+              extension: selectedExtension,
+              databaseId: drawerDatabaseId,
+            })}
           </div>
           <Input.TextArea
-            placeholder="Reason (optional)"
+            placeholder={t(($) => $.extensions.confirm.adoptReasonPlaceholder)}
             rows={3}
             onChange={(e) => { reason = e.target.value }}
           />
         </Space>
       ),
-      okText: 'Adopt',
-      cancelText: 'Cancel',
+      okText: t(($) => $.extensions.confirm.adoptOk),
+      cancelText: tCommon(($) => $.actions.cancel),
       onOk: async () => {
         setAdoptPending(true)
         try {
@@ -420,14 +455,14 @@ export const Extensions = () => {
             extension_name: selectedExtension,
             reason: reason.trim() || undefined,
           })
-          message.success('Policy updated from database snapshot')
+          message.success(t(($) => $.extensions.messages.policyUpdated))
           resetApplyFormFromPolicy(policy)
           await overviewQuery.refetch()
           if (drilldownEnabled) await drilldownQuery.refetch()
         } catch (e: unknown) {
           if (!tryShowIbcmdCliUiError(e, modal, message)) {
             const errorMessage = e instanceof Error ? e.message : 'unknown error'
-            message.error(`Failed to adopt policy: ${errorMessage}`)
+            message.error(t(($) => $.extensions.messages.failedAdoptPolicy, { error: errorMessage }))
           }
         } finally {
           setAdoptPending(false)
@@ -438,7 +473,7 @@ export const Extensions = () => {
 
   const savePreferredBinding = async () => {
     if (!selectedTemplateId) {
-      message.info('Select template first')
+      message.info(t(($) => $.extensions.messages.selectTemplateFirst))
       return
     }
     if (mutatingDisabled) return
@@ -447,11 +482,11 @@ export const Extensions = () => {
         manualOperation,
         templateId: selectedTemplateId,
       })
-      message.success('Preferred template binding updated')
+      message.success(t(($) => $.extensions.messages.preferredBindingUpdated))
     } catch (e: unknown) {
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to update preferred binding: ${errorMessage}`)
+        message.error(t(($) => $.extensions.messages.failedUpdatePreferredBinding, { error: errorMessage }))
       }
     }
   }
@@ -461,11 +496,11 @@ export const Extensions = () => {
     if (mutatingDisabled) return
     try {
       await deleteBindingMutation.mutateAsync(manualOperation)
-      message.success('Preferred template binding removed')
+      message.success(t(($) => $.extensions.messages.preferredBindingRemoved))
     } catch (e: unknown) {
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to remove preferred binding: ${errorMessage}`)
+        message.error(t(($) => $.extensions.messages.failedRemovePreferredBinding, { error: errorMessage }))
       }
     }
   }
@@ -475,20 +510,22 @@ export const Extensions = () => {
     if (mutatingDisabled) return
     if (planPending || applyPending) return
     if (templateSelectionMissing) {
-      message.error('Select template or configure preferred binding')
+      message.error(t(($) => $.extensions.messages.selectTemplateOrBinding))
       return
     }
 
     const isSetFlagsOperation = manualOperation === 'extensions.set_flags'
     const mode = resolveExtensionsApplyMode(drawerDatabaseId)
     const applyTitle = isSetFlagsOperation
-      ? (mode === 'targeted_fallback' ? 'Apply selected flags in fallback mode?' : 'Launch workflow-first flags rollout?')
-      : 'Launch extensions sync?'
+      ? (mode === 'targeted_fallback'
+          ? t(($) => $.extensions.confirm.applyTargetedTitle)
+          : t(($) => $.extensions.confirm.applyWorkflowTitle))
+      : t(($) => $.extensions.confirm.applySyncTitle)
     const applySuccessMessage = isSetFlagsOperation
       ? (mode === 'targeted_fallback'
-        ? 'Operation queued: targeted fallback apply'
-        : 'Operation queued: workflow-first rollout')
-      : 'Operation queued: extensions sync'
+        ? t(($) => $.extensions.messages.applyQueuedTargeted)
+        : t(($) => $.extensions.messages.applyQueuedWorkflow))
+      : t(($) => $.extensions.messages.applyQueuedSync)
 
     const { applyMask, flagsValues } = buildSetFlagsRuntimeInput(
       {
@@ -502,7 +539,7 @@ export const Extensions = () => {
       drawerPolicy,
     )
     if (isSetFlagsOperation && !hasSetFlagsMaskSelection(applyMask)) {
-      message.error('Select at least one flag to apply')
+      message.error(t(($) => $.extensions.messages.selectAtLeastOneFlag))
       return
     }
 
@@ -542,8 +579,8 @@ export const Extensions = () => {
         const total = resp.total ?? 0
         if (total > 500) {
           modal.error({
-            title: 'Too many databases',
-            content: `This operation is limited to 500 databases per run (matched: ${total}). Narrow filters and retry.`,
+            title: t(($) => $.extensions.confirm.tooManyDatabasesTitle),
+            content: t(($) => $.extensions.confirm.tooManyDatabasesDescription, { total: String(total) }),
           })
           return
         }
@@ -554,7 +591,7 @@ export const Extensions = () => {
 
       const databaseIds = Array.from(new Set(dbIds)).filter(Boolean)
       if (databaseIds.length === 0) {
-        message.info('No target databases matched current filters')
+        message.info(t(($) => $.extensions.messages.noTargetDatabases))
         return
       }
 
@@ -563,18 +600,22 @@ export const Extensions = () => {
       const previewText = formatExecutionPlan(plan.execution_plan)
       const bindings = extractBindings(plan.bindings)
       const bindingColumns: ColumnsType<UIBinding> = [
-        { title: 'Target', dataIndex: 'target_ref', key: 'target_ref' },
-        { title: 'Source', dataIndex: 'source_ref', key: 'source_ref' },
-        { title: 'Resolve', dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
+        { title: t(($) => $.extensions.bindings.target), dataIndex: 'target_ref', key: 'target_ref' },
+        { title: t(($) => $.extensions.bindings.source), dataIndex: 'source_ref', key: 'source_ref' },
+        { title: t(($) => $.extensions.bindings.resolve), dataIndex: 'resolve_at', key: 'resolve_at', width: 90 },
         {
-          title: 'Sensitive',
+          title: t(($) => $.extensions.bindings.sensitive),
           dataIndex: 'sensitive',
           key: 'sensitive',
           width: 90,
-          render: (value: boolean | undefined) => (value ? <Tag color="red">yes</Tag> : <Tag>no</Tag>),
+          render: (value: boolean | undefined) => (
+            value
+              ? <Tag color="red">{t(($) => $.shared.yes)}</Tag>
+              : <Tag>{t(($) => $.shared.no)}</Tag>
+          ),
         },
-        { title: 'Status', dataIndex: 'status', key: 'status', width: 110 },
-        { title: 'Reason', dataIndex: 'reason', key: 'reason' },
+        { title: t(($) => $.extensions.bindings.status), dataIndex: 'status', key: 'status', width: 110 },
+        { title: t(($) => $.extensions.bindings.reason), dataIndex: 'reason', key: 'reason' },
       ]
 
       confirmWithTracking(modal, {
@@ -582,56 +623,59 @@ export const Extensions = () => {
         content: (
           <div>
             <div style={{ marginBottom: 8 }}>
-              Extension <Text code>{selectedExtension}</Text> will be processed on {databaseIds.length} database(s).
+              {t(($) => $.extensions.confirm.extensionSummary, {
+                extension: selectedExtension,
+                count: databaseIds.length,
+              })}
             </div>
             <div style={{ marginBottom: 8 }}>
-              Manual operation: <Text code>{manualOperation}</Text>
+              {t(($) => $.extensions.confirm.manualOperationSummary, { operation: manualOperation })}
             </div>
             <div style={{ marginBottom: 8 }}>
-              Template: <Text code>{selectedTemplateId || preferredBinding?.template_id || 'preferred binding'}</Text>
+              {t(($) => $.extensions.confirm.templateSummary, {
+                template: selectedTemplateId || preferredBinding?.template_id || t(($) => $.extensions.bindings.preferred),
+              })}
             </div>
             {isSetFlagsOperation && (
               <>
                 <div style={{ marginBottom: 8 }}>
-                  Mode:{' '}
+                  {t(($) => $.extensions.confirm.modeSummary)}{' '}
                   {mode === 'targeted_fallback'
-                    ? <Tag color="orange">fallback / targeted</Tag>
-                    : <Tag color="blue">workflow-first / bulk</Tag>}
+                    ? <Tag color="orange">{t(($) => $.extensions.mode.targetedTag)}</Tag>
+                    : <Tag color="blue">{t(($) => $.extensions.mode.workflowTag)}</Tag>}
                 </div>
                 <Space size={8} wrap style={{ marginBottom: 8 }}>
-                  <div>Active: {applyMask.active ? boolTag(flagsValues.active) : <Text type="secondary">skipped</Text>}</div>
-                  <div>Safe mode: {applyMask.safe_mode ? boolTag(flagsValues.safe_mode) : <Text type="secondary">skipped</Text>}</div>
-                  <div>Unsafe action protection: {applyMask.unsafe_action_protection ? boolTag(flagsValues.unsafe_action_protection) : <Text type="secondary">skipped</Text>}</div>
+                  <div>{t(($) => $.extensions.flags.active)}: {applyMask.active ? formatBoolTag(flagsValues.active) : <Text type="secondary">{t(($) => $.extensions.flags.skipped)}</Text>}</div>
+                  <div>{t(($) => $.extensions.flags.safeMode)}: {applyMask.safe_mode ? formatBoolTag(flagsValues.safe_mode) : <Text type="secondary">{t(($) => $.extensions.flags.skipped)}</Text>}</div>
+                  <div>{t(($) => $.extensions.flags.unsafeActionProtection)}: {applyMask.unsafe_action_protection ? formatBoolTag(flagsValues.unsafe_action_protection) : <Text type="secondary">{t(($) => $.extensions.flags.skipped)}</Text>}</div>
                 </Space>
                 <div style={{ marginBottom: 8 }}>
-                  <Text type="secondary">
-                    Runtime source: this launch request sends explicit <Text code>flags_values</Text> and <Text code>apply_mask</Text>.
-                  </Text>
+                  <Text type="secondary">{t(($) => $.extensions.confirm.runtimeSourceSummary)}</Text>
                 </div>
               </>
             )}
             {previewText ? (
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
             ) : (
-              <div style={{ opacity: 0.7 }}>Preview not available</div>
+              <div style={{ opacity: 0.7 }}>{t(($) => $.extensions.confirm.previewNotAvailable)}</div>
             )}
             {isStaff && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>{t(($) => $.extensions.confirm.bindingProvenanceTitle)}</div>
                 {bindings.length > 0 ? (
                   <ExtensionsBindingsTable
                     data={bindings}
                     columns={bindingColumns}
                   />
                 ) : (
-                  <div style={{ opacity: 0.7 }}>No bindings</div>
+                  <div style={{ opacity: 0.7 }}>{t(($) => $.extensions.confirm.noBindings)}</div>
                 )}
               </div>
             )}
           </div>
         ),
-        okText: 'Apply',
-        cancelText: 'Cancel',
+        okText: t(($) => $.extensions.confirm.applyOk),
+        cancelText: tCommon(($) => $.actions.cancel),
         onOk: async () => {
           setApplyPending(true)
           try {
@@ -676,11 +720,11 @@ export const Extensions = () => {
                   : []
 
                 confirmWithTracking(modal, {
-                  title: 'State changed',
+                  title: t(($) => $.extensions.confirm.stateChangedTitle),
                   content: (
                     <div>
                       <div style={{ marginBottom: 8 }}>
-                        Some target databases changed since the plan was built. Re-plan is required.
+                        {t(($) => $.extensions.confirm.stateChangedDescription)}
                       </div>
                       {driftRows.length > 0 ? (
                         <ExtensionsDriftTable data={driftRows.slice(0, 10)} />
@@ -691,13 +735,13 @@ export const Extensions = () => {
                       )}
                       {driftRows.length > 10 ? (
                         <div style={{ marginTop: 8, opacity: 0.7 }}>
-                          Showing 10 of {driftRows.length} drifted databases.
+                          {t(($) => $.extensions.confirm.showingFirst, { count: driftRows.length })}
                         </div>
                       ) : null}
                     </div>
                   ),
-                  okText: 'Re-plan and retry',
-                  cancelText: 'Close',
+                  okText: t(($) => $.extensions.confirm.replanAndRetry),
+                  cancelText: t(($) => $.extensions.confirm.close),
                   onOk: async () => {
                     setApplyPending(true)
                     try {
@@ -716,7 +760,7 @@ export const Extensions = () => {
               }
 
               modal.error({
-                title: 'Conflict',
+                title: t(($) => $.extensions.confirm.conflictTitle),
                 content: (
                   <pre style={{ whiteSpace: 'pre-wrap' }}>
                     {JSON.stringify(data ?? {}, null, 2)}
@@ -725,7 +769,7 @@ export const Extensions = () => {
               })
             } else if (!tryShowIbcmdCliUiError(e, modal, message)) {
               const errorMessage = e instanceof Error ? e.message : 'unknown error'
-              message.error(`Failed to apply rollout: ${errorMessage}`)
+              message.error(t(($) => $.extensions.messages.failedApplyRollout, { error: errorMessage }))
             }
           } finally {
             setApplyPending(false)
@@ -743,16 +787,16 @@ export const Extensions = () => {
       }
       const code = extractErrorCode(maybe?.response?.data)
       if (code === 'MISSING_TEMPLATE_BINDING') {
-        message.error('Preferred template binding is missing. Select a template or configure preferred binding.')
+        message.error(t(($) => $.extensions.messages.missingTemplateBinding))
         return
       }
       if (code === 'CONFIGURATION_ERROR') {
-        message.error('Selected template is incompatible with this manual operation.')
+        message.error(t(($) => $.extensions.messages.configurationError))
         return
       }
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to build plan: ${errorMessage}`)
+        message.error(t(($) => $.extensions.messages.failedBuildPlan, { error: errorMessage }))
       }
     } finally {
       setPlanPending(false)
@@ -761,7 +805,7 @@ export const Extensions = () => {
 
   const overviewColumns: ColumnsType<ExtensionsOverviewRow> = [
     {
-      title: 'Extension',
+      title: t(($) => $.extensions.table.extension),
       dataIndex: 'name',
       key: 'name',
       render: (value: string, row) => (
@@ -769,7 +813,7 @@ export const Extensions = () => {
           type="link"
           style={{ padding: 0 }}
           onClick={() => openDrawer(row)}
-          aria-label={`Open extension ${value}`}
+          aria-label={t(($) => $.extensions.drawer.title, { name: value })}
         >
           {value}
         </Button>
@@ -777,48 +821,48 @@ export const Extensions = () => {
       sorter: (a, b) => a.name.localeCompare(b.name),
     },
     {
-      title: 'Purpose',
+      title: t(($) => $.extensions.table.purpose),
       dataIndex: 'purpose',
       key: 'purpose',
-      render: (v: string | null | undefined) => v ? <Text>{v}</Text> : <Text type="secondary">—</Text>,
+      render: (v: string | null | undefined) => v ? <Text>{v}</Text> : <Text type="secondary">{unavailable}</Text>,
     },
     {
-      title: 'Active',
+      title: t(($) => $.extensions.table.active),
       key: 'active_policy',
-      render: (_: unknown, row) => flagCell(row.flags?.active),
+      render: (_: unknown, row) => renderFlagCell(row.flags?.active),
     },
     {
-      title: 'Safe mode',
+      title: t(($) => $.extensions.table.safeMode),
       key: 'safe_mode_policy',
-      render: (_: unknown, row) => flagCell(row.flags?.safe_mode),
+      render: (_: unknown, row) => renderFlagCell(row.flags?.safe_mode),
     },
     {
-      title: 'Unsafe action protection',
+      title: t(($) => $.extensions.table.unsafeActionProtection),
       key: 'unsafe_action_protection_policy',
-      render: (_: unknown, row) => flagCell(row.flags?.unsafe_action_protection),
+      render: (_: unknown, row) => renderFlagCell(row.flags?.unsafe_action_protection),
     },
     {
-      title: 'Installed',
+      title: t(($) => $.extensions.table.installed),
       key: 'installed',
       align: 'right',
       render: (_: unknown, row) => <Text>{row.installed_count}</Text>,
     },
     {
-      title: 'Missing',
+      title: t(($) => $.extensions.table.missing),
       dataIndex: 'missing_count',
       key: 'missing_count',
       align: 'right',
       render: (v: number) => <Text>{v}</Text>,
     },
     {
-      title: 'Unknown',
+      title: t(($) => $.extensions.table.unknown),
       dataIndex: 'unknown_count',
       key: 'unknown_count',
       align: 'right',
       render: (v: number) => <Text>{v}</Text>,
     },
     {
-      title: 'Versions',
+      title: t(($) => $.extensions.table.versions),
       dataIndex: 'versions',
       key: 'versions',
       render: (versions: { version: string | null; count: number }[]) => {
@@ -827,23 +871,23 @@ export const Extensions = () => {
           .sort((a, b) => b.count - a.count)
           .slice(0, 4)
         if (top.length === 0) {
-          return <Text type="secondary">—</Text>
+          return <Text type="secondary">{unavailable}</Text>
         }
         return (
           <Space size={4} wrap>
             {top.map((v) => (
-              <Tag key={`${v.version ?? 'null'}-${v.count}`}>{v.version ?? '—'}: {v.count}</Tag>
+              <Tag key={`${v.version ?? 'null'}-${v.count}`}>{v.version ?? unavailable}: {v.count}</Tag>
             ))}
           </Space>
         )
       },
     },
     {
-      title: 'Latest snapshot',
+      title: t(($) => $.extensions.table.latestSnapshot),
       dataIndex: 'latest_snapshot_at',
       key: 'latest_snapshot_at',
       render: (value?: string | null) => (
-        value ? <Text>{dayjs(value).format('DD.MM.YYYY HH:mm')}</Text> : <Text type="secondary">—</Text>
+        <Text>{formatDateTime(value)}</Text>
       ),
     },
   ]
@@ -865,7 +909,7 @@ export const Extensions = () => {
 
   const drillColumns: ColumnsType<ExtensionsOverviewDatabaseRow> = [
     {
-      title: 'Database',
+      title: t(($) => $.extensions.table.database),
       dataIndex: 'database_name',
       key: 'database_name',
       render: (value: string) => (
@@ -875,49 +919,49 @@ export const Extensions = () => {
       ),
     },
     {
-      title: 'Cluster',
+      title: t(($) => $.extensions.table.cluster),
       key: 'cluster',
       render: (_: unknown, row) => (
-        <Text type="secondary">{row.cluster_name || row.cluster_id || '—'}</Text>
+        <Text type="secondary">{row.cluster_name || row.cluster_id || unavailable}</Text>
       ),
     },
     {
-      title: 'Status',
+      title: t(($) => $.extensions.table.status),
       dataIndex: 'status',
       key: 'status',
       render: (value: Status) => (
-        <Tag color={statusTagColor(value)}>{value}</Tag>
+        <Tag color={statusTagColor(value)}>{formatStatusLabel(value)}</Tag>
       ),
     },
     {
-      title: 'Active',
+      title: t(($) => $.extensions.table.active),
       key: 'active_observed',
-      render: (_: unknown, row) => boolTag(row.flags?.active),
+      render: (_: unknown, row) => formatBoolTag(row.flags?.active),
     },
     {
-      title: 'Safe mode',
+      title: t(($) => $.extensions.table.safeMode),
       key: 'safe_mode_observed',
-      render: (_: unknown, row) => boolTag(row.flags?.safe_mode),
+      render: (_: unknown, row) => formatBoolTag(row.flags?.safe_mode),
     },
     {
-      title: 'Unsafe action protection',
+      title: t(($) => $.extensions.table.unsafeActionProtection),
       key: 'unsafe_action_protection_observed',
-      render: (_: unknown, row) => boolTag(row.flags?.unsafe_action_protection),
+      render: (_: unknown, row) => formatBoolTag(row.flags?.unsafe_action_protection),
     },
     {
-      title: 'Version',
+      title: t(($) => $.extensions.table.version),
       dataIndex: 'version',
       key: 'version',
       render: (value?: string | null) => (
-        value ? <Text>{value}</Text> : <Text type="secondary">—</Text>
+        value ? <Text>{value}</Text> : <Text type="secondary">{unavailable}</Text>
       ),
     },
     {
-      title: 'Snapshot',
+      title: t(($) => $.extensions.table.snapshot),
       dataIndex: 'snapshot_updated_at',
       key: 'snapshot_updated_at',
       render: (value?: string | null) => (
-        value ? <Text>{dayjs(value).format('DD.MM.YYYY HH:mm')}</Text> : <Text type="secondary">—</Text>
+        <Text>{formatDateTime(value)}</Text>
       ),
     },
   ]
@@ -941,15 +985,15 @@ export const Extensions = () => {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Extensions"
-          subtitle="Management workspace with URL-backed selected extension context and secondary drill-down surface."
+          title={t(($) => $.extensions.page.title)}
+          subtitle={t(($) => $.extensions.page.subtitle)}
           actions={(
             <Button
               data-testid="extensions-refresh"
               onClick={() => overviewQuery.refetch()}
               loading={overviewQuery.isFetching}
             >
-              Refresh
+              {t(($) => $.extensions.page.refresh)}
             </Button>
           )}
         />
@@ -960,7 +1004,7 @@ export const Extensions = () => {
         <Input
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          placeholder="Search extension name"
+          placeholder={t(($) => $.extensions.page.searchPlaceholder)}
           style={{ width: 260 }}
           allowClear
         />
@@ -968,20 +1012,20 @@ export const Extensions = () => {
           value={status}
           onChange={(v) => { setStatus(v); setPage(1) }}
           allowClear
-          placeholder="Status"
+          placeholder={t(($) => $.extensions.page.statusPlaceholder)}
           style={{ width: 180 }}
           options={[
-            { value: 'active', label: 'active' },
-            { value: 'inactive', label: 'inactive' },
-            { value: 'missing', label: 'missing' },
-            { value: 'unknown', label: 'unknown' },
+            { value: 'active', label: t(($) => $.extensions.status.active) },
+            { value: 'inactive', label: t(($) => $.extensions.status.inactive) },
+            { value: 'missing', label: t(($) => $.extensions.status.missing) },
+            { value: 'unknown', label: t(($) => $.extensions.status.unknown) },
           ]}
         />
         <Input
           data-testid="extensions-overview-version"
           value={version}
           onChange={(e) => { setVersion(e.target.value); setPage(1) }}
-          placeholder="Version (exact)"
+          placeholder={t(($) => $.extensions.page.versionPlaceholder)}
           style={{ width: 220 }}
           allowClear
         />
@@ -990,7 +1034,7 @@ export const Extensions = () => {
           value={databaseId}
           onChange={(v) => { setDatabaseId(v); setPage(1) }}
           allowClear
-          placeholder="Database"
+          placeholder={t(($) => $.extensions.page.databasePlaceholder)}
           style={{ width: 320 }}
           options={databaseOptions}
           loading={databasesQuery.isLoading}
@@ -1007,7 +1051,7 @@ export const Extensions = () => {
             setDrawerPage(1)
           }}
           allowClear
-          placeholder="Cluster"
+          placeholder={t(($) => $.extensions.page.clusterPlaceholder)}
           style={{ width: 260 }}
           options={clusterOptions}
           loading={clustersQuery.isLoading}
@@ -1015,12 +1059,14 @@ export const Extensions = () => {
           optionFilterProp="label"
         />
         <Text type="secondary">
-          Total DBs: {overviewQuery.data?.total_databases ?? '—'}
+          {typeof overviewQuery.data?.total_databases === 'number'
+            ? t(($) => $.extensions.page.totalDatabases, { count: overviewQuery.data.total_databases })
+            : t(($) => $.extensions.page.totalDatabasesUnavailable)}
         </Text>
         </Space>
 
         {overviewQuery.isError && (
-          <Alert type="error" showIcon message="Failed to load extensions overview" />
+          <Alert type="error" showIcon message={t(($) => $.extensions.page.loadFailed)} />
         )}
 
         <ExtensionsOverviewTable
@@ -1031,7 +1077,9 @@ export const Extensions = () => {
         />
 
         <DrawerSurfaceShell
-          title={selectedExtension ? `Extension: ${selectedExtension}` : 'Extension'}
+          title={selectedExtension
+            ? t(($) => $.extensions.drawer.title, { name: selectedExtension })
+            : t(($) => $.extensions.drawer.titleFallback)}
           open={drawerOpen}
           onClose={() => updateSearchParams({ extension: null, database: null })}
           width={860}
@@ -1052,33 +1100,35 @@ export const Extensions = () => {
             <Alert
               type="warning"
               showIcon
-              message="Mutating actions are disabled"
-              description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+              message={t(($) => $.extensions.drawer.mutatingDisabledTitle)}
+              description={t(($) => $.extensions.drawer.mutatingDisabledDescription)}
             />
           )}
 
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
-            <Text strong>Run manual operation</Text>
+            <Text strong>{t(($) => $.extensions.drawer.manualOperationTitle)}</Text>
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               <Alert
                 type={setFlagsOperationSelected && fallbackMode ? 'warning' : 'info'}
                 showIcon
                 data-testid="extensions-apply-mode-hint"
                 message={setFlagsOperationSelected
-                  ? (fallbackMode ? 'Fallback mode (targeted)' : 'Workflow-first mode (bulk)')
-                  : 'Template-based sync mode'}
+                  ? (fallbackMode
+                      ? t(($) => $.extensions.mode.fallbackTitle)
+                      : t(($) => $.extensions.mode.workflowTitle))
+                  : t(($) => $.extensions.mode.templateSyncTitle)}
                 description={setFlagsOperationSelected
                   ? (fallbackMode
-                    ? 'Use for emergency/single DB changes only.'
-                    : 'Primary path for mass rollout. Progress is tracked in Operations.')
-                  : 'Runs extensions.sync through selected template and manual-operation contract.'}
+                    ? t(($) => $.extensions.mode.fallbackDescription)
+                    : t(($) => $.extensions.mode.workflowDescription))
+                  : t(($) => $.extensions.mode.templateSyncDescription)}
               />
               <Space
                 align={isNarrow ? 'start' : 'center'}
                 direction={isNarrow ? 'vertical' : 'horizontal'}
                 style={{ width: '100%' }}
               >
-                <Text type="secondary">Operation</Text>
+                <Text type="secondary">{t(($) => $.extensions.drawer.operationLabel)}</Text>
                 <Select
                   data-testid="extensions-apply-manual-operation"
                   value={manualOperation}
@@ -1092,13 +1142,15 @@ export const Extensions = () => {
                 direction={isNarrow ? 'vertical' : 'horizontal'}
                 style={{ width: '100%' }}
               >
-                <Text type="secondary">Template</Text>
+                <Text type="secondary">{t(($) => $.extensions.drawer.templateLabel)}</Text>
                 <Select
                   data-testid="extensions-apply-template"
                   value={selectedTemplateId}
                   onChange={(value) => setSelectedTemplateId(value)}
                   options={templateOptions}
-                  placeholder={templatesQuery.isLoading ? 'Loading templates…' : 'Select template (or rely on preferred)'}
+                  placeholder={templatesQuery.isLoading
+                    ? t(($) => $.extensions.drawer.templateLabel)
+                    : t(($) => $.extensions.messages.selectTemplateOrBinding)}
                   loading={templatesQuery.isLoading}
                   allowClear
                   style={{ width: isNarrow ? '100%' : 420 }}
@@ -1110,7 +1162,7 @@ export const Extensions = () => {
                     loading={upsertBindingMutation.isPending}
                     disabled={!selectedTemplateId || mutatingDisabled}
                   >
-                    Save preferred
+                    {t(($) => $.extensions.drawer.savePreferred)}
                   </Button>
                   <Button
                     size="small"
@@ -1118,7 +1170,7 @@ export const Extensions = () => {
                     loading={deleteBindingMutation.isPending}
                     disabled={!preferredBinding || mutatingDisabled}
                   >
-                    Clear preferred
+                    {t(($) => $.extensions.drawer.clearPreferred)}
                   </Button>
                 </Space>
               </Space>
@@ -1126,24 +1178,24 @@ export const Extensions = () => {
                 <Alert
                   type="error"
                   showIcon
-                  message="Failed to load compatible templates"
-                  description="Template list is unavailable. Retry later or reload the page."
+                  message={t(($) => $.extensions.drawer.compatibleTemplatesFailedTitle)}
+                  description={t(($) => $.extensions.drawer.compatibleTemplatesFailedDescription)}
                 />
               )}
               {bindingsQuery.isError && (
                 <Alert
                   type="warning"
                   showIcon
-                  message="Preferred binding is unavailable"
-                  description="Binding API is temporarily unavailable. You can still launch with explicit template override."
+                  message={t(($) => $.extensions.drawer.preferredBindingUnavailableTitle)}
+                  description={t(($) => $.extensions.drawer.preferredBindingUnavailableDescription)}
                 />
               )}
               {preferredBinding && (
                 <Space size={8} wrap data-testid="extensions-preferred-binding-summary">
-                  <Tag color="geekblue">preferred</Tag>
+                  <Tag color="geekblue">{t(($) => $.extensions.bindings.preferred)}</Tag>
                   <Tag>{preferredBinding.template_id}</Tag>
                   {preferredBinding.updated_at && (
-                    <Tag>{dayjs(preferredBinding.updated_at).format('DD.MM.YYYY HH:mm')}</Tag>
+                    <Tag>{formatDateTime(preferredBinding.updated_at)}</Tag>
                   )}
                   {preferredBinding.updated_by && <Tag>{preferredBinding.updated_by}</Tag>}
                 </Space>
@@ -1151,15 +1203,15 @@ export const Extensions = () => {
               {selectedTemplate && (
                 <Space size={8} wrap data-testid="extensions-apply-template-summary">
                   <Tag color="blue">{selectedTemplate.value}</Tag>
-                  <Tag>{selectedTemplate.capability || 'no capability'}</Tag>
+                  <Tag>{selectedTemplate.capability || t(($) => $.extensions.bindings.noCapability)}</Tag>
                 </Space>
               )}
               {templateSelectionMissing && (
                 <Alert
                   type="warning"
                   showIcon
-                  message="Template is not resolved"
-                  description="Choose a template override or configure preferred template binding for this manual operation."
+                  message={t(($) => $.extensions.drawer.templateNotResolvedTitle)}
+                  description={t(($) => $.extensions.drawer.templateNotResolvedDescription)}
                 />
               )}
               {setFlagsOperationSelected && (
@@ -1168,11 +1220,11 @@ export const Extensions = () => {
                     type="info"
                     showIcon
                     data-testid="extensions-apply-runtime-source-hint"
-                    message="Runtime source of truth"
+                    message={t(($) => $.extensions.drawer.runtimeSourceTitle)}
                     description={(
                       <Space direction="vertical" size={2}>
-                        <Text>Values below are sent as <Text code>flags_values</Text> + <Text code>apply_mask</Text> in launch request.</Text>
-                        <Text type="secondary">Template stores transport/binding only (`$flags.*` mapping).</Text>
+                        <Text>{t(($) => $.extensions.drawer.runtimeSourceDescription)}</Text>
+                        <Text type="secondary">{t(($) => $.extensions.drawer.runtimeSourceSecondary)}</Text>
                       </Space>
                     )}
                   />
@@ -1182,7 +1234,7 @@ export const Extensions = () => {
                       checked={applyActiveEnabled}
                       onChange={(e) => setApplyActiveEnabled(e.target.checked)}
                     >
-                      Active
+                      {t(($) => $.extensions.flags.active)}
                     </Checkbox>
                     <Switch
                       data-testid="extensions-apply-flag-active-value"
@@ -1197,7 +1249,7 @@ export const Extensions = () => {
                       checked={applySafeModeEnabled}
                       onChange={(e) => setApplySafeModeEnabled(e.target.checked)}
                     >
-                      Safe mode
+                      {t(($) => $.extensions.flags.safeMode)}
                     </Checkbox>
                     <Switch
                       data-testid="extensions-apply-flag-safe-mode-value"
@@ -1212,7 +1264,7 @@ export const Extensions = () => {
                       checked={applyUnsafeActionProtectionEnabled}
                       onChange={(e) => setApplyUnsafeActionProtectionEnabled(e.target.checked)}
                     >
-                      Unsafe action protection
+                      {t(($) => $.extensions.flags.unsafeActionProtection)}
                     </Checkbox>
                     <Switch
                       data-testid="extensions-apply-flag-unsafe-action-protection-value"
@@ -1227,11 +1279,11 @@ export const Extensions = () => {
                 <Tooltip
                   title={
                     mutatingDisabled
-                      ? 'Select a tenant to enable this action'
+                      ? t(($) => $.extensions.drawer.selectTenantToEnable)
                       : templateSelectionMissing
-                        ? 'Template is not resolved'
+                        ? t(($) => $.extensions.drawer.templateNotResolvedTooltip)
                         : setFlagsOperationSelected && !hasRuntimeMaskSelection
-                          ? 'Select at least one flag to apply'
+                          ? t(($) => $.extensions.drawer.selectAtLeastOneFlagTooltip)
                           : undefined
                   }
                 >
@@ -1241,16 +1293,18 @@ export const Extensions = () => {
                     loading={planPending || applyPending}
                     disabled={!selectedExtension || mutatingDisabled || templateSelectionMissing || (setFlagsOperationSelected && !hasRuntimeMaskSelection)}
                   >
-                    Apply
+                    {t(($) => $.extensions.drawer.apply)}
                   </Button>
                 </Tooltip>
-                <Tooltip title={!drawerDatabaseId ? 'Select a database to adopt from' : (mutatingDisabled ? 'Select a tenant to enable this action' : undefined)}>
+                <Tooltip title={!drawerDatabaseId
+                  ? t(($) => $.extensions.drawer.selectDatabaseToAdopt)
+                  : (mutatingDisabled ? t(($) => $.extensions.drawer.selectTenantToEnable) : undefined)}>
                   <Button
                     onClick={runAdoptPolicy}
                     loading={adoptPending}
                     disabled={!selectedExtension || !drawerDatabaseId || mutatingDisabled || !setFlagsOperationSelected}
                   >
-                    Adopt from database
+                    {t(($) => $.extensions.drawer.adoptFromDatabase)}
                   </Button>
                 </Tooltip>
               </Space>
@@ -1266,7 +1320,7 @@ export const Extensions = () => {
                 setDrawerPage(1)
               }}
               allowClear
-              placeholder="Database"
+              placeholder={t(($) => $.extensions.page.databasePlaceholder)}
               style={{ width: 320 }}
               options={databaseOptions}
               loading={databasesQuery.isLoading}
@@ -1277,29 +1331,29 @@ export const Extensions = () => {
               value={drawerStatus}
               onChange={(v) => { setDrawerStatus(v); setDrawerPage(1) }}
               allowClear
-              placeholder="Status"
+              placeholder={t(($) => $.extensions.page.statusPlaceholder)}
               style={{ width: 180 }}
               options={[
-                { value: 'active', label: 'active' },
-                { value: 'inactive', label: 'inactive' },
-                { value: 'missing', label: 'missing' },
-                { value: 'unknown', label: 'unknown' },
+                { value: 'active', label: t(($) => $.extensions.status.active) },
+                { value: 'inactive', label: t(($) => $.extensions.status.inactive) },
+                { value: 'missing', label: t(($) => $.extensions.status.missing) },
+                { value: 'unknown', label: t(($) => $.extensions.status.unknown) },
               ]}
             />
             <Input
               value={drawerVersion}
               onChange={(e) => { setDrawerVersion(e.target.value); setDrawerPage(1) }}
-              placeholder="Version (exact)"
+              placeholder={t(($) => $.extensions.page.versionPlaceholder)}
               style={{ width: 220 }}
               allowClear
             />
             <Button onClick={() => drilldownQuery.refetch()} loading={drilldownQuery.isFetching} disabled={!drilldownEnabled}>
-              Refresh
+              {t(($) => $.extensions.page.refresh)}
             </Button>
           </Space>
 
           {drilldownQuery.isError && (
-            <Alert type="error" showIcon message="Failed to load databases" />
+            <Alert type="error" showIcon message={t(($) => $.extensions.page.loadDatabasesFailed)} />
           )}
 
           <ExtensionsDrilldownTable

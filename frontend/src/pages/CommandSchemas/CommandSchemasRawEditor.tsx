@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, App, Button, Card, Checkbox, Input, Modal, Space, Switch, Tabs, Typography } from 'antd'
 import { SaveOutlined } from '@ant-design/icons'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { DriverCatalogV2 } from '../../api/driverCommands'
 import {
@@ -67,6 +68,7 @@ export function CommandSchemasRawEditor({
   onDirtyChange,
 }: CommandSchemasRawEditorProps) {
   const { message } = App.useApp()
+  const { t } = useAdminSupportTranslation()
 
   const [activeTab, setActiveTab] = useState<RawTab>('base')
 
@@ -123,12 +125,12 @@ export function CommandSchemasRawEditor({
   const openSave = (target: SaveTarget) => {
     if (disabled || saving) return
     if (!view) {
-      message.error('Editor data is not loaded yet')
+      message.error(t(($) => $.commandSchemas.raw.editorNotLoaded))
       return
     }
 
     if (target === 'effective' && !dangerousEffectiveEnabled) {
-      message.warning('Enable dangerous effective edit first')
+      message.warning(t(($) => $.commandSchemas.raw.enableDangerousEditFirst))
       return
     }
 
@@ -161,7 +163,7 @@ export function CommandSchemasRawEditor({
       setValidateSummary({ ok: response.ok, errors: response.errors_count, warnings: response.warnings_count })
       return { ok: response.ok, errors: response.errors_count }
     } catch (error) {
-      const msg = extractBackendMessage(error) || 'Failed to validate catalog'
+      const msg = extractBackendMessage(error) || t(($) => $.commandSchemas.raw.failedValidateCatalog)
       setValidateError(msg)
       setValidateIssues([])
       setValidateSummary(null)
@@ -177,29 +179,29 @@ export function CommandSchemasRawEditor({
     }
     const reason = saveReason.trim()
     if (!reason) {
-      message.error('Reason is required')
+      message.error(t(($) => $.commandSchemas.raw.reasonRequired))
       return
     }
 
     if (saveTarget === 'effective' && !saveConfirmed) {
-      message.error('Confirm the dangerous action')
+      message.error(t(($) => $.commandSchemas.raw.confirmDangerousAction))
       return
     }
 
     const raw = saveTarget === 'base' ? baseRaw : saveTarget === 'overrides' ? overridesRaw : effectiveRaw
     const parsed = parseJsonObject(raw)
     if (!parsed) {
-      message.error('Invalid JSON: expected a JSON object')
+      message.error(t(($) => $.commandSchemas.raw.invalidJsonExpectedObject))
       return
     }
 
     const validation = await runValidation(saveTarget, parsed)
     if (!validation) {
-      message.error('Validation failed')
+      message.error(t(($) => $.commandSchemas.raw.validationFailed))
       return
     }
     if (!validation.ok) {
-      message.error(`Validation failed: ${validation.errors} error(s)`)
+      message.error(t(($) => $.commandSchemas.raw.validationFailedWithErrors, { count: validation.errors }))
       return
     }
 
@@ -207,13 +209,13 @@ export function CommandSchemasRawEditor({
     try {
       if (saveTarget === 'base') {
         await updateCommandSchemaBase({ driver, catalog: parsed, reason, expected_etag: view.etag })
-        message.success('Base saved')
+        message.success(t(($) => $.commandSchemas.raw.baseSaved))
       } else if (saveTarget === 'overrides') {
         await updateCommandSchemaOverrides({ driver, catalog: parsed, reason, expected_etag: view.etag })
-        message.success('Overrides saved')
+        message.success(t(($) => $.commandSchemas.raw.overridesSaved))
       } else {
         await updateCommandSchemaEffective({ driver, catalog: parsed, reason, expected_etag: view.etag })
-        message.success('Effective saved')
+        message.success(t(($) => $.commandSchemas.raw.effectiveSaved))
         setDangerousEffectiveEnabled(false)
       }
 
@@ -222,10 +224,10 @@ export function CommandSchemasRawEditor({
     } catch (error) {
       const status = (error as { response?: { status?: number } } | null)?.response?.status
       if (status === 409) {
-        message.error('Conflict (ETag mismatch). Refresh and retry.')
+        message.error(t(($) => $.commandSchemas.raw.conflictEtag))
         return
       }
-      const msg = extractBackendMessage(error) || 'Failed to save catalog'
+      const msg = extractBackendMessage(error) || t(($) => $.commandSchemas.raw.failedSaveCatalog)
       message.error(msg)
     } finally {
       setSaving(false)
@@ -241,7 +243,7 @@ export function CommandSchemasRawEditor({
           onClick={() => openSave('base')}
           disabled={disabled || saving || !view}
         >
-          Save base...
+          {t(($) => $.commandSchemas.raw.saveBase)}
         </Button>
       )}
       {activeTab === 'overrides' && (
@@ -251,7 +253,7 @@ export function CommandSchemasRawEditor({
           onClick={() => openSave('overrides')}
           disabled={disabled || saving || !view}
         >
-          Save overrides...
+          {t(($) => $.commandSchemas.raw.saveOverrides)}
         </Button>
       )}
       {activeTab === 'effective' && (
@@ -262,7 +264,7 @@ export function CommandSchemasRawEditor({
           onClick={() => openSave('effective')}
           disabled={disabled || saving || !view || !dangerousEffectiveEnabled}
         >
-          Save effective...
+          {t(($) => $.commandSchemas.raw.saveEffective)}
         </Button>
       )}
     </Space>
@@ -270,10 +272,10 @@ export function CommandSchemasRawEditor({
 
   const saveTitle =
     saveTarget === 'base'
-      ? 'Save base catalog'
+      ? t(($) => $.commandSchemas.raw.saveBaseTitle)
       : saveTarget === 'overrides'
-        ? 'Save overrides catalog'
-        : 'DANGEROUS: Save effective catalog'
+        ? t(($) => $.commandSchemas.raw.saveOverridesTitle)
+        : t(($) => $.commandSchemas.raw.saveEffectiveTitle)
 
   const okDisabled = !saveReason.trim() || saving || validateLoading || !view || (
     saveTarget === 'effective' && !saveConfirmed
@@ -286,20 +288,20 @@ export function CommandSchemasRawEditor({
           <Alert
             type="warning"
             showIcon
-            message="Unsaved changes (raw)"
-            description="Local JSON differs from server state. Reload to discard, or save the tab you changed."
+            message={t(($) => $.commandSchemas.raw.unsavedTitle)}
+            description={t(($) => $.commandSchemas.raw.unsavedDescription)}
           />
         )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(560px, 1fr) 420px', gap: 16, alignItems: 'start' }}>
-          <Card size="small" title="Raw JSON" extra={tabBarExtraContent}>
+          <Card size="small" title={t(($) => $.commandSchemas.raw.rawJsonTitle)} extra={tabBarExtraContent}>
             <Tabs
               activeKey={activeTab}
               onChange={(key) => setActiveTab(key as RawTab)}
               items={[
                 {
                   key: 'base',
-                  label: 'Base',
+                  label: t(($) => $.commandSchemas.raw.base),
                   children: (
                     <LazyJsonCodeEditor
                       value={baseRaw}
@@ -312,7 +314,7 @@ export function CommandSchemasRawEditor({
                 },
                 {
                   key: 'overrides',
-                  label: 'Overrides',
+                  label: t(($) => $.commandSchemas.raw.overrides),
                   children: (
                     <LazyJsonCodeEditor
                       value={overridesRaw}
@@ -325,14 +327,14 @@ export function CommandSchemasRawEditor({
                 },
                 {
                   key: 'effective',
-                  label: 'Effective',
+                  label: t(($) => $.commandSchemas.raw.effective),
                   children: (
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
                       <Alert
                         type="warning"
                         showIcon
-                        message="Danger zone"
-                        description="Saving effective overwrites base and resets overrides. Use only if you fully understand the consequences."
+                        message={t(($) => $.commandSchemas.raw.dangerZoneTitle)}
+                        description={t(($) => $.commandSchemas.raw.dangerZoneDescription)}
                       />
                       <Space>
                         <Switch
@@ -341,7 +343,7 @@ export function CommandSchemasRawEditor({
                           onChange={setDangerousEffectiveEnabled}
                           disabled={disabled || saving}
                         />
-                        <Text type="secondary">Enable dangerous effective edit</Text>
+                        <Text type="secondary">{t(($) => $.commandSchemas.raw.enableDangerousEffectiveEdit)}</Text>
                       </Space>
                       <LazyJsonCodeEditor
                         value={effectiveRaw}
@@ -357,26 +359,26 @@ export function CommandSchemasRawEditor({
             />
           </Card>
 
-          <Card size="small" title="Validate">
+          <Card size="small" title={t(($) => $.commandSchemas.raw.validateTitle)}>
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               {!validateSummary && !validateError && (
                 <Alert
                   type="info"
                   showIcon
-                  message="No validation yet"
-                  description="Validation runs automatically before saving a tab."
+                  message={t(($) => $.commandSchemas.raw.noValidationYetTitle)}
+                  description={t(($) => $.commandSchemas.raw.noValidationYetDescription)}
                 />
               )}
 
               {validateError && (
-                <Alert type="warning" showIcon message="Validation failed" description={validateError} />
+                <Alert type="warning" showIcon message={t(($) => $.commandSchemas.raw.validationFailed)} description={validateError} />
               )}
 
               {validateSummary && (
                 <Alert
                   type={validateSummary.ok ? 'success' : 'error'}
                   showIcon
-                  message={validateSummary.ok ? 'OK' : 'Errors found'}
+                  message={validateSummary.ok ? t(($) => $.commandSchemas.sidePanel.ok) : t(($) => $.commandSchemas.raw.errorsFound)}
                   description={`errors=${validateSummary.errors}, warnings=${validateSummary.warnings}`}
                 />
               )}
@@ -393,7 +395,7 @@ export function CommandSchemasRawEditor({
                     />
                   ))}
                   {validateIssues.length > 50 && (
-                    <Text type="secondary">Showing first 50 issues.</Text>
+                    <Text type="secondary">{t(($) => $.commandSchemas.raw.showingFirstIssues, { count: 50 })}</Text>
                   )}
                 </Space>
               )}
@@ -416,8 +418,8 @@ export function CommandSchemasRawEditor({
             <Alert
               type="warning"
               showIcon
-              message="This will overwrite base and reset overrides"
-              description="After saving, effective will become equal to base and all overrides will be cleared."
+              message={t(($) => $.commandSchemas.raw.overwriteBaseTitle)}
+              description={t(($) => $.commandSchemas.raw.overwriteBaseDescription)}
             />
           )}
 
@@ -428,16 +430,16 @@ export function CommandSchemasRawEditor({
               onChange={(e) => setSaveConfirmed(e.target.checked)}
               disabled={saving}
             >
-              I understand the consequences
+              {t(($) => $.commandSchemas.raw.understandConsequences)}
             </Checkbox>
           )}
 
-          <Text type="secondary">Reason (required)</Text>
+          <Text type="secondary">{t(($) => $.commandSchemas.raw.reasonLabel)}</Text>
           <Input.TextArea
             data-testid="command-schemas-raw-save-reason"
             value={saveReason}
             onChange={(e) => setSaveReason(e.target.value)}
-            placeholder="Why are you changing command schemas?"
+            placeholder={t(($) => $.commandSchemas.raw.reasonPlaceholder)}
             rows={4}
             disabled={saving}
           />

@@ -1,4 +1,5 @@
 import { Alert, Tabs } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { CommandSchemasPageModel } from '../useCommandSchemasPageModel'
 import { CommandSchemasAdvancedEditor } from './editors/CommandSchemasAdvancedEditor'
@@ -9,6 +10,7 @@ import { CommandSchemasPermissionsEditor } from './editors/CommandSchemasPermiss
 
 export function CommandSchemasEditorTabs(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   return (
     <Tabs
@@ -17,33 +19,33 @@ export function CommandSchemasEditorTabs(props: { model: CommandSchemasPageModel
       items={[
         {
           key: 'basics',
-          label: 'Basics',
+          label: t(($) => $.commandSchemas.tabs.basics),
           children: model.selectedCommandId && model.selectedEffective
             ? <CommandSchemasBasicsEditor model={model} />
-            : <Alert type="info" message="Select a command from the list" showIcon />,
+            : <Alert type="info" message={t(($) => $.commandSchemas.tabs.selectCommand)} showIcon />,
         },
         {
           key: 'permissions',
-          label: 'Permissions',
+          label: t(($) => $.commandSchemas.tabs.permissions),
           children: model.selectedCommandId && model.selectedEffective
             ? <CommandSchemasPermissionsEditor model={model} />
-            : <Alert type="info" message="Select a command from the list" showIcon />,
+            : <Alert type="info" message={t(($) => $.commandSchemas.tabs.selectCommand)} showIcon />,
         },
         {
           key: 'params',
-          label: 'Params',
+          label: t(($) => $.commandSchemas.tabs.params),
           children: model.selectedCommandId && model.selectedEffective
             ? <CommandSchemasParamsEditor model={model} />
-            : <Alert type="info" message="Select a command from the list" showIcon />,
+            : <Alert type="info" message={t(($) => $.commandSchemas.tabs.selectCommand)} showIcon />,
         },
         {
           key: 'driver',
-          label: 'Driver',
+          label: t(($) => $.commandSchemas.tabs.driver),
           children: <CommandSchemasDriverSchemaEditor model={model} />,
         },
         {
           key: 'advanced',
-          label: 'Advanced',
+          label: t(($) => $.commandSchemas.tabs.advanced),
           children: <CommandSchemasAdvancedEditor model={model} />,
         },
       ]}

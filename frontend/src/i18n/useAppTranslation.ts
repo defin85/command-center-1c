@@ -61,3 +61,4 @@ export const useSystemStatusTranslation = () => useNamespaceTranslation('systemS
 export const useDashboardTranslation = () => useNamespaceTranslation('dashboard')
 export const useClustersTranslation = () => useNamespaceTranslation('clusters')
 export const useRbacTranslation = () => useNamespaceTranslation('rbac')
+export const useAdminSupportTranslation = () => useNamespaceTranslation('adminSupport')

@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { App, Space, Typography } from 'antd'
 import type { UploadProps } from 'antd'
 import type { ModalFuncProps } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import {
   type CommandSchemaCommandPatch,
@@ -27,6 +28,7 @@ type BeforeUpload = NonNullable<UploadProps['beforeUpload']>
 
 export function useCommandSchemasActions(state: State) {
   const { message, modal } = App.useApp()
+  const { t } = useAdminSupportTranslation()
 
   const confirm = useCallback((config: ModalFuncProps) => {
     confirmWithTracking(modal, config)
@@ -58,26 +60,26 @@ export function useCommandSchemasActions(state: State) {
 
   const discardChanges = useCallback(() => {
     confirm({
-      title: 'Discard unsaved changes?',
-      content: 'This will reset local overrides to the current active version.',
-      okText: 'Discard',
+      title: t(($) => $.commandSchemas.actions.discardUnsavedTitle),
+      content: t(($) => $.commandSchemas.actions.discardUnsavedDescription),
+      okText: t(($) => $.commandSchemas.unsaved.discard),
       okButtonProps: { danger: true },
-      cancelText: 'Cancel',
+      cancelText: t(($) => $.commandSchemas.basics.cancel),
       onOk: () => {
         const next = deepCopy(state.serverOverrides)
         state.setDraftOverrides(next)
         state.setDriverSchemaText(JSON.stringify(safeOverridesDriverSchema(next), null, 2))
         state.setDriverSchemaTextError(null)
-        message.success('Changes discarded')
+        message.success(t(($) => $.commandSchemas.actions.changesDiscarded))
       },
     })
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const requestDriverChange = useCallback((nextDriver: State['activeDriver']) => {
     if (nextDriver === state.activeDriver) return
 
     if (state.saving || state.rollbackLoading || state.rollingBack) {
-      message.info('Please wait until the current action finishes')
+      message.info(t(($) => $.commandSchemas.actions.waitCurrentAction))
       return
     }
 
@@ -87,20 +89,20 @@ export function useCommandSchemasActions(state: State) {
     }
 
     confirm({
-      title: 'Unsaved changes',
-      content: 'You have unsaved changes. Save or discard them before switching the driver.',
-      okText: 'Discard and switch',
+      title: t(($) => $.commandSchemas.actions.unsavedChangesTitle),
+      content: t(($) => $.commandSchemas.actions.unsavedChangesDescription),
+      okText: t(($) => $.commandSchemas.actions.discardAndSwitch),
       okButtonProps: { danger: true },
-      cancelText: 'Cancel',
+      cancelText: t(($) => $.commandSchemas.basics.cancel),
       onOk: () => {
         state.setActiveDriver(nextDriver)
       },
     })
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const requestRefreshView = useCallback(() => {
     if (state.saving || state.rollingBack) {
-      message.info('Please wait until the current action finishes')
+      message.info(t(($) => $.commandSchemas.actions.waitCurrentAction))
       return
     }
 
@@ -110,20 +112,20 @@ export function useCommandSchemasActions(state: State) {
     }
 
     confirm({
-      title: 'Unsaved changes',
-      content: 'Refresh will discard your local draft and reload the current active version.',
-      okText: 'Discard and refresh',
+      title: t(($) => $.commandSchemas.actions.unsavedChangesTitle),
+      content: t(($) => $.commandSchemas.actions.refreshUnsavedDescription),
+      okText: t(($) => $.commandSchemas.actions.discardAndRefresh),
       okButtonProps: { danger: true },
-      cancelText: 'Cancel',
+      cancelText: t(($) => $.commandSchemas.basics.cancel),
       onOk: () => {
         void state.fetchView()
       },
     })
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const openImportIts = useCallback(() => {
     if (state.saving || state.rollbackLoading || state.rollingBack || state.loading) {
-      message.info('Please wait until the current action finishes')
+      message.info(t(($) => $.commandSchemas.actions.waitCurrentAction))
       return
     }
 
@@ -140,14 +142,14 @@ export function useCommandSchemasActions(state: State) {
     }
 
     confirm({
-      title: 'Unsaved changes',
-      content: 'Importing ITS will reload the editor and discard your local draft.',
-      okText: 'Discard and continue',
+      title: t(($) => $.commandSchemas.actions.unsavedChangesTitle),
+      content: t(($) => $.commandSchemas.actions.importItsUnsavedDescription),
+      okText: t(($) => $.commandSchemas.actions.discardAndContinue),
       okButtonProps: { danger: true },
-      cancelText: 'Cancel',
+      cancelText: t(($) => $.commandSchemas.basics.cancel),
       onOk: open,
     })
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const handleImportItsFile = useCallback<BeforeUpload>((file) => {
     state.setImportItsFile(file)
@@ -159,11 +161,11 @@ export function useCommandSchemasActions(state: State) {
 
     const reason = saveText(state.importItsReason)
     if (!reason) {
-      message.error('Reason is required')
+      message.error(t(($) => $.commandSchemas.actions.reasonRequired))
       return
     }
     if (!state.importItsFile) {
-      message.error('Select ITS JSON file')
+      message.error(t(($) => $.commandSchemas.actions.selectItsFile))
       return
     }
 
@@ -172,12 +174,12 @@ export function useCommandSchemasActions(state: State) {
       const rawText = await state.importItsFile.text()
       const parsed = JSON.parse(rawText) as unknown
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        message.error('ITS payload must be a JSON object')
+        message.error(t(($) => $.commandSchemas.actions.itsPayloadMustBeObject))
         return
       }
       itsPayload = parsed as Record<string, unknown>
     } catch (_err) {
-      message.error('Invalid ITS JSON file')
+      message.error(t(($) => $.commandSchemas.actions.invalidItsJson))
       return
     }
 
@@ -203,21 +205,16 @@ export function useCommandSchemasActions(state: State) {
     if (!hasBlocks || (state.activeDriver === 'cli' && !hasCliCommandBlocks)) {
       const ok = await new Promise<boolean>((resolve) => {
         confirm({
-          title: 'ITS export quality warning',
+          title: t(($) => $.commandSchemas.actions.itsQualityWarningTitle),
           content: (
             <Space direction="vertical">
-              <Text>
-                This ITS JSON does not include structured <Text code>blocks</Text> (or does not include{' '}
-                <Text code>Lang-parameter</Text> command blocks for CLI). Parsing may be degraded.
-              </Text>
-              <Text type="secondary">
-                Re-export with <Text code>python scripts/dev/its-scrape.py --with-blocks --no-raw-text</Text> for best results.
-              </Text>
+              <Text>{t(($) => $.commandSchemas.actions.itsQualityWarningDescription)}</Text>
+              <Text type="secondary">{t(($) => $.commandSchemas.actions.itsQualityWarningRecommended, { command: 'python scripts/dev/its-scrape.py --with-blocks --no-raw-text' })}</Text>
             </Space>
           ),
-          okText: 'Import anyway',
+          okText: t(($) => $.commandSchemas.actions.importAnyway),
           okButtonProps: { danger: true },
-          cancelText: 'Cancel',
+          cancelText: t(($) => $.commandSchemas.basics.cancel),
           onOk: () => resolve(true),
           onCancel: () => resolve(false),
         })
@@ -228,7 +225,7 @@ export function useCommandSchemasActions(state: State) {
     state.setImportingIts(true)
     try {
       await importItsCommandSchemas({ driver: state.activeDriver, its_payload: itsPayload, save: true, reason })
-      message.success('ITS imported')
+      message.success(t(($) => $.commandSchemas.actions.itsImported))
       state.setImportItsOpen(false)
       await state.fetchView()
     } catch (error) {
@@ -236,11 +233,11 @@ export function useCommandSchemasActions(state: State) {
       const backendMessage = typeof err?.response?.data?.error === 'string'
         ? err.response?.data?.error
         : err?.response?.data?.error?.message
-      message.error(backendMessage || 'Failed to import ITS')
+      message.error(backendMessage || t(($) => $.commandSchemas.actions.failedImportIts))
     } finally {
       state.setImportingIts(false)
     }
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const openRollback = useCallback(async () => {
     state.setRollbackOpen(true)
@@ -253,38 +250,38 @@ export function useCommandSchemasActions(state: State) {
       const response = await listCommandSchemaVersions(state.activeDriver, 'overrides', { limit: 200, offset: 0 })
       state.setRollbackVersions(response.versions ?? [])
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to load overrides versions'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedLoadOverridesVersions)
       message.error(text)
     } finally {
       state.setRollbackLoading(false)
     }
-  }, [message, state])
+  }, [message, state, t])
 
   const openPromote = useCallback(() => {
     if (!state.view) {
-      message.error('Editor data is not loaded yet')
+      message.error(t(($) => $.commandSchemas.actions.editorNotLoaded))
       return
     }
     if (!state.canPromoteLatest) {
-      message.info('Nothing to promote (approved is already latest)')
+      message.info(t(($) => $.commandSchemas.actions.nothingToPromote))
       return
     }
     state.setPromoteOpen(true)
     state.setPromoteReason('')
-  }, [message, state])
+  }, [message, state, t])
 
   const handlePromote = useCallback(async () => {
     if (!state.view) return
 
     const reason = saveText(state.promoteReason)
     if (!reason) {
-      message.error('Reason is required')
+      message.error(t(($) => $.commandSchemas.actions.reasonRequired))
       return
     }
 
     const version = safeText(state.view.base?.latest_version).trim()
     if (!version) {
-      message.error('Latest base version is not available')
+      message.error(t(($) => $.commandSchemas.actions.latestBaseVersionUnavailable))
       return
     }
 
@@ -296,27 +293,27 @@ export function useCommandSchemasActions(state: State) {
         alias: 'approved',
         reason,
       })
-      message.success(`Promoted ${version} to approved`)
+      message.success(t(($) => $.commandSchemas.actions.promotedToApproved, { version }))
       state.setPromoteOpen(false)
       await state.fetchView()
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to promote'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedPromote)
       message.error(text)
     } finally {
       state.setPromoting(false)
     }
-  }, [message, state])
+  }, [message, state, t])
 
   const handleRollback = useCallback(async () => {
     if (!state.view) return
 
     const reason = saveText(state.rollbackReason)
     if (!reason) {
-      message.error('Reason is required')
+      message.error(t(($) => $.commandSchemas.actions.reasonRequired))
       return
     }
     if (!state.rollbackVersion) {
-      message.error('Select version to rollback')
+      message.error(t(($) => $.commandSchemas.actions.selectVersionToRollback))
       return
     }
 
@@ -328,30 +325,30 @@ export function useCommandSchemasActions(state: State) {
         reason,
         expected_etag: state.view.etag,
       })
-      message.success('Rollback applied')
+      message.success(t(($) => $.commandSchemas.actions.rollbackApplied))
       state.setRollbackOpen(false)
       await state.fetchView()
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) {
         confirm({
-          title: 'Conflict',
-          content: 'Overrides changed since you opened the editor. Refresh to load the latest active version (local draft will be discarded).',
-          okText: 'Refresh (discard local draft)',
+          title: t(($) => $.commandSchemas.actions.conflictTitle),
+          content: t(($) => $.commandSchemas.actions.conflictDescription),
+          okText: t(($) => $.commandSchemas.actions.refreshDiscardLocalDraft),
           okButtonProps: { danger: true },
-          cancelText: 'Keep editing',
+          cancelText: t(($) => $.commandSchemas.actions.keepEditing),
           onOk: () => {
             void state.fetchView()
           },
         })
       } else {
-        const text = err instanceof Error ? err.message : 'Failed to rollback overrides'
+        const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedRollback)
         message.error(text)
       }
     } finally {
       state.setRollingBack(false)
     }
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const openSave = useCallback(() => {
     state.setSaveOpen(true)
@@ -363,7 +360,7 @@ export function useCommandSchemasActions(state: State) {
 
     const reason = saveText(state.saveReason)
     if (!reason) {
-      message.error('Reason is required')
+      message.error(t(($) => $.commandSchemas.actions.reasonRequired))
       return
     }
 
@@ -375,30 +372,30 @@ export function useCommandSchemasActions(state: State) {
         reason,
         expected_etag: state.view.etag,
       })
-      message.success('Overrides saved')
+      message.success(t(($) => $.commandSchemas.actions.overridesSaved))
       state.setSaveOpen(false)
       await state.fetchView()
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) {
         confirm({
-          title: 'Conflict',
-          content: 'Overrides changed since you opened the editor. Refresh to load the latest active version (local draft will be discarded).',
-          okText: 'Refresh (discard local draft)',
+          title: t(($) => $.commandSchemas.actions.conflictTitle),
+          content: t(($) => $.commandSchemas.actions.conflictDescription),
+          okText: t(($) => $.commandSchemas.actions.refreshDiscardLocalDraft),
           okButtonProps: { danger: true },
-          cancelText: 'Keep editing',
+          cancelText: t(($) => $.commandSchemas.actions.keepEditing),
           onOk: () => {
             void state.fetchView()
           },
         })
       } else {
-        const text = err instanceof Error ? err.message : 'Failed to save overrides'
+        const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedSaveOverrides)
         message.error(text)
       }
     } finally {
       state.setSaving(false)
     }
-  }, [confirm, message, state])
+  }, [confirm, message, state, t])
 
   const loadDiff = useCallback(async () => {
     if (!state.selectedCommandId) return
@@ -409,13 +406,13 @@ export function useCommandSchemasActions(state: State) {
       const response = await diffCommandSchemas({ driver: state.activeDriver, command_id: state.selectedCommandId, catalog: state.draftOverrides })
       state.setDiffItems(response.changes ?? [])
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to load diff'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedLoadDiff)
       state.setDiffError(text)
       state.setDiffItems([])
     } finally {
       state.setDiffLoading(false)
     }
-  }, [state])
+  }, [state, t])
 
   const runValidate = useCallback(async () => {
     state.setValidateLoading(true)
@@ -425,14 +422,14 @@ export function useCommandSchemasActions(state: State) {
       state.setValidateIssues(response.issues ?? [])
       state.setValidateSummary({ ok: Boolean(response.ok), errors: response.errors_count ?? 0, warnings: response.warnings_count ?? 0 })
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to validate'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedValidate)
       state.setValidateError(text)
       state.setValidateIssues([])
       state.setValidateSummary(null)
     } finally {
       state.setValidateLoading(false)
     }
-  }, [state])
+  }, [state, t])
 
   const buildPreview = useCallback(async () => {
     if (!state.selectedCommandId) return
@@ -447,7 +444,7 @@ export function useCommandSchemasActions(state: State) {
 
       const connection = state.activeDriver === 'ibcmd' ? parseJsonObject(state.previewConnectionText) : {}
       if (state.activeDriver === 'ibcmd' && !connection) {
-        state.setPreviewError('Invalid connection JSON: expected a JSON object')
+        state.setPreviewError(t(($) => $.commandSchemas.actions.invalidConnectionJson))
         state.setPreviewArgv([])
         state.setPreviewArgvMasked([])
         return
@@ -465,14 +462,14 @@ export function useCommandSchemasActions(state: State) {
       state.setPreviewArgv(response.argv ?? [])
       state.setPreviewArgvMasked(response.argv_masked ?? [])
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to build preview'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedBuildPreview)
       state.setPreviewError(text)
       state.setPreviewArgv([])
       state.setPreviewArgvMasked([])
     } finally {
       state.setPreviewLoading(false)
     }
-  }, [state])
+  }, [state, t])
 
   const selectCommand = useCallback((commandId: string) => {
     state.setSelectedCommandId(commandId)
@@ -493,7 +490,7 @@ export function useCommandSchemasActions(state: State) {
     state.setDriverSchemaText(nextText)
     const parsed = parseJsonObject(nextText)
     if (!parsed) {
-      state.setDriverSchemaTextError('Invalid JSON: expected a JSON object')
+      state.setDriverSchemaTextError(t(($) => $.commandSchemas.actions.invalidConnectionJson))
       return
     }
     state.setDriverSchemaTextError(null)
@@ -504,18 +501,18 @@ export function useCommandSchemasActions(state: State) {
         driver_schema: parsed,
       },
     }))
-  }, [state])
+  }, [state, t])
 
   const resetDriverSchemaOverrides = useCallback(() => {
     applyDriverSchemaText('{}')
-    message.success('Driver schema overrides reset')
-  }, [applyDriverSchemaText, message])
+    message.success(t(($) => $.commandSchemas.actions.driverSchemaOverridesReset))
+  }, [applyDriverSchemaText, message, t])
 
   const copyEffectiveDriverSchema = useCallback(() => {
     const effectiveSchema = safeCatalogDriverSchema(state.view?.catalogs?.effective?.catalog)
     applyDriverSchemaText(JSON.stringify(effectiveSchema ?? {}, null, 2))
-    message.success('Copied effective driver schema into overrides')
-  }, [applyDriverSchemaText, message, state.view])
+    message.success(t(($) => $.commandSchemas.actions.copiedEffectiveDriverSchema))
+  }, [applyDriverSchemaText, message, state.view, t])
 
   const copyLatestBaseDriverSchema = useCallback(async () => {
     if (state.copyLatestDriverSchemaLoading) return
@@ -524,18 +521,18 @@ export function useCommandSchemasActions(state: State) {
       const latestView = await getCommandSchemasEditorView(state.activeDriver, 'raw')
       const latestSchema = safeCatalogDriverSchema(latestView.catalogs?.base)
       if (Object.keys(latestSchema).length === 0) {
-        message.info('Latest base driver schema is empty')
+        message.info(t(($) => $.commandSchemas.actions.latestBaseDriverSchemaEmpty))
         return
       }
       applyDriverSchemaText(JSON.stringify(latestSchema, null, 2))
-      message.success('Copied latest base driver schema into overrides')
+      message.success(t(($) => $.commandSchemas.actions.copiedLatestBaseDriverSchema))
     } catch (err) {
-      const text = err instanceof Error ? err.message : 'Failed to load latest base catalog'
+      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedLoadLatestBaseCatalog)
       message.error(text)
     } finally {
       state.setCopyLatestDriverSchemaLoading(false)
     }
-  }, [applyDriverSchemaText, message, state])
+  }, [applyDriverSchemaText, message, state, t])
 
   return {
     confirm,

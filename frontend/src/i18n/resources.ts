@@ -1,7 +1,9 @@
+import adminSupportEn from './locales/en/adminSupport'
 import commonEn from './locales/en/common'
 import errorsEn from './locales/en/errors'
 import platformEn from './locales/en/platform'
 import shellEn from './locales/en/shell'
+import adminSupportRu from './locales/ru/adminSupport'
 import commonRu from './locales/ru/common'
 import dashboardRu from './locales/ru/dashboard'
 import errorsRu from './locales/ru/errors'
@@ -12,7 +14,7 @@ import shellRu from './locales/ru/shell'
 import type systemStatusSchema from './locales/ru/systemStatus'
 import type { AppLocale } from './constants'
 
-export const eagerNamespaces = ['common', 'shell', 'platform', 'errors'] as const
+export const eagerNamespaces = ['common', 'shell', 'platform', 'errors', 'adminSupport'] as const
 export const lazyNamespaces = ['systemStatus', 'dashboard', 'clusters', 'rbac'] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
@@ -29,6 +31,7 @@ export type AppCatalogSchema = {
   dashboard: typeof dashboardRu
   clusters: typeof clustersRu
   rbac: typeof rbacRu
+  adminSupport: typeof adminSupportRu
 }
 
 export const defaultNamespace = 'common'
@@ -39,8 +42,10 @@ export const eagerResources = {
     shell: shellRu,
     platform: platformRu,
     errors: errorsRu,
+    adminSupport: adminSupportRu,
   },
   en: {
+    adminSupport: adminSupportEn,
     common: commonEn,
     shell: shellEn,
     platform: platformEn,

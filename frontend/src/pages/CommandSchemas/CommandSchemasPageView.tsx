@@ -1,4 +1,5 @@
 import { Alert, Button, Space, Typography } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { CommandSchemaDriver } from '../../api/commandSchemas'
 import { EntityDetails, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
@@ -20,13 +21,14 @@ const { Text } = Typography
 
 export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Command Schemas"
-          subtitle="Command schema workspace с route-addressable driver, mode и selected command context."
+          title={t(($) => $.commandSchemas.page.title)}
+          subtitle={t(($) => $.commandSchemas.page.subtitle)}
           actions={(
             <Space wrap>
               {(['ibcmd', 'cli'] as CommandSchemaDriver[]).map((driver) => (
@@ -75,7 +77,7 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
           )}
 
           {model.error && (
-            <Alert type="warning" message="Failed to load command schemas" description={model.error} showIcon />
+            <Alert type="warning" message={t(($) => $.commandSchemas.page.loadFailed)} description={model.error} showIcon />
           )}
 
           {model.view && (
@@ -86,7 +88,7 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
             <>
               <MasterDetailShell
                 list={(
-                  <EntityDetails title={`Commands (${model.commands.length})`}>
+                  <EntityDetails title={t(($) => $.commandSchemas.page.commandsTitle, { count: model.commands.length })}>
                     <CommandSchemasCommandList
                       search={model.search}
                       setSearch={model.setSearch}
@@ -108,14 +110,16 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
                 detail={(
                   <EntityDetails
                     title={model.selectedCommandId
-                      ? `Editor: ${displayCommandId(model.activeDriver, model.selectedCommandId)}`
-                      : 'Editor'}
+                      ? t(($) => $.commandSchemas.page.editorTitleWithCommand, {
+                          commandId: displayCommandId(model.activeDriver, model.selectedCommandId),
+                        })
+                      : t(($) => $.commandSchemas.page.editorTitle)}
                     empty={!model.selectedCommandId}
-                    emptyDescription="Select a command from the list to open inspect/editor flow."
+                    emptyDescription={t(($) => $.commandSchemas.page.editorEmpty)}
                   >
                     <Space direction="vertical" size="large" style={{ width: '100%' }}>
                       <CommandSchemasEditorTabs model={model} />
-                      <EntityDetails title="Preview / Diff / Validate">
+                      <EntityDetails title={t(($) => $.commandSchemas.page.previewPanelTitle)}>
                         <CommandSchemasSidePanel model={model} />
                       </EntityDetails>
                     </Space>
@@ -124,8 +128,10 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
                 detailOpen={Boolean(model.selectedCommandId)}
                 onCloseDetail={() => model.selectCommand('')}
                 detailDrawerTitle={model.selectedCommandId
-                  ? `Editor: ${displayCommandId(model.activeDriver, model.selectedCommandId)}`
-                  : 'Editor'}
+                  ? t(($) => $.commandSchemas.page.editorTitleWithCommand, {
+                      commandId: displayCommandId(model.activeDriver, model.selectedCommandId),
+                    })
+                  : t(($) => $.commandSchemas.page.editorTitle)}
                 listMinWidth={320}
                 listMaxWidth={380}
               />
@@ -133,7 +139,7 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
               <CommandSchemasSaveModal model={model} />
             </>
           ) : (
-            <EntityDetails title={`Raw editor: ${model.activeDriver.toUpperCase()}`}>
+            <EntityDetails title={t(($) => $.commandSchemas.page.rawEditorTitle, { driver: model.activeDriver.toUpperCase() })}>
               <CommandSchemasRawEditor
                 driver={model.activeDriver}
                 view={model.view}
@@ -150,7 +156,7 @@ export function CommandSchemasPageView(props: { model: CommandSchemasPageModel }
 
           {model.mode === 'raw' && model.view && model.canPromoteLatest && (
             <Text type="secondary">
-              Note: base latest differs from approved. Switch to Guided mode to edit overrides against approved base.
+              {t(($) => $.commandSchemas.page.noteLatestDiffers)}
             </Text>
           )}
         </Space>

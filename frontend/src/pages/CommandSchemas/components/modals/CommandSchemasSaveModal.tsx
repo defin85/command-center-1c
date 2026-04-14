@@ -1,4 +1,5 @@
 import { Alert, Input, Modal, Space, Typography } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { CommandSchemasPageModel } from '../../useCommandSchemasPageModel'
 
@@ -6,6 +7,7 @@ const { Text } = Typography
 
 export function CommandSchemasSaveModal(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   if (model.mode !== 'guided') {
     return null
@@ -13,11 +15,11 @@ export function CommandSchemasSaveModal(props: { model: CommandSchemasPageModel 
 
   return (
     <Modal
-      title="Save overrides"
+      title={t(($) => $.commandSchemas.modals.saveTitle)}
       open={model.saveOpen}
       onCancel={() => model.setSaveOpen(false)}
       onOk={() => { void model.handleSave() }}
-      okText="Save"
+      okText={t(($) => $.commandSchemas.modals.save)}
       okButtonProps={{ loading: model.saving, 'data-testid': 'command-schemas-save-confirm' }}
       cancelButtonProps={{ disabled: model.saving }}
     >
@@ -25,15 +27,15 @@ export function CommandSchemasSaveModal(props: { model: CommandSchemasPageModel 
         <Alert
           type="info"
           showIcon
-          message="Summary"
+          message={t(($) => $.commandSchemas.modals.summary)}
           description={`driver_schema=${model.overridesCounts.driver_schema}, commands=${model.overridesCounts.commands}, params=${model.overridesCounts.params}, permissions=${model.overridesCounts.permissions}`}
         />
-        <Text type="secondary">Reason (required)</Text>
+        <Text type="secondary">{t(($) => $.commandSchemas.modals.reasonLabel)}</Text>
         <Input.TextArea
           data-testid="command-schemas-save-reason"
           value={model.saveReason}
           onChange={(e) => model.setSaveReason(e.target.value)}
-          placeholder="Why are you changing command schemas?"
+          placeholder={t(($) => $.commandSchemas.modals.reasonPlaceholder)}
           rows={4}
         />
       </Space>

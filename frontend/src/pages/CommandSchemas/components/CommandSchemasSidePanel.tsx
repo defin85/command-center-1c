@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Input, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
+import { useAdminSupportTranslation } from '@/i18n'
 
 import type { DriverCommandParamV2 } from '../../../api/driverCommands'
 import { LazyJsonCodeEditor } from '../../../components/code/LazyJsonCodeEditor'
@@ -9,6 +10,7 @@ const { Text } = Typography
 
 export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel }) {
   const model = props.model
+  const { t } = useAdminSupportTranslation()
 
   const hasSelection = Boolean(model.selectedCommandId && model.selectedEffective)
   const paramsByName =
@@ -24,18 +26,18 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
       items={[
         {
           key: 'preview',
-          label: 'Preview',
+          label: t(($) => $.commandSchemas.sidePanel.preview),
           children: (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {!hasSelection && <Alert type="info" showIcon message="Select a command to preview" />}
+              {!hasSelection && <Alert type="info" showIcon message={t(($) => $.commandSchemas.sidePanel.selectCommandToPreview)} />}
               <Space wrap>
                 <Select
                   value={model.previewMode}
                   onChange={(v) => model.setPreviewMode(v)}
                   style={{ width: 140 }}
                   options={[
-                    { value: 'guided', label: 'guided' },
-                    { value: 'manual', label: 'manual' },
+                    { value: 'guided', label: t(($) => $.commandSchemas.sidePanel.previewModeGuided) },
+                    { value: 'manual', label: t(($) => $.commandSchemas.sidePanel.previewModeManual) },
                   ]}
                 />
                 <Button
@@ -43,17 +45,17 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
                   loading={model.previewLoading}
                   disabled={!hasSelection || (model.activeDriver === 'ibcmd' && Boolean(model.previewConnectionError))}
                 >
-                  Build argv
+                  {t(($) => $.commandSchemas.sidePanel.buildArgv)}
                 </Button>
               </Space>
 
               {model.activeDriver === 'ibcmd' && (
-                <Card size="small" title="Connection (ibcmd)">
+                <Card size="small" title={t(($) => $.commandSchemas.sidePanel.connectionTitle)}>
                   <LazyJsonCodeEditor
                     value={model.previewConnectionText}
                     onChange={(nextText) => {
                       model.setPreviewConnectionText(nextText)
-                      model.setPreviewConnectionError(parseJsonObject(nextText) ? null : 'Invalid JSON: expected a JSON object')
+                      model.setPreviewConnectionError(parseJsonObject(nextText) ? null : t(($) => $.commandSchemas.sidePanel.invalidJsonExpectedObject))
                     }}
                     height={180}
                     path={`command-schemas-${model.activeDriver}-${model.selectedCommandId}-preview-connection.json`}
@@ -67,7 +69,7 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
               )}
 
               {paramNames.length > 0 && (
-                <Card size="small" title="Params">
+                <Card size="small" title={t(($) => $.commandSchemas.sidePanel.paramsTitle)}>
                   <Space direction="vertical" size="small" style={{ width: '100%' }}>
                     {paramNames.map((name) => {
                       const schema = paramsByName[name]
@@ -86,11 +88,11 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
                         <div key={name}>
                           <Space wrap>
                             <Text code>{name}</Text>
-                            {isRequired && <Tag color="red">required</Tag>}
-                            {isSensitive && <Tag color="orange">sensitive</Tag>}
+                            {isRequired && <Tag color="red">{t(($) => $.commandSchemas.sidePanel.required)}</Tag>}
+                            {isSensitive && <Tag color="orange">{t(($) => $.commandSchemas.sidePanel.sensitive)}</Tag>}
                             {kind === 'flag' && safeText(schema.flag) && <Tag>{safeText(schema.flag)}</Tag>}
                             {kind === 'positional' && Number.isFinite(Number(schema.position)) && (
-                              <Tag>pos {Number(schema.position)}</Tag>
+                              <Tag>{t(($) => $.commandSchemas.sidePanel.position, { value: String(Number(schema.position)) })}</Tag>
                             )}
                           </Space>
                           <div style={{ marginTop: 6 }}>
@@ -111,13 +113,13 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
                               <Input.Password
                                 value={safeText(currentValue)}
                                 onChange={(e) => setValue(e.target.value)}
-                                placeholder="value"
+                                placeholder={t(($) => $.commandSchemas.sidePanel.valuePlaceholder)}
                               />
                             ) : (
                               <Input
                                 value={safeText(currentValue)}
                                 onChange={(e) => setValue(e.target.value)}
-                                placeholder="value"
+                                placeholder={t(($) => $.commandSchemas.sidePanel.valuePlaceholder)}
                               />
                             )}
                           </div>
@@ -128,30 +130,30 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
                 </Card>
               )}
 
-              <Card size="small" title="Additional args (one per line)">
+              <Card size="small" title={t(($) => $.commandSchemas.sidePanel.additionalArgsTitle)}>
                 <Input.TextArea
                   value={model.previewArgsText}
                   onChange={(e) => model.setPreviewArgsText(e.target.value)}
                   rows={4}
-                  placeholder="--extra\n--flag=value"
+                  placeholder={t(($) => $.commandSchemas.sidePanel.additionalArgsPlaceholder)}
                 />
               </Card>
 
-              {model.previewError && <Alert type="warning" showIcon message="Preview error" description={model.previewError} />}
+              {model.previewError && <Alert type="warning" showIcon message={t(($) => $.commandSchemas.sidePanel.previewError)} description={model.previewError} />}
 
-              <Card size="small" title="argv">
+              <Card size="small" title={t(($) => $.commandSchemas.sidePanel.argv)}>
                 <Space direction="vertical" size={0} style={{ width: '100%' }}>
                   {model.previewArgv.length === 0 ? (
-                    <Text type="secondary">No preview yet</Text>
+                    <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noPreviewYet)}</Text>
                   ) : (
                     model.previewArgv.map((line, idx) => <Text key={idx} code>{line}</Text>)
                   )}
                 </Space>
               </Card>
-              <Card size="small" title="argv_masked">
+              <Card size="small" title={t(($) => $.commandSchemas.sidePanel.argvMasked)}>
                 <Space direction="vertical" size={0} style={{ width: '100%' }}>
                   {model.previewArgvMasked.length === 0 ? (
-                    <Text type="secondary">No preview yet</Text>
+                    <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noPreviewYet)}</Text>
                   ) : (
                     model.previewArgvMasked.map((line, idx) => <Text key={idx} code>{line}</Text>)
                   )}
@@ -162,26 +164,26 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
         },
         {
           key: 'diff',
-          label: 'Diff',
+          label: t(($) => $.commandSchemas.sidePanel.diff),
           children: (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              {!hasSelection && <Alert type="info" showIcon message="Select a command to diff" />}
+              {!hasSelection && <Alert type="info" showIcon message={t(($) => $.commandSchemas.sidePanel.selectCommandToDiff)} />}
               <Button onClick={() => { void model.loadDiff() }} loading={model.diffLoading} disabled={!hasSelection}>
-                Load diff (base to effective)
+                {t(($) => $.commandSchemas.sidePanel.loadDiff)}
               </Button>
-              {model.diffError && <Alert type="warning" showIcon message="Diff error" description={model.diffError} />}
+              {model.diffError && <Alert type="warning" showIcon message={t(($) => $.commandSchemas.sidePanel.diffError)} description={model.diffError} />}
               <div style={{ maxHeight: 620, overflow: 'auto' }}>
-                <Card size="small" title={`Changes (${model.diffItems.length})`}>
+                <Card size="small" title={t(($) => $.commandSchemas.sidePanel.changes, { count: model.diffItems.length })}>
                   {model.diffItems.length === 0 ? (
-                    <Text type="secondary">No changes</Text>
+                    <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noChanges)}</Text>
                   ) : (
                     <div style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Path</th>
-                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Base</th>
-                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>Effective</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>{t(($) => $.commandSchemas.sidePanel.path)}</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>{t(($) => $.commandSchemas.sidePanel.base)}</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px' }}>{t(($) => $.commandSchemas.sidePanel.effective)}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -207,24 +209,24 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
         },
         {
           key: 'validate',
-          label: 'Validate',
+          label: t(($) => $.commandSchemas.sidePanel.validate),
           children: (
             <Space direction="vertical" size="middle" style={{ width: '100%' }}>
               <Button onClick={() => { void model.runValidate() }} loading={model.validateLoading}>
-                Validate effective catalog
+                {t(($) => $.commandSchemas.sidePanel.validateCatalog)}
               </Button>
-              {model.validateError && <Alert type="warning" showIcon message="Validation error" description={model.validateError} />}
+              {model.validateError && <Alert type="warning" showIcon message={t(($) => $.commandSchemas.sidePanel.validationError)} description={model.validateError} />}
               {model.validateSummary && (
                 <Alert
                   type={model.validateSummary.ok ? 'success' : 'warning'}
                   showIcon
-                  message={model.validateSummary.ok ? 'OK' : 'Validation failed'}
+                  message={model.validateSummary.ok ? t(($) => $.commandSchemas.sidePanel.ok) : t(($) => $.commandSchemas.sidePanel.validationFailed)}
                   description={`errors=${model.validateSummary.errors}, warnings=${model.validateSummary.warnings}`}
                 />
               )}
-              <Card size="small" title={`Global issues (${model.globalIssues.length})`}>
+              <Card size="small" title={t(($) => $.commandSchemas.sidePanel.globalIssues, { count: model.globalIssues.length })}>
                 {model.globalIssues.length === 0 ? (
-                  <Text type="secondary">No issues</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noIssues)}</Text>
                 ) : (
                   <Space direction="vertical" size="small" style={{ width: '100%' }}>
                     {model.globalIssues.map((issue, idx) => (
@@ -239,11 +241,11 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
                   </Space>
                 )}
               </Card>
-              <Card size="small" title={`Issues for selected command (${model.issuesForSelected.length})`}>
+              <Card size="small" title={t(($) => $.commandSchemas.sidePanel.issuesForSelected, { count: model.issuesForSelected.length })}>
                 {!hasSelection ? (
-                  <Text type="secondary">No command selected</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noCommandSelected)}</Text>
                 ) : model.issuesForSelected.length === 0 ? (
-                  <Text type="secondary">No issues</Text>
+                  <Text type="secondary">{t(($) => $.commandSchemas.sidePanel.noIssues)}</Text>
                 ) : (
                   <Space direction="vertical" size="small" style={{ width: '100%' }}>
                     {model.issuesForSelected.map((issue, idx) => (
@@ -265,4 +267,3 @@ export function CommandSchemasSidePanel(props: { model: CommandSchemasPageModel 
     />
   )
 }
-

@@ -9,6 +9,7 @@ import { getRuntimeSettings, updateRuntimeSetting, type RuntimeSetting } from '.
 import { DrawerSurfaceShell, PageHeader, WorkspacePage } from '../../components/platform'
 import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
+import { useAdminSupportTranslation, useCommonTranslation } from '../../i18n'
 
 const { Text } = Typography
 
@@ -31,6 +32,8 @@ const isBool = (value: unknown): value is boolean => typeof value === 'boolean'
 
 export function TimelineSettingsPage() {
   const { isStaff } = useAuthz()
+  const { t } = useAdminSupportTranslation()
+  const { t: tCommon } = useCommonTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [settings, setSettings] = useState<RuntimeSettingRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -45,6 +48,7 @@ export function TimelineSettingsPage() {
   const canEdit = isStaff
   const selectedSettingKey = (searchParams.get('setting') || '').trim() || null
   const activeContext = (searchParams.get('context') || '').trim()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
 
   const updateSearchParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -78,11 +82,11 @@ export function TimelineSettingsPage() {
         }))
       )
     } catch (_err) {
-      setError('Не удалось загрузить настройки')
+      setError(t(($) => $.timelineSettings.errors.loadFailed))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   const loadStreamStatus = useCallback(async () => {
     try {
@@ -131,42 +135,76 @@ export function TimelineSettingsPage() {
         )
       )
     } catch (_err) {
-      setError('Не удалось сохранить настройку')
+      setError(t(($) => $.timelineSettings.errors.saveFailed))
     }
-  }, [])
+  }, [t])
 
   const resetQueue = useCallback(async () => {
     try {
       await updateRuntimeSetting(RESET_KEY, new Date().toISOString())
     } catch (_err) {
-      setError('Не удалось отправить команду на пересоздание очереди')
+      setError(t(($) => $.timelineSettings.errors.resetQueueFailed))
     }
-  }, [])
+  }, [t])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'key', label: 'Key', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'description', label: 'Описание', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'value', label: 'Значение', sortable: true, groupKey: 'value', groupLabel: 'Value' },
-    { key: 'default', label: 'Default', sortable: true, groupKey: 'value', groupLabel: 'Value' },
-    { key: 'range', label: 'Диапазон', groupKey: 'value', groupLabel: 'Value' },
-    { key: 'actions', label: 'Действия', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    {
+      key: 'key',
+      label: t(($) => $.timelineSettings.table.key),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.timelineSettings.groups.core),
+    },
+    {
+      key: 'description',
+      label: t(($) => $.timelineSettings.table.description),
+      sortable: true,
+      groupKey: 'core',
+      groupLabel: t(($) => $.timelineSettings.groups.core),
+    },
+    {
+      key: 'value',
+      label: t(($) => $.timelineSettings.table.value),
+      sortable: true,
+      groupKey: 'value',
+      groupLabel: t(($) => $.timelineSettings.groups.value),
+    },
+    {
+      key: 'default',
+      label: t(($) => $.timelineSettings.table.default),
+      sortable: true,
+      groupKey: 'value',
+      groupLabel: t(($) => $.timelineSettings.groups.value),
+    },
+    {
+      key: 'range',
+      label: t(($) => $.timelineSettings.table.range),
+      groupKey: 'value',
+      groupLabel: t(($) => $.timelineSettings.groups.value),
+    },
+    {
+      key: 'actions',
+      label: t(($) => $.timelineSettings.table.actions),
+      groupKey: 'actions',
+      groupLabel: t(($) => $.timelineSettings.groups.actions),
+    },
+  ], [t])
 
   const columns: ColumnsType<RuntimeSettingRow> = useMemo(() => ([
     {
-      title: 'Key',
+      title: t(($) => $.timelineSettings.table.key),
       dataIndex: 'key',
       key: 'key',
       width: 300,
       render: (value: string) => <Text code>{value}</Text>,
     },
     {
-      title: 'Описание',
+      title: t(($) => $.timelineSettings.table.description),
       dataIndex: 'description',
       key: 'description',
     },
     {
-      title: 'Значение',
+      title: t(($) => $.timelineSettings.table.value),
       dataIndex: 'draftValue',
       key: 'value',
       width: 180,
@@ -178,23 +216,23 @@ export function TimelineSettingsPage() {
       },
     },
     {
-      title: 'Default',
+      title: t(($) => $.timelineSettings.table.default),
       dataIndex: 'default',
       key: 'default',
       width: 120,
       render: (value: unknown) => <Tag>{String(value)}</Tag>,
     },
     {
-      title: 'Диапазон',
+      title: t(($) => $.timelineSettings.table.range),
       key: 'range',
       width: 140,
       render: (_value, record) => {
-        if (record.min_value === null && record.max_value === null) return '-'
-        return `${record.min_value ?? '-'}..${record.max_value ?? '-'}`
+        if (record.min_value === null && record.max_value === null) return unavailableShort
+        return `${record.min_value ?? unavailableShort}..${record.max_value ?? unavailableShort}`
       },
     },
     {
-      title: 'Действия',
+      title: t(($) => $.timelineSettings.table.actions),
       key: 'actions',
       width: 140,
       render: (_value, record) => (
@@ -203,11 +241,11 @@ export function TimelineSettingsPage() {
           type="primary"
           onClick={() => updateSearchParams({ setting: record.key, context: 'setting' })}
         >
-          Edit
+          {t(($) => $.timelineSettings.table.edit)}
         </Button>
       ),
     },
-  ]), [updateSearchParams])
+  ]), [t, unavailableShort, updateSearchParams])
 
   const table = useTableToolkit({
     tableId: 'timeline_settings',
@@ -342,18 +380,18 @@ export function TimelineSettingsPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Timeline Settings"
-          subtitle="Timeline settings workspace с secondary diagnostics/remediation внутри того же platform shell."
+          title={t(($) => $.timelineSettings.page.title)}
+          subtitle={t(($) => $.timelineSettings.page.subtitle)}
           actions={(
             <Space wrap>
               <Button onClick={() => void loadSettings()} loading={loading}>
-                Refresh
+                {t(($) => $.timelineSettings.page.refresh)}
               </Button>
               <Button
                 data-testid="timeline-settings-open-diagnostics"
                 onClick={() => updateSearchParams({ context: 'diagnostics', setting: null })}
               >
-                Diagnostics
+                {t(($) => $.timelineSettings.page.diagnostics)}
               </Button>
             </Space>
           )}
@@ -363,8 +401,8 @@ export function TimelineSettingsPage() {
       {!isStaff && (
         <Alert
           type="warning"
-          message="Недостаточно прав"
-          description="Доступ только для staff пользователей."
+          message={t(($) => $.timelineSettings.page.insufficientPermissionsTitle)}
+          description={t(($) => $.timelineSettings.page.insufficientPermissionsDescription)}
         />
       )}
 
@@ -380,7 +418,7 @@ export function TimelineSettingsPage() {
           loading={loading}
           rowKey="key"
           columns={columns}
-          searchPlaceholder="Search timeline settings"
+          searchPlaceholder={t(($) => $.timelineSettings.page.searchPlaceholder)}
           onRow={(record) => ({
             onClick: () => updateSearchParams({ setting: record.key, context: 'setting' }),
             style: { cursor: 'pointer' },
@@ -391,7 +429,7 @@ export function TimelineSettingsPage() {
       <DrawerSurfaceShell
         open={Boolean(selectedSetting) && activeContext !== 'diagnostics'}
         onClose={() => updateSearchParams({ setting: null, context: null })}
-        title={selectedSetting?.key ?? 'Timeline setting'}
+        title={selectedSetting?.key ?? t(($) => $.timelineSettings.detail.titleFallback)}
         subtitle={selectedSetting?.description ?? undefined}
         drawerTestId="timeline-settings-detail-drawer"
         extra={selectedSetting ? (
@@ -400,15 +438,15 @@ export function TimelineSettingsPage() {
             disabled={!canEdit || selectedSetting.draftValue === selectedSetting.value}
             onClick={() => { void saveSetting(selectedSetting) }}
           >
-            Save
+            {t(($) => $.timelineSettings.detail.save)}
           </Button>
         ) : null}
       >
         {selectedSetting ? (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Text><strong>Current:</strong> {String(selectedSetting.value ?? '—')}</Text>
-            <Text><strong>Default:</strong> {String(selectedSetting.default ?? '—')}</Text>
-            <Text><strong>Range:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? '—' : `${selectedSetting.min_value ?? '-'}..${selectedSetting.max_value ?? '-'}`}</Text>
+            <Text><strong>{t(($) => $.shared.current)}:</strong> {String(selectedSetting.value ?? unavailableShort)}</Text>
+            <Text><strong>{t(($) => $.shared.default)}:</strong> {String(selectedSetting.default ?? unavailableShort)}</Text>
+            <Text><strong>{t(($) => $.shared.range)}:</strong> {selectedSetting.min_value === null && selectedSetting.max_value === null ? unavailableShort : `${selectedSetting.min_value ?? unavailableShort}..${selectedSetting.max_value ?? unavailableShort}`}</Text>
             <div>{renderSettingEditor(selectedSetting)}</div>
           </Space>
         ) : null}
@@ -417,12 +455,12 @@ export function TimelineSettingsPage() {
       <DrawerSurfaceShell
         open={activeContext === 'diagnostics'}
         onClose={() => updateSearchParams({ context: null, setting: null })}
-        title="Timeline diagnostics"
-        subtitle="Runtime controls stay primary; diagnostics/remediation live in the same workspace shell."
+        title={t(($) => $.timelineSettings.diagnostics.title)}
+        subtitle={t(($) => $.timelineSettings.diagnostics.subtitle)}
         drawerTestId="timeline-settings-diagnostics-drawer"
         extra={(
           <Button danger onClick={() => { void resetQueue() }} disabled={!canEdit}>
-            Пересоздать очередь
+            {t(($) => $.timelineSettings.diagnostics.resetQueue)}
           </Button>
         )}
       >
@@ -430,14 +468,20 @@ export function TimelineSettingsPage() {
           {streamStatus ? (
             <Space direction="vertical" size="small" style={{ width: '100%' }}>
               <Tag color={streamStatus.active >= streamStatus.max ? 'red' : 'blue'}>
-                Active mux streams: {streamStatus.active}/{streamStatus.max}
+                {t(($) => $.timelineSettings.diagnostics.activeMuxStreams, {
+                  active: String(streamStatus.active),
+                  max: String(streamStatus.max),
+                })}
               </Tag>
               <Tag color={streamStatus.subscriptions >= streamStatus.maxSubscriptions ? 'red' : 'blue'}>
-                Active subscriptions: {streamStatus.subscriptions}/{streamStatus.maxSubscriptions}
+                {t(($) => $.timelineSettings.diagnostics.activeSubscriptions, {
+                  active: String(streamStatus.subscriptions),
+                  max: String(streamStatus.maxSubscriptions),
+                })}
               </Tag>
             </Space>
           ) : (
-            <Text type="secondary">Stream diagnostics are unavailable.</Text>
+            <Text type="secondary">{t(($) => $.timelineSettings.diagnostics.streamUnavailable)}</Text>
           )}
         </Space>
       </DrawerSurfaceShell>
