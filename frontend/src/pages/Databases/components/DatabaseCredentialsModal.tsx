@@ -3,6 +3,7 @@ import type { FormInstance } from 'antd'
 
 import type { Database } from '../../../api/generated/model/database'
 import { ModalFormShell } from '../../../components/platform'
+import { useDatabasesTranslation } from '../../../i18n'
 
 export type DatabaseCredentialsModalProps = {
   open: boolean
@@ -23,6 +24,7 @@ export function DatabaseCredentialsModal({
   onSave,
   onReset,
 }: DatabaseCredentialsModalProps) {
+  const { t } = useDatabasesTranslation()
   const disableReset = !database?.password_configured && !database?.username
 
   return (
@@ -30,33 +32,37 @@ export function DatabaseCredentialsModal({
       open={open}
       onClose={onCancel}
       onSubmit={onSave}
-      title={database ? `Credentials: ${database.name}` : 'Credentials'}
-      subtitle="Legacy OData credential override"
-      submitText="Save"
+      title={database
+        ? t(($) => $.modals.credentials.titleWithName, { name: database.name })
+        : t(($) => $.modals.credentials.title)}
+      subtitle={t(($) => $.modals.credentials.subtitle)}
+      submitText={t(($) => $.modals.credentials.save)}
       confirmLoading={saving}
       forceRender
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
           <Button danger onClick={onReset} disabled={disableReset}>
-            Reset
+            {t(($) => $.modals.credentials.reset)}
           </Button>
         </Space>
         <Form form={form} layout="vertical">
           <Alert
             type="info"
             showIcon
-            message="Pool publication credentials now use RBAC mappings"
-            description="Для `pool.publication_odata` система использует OData user/password из /rbac → Infobase Users. Поля ниже остаются только для legacy сценариев."
+            message={t(($) => $.modals.credentials.alertTitle)}
+            description={t(($) => $.modals.credentials.alertDescription)}
             style={{ marginBottom: 12 }}
           />
-          <Form.Item label="OData Username" name="username" htmlFor="database-credentials-username">
-            <Input id="database-credentials-username" placeholder="Optional OData username" />
+          <Form.Item label={t(($) => $.modals.credentials.usernameLabel)} name="username" htmlFor="database-credentials-username">
+            <Input id="database-credentials-username" placeholder={t(($) => $.modals.credentials.usernamePlaceholder)} />
           </Form.Item>
-          <Form.Item label="OData Password" name="password" htmlFor="database-credentials-password">
+          <Form.Item label={t(($) => $.modals.credentials.passwordLabel)} name="password" htmlFor="database-credentials-password">
             <Input.Password
               id="database-credentials-password"
-              placeholder={database?.password_configured ? 'Configured' : 'Enter password'}
+              placeholder={database?.password_configured
+                ? t(($) => $.modals.credentials.passwordConfiguredPlaceholder)
+                : t(($) => $.modals.credentials.passwordPlaceholder)}
             />
           </Form.Item>
         </Form>

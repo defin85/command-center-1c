@@ -1,6 +1,5 @@
 import { Alert, App, Button, Grid, Radio, Space, Spin, Typography } from 'antd'
 import { LinkOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import type { DatabaseMetadataManagementConfigurationProfile } from '../../../api/generated/model/databaseMetadataManagementConfigurationProfile'
@@ -13,6 +12,7 @@ import {
   useUpdateDatabaseMasterDataSyncEligibility,
 } from '../../../api/queries/databases'
 import { DrawerFormShell } from '../../../components/platform'
+import { useDatabasesTranslation, useLocaleFormatters } from '../../../i18n'
 import { trackUiAction } from '../../../observability/uiActionJournal'
 
 type AlertTone = 'success' | 'info' | 'warning' | 'error'
@@ -77,20 +77,24 @@ type MetadataManagementPayload = DatabaseMetadataManagementResponse & {
 const { useBreakpoint } = Grid
 const DESKTOP_BREAKPOINT_PX = 992
 
-const formatDateTime = (value?: string | null): string => {
-  if (!value) return 'n/a'
-  const parsed = dayjs(value)
-  return parsed.isValid() ? parsed.format('DD.MM.YYYY HH:mm:ss') : value
-}
+type DatabasesT = ReturnType<typeof useDatabasesTranslation>['t']
+type LocaleFormatters = ReturnType<typeof useLocaleFormatters>
 
-const formatValue = (value?: string | null): string => {
-  return typeof value === 'string' && value.trim() ? value : 'n/a'
-}
+const formatDateTime = (formatters: LocaleFormatters, t: DatabasesT, value?: string | null): string => (
+  formatters.dateTime(value, { fallback: t(($) => $.shared.notAvailable) })
+)
 
-const formatBoolean = (value?: boolean): string => (value ? 'Yes' : 'No')
+const formatValue = (t: DatabasesT, value?: string | null): string => (
+  typeof value === 'string' && value.trim() ? value : t(($) => $.shared.notAvailable)
+)
+
+const formatBoolean = (t: DatabasesT, value?: boolean): string => (
+  value ? t(($) => $.shared.yes) : t(($) => $.shared.no)
+)
 
 const buildProfileStatusDescriptor = (
-  profile: ConfigurationProfileState
+  profile: ConfigurationProfileState,
+  t: DatabasesT,
 ): StatusDescriptor => {
   const reverifyBlocked = profile.reverify_available === false
   const blockerMessage = typeof profile.reverify_blocker_message === 'string'
@@ -100,56 +104,58 @@ const buildProfileStatusDescriptor = (
     case 'verified':
       return {
         tone: 'success',
-        label: 'Verified',
-        message: 'Configuration identity подтверждён.',
-        description: 'Reuse key берётся из проверенного configuration profile.',
+        label: t(($) => $.metadata.profile.verifiedLabel),
+        message: t(($) => $.metadata.profile.verifiedMessage),
+        description: t(($) => $.metadata.profile.verifiedDescription),
       }
     case 'verification_pending':
       return {
         tone: 'info',
-        label: 'Pending',
-        message: 'Идёт асинхронная перепроверка configuration identity.',
-        description: 'Следить за выполнением можно через Operations.',
+        label: t(($) => $.metadata.profile.pendingLabel),
+        message: t(($) => $.metadata.profile.pendingMessage),
+        description: t(($) => $.metadata.profile.pendingDescription),
       }
     case 'migrated_legacy':
       return {
         tone: 'warning',
-        label: reverifyBlocked ? 'Blocked' : 'Legacy',
+        label: reverifyBlocked ? t(($) => $.metadata.profile.blockedLabel) : t(($) => $.metadata.profile.legacyLabel),
         message: reverifyBlocked
-          ? 'Profile собран из legacy snapshot, но перепроверка сейчас недоступна.'
-          : 'Profile собран из legacy snapshot и требует перепроверки.',
-        description: blockerMessage || 'Запустите Re-verify configuration identity, чтобы закрепить canonical reuse key.',
+          ? t(($) => $.metadata.profile.legacyBlockedMessage)
+          : t(($) => $.metadata.profile.legacyMessage),
+        description: blockerMessage || t(($) => $.metadata.profile.legacyDescription),
       }
     case 'reverify_required':
       return {
         tone: 'warning',
-        label: reverifyBlocked ? 'Blocked' : 'Reverify required',
+        label: reverifyBlocked ? t(($) => $.metadata.profile.blockedLabel) : t(($) => $.metadata.profile.reverifyRequiredLabel),
         message: reverifyBlocked
-          ? 'Configuration identity требует перепроверки, но re-verify сейчас недоступен.'
-          : 'Configuration identity помечен как требующий перепроверки.',
-        description: blockerMessage || 'Запустите Re-verify configuration identity перед полаганием на reuse key.',
+          ? t(($) => $.metadata.profile.reverifyBlockedMessage)
+          : t(($) => $.metadata.profile.reverifyMessage),
+        description: blockerMessage || t(($) => $.metadata.profile.reverifyDescription),
       }
     case 'verification_failed':
       return {
         tone: reverifyBlocked ? 'warning' : 'error',
-        label: reverifyBlocked ? 'Blocked' : 'Failed',
+        label: reverifyBlocked ? t(($) => $.metadata.profile.blockedLabel) : t(($) => $.metadata.profile.failedLabel),
         message: reverifyBlocked
-          ? 'Последняя перепроверка configuration identity завершилась ошибкой, а повторный запуск сейчас недоступен.'
-          : 'Последняя перепроверка configuration identity завершилась ошибкой.',
-        description: blockerMessage || 'Повторите re-verify и проверьте operation result.',
+          ? t(($) => $.metadata.profile.failedBlockedMessage)
+          : t(($) => $.metadata.profile.failedMessage),
+        description: blockerMessage || t(($) => $.metadata.profile.failedDescription),
       }
     default:
       return {
         tone: 'warning',
-        label: reverifyBlocked ? 'Blocked' : 'Missing',
-        message: 'Configuration profile отсутствует.',
-        description: blockerMessage || 'Сначала запустите Re-verify configuration identity.',
+        label: reverifyBlocked ? t(($) => $.metadata.profile.blockedLabel) : t(($) => $.metadata.profile.missingLabel),
+        message: t(($) => $.metadata.profile.missingMessage),
+        description: blockerMessage || t(($) => $.metadata.profile.missingDescription),
       }
   }
 }
 
 const buildSnapshotStatusDescriptor = (
   snapshot: DatabaseMetadataManagementSnapshot,
+  t: DatabasesT,
+  formatters: LocaleFormatters,
   profile?: ConfigurationProfileState | null,
 ): StatusDescriptor => {
   if (snapshot.status !== 'available') {
@@ -159,34 +165,34 @@ const buildSnapshotStatusDescriptor = (
         : ''
       return {
         tone: 'warning',
-        label: 'Blocked',
-        message: 'Metadata snapshot недоступен, пока не подтверждён configuration profile.',
-        description: blockerMessage || 'Сначала перепроверьте configuration identity.',
+        label: t(($) => $.metadata.snapshot.blockedLabel),
+        message: t(($) => $.metadata.snapshot.blockedMessage),
+        description: blockerMessage || t(($) => $.metadata.snapshot.blockedDescription),
       }
     }
     return {
       tone: 'warning',
-        label: 'Missing',
-      message: 'Current metadata snapshot отсутствует.',
-      description: 'Запустите Refresh metadata snapshot для выбранной ИБ.',
+      label: t(($) => $.metadata.snapshot.missingLabel),
+      message: t(($) => $.metadata.snapshot.missingMessage),
+      description: t(($) => $.metadata.snapshot.missingDescription),
     }
   }
 
   if (snapshot.publication_drift) {
-    const lastObservedRefresh = formatDateTime(profile?.observed_metadata_fetched_at)
-    const canonicalSnapshotFetchedAt = formatDateTime(snapshot.fetched_at)
+    const lastObservedRefresh = formatDateTime(formatters, t, profile?.observed_metadata_fetched_at)
+    const canonicalSnapshotFetchedAt = formatDateTime(formatters, t, snapshot.fetched_at)
     return {
       tone: 'warning',
-      label: 'Drift',
-      message: 'Live metadata отличается от canonical snapshot.',
+      label: t(($) => $.metadata.snapshot.driftLabel),
+      message: t(($) => $.metadata.snapshot.driftMessage),
       description: (
         <Space direction="vertical" size={4}>
-          <span>{`Последний успешный live metadata refresh: ${lastObservedRefresh}.`}</span>
-          <span>{`Текущий canonical snapshot fetched at: ${canonicalSnapshotFetchedAt}.`}</span>
+          <span>{t(($) => $.metadata.snapshot.lastObservedRefresh, { value: lastObservedRefresh })}</span>
+          <span>{t(($) => $.metadata.snapshot.canonicalFetchedAt, { value: canonicalSnapshotFetchedAt })}</span>
           <span>
             {snapshot.is_shared_snapshot
-              ? 'Refresh metadata snapshot может завершиться успешно и всё равно оставить drift: для этой business identity reused shared snapshot, поэтому observed hash обновляется, а canonical остаётся прежним.'
-              : 'Refresh metadata snapshot может завершиться успешно и всё равно оставить drift, пока live publication metadata не совпадёт с canonical snapshot.'}
+              ? t(($) => $.metadata.snapshot.driftSharedExplanation)
+              : t(($) => $.metadata.snapshot.driftDatabaseExplanation)}
           </span>
         </Space>
       ),
@@ -195,38 +201,41 @@ const buildSnapshotStatusDescriptor = (
 
   return {
     tone: 'success',
-    label: snapshot.is_shared_snapshot ? 'Shared' : 'Database scope',
-    message: 'Metadata snapshot доступен.',
+    label: snapshot.is_shared_snapshot
+      ? t(($) => $.metadata.snapshot.sharedLabel)
+      : t(($) => $.metadata.snapshot.databaseScopeLabel),
+    message: t(($) => $.metadata.snapshot.availableMessage),
     description: snapshot.is_shared_snapshot
-      ? 'Для этой ИБ используется shared snapshot по config_name/config_version.'
-      : 'Для этой ИБ используется database-scoped snapshot.',
+      ? t(($) => $.metadata.snapshot.availableSharedDescription)
+      : t(($) => $.metadata.snapshot.availableDatabaseDescription),
   }
 }
 
 const buildEligibilityStatusDescriptor = (
-  state: ClusterAllEligibilityState
+  state: ClusterAllEligibilityState,
+  t: DatabasesT,
 ): StatusDescriptor => {
   switch (state) {
     case 'eligible':
       return {
         tone: 'success',
-        label: 'Eligible',
-        message: 'Эта база войдёт в pool master-data cluster_all launch.',
-        description: 'Use this for databases that intentionally belong to cluster-wide manual sync.',
+        label: t(($) => $.metadata.eligibility.eligibleLabel),
+        message: t(($) => $.metadata.eligibility.eligibleMessage),
+        description: t(($) => $.metadata.eligibility.eligibleDescription),
       }
     case 'excluded':
       return {
         tone: 'info',
-        label: 'Excluded',
-        message: 'Эта база намеренно исключена из pool master-data cluster_all.',
-        description: 'Для разового запуска по этой ИБ используйте target mode Database Set.',
+        label: t(($) => $.metadata.eligibility.excludedLabel),
+        message: t(($) => $.metadata.eligibility.excludedMessage),
+        description: t(($) => $.metadata.eligibility.excludedDescription),
       }
     default:
       return {
         tone: 'warning',
-        label: 'Unconfigured',
-        message: 'По этой базе ещё не принято явное решение для cluster_all.',
-        description: 'Пока состояние не переведено в Eligible или Excluded, cluster-wide launch блокируется fail-closed.',
+        label: t(($) => $.metadata.eligibility.unconfiguredLabel),
+        message: t(($) => $.metadata.eligibility.unconfiguredMessage),
+        description: t(($) => $.metadata.eligibility.unconfiguredDescription),
       }
   }
 }
@@ -303,6 +312,8 @@ export const DatabaseMetadataManagementDrawer = ({
   onOpenIbcmdProfile,
 }: DatabaseMetadataManagementDrawerProps) => {
   const screens = useBreakpoint()
+  const { t } = useDatabasesTranslation()
+  const formatters = useLocaleFormatters()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
     ? !screens.lg
@@ -328,9 +339,9 @@ export const DatabaseMetadataManagementDrawer = ({
     poolMasterDataSync?.cluster_all_eligibility?.state ?? 'unconfigured'
   ) as ClusterAllEligibilityState
   const readiness = poolMasterDataSync?.readiness ?? null
-  const profileDescriptor = profile ? buildProfileStatusDescriptor(profile) : null
-  const snapshotDescriptor = snapshot ? buildSnapshotStatusDescriptor(snapshot, profile) : null
-  const eligibilityDescriptor = buildEligibilityStatusDescriptor(eligibilityState)
+  const profileDescriptor = profile ? buildProfileStatusDescriptor(profile, t) : null
+  const snapshotDescriptor = snapshot ? buildSnapshotStatusDescriptor(snapshot, t, formatters, profile) : null
+  const eligibilityDescriptor = buildEligibilityStatusDescriptor(eligibilityState, t)
   const queuedOperationId =
     reverifyMutation.data?.operation_id || profile?.verification_operation_id || ''
   const reverifyBlockedByIbcmdProfile = (
@@ -365,10 +376,10 @@ export const DatabaseMetadataManagementDrawer = ({
       { database_id: databaseId },
       {
         onSuccess: (response) => {
-          message.success(response.message || 'Configuration identity re-verify queued')
+          message.success(response.message || t(($) => $.metadata.messages.reverifyQueued))
         },
         onError: (error: Error) => {
-          message.error(`Не удалось запустить re-verify: ${error.message}`)
+          message.error(t(($) => $.metadata.messages.reverifyFailed, { error: error.message }))
         },
       }
     )
@@ -380,10 +391,10 @@ export const DatabaseMetadataManagementDrawer = ({
       { database_id: databaseId },
       {
         onSuccess: () => {
-          message.success('Metadata snapshot обновлён')
+          message.success(t(($) => $.metadata.messages.snapshotUpdated))
         },
         onError: (error: Error) => {
-          message.error(`Не удалось обновить snapshot: ${error.message}`)
+          message.error(t(($) => $.metadata.messages.snapshotUpdateFailed, { error: error.message }))
         },
       }
     )
@@ -398,10 +409,10 @@ export const DatabaseMetadataManagementDrawer = ({
       },
       {
         onSuccess: (response) => {
-          message.success(response.message || 'Pool master-data eligibility updated')
+          message.success(response.message || t(($) => $.metadata.messages.eligibilityUpdated))
         },
         onError: (error: Error) => {
-          message.error(`Не удалось обновить eligibility: ${error.message}`)
+          message.error(t(($) => $.metadata.messages.eligibilityUpdateFailed, { error: error.message }))
         },
       },
     )
@@ -412,7 +423,9 @@ export const DatabaseMetadataManagementDrawer = ({
       open={open}
       onClose={onClose}
       width={640}
-      title={`Metadata management: ${databaseName ?? databaseId ?? 'database'}`}
+      title={t(($) => $.metadata.title, {
+        name: databaseName ?? databaseId ?? t(($) => $.shared.databaseFallback),
+      })}
       drawerTestId="database-metadata-management-drawer"
       extra={queuedOperationId ? (
         <Button
@@ -425,7 +438,7 @@ export const DatabaseMetadataManagementDrawer = ({
           }}
           data-testid="database-metadata-management-open-operations"
         >
-          Открыть Operations
+          {t(($) => $.metadata.openOperations)}
         </Button>
       ) : null}
     >
@@ -439,7 +452,7 @@ export const DatabaseMetadataManagementDrawer = ({
         <Alert
           type="error"
           showIcon
-          message="Не удалось загрузить metadata management state"
+          message={t(($) => $.metadata.loadingFailedTitle)}
           description={getErrorMessage(metadataQuery.error)}
         />
       ) : null}
@@ -466,7 +479,7 @@ export const DatabaseMetadataManagementDrawer = ({
                   disabled={mutatingDisabled}
                   data-testid="database-metadata-management-open-ibcmd-profile"
                 >
-                  {isNarrow ? 'Открыть IBCMD' : 'Открыть IBCMD profile'}
+                  {isNarrow ? t(($) => $.metadata.actions.openIbcmdShort) : t(($) => $.metadata.actions.openIbcmd)}
                 </Button>
               ) : (
                 <Button
@@ -478,24 +491,24 @@ export const DatabaseMetadataManagementDrawer = ({
                   disabled={mutatingDisabled || profile?.reverify_available === false}
                   data-testid="database-metadata-management-reverify"
                 >
-                  {isNarrow ? 'Перепроверить' : 'Перепроверить configuration identity'}
+                  {isNarrow ? t(($) => $.metadata.actions.reverifyShort) : t(($) => $.metadata.actions.reverify)}
                 </Button>
               )
             }
           />
 
-          {renderMetadataSummarySection('Configuration profile', [
-            { key: 'config_name', label: 'Config name', value: formatValue(profile.config_name) },
-            { key: 'config_version', label: 'Config version', value: formatValue(profile.config_version) },
-            { key: 'config_generation_id', label: 'Generation ID', value: formatValue(profile.config_generation_id) },
-            { key: 'config_root_name', label: 'Config root name', value: formatValue(profile.config_root_name) },
-            { key: 'config_vendor', label: 'Vendor', value: formatValue(profile.config_vendor) },
-            { key: 'verified_at', label: 'Verified at', value: formatDateTime(profile.verified_at) },
-            { key: 'probe_requested', label: 'Generation probe requested', value: formatDateTime(profile.generation_probe_requested_at) },
-            { key: 'probe_checked', label: 'Generation probe checked', value: formatDateTime(profile.generation_probe_checked_at) },
-            { key: 'observed_metadata_hash', label: 'Observed metadata hash', value: formatValue(profile.observed_metadata_hash) },
-            { key: 'canonical_metadata_hash', label: 'Canonical metadata hash', value: formatValue(profile.canonical_metadata_hash) },
-            { key: 'publication_drift', label: 'Publication drift', value: profile.publication_drift ? 'Да' : 'Нет' },
+          {renderMetadataSummarySection(t(($) => $.metadata.sections.configurationProfile), [
+            { key: 'config_name', label: t(($) => $.metadata.fields.configName), value: formatValue(t, profile.config_name) },
+            { key: 'config_version', label: t(($) => $.metadata.fields.configVersion), value: formatValue(t, profile.config_version) },
+            { key: 'config_generation_id', label: t(($) => $.metadata.fields.generationId), value: formatValue(t, profile.config_generation_id) },
+            { key: 'config_root_name', label: t(($) => $.metadata.fields.configRootName), value: formatValue(t, profile.config_root_name) },
+            { key: 'config_vendor', label: t(($) => $.metadata.fields.vendor), value: formatValue(t, profile.config_vendor) },
+            { key: 'verified_at', label: t(($) => $.metadata.fields.verifiedAt), value: formatDateTime(formatters, t, profile.verified_at) },
+            { key: 'probe_requested', label: t(($) => $.metadata.fields.generationProbeRequested), value: formatDateTime(formatters, t, profile.generation_probe_requested_at) },
+            { key: 'probe_checked', label: t(($) => $.metadata.fields.generationProbeChecked), value: formatDateTime(formatters, t, profile.generation_probe_checked_at) },
+            { key: 'observed_metadata_hash', label: t(($) => $.metadata.fields.observedMetadataHash), value: formatValue(t, profile.observed_metadata_hash) },
+            { key: 'canonical_metadata_hash', label: t(($) => $.metadata.fields.canonicalMetadataHash), value: formatValue(t, profile.canonical_metadata_hash) },
+            { key: 'publication_drift', label: t(($) => $.metadata.fields.publicationDrift), value: profile.publication_drift ? t(($) => $.shared.yes) : t(($) => $.shared.no) },
           ])}
 
           <div
@@ -527,25 +540,25 @@ export const DatabaseMetadataManagementDrawer = ({
                 disabled={mutatingDisabled || refreshBlockedByMissingProfile}
                 data-testid="database-metadata-management-refresh"
               >
-                {isNarrow ? 'Обновить snapshot' : 'Обновить metadata snapshot'}
+                {isNarrow ? t(($) => $.metadata.actions.refreshShort) : t(($) => $.metadata.actions.refresh)}
               </Button>
             }
           />
 
-          {renderMetadataSummarySection('Metadata snapshot', [
-            { key: 'snapshot_id', label: 'Snapshot ID', value: formatValue(snapshot.snapshot_id) },
-            { key: 'source', label: 'Source', value: formatValue(snapshot.source) },
-            { key: 'fetched_at', label: 'Fetched at', value: formatDateTime(snapshot.fetched_at) },
-            { key: 'catalog_version', label: 'Catalog version', value: formatValue(snapshot.catalog_version) },
-            { key: 'config_name', label: 'Snapshot config name', value: formatValue(snapshot.config_name) },
-            { key: 'config_version', label: 'Snapshot config version', value: formatValue(snapshot.config_version) },
-            { key: 'metadata_hash', label: 'Metadata hash', value: formatValue(snapshot.metadata_hash) },
-            { key: 'observed_metadata_hash', label: 'Observed metadata hash', value: formatValue(snapshot.observed_metadata_hash) },
-            { key: 'resolution_mode', label: 'Resolution mode', value: formatValue(snapshot.resolution_mode) },
-            { key: 'is_shared_snapshot', label: 'Shared snapshot', value: snapshot.is_shared_snapshot ? 'Да' : 'Нет' },
-            { key: 'provenance_database_id', label: 'Provenance database', value: formatValue(snapshot.provenance_database_id) },
-            { key: 'provenance_confirmed_at', label: 'Provenance confirmed at', value: formatDateTime(snapshot.provenance_confirmed_at) },
-            { key: 'missing_reason', label: 'Missing reason', value: formatValue(snapshot.missing_reason) },
+          {renderMetadataSummarySection(t(($) => $.metadata.sections.metadataSnapshot), [
+            { key: 'snapshot_id', label: t(($) => $.metadata.fields.snapshotId), value: formatValue(t, snapshot.snapshot_id) },
+            { key: 'source', label: t(($) => $.metadata.fields.source), value: formatValue(t, snapshot.source) },
+            { key: 'fetched_at', label: t(($) => $.metadata.fields.fetchedAt), value: formatDateTime(formatters, t, snapshot.fetched_at) },
+            { key: 'catalog_version', label: t(($) => $.metadata.fields.catalogVersion), value: formatValue(t, snapshot.catalog_version) },
+            { key: 'config_name', label: t(($) => $.metadata.fields.snapshotConfigName), value: formatValue(t, snapshot.config_name) },
+            { key: 'config_version', label: t(($) => $.metadata.fields.snapshotConfigVersion), value: formatValue(t, snapshot.config_version) },
+            { key: 'metadata_hash', label: t(($) => $.metadata.fields.metadataHash), value: formatValue(t, snapshot.metadata_hash) },
+            { key: 'observed_metadata_hash', label: t(($) => $.metadata.fields.observedMetadataHash), value: formatValue(t, snapshot.observed_metadata_hash) },
+            { key: 'resolution_mode', label: t(($) => $.metadata.fields.resolutionMode), value: formatValue(t, snapshot.resolution_mode) },
+            { key: 'is_shared_snapshot', label: t(($) => $.metadata.fields.sharedSnapshot), value: snapshot.is_shared_snapshot ? t(($) => $.shared.yes) : t(($) => $.shared.no) },
+            { key: 'provenance_database_id', label: t(($) => $.metadata.fields.provenanceDatabase), value: formatValue(t, snapshot.provenance_database_id) },
+            { key: 'provenance_confirmed_at', label: t(($) => $.metadata.fields.provenanceConfirmedAt), value: formatDateTime(formatters, t, snapshot.provenance_confirmed_at) },
+            { key: 'missing_reason', label: t(($) => $.metadata.fields.missingReason), value: formatValue(t, snapshot.missing_reason) },
           ])}
 
           <div
@@ -577,14 +590,14 @@ export const DatabaseMetadataManagementDrawer = ({
                 loading={updateEligibilityMutation.isPending}
                 data-testid="database-metadata-management-save-eligibility"
               >
-                Save eligibility
+                {t(($) => $.metadata.actions.saveEligibility)}
               </Button>
             )}
           />
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Typography.Title level={5} style={{ margin: 0 }}>
-              Pool master-data cluster_all eligibility
+              {t(($) => $.metadata.sections.clusterAllEligibility)}
             </Typography.Title>
             <Radio.Group
               value={eligibilityDraft}
@@ -593,34 +606,32 @@ export const DatabaseMetadataManagementDrawer = ({
               data-testid="database-metadata-management-eligibility"
             >
               <Space direction="vertical" size={8}>
-                <Radio value="eligible">Eligible: include this database in cluster_all.</Radio>
-                <Radio value="excluded">Excluded: keep it out of cluster_all intentionally.</Radio>
-                <Radio value="unconfigured">Unconfigured: block cluster_all until a decision is made.</Radio>
+                <Radio value="eligible">{t(($) => $.metadata.radio.eligible)}</Radio>
+                <Radio value="excluded">{t(($) => $.metadata.radio.excluded)}</Radio>
+                <Radio value="unconfigured">{t(($) => $.metadata.radio.unconfigured)}</Radio>
               </Space>
             </Radio.Group>
             <Typography.Text type="secondary">
-              Eligibility is an operator decision about business participation. It does not change automatically
-              when readiness or health drifts.
+              {t(($) => $.metadata.decisionNote)}
             </Typography.Text>
           </div>
 
-          {renderMetadataSummarySection('Pool master-data readiness', [
-            { key: 'cluster_attached', label: 'Cluster attached', value: formatBoolean(readiness?.cluster_attached) },
-            { key: 'runtime_enabled', label: 'Runtime enabled', value: formatBoolean(readiness?.runtime_enabled) },
-            { key: 'inbound_enabled', label: 'Inbound enabled', value: formatBoolean(readiness?.inbound_enabled) },
-            { key: 'outbound_enabled', label: 'Outbound enabled', value: formatBoolean(readiness?.outbound_enabled) },
-            { key: 'odata_configured', label: 'OData configured', value: formatBoolean(readiness?.odata_configured) },
-            { key: 'credentials_configured', label: 'Credentials configured', value: formatBoolean(readiness?.credentials_configured) },
-            { key: 'ibcmd_profile_configured', label: 'IBCMD profile configured', value: formatBoolean(readiness?.ibcmd_profile_configured) },
-            { key: 'service_mapping_status', label: 'Service mapping status', value: formatValue(readiness?.service_mapping_status) },
-            { key: 'service_mapping_count', label: 'Service mapping count', value: String(readiness?.service_mapping_count ?? 0) },
-            { key: 'default_policy', label: 'Default policy', value: formatValue(readiness?.default_policy) },
-            { key: 'health_status', label: 'Health status', value: formatValue(readiness?.health_status) },
+          {renderMetadataSummarySection(t(($) => $.metadata.sections.readiness), [
+            { key: 'cluster_attached', label: t(($) => $.metadata.fields.clusterAttached), value: formatBoolean(t, readiness?.cluster_attached) },
+            { key: 'runtime_enabled', label: t(($) => $.metadata.fields.runtimeEnabled), value: formatBoolean(t, readiness?.runtime_enabled) },
+            { key: 'inbound_enabled', label: t(($) => $.metadata.fields.inboundEnabled), value: formatBoolean(t, readiness?.inbound_enabled) },
+            { key: 'outbound_enabled', label: t(($) => $.metadata.fields.outboundEnabled), value: formatBoolean(t, readiness?.outbound_enabled) },
+            { key: 'odata_configured', label: t(($) => $.metadata.fields.odataConfigured), value: formatBoolean(t, readiness?.odata_configured) },
+            { key: 'credentials_configured', label: t(($) => $.metadata.fields.credentialsConfigured), value: formatBoolean(t, readiness?.credentials_configured) },
+            { key: 'ibcmd_profile_configured', label: t(($) => $.metadata.fields.ibcmdConfigured), value: formatBoolean(t, readiness?.ibcmd_profile_configured) },
+            { key: 'service_mapping_status', label: t(($) => $.metadata.fields.serviceMappingStatus), value: formatValue(t, readiness?.service_mapping_status) },
+            { key: 'service_mapping_count', label: t(($) => $.metadata.fields.serviceMappingCount), value: String(readiness?.service_mapping_count ?? 0) },
+            { key: 'default_policy', label: t(($) => $.metadata.fields.defaultPolicy), value: formatValue(t, readiness?.default_policy) },
+            { key: 'health_status', label: t(($) => $.metadata.fields.healthStatus), value: formatValue(t, readiness?.health_status) },
           ])}
 
           <Typography.Text type="secondary">
-            Identity/reuse key и содержимое metadata snapshot управляются раздельно: re-verify обслуживает
-            configuration profile, refresh обновляет нормализованный snapshot и drift diagnostics.
+            {t(($) => $.metadata.separationNote)}
           </Typography.Text>
         </Space>
       ) : null}

@@ -29,6 +29,8 @@ import {
 import type { SelectTypeStepProps, OperationType } from './types'
 import { useOperationCatalog } from '../../../../hooks/useOperationCatalog'
 import type { OperationCatalogItem } from '../../../../api/operations'
+import { useOperationsTranslation } from '../../../../i18n'
+import { getOperationDriverLabel } from '../../utils'
 
 const { Title, Text } = Typography
 
@@ -70,14 +72,6 @@ function getIcon(iconName: string): React.ReactNode {
   return iconMap[iconName] || defaultIcon
 }
 
-const DRIVER_LABELS: Record<string, string> = {
-  ras: 'RAS',
-  odata: 'OData',
-  cli: 'CLI',
-  ibcmd: 'IBCMD',
-  workflow: 'Workflow',
-}
-
 const DRIVER_ORDER: Record<string, number> = {
   ras: 1,
   odata: 2,
@@ -97,6 +91,7 @@ export const SelectTypeStep = ({
   onSelect,
   onSelectTemplate,
 }: SelectTypeStepProps) => {
+  const { t } = useOperationsTranslation()
   const { items, loading, error } = useOperationCatalog()
   const [searchValue, setSearchValue] = useState('')
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([])
@@ -168,13 +163,13 @@ export const SelectTypeStep = ({
   return (
     <div style={{ padding: '16px 0' }}>
       <Title level={4} style={{ marginBottom: 24 }}>
-        Select Operation Type
+        {t(($) => $.wizard.selectType.title)}
       </Title>
 
       <Space wrap style={{ marginBottom: 16 }}>
         <Input
           allowClear
-          placeholder="Search Operations"
+          placeholder={t(($) => $.wizard.selectType.searchPlaceholder)}
           prefix={<SearchOutlined />}
           value={searchValue}
           onChange={(event) => setSearchValue(event.target.value)}
@@ -182,12 +177,12 @@ export const SelectTypeStep = ({
         />
         <Select
           mode="multiple"
-          placeholder="Filter by driver"
+          placeholder={t(($) => $.wizard.selectType.filterByDriver)}
           value={selectedDrivers}
           onChange={(value) => setSelectedDrivers(value)}
           options={availableDrivers.map((driver) => ({
             value: driver,
-            label: DRIVER_LABELS[driver] ?? driver,
+            label: getOperationDriverLabel(driver, t),
           }))}
           style={{ minWidth: 260 }}
         />
@@ -197,15 +192,15 @@ export const SelectTypeStep = ({
       {loading && (
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
           <Spin />
-          <div style={{ marginTop: 8, color: '#595959' }}>Loading operation catalog{'\u2026'}</div>
+          <div style={{ marginTop: 8, color: '#595959' }}>{t(($) => $.wizard.selectType.loading)}</div>
         </div>
       )}
 
       {/* Error state for catalog */}
       {error && (
         <Alert
-          message="Could not load operation catalog"
-          description="Try again later or check API status."
+          message={t(($) => $.wizard.selectType.loadFailedTitle)}
+          description={t(($) => $.wizard.selectType.loadFailedDescription)}
           type="info"
           showIcon
           style={{ marginBottom: 24 }}
@@ -225,7 +220,7 @@ export const SelectTypeStep = ({
               label: (
                 <Space>
                   <Text strong style={{ fontSize: 16 }}>
-                    {DRIVER_LABELS[driver] ?? driver}
+                    {getOperationDriverLabel(driver, t)}
                   </Text>
                   <Tag>{driverItems.length}</Tag>
                 </Space>
@@ -237,9 +232,9 @@ export const SelectTypeStep = ({
                     const hasUiForm = item.has_ui_form ?? true
                     const disabled = !hasUiForm || item.deprecated
                     const disabledReason = item.deprecated
-                      ? (item.deprecated_message || 'Deprecated')
+                      ? (item.deprecated_message || t(($) => $.wizard.selectType.disabledDeprecated))
                       : item.has_ui_form === false
-                        ? 'Not available in UI yet'
+                        ? t(($) => $.wizard.selectType.disabledUiUnavailable)
                         : null
                     const iconName = item.icon || 'AppstoreOutlined'
                     const card = (
@@ -289,13 +284,13 @@ export const SelectTypeStep = ({
                           {item.description}
                         </Text>
                         <Space size={4} style={{ marginTop: 8 }} wrap>
-                          {item.deprecated && <Tag color="red">Deprecated</Tag>}
-                          {item.has_ui_form === false && <Tag>UI form not available</Tag>}
+                          {item.deprecated && <Tag color="red">{t(($) => $.wizard.selectType.deprecated)}</Tag>}
+                          {item.has_ui_form === false && <Tag>{t(($) => $.wizard.selectType.uiNotAvailable)}</Tag>}
                         </Space>
                       </Card>
                     )
                     const wrappedCard = item.kind === 'template' ? (
-                      <Badge.Ribbon text="Template" color="blue">
+                      <Badge.Ribbon text={t(($) => $.wizard.selectType.template)} color="blue">
                         {card}
                       </Badge.Ribbon>
                     ) : card
@@ -322,7 +317,7 @@ export const SelectTypeStep = ({
       {/* Empty state when no operations available */}
       {sortedDrivers.length === 0 && !loading && (
         <Empty
-          description="No operations available"
+          description={t(($) => $.wizard.selectType.noOperations)}
           style={{ marginTop: 48 }}
         />
       )}

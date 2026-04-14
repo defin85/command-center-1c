@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import { OperationsPage } from '../OperationsPage'
 import type { UIBatchOperation } from '../types'
@@ -198,7 +199,9 @@ function renderOperationsPage(initialEntry = '/operations') {
 }
 
 describe('OperationsPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'operations')
     vi.clearAllMocks()
     mockGetRuntimeSettings.mockResolvedValue([])
     mockUseOperations.mockReturnValue({
@@ -211,6 +214,11 @@ describe('OperationsPage', () => {
       error: null,
       refetch: mockRefetch,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'operations')
+    await changeLanguage('ru')
   })
 
   it('restores selected operation and active view from query params', async () => {

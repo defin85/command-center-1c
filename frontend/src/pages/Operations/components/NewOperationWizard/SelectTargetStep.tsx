@@ -16,6 +16,7 @@ import { getHealthTag, getStatusTag } from '../../../../utils/databaseStatus'
 import { TableToolkit } from '../../../../components/table/TableToolkit'
 import { useTableToolkit } from '../../../../components/table/hooks/useTableToolkit'
 import { useAuthz } from '../../../../authz/useAuthz'
+import { useDatabasesTranslation, useOperationsTranslation } from '../../../../i18n'
 
 const { Title, Text } = Typography
 
@@ -30,6 +31,21 @@ export const SelectTargetStep = ({
 }: SelectTargetStepProps) => {
   const hasAppliedPreselection = useRef(false)
   const authz = useAuthz()
+  const { t } = useOperationsTranslation()
+  const { t: tDatabases } = useDatabasesTranslation()
+  const statusLabels = useMemo(() => ({
+    active: tDatabases(($) => $.status.active),
+    inactive: tDatabases(($) => $.status.inactive),
+    maintenance: tDatabases(($) => $.status.maintenance),
+    error: tDatabases(($) => $.status.error),
+    unknown: tDatabases(($) => $.status.unknown),
+  }), [tDatabases])
+  const healthLabels = useMemo(() => ({
+    ok: tDatabases(($) => $.health.ok),
+    degraded: tDatabases(($) => $.health.degraded),
+    down: tDatabases(($) => $.health.down),
+    unknown: tDatabases(($) => $.health.unknown),
+  }), [tDatabases])
 
   const clustersQuery = useClusters()
   const clusters = clustersQuery.data?.clusters ?? EMPTY_CLUSTERS
@@ -62,15 +78,15 @@ export const SelectTargetStep = ({
   }, [authz.isLoading, canOperateDatabase, onSelectionChange, selectedDatabases])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'cluster', label: 'Cluster', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
-    { key: 'last_check_status', label: 'Health', sortable: true, groupKey: 'status', groupLabel: 'Status' },
-  ], [])
+    { key: 'name', label: t(($) => $.wizard.selectTarget.database), sortable: true, groupKey: 'core', groupLabel: t(($) => $.wizard.selectTarget.database) },
+    { key: 'cluster', label: t(($) => $.wizard.selectTarget.cluster), sortable: true, groupKey: 'core', groupLabel: t(($) => $.wizard.selectTarget.cluster) },
+    { key: 'status', label: t(($) => $.wizard.selectTarget.status), sortable: true, groupKey: 'status', groupLabel: t(($) => $.wizard.selectTarget.status) },
+    { key: 'last_check_status', label: t(($) => $.wizard.selectTarget.health), sortable: true, groupKey: 'status', groupLabel: t(($) => $.wizard.selectTarget.status) },
+  ], [t])
 
   const columns: ColumnsType<Database> = useMemo(() => ([
     {
-      title: 'Database',
+      title: t(($) => $.wizard.selectTarget.database),
       dataIndex: 'name',
       key: 'name',
       render: (name: string, record) => (
@@ -85,7 +101,7 @@ export const SelectTargetStep = ({
       ),
     },
     {
-      title: 'Cluster',
+      title: t(($) => $.wizard.selectTarget.cluster),
       dataIndex: 'cluster_id',
       key: 'cluster',
       render: (clusterId: string | null) => {
@@ -94,26 +110,26 @@ export const SelectTargetStep = ({
       },
     },
     {
-      title: 'Status',
+      title: t(($) => $.wizard.selectTarget.status),
       dataIndex: 'status',
       key: 'status',
       width: 100,
       render: (status: string) => {
-        const tag = getStatusTag(status)
+        const tag = getStatusTag(status, statusLabels)
         return <Tag color={tag.color}>{tag.label}</Tag>
       },
     },
     {
-      title: 'Health',
+      title: t(($) => $.wizard.selectTarget.health),
       dataIndex: 'last_check_status',
       key: 'last_check_status',
       width: 80,
       render: (status: string) => {
-        const tag = getHealthTag(status)
+        const tag = getHealthTag(status, healthLabels)
         return <Tag color={tag.color}>{tag.label}</Tag>
       },
     },
-  ]), [clusterNameById])
+  ]), [clusterNameById, healthLabels, statusLabels, t])
 
   const table = useTableToolkit({
     tableId: 'operation_targets',
@@ -193,7 +209,7 @@ export const SelectTargetStep = ({
   return (
     <div>
       <Space style={{ marginBottom: 16 }} align="center">
-        <Title level={4} style={{ margin: 0 }}>Select Databases</Title>
+        <Title level={4} style={{ margin: 0 }}>{t(($) => $.wizard.selectTarget.title)}</Title>
         <Checkbox
           id="wizard-select-page"
           indeterminate={somePageSelected}
@@ -201,10 +217,10 @@ export const SelectTargetStep = ({
           onChange={(event) => handleSelectPage(event.target.checked)}
           disabled={selectableIds.length === 0}
         >
-          Select page ({selectableIds.length})
+          {t(($) => $.wizard.selectTarget.selectPage, { count: selectableIds.length })}
         </Checkbox>
         <Text type="secondary">
-          {selectedDatabases.length} selected
+          {t(($) => $.wizard.selectTarget.selectedCount, { count: selectedDatabases.length })}
         </Text>
       </Space>
 
@@ -219,7 +235,7 @@ export const SelectTargetStep = ({
         size="small"
         tableLayout="fixed"
         scroll={{ x: table.totalColumnsWidth }}
-        searchPlaceholder="Search databases"
+        searchPlaceholder={t(($) => $.wizard.selectTarget.searchPlaceholder)}
       />
     </div>
   )

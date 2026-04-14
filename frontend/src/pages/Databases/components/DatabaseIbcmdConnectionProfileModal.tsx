@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import type { Database } from '../../../api/generated/model/database'
 import { useDriverCommands } from '../../../api/queries/driverCommands'
 import { ModalFormShell } from '../../../components/platform'
+import { useDatabasesTranslation } from '../../../i18n'
 
 export type DatabaseIbcmdConnectionProfileModalProps = {
   open: boolean
@@ -25,6 +26,7 @@ export function DatabaseIbcmdConnectionProfileModal({
   onSave,
   onReset,
 }: DatabaseIbcmdConnectionProfileModalProps) {
+  const { t } = useDatabasesTranslation()
   const dbAny = (database ?? null) as (Database & { ibcmd_connection?: unknown }) | null
   const disableReset = !dbAny?.ibcmd_connection
 
@@ -53,9 +55,11 @@ export function DatabaseIbcmdConnectionProfileModal({
       open={open}
       onClose={onCancel}
       onSubmit={onSave}
-      title={database ? `IBCMD connection profile: ${database.name}` : 'IBCMD connection profile'}
-      subtitle="Database-scoped ibcmd runtime profile"
-      submitText="Save"
+      title={database
+        ? t(($) => $.modals.ibcmd.titleWithName, { name: database.name })
+        : t(($) => $.modals.ibcmd.title)}
+      subtitle={t(($) => $.modals.ibcmd.subtitle)}
+      submitText={t(($) => $.modals.ibcmd.save)}
       confirmLoading={saving}
       width={720}
       forceRender
@@ -63,17 +67,16 @@ export function DatabaseIbcmdConnectionProfileModal({
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
           <Button danger onClick={onReset} disabled={disableReset}>
-            Reset
+            {t(($) => $.modals.ibcmd.reset)}
           </Button>
         </Space>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-          Профиль хранится на уровне базы и используется по умолчанию для запусков ibcmd. Это raw flags: система не
-          пытается интерпретировать режимы, а пользователь отвечает за корректные комбинации. Секреты здесь не задаются.
+          {t(($) => $.modals.ibcmd.description)}
         </Typography.Paragraph>
 
         <Form form={form} layout="vertical">
           <Form.Item
-            label="remote (SSH URL)"
+            label={t(($) => $.modals.ibcmd.remoteLabel)}
             name="remote"
             htmlFor="database-ibcmd-profile-remote"
             rules={[
@@ -82,17 +85,17 @@ export function DatabaseIbcmdConnectionProfileModal({
                   const v = typeof value === 'string' ? value.trim() : ''
                   if (!v) return
                   if (!v.toLowerCase().startsWith('ssh://')) {
-                    throw new Error('remote должен начинаться с ssh://')
+                    throw new Error(t(($) => $.modals.ibcmd.remoteInvalid))
                   }
                 },
               },
             ]}
           >
-            <Input id="database-ibcmd-profile-remote" placeholder="ssh://host:port" />
+            <Input id="database-ibcmd-profile-remote" placeholder={t(($) => $.modals.ibcmd.remotePlaceholder)} />
           </Form.Item>
 
-          <Form.Item label="pid" name="pid" htmlFor="database-ibcmd-profile-pid">
-            <InputNumber id="database-ibcmd-profile-pid" min={1} style={{ width: '100%' }} placeholder="12345" />
+          <Form.Item label={t(($) => $.modals.ibcmd.pidLabel)} name="pid" htmlFor="database-ibcmd-profile-pid">
+            <InputNumber id="database-ibcmd-profile-pid" min={1} style={{ width: '100%' }} placeholder={t(($) => $.modals.ibcmd.pidPlaceholder)} />
           </Form.Item>
 
           <div
@@ -103,21 +106,21 @@ export function DatabaseIbcmdConnectionProfileModal({
               width: '100%',
             }}
           />
-          <Typography.Title level={5} style={{ marginTop: 0 }}>offline</Typography.Title>
+          <Typography.Title level={5} style={{ marginTop: 0 }}>{t(($) => $.modals.ibcmd.offlineTitle)}</Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            Любые offline.* ключи из driver schema. Они будут прокинуты как флаги вида <Typography.Text code>--key=value</Typography.Text>
-            (snake_case преобразуется в kebab-case). Ключи <Typography.Text code>db_user</Typography.Text>,{' '}
-            <Typography.Text code>db_pwd</Typography.Text>, <Typography.Text code>db_password</Typography.Text> запрещены.
+            {t(($) => $.modals.ibcmd.offlineDescription)}
           </Typography.Paragraph>
 
           <Form.List name="offline_entries">
             {(fields, { add, remove }) => (
               <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <Form.Item label="Добавить offline флаг (из схемы)" style={{ marginBottom: 0 }}>
+                <Form.Item label={t(($) => $.modals.ibcmd.addSchemaKeyLabel)} style={{ marginBottom: 0 }}>
                   <Space.Compact style={{ width: '100%' }}>
                     <Input
                       data-testid="ibcmd-profile-offline-schema-input"
-                      placeholder={offlineSchemaKeys.length > 0 ? 'например db_name' : 'Схема не загружена'}
+                      placeholder={offlineSchemaKeys.length > 0
+                        ? t(($) => $.modals.ibcmd.addSchemaKeyPlaceholderLoaded)
+                        : t(($) => $.modals.ibcmd.addSchemaKeyPlaceholderEmpty)}
                       disabled={offlineSchemaKeys.length === 0}
                       value={schemaKeyDraft}
                       list="ibcmd-offline-schema-keys"
@@ -142,7 +145,7 @@ export function DatabaseIbcmdConnectionProfileModal({
                         setSchemaKeyDraft('')
                       }}
                     >
-                      Add
+                      {t(($) => $.modals.ibcmd.add)}
                     </Button>
                   </Space.Compact>
                 </Form.Item>
@@ -152,34 +155,34 @@ export function DatabaseIbcmdConnectionProfileModal({
                     <Form.Item
                       name={[field.name, 'key']}
                       rules={[
-                        { required: true, message: 'key обязателен' },
+                        { required: true, message: t(($) => $.modals.ibcmd.keyRequired) },
                         {
                           validator: async (_, value) => {
                             const v = typeof value === 'string' ? value.trim() : ''
                             if (!v) return
                             if (v.startsWith('-')) {
-                              throw new Error('key задаётся без префикса -- (например db_name, а не --db-name)')
+                              throw new Error(t(($) => $.modals.ibcmd.keyNoPrefix))
                             }
                             const lowered = v.toLowerCase()
                             if (lowered === 'db_user' || lowered === 'db_pwd' || lowered === 'db_password') {
-                              throw new Error('секретные ключи запрещены (db_user/db_pwd/db_password)')
+                              throw new Error(t(($) => $.modals.ibcmd.keySecretsForbidden))
                             }
                           },
                         },
                       ]}
                       style={{ marginBottom: 0, flex: 1 }}
                     >
-                      <Input placeholder="config" />
+                      <Input placeholder={t(($) => $.modals.ibcmd.keyPlaceholder)} />
                     </Form.Item>
                     <Form.Item
                       name={[field.name, 'value']}
-                      rules={[{ required: true, message: 'value обязателен' }]}
+                      rules={[{ required: true, message: t(($) => $.modals.ibcmd.valueRequired) }]}
                       style={{ marginBottom: 0, flex: 2 }}
                     >
-                      <Input placeholder="/path/to/value" />
+                      <Input placeholder={t(($) => $.modals.ibcmd.valuePlaceholder)} />
                     </Form.Item>
                     <Button danger onClick={() => remove(field.name)}>
-                      Remove
+                      {t(($) => $.modals.ibcmd.remove)}
                     </Button>
                   </Space>
                 ))}

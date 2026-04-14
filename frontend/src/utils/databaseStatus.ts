@@ -3,20 +3,39 @@ type TagMeta = {
   color: string
 }
 
+type StatusLabelKey = 'active' | 'inactive' | 'maintenance' | 'error' | 'unknown'
+type HealthLabelKey = 'ok' | 'degraded' | 'down' | 'unknown'
+type StatusLabels = Partial<Record<StatusLabelKey, string>>
+type HealthLabels = Partial<Record<HealthLabelKey, string>>
+
 type Severity = 0 | 1 | 2 | 3
 
-const statusMap: Record<string, TagMeta> = {
-  active: { label: 'Active', color: 'green' },
-  inactive: { label: 'Inactive', color: 'default' },
-  maintenance: { label: 'Maintenance', color: 'orange' },
-  error: { label: 'Error', color: 'red' },
+const defaultStatusLabels: Record<StatusLabelKey, string> = {
+  active: 'Active',
+  inactive: 'Inactive',
+  maintenance: 'Maintenance',
+  error: 'Error',
+  unknown: 'Unknown',
 }
 
-const healthMap: Record<string, TagMeta> = {
-  ok: { label: 'OK', color: 'green' },
-  degraded: { label: 'Degraded', color: 'orange' },
-  down: { label: 'Down', color: 'red' },
-  unknown: { label: 'Unknown', color: 'default' },
+const defaultHealthLabels: Record<HealthLabelKey, string> = {
+  ok: 'OK',
+  degraded: 'Degraded',
+  down: 'Down',
+  unknown: 'Unknown',
+}
+
+const statusColors: Record<Exclude<StatusLabelKey, 'unknown'>, string> = {
+  active: 'green',
+  inactive: 'default',
+  maintenance: 'orange',
+  error: 'red',
+}
+
+const healthColors: Record<Exclude<HealthLabelKey, 'unknown'>, string> = {
+  ok: 'green',
+  degraded: 'orange',
+  down: 'red',
 }
 
 const statusSeverity: Record<string, Severity> = {
@@ -40,19 +59,41 @@ const severityColor: Record<Severity, string> = {
   3: 'red',
 }
 
-export const getStatusTag = (status?: string | null): TagMeta => {
-  if (!status) return { label: 'Unknown', color: 'default' }
-  return statusMap[status] ?? { label: 'Unknown', color: 'default' }
+const resolveStatusLabel = (status: StatusLabelKey, labels?: StatusLabels) => (
+  labels?.[status] ?? defaultStatusLabels[status]
+)
+
+const resolveHealthLabel = (health: HealthLabelKey, labels?: HealthLabels) => (
+  labels?.[health] ?? defaultHealthLabels[health]
+)
+
+export const getStatusTag = (status?: string | null, labels?: StatusLabels): TagMeta => {
+  if (!status) {
+    return { label: resolveStatusLabel('unknown', labels), color: 'default' }
+  }
+  if (status === 'active' || status === 'inactive' || status === 'maintenance' || status === 'error') {
+    return { label: resolveStatusLabel(status, labels), color: statusColors[status] }
+  }
+  return { label: resolveStatusLabel('unknown', labels), color: 'default' }
 }
 
-export const getHealthTag = (health?: string | null): TagMeta => {
-  if (!health) return { label: 'Unknown', color: 'default' }
-  return healthMap[health] ?? { label: 'Unknown', color: 'default' }
+export const getHealthTag = (health?: string | null, labels?: HealthLabels): TagMeta => {
+  if (!health) {
+    return { label: resolveHealthLabel('unknown', labels), color: 'default' }
+  }
+  if (health === 'ok' || health === 'degraded' || health === 'down') {
+    return { label: resolveHealthLabel(health, labels), color: healthColors[health] }
+  }
+  return { label: resolveHealthLabel('unknown', labels), color: 'default' }
 }
 
-export const getSummaryTag = (status?: string | null, health?: string | null): TagMeta => {
-  const statusTag = getStatusTag(status)
-  const healthTag = getHealthTag(health)
+export const getSummaryTag = (
+  status?: string | null,
+  health?: string | null,
+  labels?: { status?: StatusLabels; health?: HealthLabels },
+): TagMeta => {
+  const statusTag = getStatusTag(status, labels?.status)
+  const healthTag = getHealthTag(health, labels?.health)
   const statusLevel = status ? statusSeverity[status] ?? 1 : 1
   const healthLevel = health ? healthSeverity[health] ?? 1 : 1
   const severity = Math.max(statusLevel, healthLevel) as Severity

@@ -38,6 +38,7 @@ import {
 import { buildIbcmdConnectionProfileUpdatePayload } from './lib/ibcmdConnectionProfile'
 import { getHealthTag, getStatusTag } from '../../utils/databaseStatus'
 import { EntityDetails, EntityList, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
+import { useDatabasesTranslation, useLocaleFormatters } from '../../i18n'
 import { confirmWithTracking } from '../../observability/confirmWithTracking'
 
 const EMPTY_CLUSTERS: Cluster[] = []
@@ -93,6 +94,8 @@ export const Databases = () => {
   const navigate = useNavigate()
   const { message, modal } = App.useApp()
   const authz = useAuthz()
+  const { t, ready } = useDatabasesTranslation()
+  const formatters = useLocaleFormatters()
   const isStaff = authz.isStaff
   const hasTenantContext = Boolean(localStorage.getItem('active_tenant_id'))
   const mutatingDisabled = isStaff && !hasTenantContext
@@ -121,16 +124,16 @@ export const Databases = () => {
   }, [canSelectRows])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'host', label: 'Host', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'port', label: 'Port', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'status', label: 'Status', groupKey: 'status', groupLabel: 'Status' },
-    { key: 'last_check_status', label: 'Health', groupKey: 'status', groupLabel: 'Status' },
-    { key: 'last_check', label: 'Last Check', sortable: true, groupKey: 'status', groupLabel: 'Status' },
-    { key: 'credentials', label: 'Credentials', groupKey: 'access', groupLabel: 'Access' },
-    { key: 'restrictions', label: 'Restrictions', groupKey: 'access', groupLabel: 'Access' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    { key: 'name', label: t(($) => $.columns.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.columnGroups.core) },
+    { key: 'host', label: t(($) => $.columns.host), sortable: true, groupKey: 'core', groupLabel: t(($) => $.columnGroups.core) },
+    { key: 'port', label: t(($) => $.columns.port), sortable: true, groupKey: 'core', groupLabel: t(($) => $.columnGroups.core) },
+    { key: 'status', label: t(($) => $.columns.status), groupKey: 'status', groupLabel: t(($) => $.columnGroups.status) },
+    { key: 'last_check_status', label: t(($) => $.columns.health), groupKey: 'status', groupLabel: t(($) => $.columnGroups.status) },
+    { key: 'last_check', label: t(($) => $.columns.lastCheck), sortable: true, groupKey: 'status', groupLabel: t(($) => $.columnGroups.status) },
+    { key: 'credentials', label: t(($) => $.columns.credentials), groupKey: 'access', groupLabel: t(($) => $.columnGroups.access) },
+    { key: 'restrictions', label: t(($) => $.columns.restrictions), groupKey: 'access', groupLabel: t(($) => $.columnGroups.access) },
+    { key: 'actions', label: t(($) => $.columns.actions), groupKey: 'actions', groupLabel: t(($) => $.columnGroups.actions) },
+  ], [t])
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -241,14 +244,14 @@ export const Databases = () => {
 
   const openCredentialsModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
-      message.error('Недостаточно прав для управления кредами базы')
+      message.error(t(($) => $.messages.accessDeniedCredentials))
       return
     }
     updateSearchParams({
       database: database.id,
       context: 'credentials',
     })
-  }, [canManageDatabase, message, updateSearchParams])
+  }, [canManageDatabase, message, t, updateSearchParams])
 
   const closeCredentialsModal = useCallback(() => {
     credentialsForm.resetFields()
@@ -259,14 +262,14 @@ export const Databases = () => {
 
   const openDbmsMetadataModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
-      message.error('Недостаточно прав для управления DBMS metadata базы')
+      message.error(t(($) => $.messages.accessDeniedDbms))
       return
     }
     updateSearchParams({
       database: database.id,
       context: 'dbms',
     })
-  }, [canManageDatabase, message, updateSearchParams])
+  }, [canManageDatabase, message, t, updateSearchParams])
 
   const closeDbmsMetadataModal = useCallback(() => {
     dbmsMetadataForm.resetFields()
@@ -277,14 +280,14 @@ export const Databases = () => {
 
   const openIbcmdProfileModal = useCallback((database: Database) => {
     if (!canManageDatabase(database.id)) {
-      message.error('Недостаточно прав для управления IBCMD profile базы')
+      message.error(t(($) => $.messages.accessDeniedIbcmd))
       return
     }
     updateSearchParams({
       database: database.id,
       context: 'ibcmd',
     })
-  }, [canManageDatabase, message, updateSearchParams])
+  }, [canManageDatabase, message, t, updateSearchParams])
 
   const closeIbcmdProfileModal = useCallback(() => {
     ibcmdProfileForm.resetFields()
@@ -296,7 +299,7 @@ export const Databases = () => {
   const handleIbcmdProfileSave = async () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления IBCMD profile базы')
+      message.error(t(($) => $.messages.accessDeniedIbcmd))
       return
     }
 
@@ -305,11 +308,11 @@ export const Databases = () => {
 
     updateDatabaseIbcmdConnectionProfile.mutate(payload, {
       onSuccess: (response) => {
-        message.success(response.message || 'IBCMD profile обновлён')
+        message.success(response.message || t(($) => $.messages.ibcmdUpdated))
         closeIbcmdProfileModal()
       },
       onError: (error: Error) => {
-        message.error('Не удалось обновить IBCMD profile: ' + error.message)
+        message.error(t(($) => $.messages.ibcmdUpdateFailed, { error: error.message }))
       },
     })
   }
@@ -317,26 +320,26 @@ export const Databases = () => {
   const handleIbcmdProfileReset = () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления IBCMD profile базы')
+      message.error(t(($) => $.messages.accessDeniedIbcmd))
       return
     }
 
     confirmWithTracking(modal, {
-      title: 'Сбросить IBCMD profile базы?',
-      content: 'Профиль подключения ibcmd будет удалён из metadata базы.',
-      okText: 'Сбросить',
-      cancelText: 'Отмена',
+      title: t(($) => $.confirm.resetIbcmdTitle),
+      content: t(($) => $.confirm.resetIbcmdContent),
+      okText: t(($) => $.confirm.reset),
+      cancelText: t(($) => $.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: () => {
         updateDatabaseIbcmdConnectionProfile.mutate(
           { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
-              message.success(response.message || 'IBCMD profile сброшен')
+              message.success(response.message || t(($) => $.messages.ibcmdReset))
               closeIbcmdProfileModal()
             },
             onError: (error: Error) => {
-              message.error('Не удалось сбросить IBCMD profile: ' + error.message)
+              message.error(t(($) => $.messages.ibcmdResetFailed, { error: error.message }))
             },
           }
         )
@@ -353,7 +356,7 @@ export const Databases = () => {
   const handleCredentialsSave = async () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления кредами базы')
+      message.error(t(($) => $.messages.accessDeniedCredentials))
       return
     }
 
@@ -369,17 +372,17 @@ export const Databases = () => {
     if (password) payload.password = password
 
     if (!payload.username && !payload.password) {
-      message.info('Нет изменений для сохранения')
+      message.info(t(($) => $.messages.noChanges))
       return
     }
 
     updateDatabaseCredentials.mutate(payload, {
       onSuccess: (response) => {
-        message.success(response.message || 'Креды базы обновлены')
+        message.success(response.message || t(($) => $.messages.credentialsUpdated))
         closeCredentialsModal()
       },
       onError: (error: Error) => {
-        message.error('Не удалось обновить креды: ' + error.message)
+        message.error(t(($) => $.messages.credentialsUpdateFailed, { error: error.message }))
       },
     })
   }
@@ -387,26 +390,26 @@ export const Databases = () => {
   const handleCredentialsReset = () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления кредами базы')
+      message.error(t(($) => $.messages.accessDeniedCredentials))
       return
     }
 
     confirmWithTracking(modal, {
-      title: 'Сбросить креды базы?',
-      content: 'Логин и пароль будут очищены.',
-      okText: 'Сбросить',
-      cancelText: 'Отмена',
+      title: t(($) => $.confirm.resetCredentialsTitle),
+      content: t(($) => $.confirm.resetCredentialsContent),
+      okText: t(($) => $.confirm.reset),
+      cancelText: t(($) => $.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: async () => {
         updateDatabaseCredentials.mutate(
           { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
-              message.success(response.message || 'Креды базы сброшены')
+              message.success(response.message || t(($) => $.messages.credentialsReset))
               closeCredentialsModal()
             },
             onError: (error: Error) => {
-              message.error('Не удалось сбросить креды: ' + error.message)
+              message.error(t(($) => $.messages.credentialsResetFailed, { error: error.message }))
             },
           }
         )
@@ -423,7 +426,7 @@ export const Databases = () => {
   const handleDbmsMetadataSave = async () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления DBMS metadata базы')
+      message.error(t(($) => $.messages.accessDeniedDbms))
       return
     }
 
@@ -440,17 +443,17 @@ export const Databases = () => {
     if (dbName) payload.db_name = dbName
 
     if (!payload.dbms && !payload.db_server && !payload.db_name) {
-      message.info('Нет изменений для сохранения')
+      message.info(t(($) => $.messages.noChanges))
       return
     }
 
     updateDatabaseDbmsMetadata.mutate(payload, {
       onSuccess: (response) => {
-        message.success(response.message || 'DBMS metadata обновлены')
+        message.success(response.message || t(($) => $.messages.dbmsUpdated))
         closeDbmsMetadataModal()
       },
       onError: (error: Error) => {
-        message.error('Не удалось обновить DBMS metadata: ' + error.message)
+        message.error(t(($) => $.messages.dbmsUpdateFailed, { error: error.message }))
       },
     })
   }
@@ -458,26 +461,26 @@ export const Databases = () => {
   const handleDbmsMetadataReset = () => {
     if (!selectedDatabaseIdFromUrl) return
     if (!canManageDatabase(selectedDatabaseIdFromUrl)) {
-      message.error('Недостаточно прав для управления DBMS metadata базы')
+      message.error(t(($) => $.messages.accessDeniedDbms))
       return
     }
 
     confirmWithTracking(modal, {
-      title: 'Сбросить DBMS metadata базы?',
-      content: 'Поля DBMS/DB server/DB name будут очищены.',
-      okText: 'Сбросить',
-      cancelText: 'Отмена',
+      title: t(($) => $.confirm.resetDbmsTitle),
+      content: t(($) => $.confirm.resetDbmsContent),
+      okText: t(($) => $.confirm.reset),
+      cancelText: t(($) => $.confirm.cancel),
       okButtonProps: { danger: true },
       onOk: async () => {
         updateDatabaseDbmsMetadata.mutate(
           { database_id: selectedDatabaseIdFromUrl, reset: true },
           {
             onSuccess: (response) => {
-              message.success(response.message || 'DBMS metadata сброшены')
+              message.success(response.message || t(($) => $.messages.dbmsReset))
               closeDbmsMetadataModal()
             },
             onError: (error: Error) => {
-              message.error('Не удалось сбросить DBMS metadata: ' + error.message)
+              message.error(t(($) => $.messages.dbmsResetFailed, { error: error.message }))
             },
           }
         )
@@ -493,14 +496,14 @@ export const Databases = () => {
 
   const openExtensionsDrawer = useCallback((database: Database) => {
     if (!canOperateDatabase(database.id)) {
-      message.error('Недостаточно прав для операций с расширениями')
+      message.error(t(($) => $.messages.accessDeniedExtensions))
       return
     }
     updateSearchParams({
       database: database.id,
       context: 'extensions',
     })
-  }, [canOperateDatabase, message, updateSearchParams])
+  }, [canOperateDatabase, message, t, updateSearchParams])
 
   const closeExtensionsDrawer = useCallback(() => {
     updateSearchParams({
@@ -510,14 +513,14 @@ export const Databases = () => {
 
   const openMetadataManagementDrawer = useCallback((database: Database) => {
     if (!canViewDatabase(database.id)) {
-      message.error('Недостаточно прав для просмотра metadata management')
+      message.error(t(($) => $.messages.accessDeniedMetadata))
       return
     }
     updateSearchParams({
       database: database.id,
       context: 'metadata',
     })
-  }, [canViewDatabase, message, updateSearchParams])
+  }, [canViewDatabase, message, t, updateSearchParams])
 
   const closeMetadataManagementDrawer = useCallback(() => {
     updateSearchParams({
@@ -544,18 +547,21 @@ export const Databases = () => {
     }
 
     modal.info({
-      title: 'Health check queued',
-      content: `Queued ${operationIds.length} operations. Check Operations for progress.`,
+      title: t(($) => $.messages.healthCheckQueuedTitle),
+      content: t(($) => $.messages.healthCheckQueuedDescription, { count: operationIds.length }),
     })
     navigate('/operations')
-  }, [bulkHealthCheck, modal, navigate])
+  }, [bulkHealthCheck, modal, navigate, t])
 
   const runSetStatus = useCallback(async (ids: string[], status: SetDatabaseStatusValue) => {
     const res = await setDatabaseStatus.mutateAsync({ databaseIds: ids, status })
     const missingCount = res.not_found?.length ?? 0
-    const missingSuffix = missingCount > 0 ? `, не найдено: ${missingCount}` : ''
-    message.success(`Статус "${res.status}" применен к ${res.updated}${missingSuffix}`)
-  }, [setDatabaseStatus, message])
+    message.success(
+      missingCount > 0
+        ? t(($) => $.messages.statusAppliedWithMissing, { status: res.status, updated: String(res.updated), missing: String(missingCount) })
+        : t(($) => $.messages.statusApplied, { status: res.status, updated: String(res.updated) })
+    )
+  }, [message, setDatabaseStatus, t])
 
   const markHealthCheckPending = useCallback((databaseId: string, pending: boolean) => {
     setHealthCheckPendingIds((prev) => {
@@ -572,7 +578,7 @@ export const Databases = () => {
   // Handler for single database action (context menu)
   const handleSingleAction = useCallback((action: DatabaseActionKey, database: Database) => {
     if (!canOperateDatabase(database.id)) {
-      message.error('Недостаточно прав для операции')
+      message.error(t(($) => $.messages.accessDeniedOperation))
       return
     }
     if (action === 'more') {
@@ -587,12 +593,12 @@ export const Databases = () => {
       operation: action,
       databases: [{ id: database.id, name: database.name }],
     })
-  }, [canOperateDatabase, message, navigate])
+  }, [canOperateDatabase, message, navigate, t])
 
   // Handler for bulk action
   const handleBulkAction = useCallback((action: string) => {
     if (!canOperateSelected) {
-      message.error('Недостаточно прав для массовой операции')
+      message.error(t(($) => $.messages.accessDeniedBulkOperation))
       return
     }
     setConfirmModal({
@@ -600,7 +606,7 @@ export const Databases = () => {
       operation: action,
       databases: selectedDatabases.map((db) => ({ id: db.id, name: db.name })),
     })
-  }, [canOperateSelected, message, selectedDatabases])
+  }, [canOperateSelected, message, selectedDatabases, t])
 
   // Confirm operation handler
   const handleConfirmOperation = useCallback(async (config?: {
@@ -613,7 +619,7 @@ export const Databases = () => {
     const operationType = confirmModal.operation as RASOperationType
     const dbs = confirmModal.databases
     if (!dbs.every((db) => canOperateDatabase(db.id))) {
-      message.error('Недостаточно прав для операции')
+      message.error(t(($) => $.messages.accessDeniedOperation))
       return
     }
 
@@ -636,7 +642,7 @@ export const Databases = () => {
         },
       }
     )
-  }, [canOperateDatabase, confirmModal, executeRasOperation, message, navigate])
+  }, [canOperateDatabase, confirmModal, executeRasOperation, message, navigate, t])
 
   // Clear selection handler
   const handleClearSelection = useCallback(() => {
@@ -802,15 +808,30 @@ export const Databases = () => {
     })
   }, [updateSearchParams])
 
+  const statusLabels = useMemo(() => ({
+    active: t(($) => $.status.active),
+    inactive: t(($) => $.status.inactive),
+    maintenance: t(($) => $.status.maintenance),
+    error: t(($) => $.status.error),
+    unknown: t(($) => $.status.unknown),
+  }), [t])
+  const healthLabels = useMemo(() => ({
+    ok: t(($) => $.health.ok),
+    degraded: t(($) => $.health.degraded),
+    down: t(($) => $.health.down),
+    unknown: t(($) => $.health.unknown),
+  }), [t])
+  const notAvailable = t(($) => $.shared.notAvailable)
+
   const databasesSubtitle = selectedCluster
-    ? `Manage database metadata, DBMS context, credentials, and extensions for ${selectedCluster.name}.`
-    : 'Manage database metadata, DBMS context, credentials, and extensions from one operational workspace.'
+    ? t(($) => $.page.subtitleCluster, { cluster: selectedCluster.name })
+    : t(($) => $.page.subtitleAll)
 
   const databasesToolbar = (
     <Space direction="vertical" size="middle" style={{ width: '100%', marginBottom: 16 }}>
       {selectedCluster ? (
         <Typography.Text type="secondary">
-          Cluster: {selectedCluster.name}
+          {t(($) => $.page.clusterLabel, { name: selectedCluster.name })}
         </Typography.Text>
       ) : null}
 
@@ -826,37 +847,37 @@ export const Databases = () => {
 
       {canOperateAny && selectedRowKeys.length > 0 ? (
         <Space wrap>
-          <Typography.Text type="secondary">Ops:</Typography.Text>
+          <Typography.Text type="secondary">{t(($) => $.bulk.ops)}</Typography.Text>
           <Button
             icon={<HeartOutlined />}
             onClick={async () => {
               if (!canOperateSelected) {
-                message.error('Недостаточно прав для массовой проверки')
+                message.error(t(($) => $.messages.accessDeniedBulkHealth))
                 return
               }
               try {
                 await runBulkHealthCheck(selectedDatabases.map((d) => d.id))
               } catch (e: unknown) {
-                message.error(`Bulk health check failed: ${getErrorMessage(e)}`)
+                message.error(t(($) => $.messages.bulkHealthCheckFailed, { error: getErrorMessage(e) }))
               }
             }}
             loading={bulkHealthCheck.isPending}
             disabled={!canOperateSelected}
           >
-            Health check
+            {t(($) => $.bulk.healthCheck)}
           </Button>
           <Dropdown
             trigger={['click']}
             disabled={!canManageSelected}
             menu={{
               items: [
-                { key: SetDatabaseStatusRequestStatusEnum.active, label: 'Set Active' },
-                { key: SetDatabaseStatusRequestStatusEnum.inactive, label: 'Set Inactive' },
-                { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: 'Set Maintenance' },
+                { key: SetDatabaseStatusRequestStatusEnum.active, label: t(($) => $.bulk.setActive) },
+                { key: SetDatabaseStatusRequestStatusEnum.inactive, label: t(($) => $.bulk.setInactive) },
+                { key: SetDatabaseStatusRequestStatusEnum.maintenance, label: t(($) => $.bulk.setMaintenance) },
               ],
               onClick: async ({ key }) => {
                 if (!canManageSelected) {
-                  message.error('Недостаточно прав для смены статуса')
+                  message.error(t(($) => $.messages.accessDeniedStatus))
                   return
                 }
                 try {
@@ -864,16 +885,16 @@ export const Databases = () => {
                 } catch (e: unknown) {
                   const status = getErrorStatus(e)
                   if (status === 403) {
-                    message.error('Set status requires manage access')
+                    message.error(t(($) => $.messages.manageAccessRequired))
                     return
                   }
-                  message.error(`Set status failed: ${getErrorMessage(e)}`)
+                  message.error(t(($) => $.messages.statusUpdateFailed, { error: getErrorMessage(e) }))
                 }
               },
             }}
           >
             <Button icon={<EditOutlined />} loading={setDatabaseStatus.isPending} disabled={!canManageSelected}>
-              Set status <DownOutlined />
+              {t(($) => $.bulk.setStatus)} <DownOutlined />
             </Button>
           </Dropdown>
         </Space>
@@ -881,31 +902,38 @@ export const Databases = () => {
     </Space>
   )
 
+  if (!ready) {
+    return null
+  }
+
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Databases"
+          title={t(($) => $.page.title)}
           subtitle={databasesSubtitle}
           actions={(
             <Space wrap size="middle">
               <Select
                 style={{ width: 250 }}
-                placeholder="All clusters"
+                placeholder={t(($) => $.page.allClusters)}
                 allowClear
                 value={clusterIdFromUrl}
                 onChange={handleClusterChange}
                 loading={clustersLoading}
-                aria-label="Cluster filter"
+                aria-label={t(($) => $.page.clusterFilter)}
               >
                 {clusters.map((cluster) => (
                   <Select.Option key={cluster.id} value={cluster.id}>
-                    {cluster.name} ({cluster.databases_count ?? 0} databases)
+                    {t(($) => $.page.clusterOption, {
+                      name: cluster.name,
+                      count: cluster.databases_count ?? 0,
+                    })}
                   </Select.Option>
                 ))}
               </Select>
               <Button type="primary" icon={<PlusOutlined />} disabled={!isStaff}>
-                Add Database
+                {t(($) => $.page.addDatabase)}
               </Button>
             </Space>
           )}
@@ -916,12 +944,12 @@ export const Databases = () => {
         list={(
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <EntityList
-              title="Database Catalog"
+              title={t(($) => $.page.catalogTitle)}
               extra={(
                 <Input.Search
-                  aria-label="Search databases"
+                  aria-label={t(($) => $.page.searchAriaLabel)}
                   allowClear
-                  placeholder="Search databases"
+                  placeholder={t(($) => $.page.searchPlaceholder)}
                   value={table.search}
                   onChange={(event) => table.setSearch(event.target.value)}
                   style={{ width: '100%', maxWidth: 260 }}
@@ -929,11 +957,11 @@ export const Databases = () => {
               )}
               toolbar={databasesToolbar}
               loading={databasesLoading}
-              emptyDescription={selectedCluster ? 'No databases found for the selected cluster.' : 'No databases found.'}
+              emptyDescription={selectedCluster ? t(($) => $.page.emptyCluster) : t(($) => $.page.emptyAll)}
               dataSource={databases}
               renderItem={(database) => {
-                const statusTag = getStatusTag(database.status)
-                const healthTag = getHealthTag(database.last_check_status)
+                const statusTag = getStatusTag(database.status, statusLabels)
+                const healthTag = getHealthTag(database.last_check_status, healthLabels)
                 const selected = database.id === selectedDatabaseIdFromUrl
                 const bulkSelected = selectedRowKeys.includes(database.id)
                 const bulkSelectionDisabled = database.status === 'maintenance' || !canOperateDatabase(database.id)
@@ -945,7 +973,7 @@ export const Databases = () => {
                   >
                     {canSelectRows ? (
                       <Checkbox
-                        aria-label={`Select database ${database.name} for bulk operations`}
+                        aria-label={t(($) => $.page.selectDatabaseForBulk, { name: database.name })}
                         checked={bulkSelected}
                         disabled={bulkSelectionDisabled}
                         onChange={(event) => handleToggleBulkSelection(database, event.target.checked)}
@@ -956,7 +984,7 @@ export const Databases = () => {
                     <Button
                       type="text"
                       block
-                      aria-label={`Open database ${database.name}`}
+                      aria-label={t(($) => $.page.openDatabase, { name: database.name })}
                       aria-pressed={selected}
                       onClick={() => handleSelectDatabase(database)}
                       disabled={!canViewDatabase(database.id)}
@@ -966,16 +994,31 @@ export const Databases = () => {
                         <Space wrap size={[8, 8]}>
                           <Typography.Text strong>{database.name}</Typography.Text>
                           <Tag color={statusTag.color}>{statusTag.label}</Tag>
-                          <Tag color={healthTag.color}>{`Health ${healthTag.label}`}</Tag>
+                          <Tag color={healthTag.color}>{t(($) => $.page.healthBadge, { value: healthTag.label })}</Tag>
                           <Tag color={database.password_configured ? 'green' : 'default'}>
-                            {database.password_configured ? 'Credentials ready' : 'Credentials missing'}
+                            {database.password_configured
+                              ? t(($) => $.page.credentialsReady)
+                              : t(($) => $.page.credentialsMissing)}
                           </Tag>
                         </Space>
                         <Typography.Text type="secondary">
-                          {`${database.host}:${database.port} · ${database.infobase_name || database.base_name || 'n/a'}`}
+                          {t(($) => $.page.catalogLocation, {
+                            host: database.host,
+                            port: String(database.port),
+                            infobase: database.infobase_name || database.base_name || notAvailable,
+                          })}
                         </Typography.Text>
                         <Typography.Text type="secondary">
-                          {`${database.server_address || 'n/a'}:${database.server_port || 'n/a'} · ${database.last_check ? `Last check ${new Date(database.last_check).toLocaleString()}` : 'Never checked'}`}
+                          {database.last_check
+                            ? t(($) => $.page.catalogServerWithLastCheck, {
+                              server: database.server_address || notAvailable,
+                              port: database.server_port != null ? String(database.server_port) : notAvailable,
+                              value: formatters.dateTime(database.last_check, { fallback: notAvailable }),
+                            })
+                            : t(($) => $.page.catalogServerNeverChecked, {
+                              server: database.server_address || notAvailable,
+                              port: database.server_port != null ? String(database.server_port) : notAvailable,
+                            })}
                         </Typography.Text>
                       </Space>
                     </Button>
@@ -1012,19 +1055,21 @@ export const Databases = () => {
           />
         ) : (
           <EntityDetails
-            title="Database Workspace"
+            title={t(($) => $.page.workspaceTitle)}
             loading={selectedDatabaseLoading}
             error={selectedDatabaseIdFromUrl && selectedDatabaseError ? selectedDatabaseError : null}
             empty
             emptyDescription={selectedDatabaseIdFromUrl
-              ? 'Selected database could not be resolved in the current workspace.'
-              : 'Select a database from the catalog to inspect metadata, credentials, DBMS context, and extensions.'
+              ? t(($) => $.page.workspaceMissing)
+              : t(($) => $.page.workspaceEmpty)
             }
           />
         )}
         detailOpen={inspectDetailOpen}
         onCloseDetail={handleCloseDatabaseWorkspace}
-        detailDrawerTitle={selectedDatabase ? `Database Workspace: ${selectedDatabase.name}` : 'Database Workspace'}
+        detailDrawerTitle={selectedDatabase
+          ? t(($) => $.page.workspaceTitleWithName, { name: selectedDatabase.name })
+          : t(($) => $.page.workspaceTitle)}
         listMinWidth={420}
         listMaxWidth={560}
       />

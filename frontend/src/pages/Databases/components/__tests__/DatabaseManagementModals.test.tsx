@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp, Form } from 'antd'
 import { render, screen } from '@testing-library/react'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import type { Database } from '../../../../api/generated/model/database'
 import { DatabaseCredentialsModal } from '../DatabaseCredentialsModal'
@@ -86,6 +87,16 @@ function renderDbmsModal(database: Database | null) {
 }
 
 describe('database management modal shells', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'databases')
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
+  })
+
   it('renders credentials flow inside the canonical modal shell', () => {
     renderCredentialsModal(makeDatabase())
 

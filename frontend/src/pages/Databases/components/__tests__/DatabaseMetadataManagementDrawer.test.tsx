@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ComponentProps } from 'react'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 const { mockTrackUiAction } = vi.hoisted(() => ({
   mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
@@ -78,7 +79,9 @@ const renderDrawer = (props?: Partial<ComponentProps<typeof DatabaseMetadataMana
 }
 
 describe('DatabaseMetadataManagementDrawer', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('ru')
+    await ensureNamespaces('ru', 'databases')
     mockUseReverifyDatabaseConfigurationProfile.mockReset()
     mockUseRefreshDatabaseMetadataSnapshot.mockReset()
     mockUseUpdateDatabaseMasterDataSyncEligibility.mockReset()
@@ -102,6 +105,11 @@ describe('DatabaseMetadataManagementDrawer', () => {
       isPending: false,
       data: null,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
   })
 
   it('renders configuration profile and metadata snapshot sections', async () => {
@@ -321,7 +329,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
 
     expect(screen.getByRole('button', { name: /Перепроверить configuration identity/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /Обновить metadata snapshot/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Save eligibility' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Сохранить eligibility' })).toBeDisabled()
   })
 
   it('tracks reverify and refresh actions from the metadata drawer', async () => {
@@ -459,7 +467,7 @@ describe('DatabaseMetadataManagementDrawer', () => {
     renderDrawer()
     const user = userEvent.setup()
 
-    await user.click(screen.getByRole('radio', { name: /Eligible: include this database in cluster_all/i }))
+    await user.click(screen.getByRole('radio', { name: /Eligible: включить эту базу в cluster_all/i }))
     await user.click(screen.getByTestId('database-metadata-management-save-eligibility'))
 
     expect(mockTrackUiAction).toHaveBeenCalledWith(

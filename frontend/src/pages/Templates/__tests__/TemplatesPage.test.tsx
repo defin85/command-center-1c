@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import type { AuthzContextValue } from '../../../authz/context'
 import { AuthzContext } from '../../../authz/context'
@@ -71,7 +72,9 @@ function renderPage(initialEntries: string[] = ['/templates']) {
 }
 
 describe('TemplatesPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'templates')
     mockListOperationCatalogExposures.mockReset()
     mockValidateOperationCatalogExposure.mockReset()
     mockUseCreateTemplate.mockReset()
@@ -112,6 +115,11 @@ describe('TemplatesPage', () => {
       isError: false,
       isLoading: false,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'templates')
+    await changeLanguage('ru')
   })
 
   it('marks workflow executor templates as compatibility-only and redirects analyst authoring to workflows', async () => {

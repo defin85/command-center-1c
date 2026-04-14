@@ -11,12 +11,13 @@ import { MonitorOutlined, FilterOutlined, StopOutlined, ExportOutlined } from '@
 import type { ColumnsType } from 'antd/es/table'
 
 import type { OperationDetailsModalProps, UIBatchOperation, UITask } from '../types'
-import { getStatusColor, getOperationTypeLabel } from '../utils'
+import { useOperationsTranslation } from '../../../i18n'
 import { useOperation } from '../../../api/queries/operations'
 import type { TimelineStreamEvent } from '../../../hooks/useOperationTimelineStream'
 import { useTableToolkit } from '../../../components/table/hooks/useTableToolkit'
 import { useAuthz } from '../../../authz/useAuthz'
 import { EntityDetails, RouteButton } from '../../../components/platform'
+import { getOperationStatusLabel, getOperationTypeLabel, getStatusColor } from '../utils'
 
 const { Paragraph, Link, Text } = Typography
 const { useBreakpoint } = Grid
@@ -166,6 +167,7 @@ function useOperationInspectModel({
 }: Pick<OperationInspectPanelProps, 'operationId' | 'operationSnapshot' | 'liveEvent'>) {
   const authz = useAuthz()
   const isStaff = authz.isStaff
+  const { t } = useOperationsTranslation()
   const [operationState, setOperationState] = useState<UIBatchOperation | null>(operationSnapshot ?? null)
 
   useEffect(() => {
@@ -188,39 +190,48 @@ function useOperationInspectModel({
   }, [operationState])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'database_name', label: 'Database', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'status', groupLabel: 'Status' },
-    { key: 'duration_seconds', label: 'Duration', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
-    { key: 'retry_count', label: 'Retries', sortable: true, groupKey: 'timing', groupLabel: 'Timing' },
-    { key: 'error_message', label: 'Error', groupKey: 'details', groupLabel: 'Details' },
-  ], [])
+    { key: 'database_name', label: t(($) => $.inspect.database), sortable: true, groupKey: 'core', groupLabel: t(($) => $.inspect.database) },
+    { key: 'status', label: t(($) => $.table.status), sortable: true, groupKey: 'status', groupLabel: t(($) => $.table.status) },
+    { key: 'duration_seconds', label: t(($) => $.table.duration), sortable: true, groupKey: 'timing', groupLabel: t(($) => $.table.duration) },
+    { key: 'retry_count', label: t(($) => $.inspect.retriesTitle), sortable: true, groupKey: 'timing', groupLabel: t(($) => $.inspect.retriesTitle) },
+    { key: 'error_message', label: t(($) => $.inspect.error), groupKey: 'details', groupLabel: t(($) => $.inspect.error) },
+  ], [t])
 
   const taskColumns: ColumnsType<UITask> = useMemo(() => [
     {
-      title: 'Database',
+      title: t(($) => $.inspect.database),
       dataIndex: 'database_name',
       key: 'database_name',
     },
     {
-      title: 'Status',
+      title: t(($) => $.table.status),
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => <Tag color={getStatusColor(status)}>{status}</Tag>,
+      render: (status: string) => <Tag color={getStatusColor(status)}>{getOperationStatusLabel(status, t)}</Tag>,
     },
     {
-      title: 'Duration',
+      title: t(($) => $.table.duration),
       dataIndex: 'duration_seconds',
       key: 'duration_seconds',
-      render: (seconds: number | null) => (seconds ? `${seconds.toFixed(2)}s` : '-'),
+      render: (seconds: number | null) => (
+        seconds
+          ? t(($) => $.inspect.duration, { value: `${seconds.toFixed(2)}s` })
+          : t(($) => $.inspect.noValue)
+      ),
     },
     {
-      title: 'Retries',
+      title: t(($) => $.inspect.retriesTitle),
       dataIndex: 'retry_count',
       key: 'retry_count',
-      render: (count: number, record: UITask) => `${count}/${record.max_retries}`,
+      render: (count: number, record: UITask) => (
+        t(($) => $.inspect.retries, {
+          current: String(count),
+          max: String(record.max_retries),
+        })
+      ),
     },
     {
-      title: 'Error',
+      title: t(($) => $.inspect.error),
       dataIndex: 'error_message',
       key: 'error_message',
       render: (_error: string, record: UITask) => {
@@ -229,7 +240,7 @@ function useOperationInspectModel({
         const error = (record.error_message ?? '').trim()
         const primary = stderr ?? error
 
-        if (!primary) return '-'
+        if (!primary) return t(($) => $.inspect.noValue)
 
         const showExitStatus = exitStatus !== null && primary !== `exit status ${exitStatus}`
 
@@ -238,12 +249,12 @@ function useOperationInspectModel({
             <Text type="danger" ellipsis={{ tooltip: primary }} style={{ maxWidth: 420 }}>
               {primary}
             </Text>
-            {showExitStatus ? <Text type="secondary">exit status {exitStatus}</Text> : null}
+            {showExitStatus ? <Text type="secondary">{t(($) => $.inspect.exitStatus, { value: String(exitStatus) })}</Text> : null}
           </Space>
         )
       },
     },
-  ], [])
+  ], [t])
 
   const taskTable = useTableToolkit({
     tableId: 'operation_tasks',
@@ -331,6 +342,7 @@ function OperationInspectBody({
   taskColumns,
   taskTable,
 }: OperationInspectBodyProps) {
+  const { t } = useOperationsTranslation()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -342,7 +354,7 @@ function OperationInspectBody({
     )
 
   if (!operationId || !operationState) {
-    return <Text type="secondary">Select an operation to inspect status, tasks, and execution context.</Text>
+    return <Text type="secondary">{t(($) => $.page.inspectEmptyDescription)}</Text>
   }
 
   const showCancel = canCancel && typeof onCancel === 'function' && CANCELLABLE_OPERATION_STATUSES.has(operationState.status)
@@ -363,7 +375,7 @@ function OperationInspectBody({
         }}
       >
         <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <strong>Operation ID:</strong>
+          <strong>{t(($) => $.inspect.operationId)}</strong>
           <Paragraph
             copyable={{ text: operationState.id }}
             style={{
@@ -384,7 +396,7 @@ function OperationInspectBody({
               icon={<StopOutlined />}
               onClick={() => onCancel(operationState.id)}
             >
-              Cancel
+              {t(($) => $.inspect.cancel)}
             </Button>
           ) : null}
           <Button
@@ -392,7 +404,7 @@ function OperationInspectBody({
             icon={<MonitorOutlined />}
             onClick={() => onTimeline(operationState.id)}
           >
-            Timeline
+            {t(($) => $.inspect.timeline)}
           </Button>
         </Space>
       </div>
@@ -400,7 +412,7 @@ function OperationInspectBody({
       {operationState.workflow_execution_id ? (
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <Space wrap size={[8, 8]}>
-            <strong>Workflow Execution:</strong>
+            <strong>{t(($) => $.inspect.workflowExecution)}</strong>
             <Text code style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
               {operationState.workflow_execution_id}
             </Text>
@@ -410,7 +422,7 @@ function OperationInspectBody({
               icon={<ExportOutlined />}
               to={`/workflows/executions/${operationState.workflow_execution_id}`}
             >
-              Open workflow diagnostics
+              {t(($) => $.inspect.openWorkflowDiagnostics)}
             </RouteButton>
             {onFilterWorkflow ? (
               <Button
@@ -422,13 +434,13 @@ function OperationInspectBody({
                   }
                 }}
               >
-                Filter
+                {t(($) => $.inspect.filter)}
               </Button>
             ) : null}
           </Space>
           {operationState.node_id ? (
             <Space wrap size={[8, 8]}>
-              <strong>Node:</strong>
+              <strong>{t(($) => $.inspect.node)}</strong>
               <Paragraph
                 copyable={{ text: operationState.node_id }}
                 style={{ marginBottom: 0, display: 'block', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
@@ -445,7 +457,7 @@ function OperationInspectBody({
                     }
                   }}
                 >
-                  Filter node
+                  {t(($) => $.inspect.filterNode)}
                 </Button>
               ) : null}
             </Space>
@@ -455,8 +467,8 @@ function OperationInspectBody({
 
       {operationState.trace_id ? (
         <div>
-          <strong>Trace:</strong>{' '}
-          <Tooltip title="Открыть trace через API Gateway">
+          <strong>{t(($) => $.inspect.trace)}</strong>{' '}
+          <Tooltip title={t(($) => $.inspect.traceTooltip)}>
             <Link
               href={`/api/v2/tracing/traces/${operationState.trace_id}`}
               target="_blank"
@@ -470,17 +482,17 @@ function OperationInspectBody({
       ) : null}
 
       <div>
-        <strong>Description:</strong> {operationState.description || '-'}
+        <strong>{t(($) => $.inspect.description)}</strong> {operationState.description || t(($) => $.inspect.noValue)}
       </div>
       <div>
-        <strong>Type:</strong> {getOperationTypeLabel(operationState.operation_type)}
+        <strong>{t(($) => $.inspect.type)}</strong> {getOperationTypeLabel(operationState.operation_type, t)}
       </div>
       <div>
-        <strong>Target Entity:</strong> {operationState.target_entity || '-'}
+        <strong>{t(($) => $.inspect.targetEntity)}</strong> {operationState.target_entity || t(($) => $.inspect.noValue)}
       </div>
       {executionPlanText ? (
         <div>
-          <strong>Execution Plan (staff):</strong>
+          <strong>{t(($) => $.inspect.executionPlan)}</strong>
           <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
             {executionPlanText}
           </pre>
@@ -488,7 +500,7 @@ function OperationInspectBody({
       ) : null}
       {bindings.length > 0 ? (
         <div>
-          <strong>Binding Provenance (staff):</strong>
+          <strong>{t(($) => $.inspect.bindingProvenance)}</strong>
           <div
             data-testid="operation-inspect-bindings-surface"
             style={{
@@ -509,14 +521,14 @@ function OperationInspectBody({
               >
                 <Space direction="vertical" size={2} style={{ width: '100%' }}>
                   <Text strong style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
-                    {binding.target_ref || 'Unnamed binding target'}
+                    {binding.target_ref || t(($) => $.inspect.unnamedBindingTarget)}
                   </Text>
-                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Source: ${binding.source_ref || '-'}`}</Text>
-                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Resolve: ${binding.resolve_at || '-'}`}</Text>
-                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Sensitive: ${binding.sensitive ? 'yes' : 'no'}`}</Text>
-                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Status: ${binding.status || '-'}`}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t(($) => $.inspect.source, { value: binding.source_ref || t(($) => $.inspect.noValue) })}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t(($) => $.inspect.resolve, { value: binding.resolve_at || t(($) => $.inspect.noValue) })}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t(($) => $.inspect.sensitive, { value: binding.sensitive ? t(($) => $.inspect.yes) : t(($) => $.inspect.no) })}</Text>
+                  <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t(($) => $.inspect.status, { value: binding.status || t(($) => $.inspect.noValue) })}</Text>
                   {binding.reason ? (
-                    <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{`Reason: ${binding.reason}`}</Text>
+                    <Text type="secondary" style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{t(($) => $.inspect.reason, { value: binding.reason })}</Text>
                   ) : null}
                 </Space>
               </div>
@@ -527,19 +539,24 @@ function OperationInspectBody({
       {hasTaskTelemetry ? (
         <>
           <div>
-            <strong>Progress:</strong> <Progress percent={operationState.progress} />
+            <strong>{t(($) => $.inspect.progress)}</strong> <Progress percent={operationState.progress} />
           </div>
           <div>
-            <strong>Statistics:</strong>{' '}
-            {`${operationState.completed_tasks} completed, ${operationState.failed_tasks} failed, ${queuedTasks} queued, ${operationState.total_tasks} total`}
+            <strong>{t(($) => $.inspect.statistics)}</strong>{' '}
+            {t(($) => $.inspect.statisticsSummary, {
+              completed: String(operationState.completed_tasks),
+              failed: String(operationState.failed_tasks),
+              queued: String(queuedTasks),
+              total: String(operationState.total_tasks),
+            })}
           </div>
         </>
       ) : (
         <Alert
           type="info"
           showIcon
-          message="No task telemetry yet"
-          description="This execution currently exposes no task workset telemetry. Inspect the execution plan, bindings, or timeline context instead."
+          message={t(($) => $.inspect.noTaskTelemetryTitle)}
+          description={t(($) => $.inspect.noTaskTelemetryDescription)}
           data-testid="operation-inspect-no-task-telemetry"
         />
       )}
@@ -550,19 +567,19 @@ function OperationInspectBody({
         <Alert
           type="error"
           showIcon
-          message="Operation Failed"
+          message={t(($) => $.inspect.failedTitle)}
           description={String(
             (operationState.metadata as Record<string, unknown>).error,
           )}
         />
       ) : null}
 
-      <h3 style={{ marginBottom: 0 }}>Tasks</h3>
+      <h3 style={{ marginBottom: 0 }}>{t(($) => $.inspect.tasks)}</h3>
       {hasTaskTelemetry ? (
         isNarrow ? (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             {tasksLoading && operationState.tasks.length === 0 ? (
-              <Text type="secondary">Loading task telemetry...</Text>
+              <Text type="secondary">{t(($) => $.inspect.loadingTaskTelemetry)}</Text>
             ) : null}
             {operationState.tasks.map((task) => (
               <div
@@ -576,13 +593,18 @@ function OperationInspectBody({
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                   <Space wrap size={[8, 8]}>
                     <Text strong>{task.database_name}</Text>
-                    <Tag color={getStatusColor(task.status)}>{task.status}</Tag>
+                    <Tag color={getStatusColor(task.status)}>{getOperationStatusLabel(task.status, t)}</Tag>
                   </Space>
                   <Text type="secondary">
-                    {`Duration: ${task.duration_seconds ? `${task.duration_seconds.toFixed(2)}s` : '-'}`}
+                    {t(($) => $.inspect.duration, {
+                      value: task.duration_seconds ? `${task.duration_seconds.toFixed(2)}s` : t(($) => $.inspect.noValue),
+                    })}
                   </Text>
                   <Text type="secondary">
-                    {`Retries: ${task.retry_count}/${task.max_retries}`}
+                    {t(($) => $.inspect.retries, {
+                      current: String(task.retry_count),
+                      max: String(task.max_retries),
+                    })}
                   </Text>
                   {task.error_message ? (
                     <Text type="danger">{task.error_message}</Text>
@@ -623,7 +645,7 @@ function OperationInspectBody({
         )
       ) : (
         <Text type="secondary">
-          Task list will appear when runtime reports a task workset for this operation.
+          {t(($) => $.inspect.taskListPending)}
         </Text>
       )}
     </Space>
@@ -631,10 +653,11 @@ function OperationInspectBody({
 }
 
 export function OperationInspectPanel(props: OperationInspectPanelProps) {
+  const { t } = useOperationsTranslation()
   const model = useOperationInspectModel(props)
   const title = model.operationState
-    ? `Operation Details: ${model.operationState.name}`
-    : 'Operation Details'
+    ? t(($) => $.inspect.titleWithName, { name: model.operationState.name })
+    : t(($) => $.inspect.title)
 
   return (
     <EntityDetails title={title}>
@@ -656,6 +679,7 @@ export const OperationDetailsModal = ({
   onTimeline,
   liveEvent,
 }: OperationDetailsModalProps) => {
+  const { t } = useOperationsTranslation()
   const model = useOperationInspectModel({
     operationId: visible ? operation?.id ?? null : null,
     operationSnapshot: operation,
@@ -664,7 +688,7 @@ export const OperationDetailsModal = ({
 
   return (
     <Modal
-      title={model.operationState ? `Operation Details: ${model.operationState.name}` : 'Operation Details'}
+      title={model.operationState ? t(($) => $.inspect.titleWithName, { name: model.operationState.name }) : t(($) => $.inspect.title)}
       open={visible}
       onCancel={onClose}
       width={1000}

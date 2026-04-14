@@ -1,11 +1,14 @@
 import adminSupportEn from './locales/en/adminSupport'
 import artifactsEn from './locales/en/artifacts'
 import commonEn from './locales/en/common'
+import type databasesSchema from './locales/ru/databases'
 import decisionsEn from './locales/en/decisions'
 import errorsEn from './locales/en/errors'
+import type operationsSchema from './locales/ru/operations'
 import platformEn from './locales/en/platform'
 import serviceMeshEn from './locales/en/serviceMesh'
 import shellEn from './locales/en/shell'
+import type templatesSchema from './locales/ru/templates'
 import adminSupportRu from './locales/ru/adminSupport'
 import artifactsRu from './locales/ru/artifacts'
 import commonRu from './locales/ru/common'
@@ -30,7 +33,15 @@ export const eagerNamespaces = [
   'serviceMesh',
   'decisions',
 ] as const
-export const lazyNamespaces = ['systemStatus', 'dashboard', 'clusters', 'rbac'] as const
+export const lazyNamespaces = [
+  'systemStatus',
+  'dashboard',
+  'clusters',
+  'rbac',
+  'operations',
+  'databases',
+  'templates',
+] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
 export type TranslationNamespace = (typeof allNamespaces)[number]
@@ -50,6 +61,9 @@ export type AppCatalogSchema = {
   clusters: typeof clustersRu
   rbac: typeof rbacRu
   adminSupport: typeof adminSupportRu
+  operations: typeof operationsSchema
+  databases: typeof databasesSchema
+  templates: typeof templatesSchema
 }
 
 export const defaultNamespace = 'common'

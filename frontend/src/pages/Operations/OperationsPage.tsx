@@ -25,7 +25,8 @@ import type { NewOperationData } from './components/NewOperationWizard'
 import type { UIBatchOperation } from './types'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { EntityDetails, EntityList, MasterDetailShell, PageHeader, WorkspacePage } from '../../components/platform'
-import { getOperationTypeLabel, getStatusColor } from './utils'
+import { useLocaleFormatters, useOperationsTranslation } from '../../i18n'
+import { getOperationStatusLabel, getOperationTypeLabel, getStatusColor } from './utils'
 
 const api = getV2()
 
@@ -70,21 +71,15 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
 
 const formatShortRef = (value: string | undefined) => (value ? `${value.slice(0, 8)}...` : null)
 
-const formatOperationTaskSummary = (operation: UIBatchOperation) => {
-  if (operation.total_tasks <= 0) {
-    return 'No task telemetry yet'
-  }
-
-  const failedSuffix = operation.failed_tasks > 0 ? `, ${operation.failed_tasks} failed` : ''
-  return `${operation.completed_tasks}/${operation.total_tasks} tasks${failedSuffix}`
-}
-
 /**
  * OperationsPage - Main page with tabs for operations list and live monitor
  */
 export const OperationsPage = () => {
   const authz = useAuthz()
   const isStaff = authz.isStaff
+  const { t, ready } = useOperationsTranslation()
+  const formatters = useLocaleFormatters()
+
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedOperationIdFromUrl = searchParams.get('operation') || undefined
   const activeView = parseOperationsView(searchParams.get('tab'))
@@ -231,17 +226,36 @@ export const OperationsPage = () => {
   )
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'id', label: 'Operation ID', groupKey: 'core', groupLabel: 'Core' },
-    { key: 'workflow_execution_id', label: 'Workflow', groupKey: 'workflow', groupLabel: 'Workflow' },
-    { key: 'operation_type', label: 'Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'progress', label: 'Progress', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'databases', label: 'Databases', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'created_at', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'duration_seconds', label: 'Duration', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    { key: 'name', label: t(($) => $.table.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.table.name) },
+    { key: 'id', label: t(($) => $.table.operationId), groupKey: 'core', groupLabel: t(($) => $.table.name) },
+    { key: 'workflow_execution_id', label: t(($) => $.table.workflow), groupKey: 'workflow', groupLabel: t(($) => $.table.workflow) },
+    { key: 'operation_type', label: t(($) => $.table.type), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.table.status) },
+    { key: 'status', label: t(($) => $.table.status), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.table.status) },
+    { key: 'progress', label: t(($) => $.table.progress), groupKey: 'meta', groupLabel: t(($) => $.table.status) },
+    { key: 'databases', label: t(($) => $.table.databases), groupKey: 'meta', groupLabel: t(($) => $.table.status) },
+    { key: 'created_at', label: t(($) => $.table.created), sortable: true, groupKey: 'time', groupLabel: t(($) => $.table.created) },
+    { key: 'duration_seconds', label: t(($) => $.table.duration), sortable: true, groupKey: 'time', groupLabel: t(($) => $.table.created) },
+    { key: 'actions', label: t(($) => $.table.actions), groupKey: 'actions', groupLabel: t(($) => $.table.actions) },
+  ], [t])
+
+  const formatOperationTaskSummary = useCallback((operation: UIBatchOperation) => {
+    if (operation.total_tasks <= 0) {
+      return t(($) => $.page.taskSummaryNone)
+    }
+
+    if (operation.failed_tasks > 0) {
+      return t(($) => $.page.taskSummaryWithFailed, {
+        completed: String(operation.completed_tasks),
+        total: String(operation.total_tasks),
+        failed: String(operation.failed_tasks),
+      })
+    }
+
+    return t(($) => $.page.taskSummary, {
+      completed: String(operation.completed_tasks),
+      total: String(operation.total_tasks),
+    })
+  }, [t])
 
   const operationsColumns = useMemo(
     () => buildOperationsColumns({
@@ -250,8 +264,10 @@ export const OperationsPage = () => {
       onFilterWorkflow: handleFilterWorkflow,
       onFilterNode: handleFilterNode,
       canCancel,
+      formatDateTime: (value) => formatters.dateTime(value, { fallback: t(($) => $.inspect.noValue) }),
+      t,
     }),
-    [canCancel, handleCancel, handleFilterNode, handleFilterWorkflow, handleViewDetails]
+    [canCancel, formatters, handleCancel, handleFilterNode, handleFilterWorkflow, handleViewDetails, t]
   )
 
   const table = useTableToolkit({
@@ -306,9 +322,7 @@ export const OperationsPage = () => {
   const inspectVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'inspect'
   const timelineVisible = Boolean(selectedOperationIdFromUrl) && activeView === 'timeline'
 
-  const error = queryError
-    ? 'Failed to load operations. Please try again.'
-    : null
+  const error = queryError ? t(($) => $.page.failedToLoad) : null
 
   const handleRefresh = useCallback(() => {
     refetch()
@@ -372,32 +386,32 @@ export const OperationsPage = () => {
     <>
       {workflowExecutionId ? (
         <Tag closable onClose={() => updateSearchParams({ workflow_execution_id: null })}>
-          Workflow: {workflowExecutionId}
+          {t(($) => $.page.activeFilters.workflow, { value: workflowExecutionId })}
         </Tag>
       ) : null}
       {operationIdFilter ? (
         <Tag closable onClose={() => updateSearchParams({ operation_id: null })}>
-          Operation: {operationIdFilter}
+          {t(($) => $.page.activeFilters.operation, { value: operationIdFilter })}
         </Tag>
       ) : null}
       {nodeId ? (
         <Tag closable onClose={() => updateSearchParams({ node_id: null })}>
-          Node: {nodeId}
+          {t(($) => $.page.activeFilters.node, { value: nodeId })}
         </Tag>
       ) : null}
       {rootOperationId ? (
         <Tag closable onClose={() => updateSearchParams({ root_operation_id: null })}>
-          Root: {rootOperationId}
+          {t(($) => $.page.activeFilters.root, { value: rootOperationId })}
         </Tag>
       ) : null}
       {executionConsumer ? (
         <Tag closable onClose={() => updateSearchParams({ execution_consumer: null })}>
-          Consumer: {executionConsumer}
+          {t(($) => $.page.activeFilters.consumer, { value: executionConsumer })}
         </Tag>
       ) : null}
       {lane ? (
         <Tag closable onClose={() => updateSearchParams({ lane: null })}>
-          Lane: {lane}
+          {t(($) => $.page.activeFilters.lane, { value: lane })}
         </Tag>
       ) : null}
     </>
@@ -646,12 +660,16 @@ export const OperationsPage = () => {
     }))
   }, [muxEvent, applyTimelineUpdate])
 
+  if (!ready) {
+    return null
+  }
+
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Operations Monitor"
-          subtitle="Inspect, trace, and control batch operations without leaving the catalog."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Space wrap>
               <Button
@@ -659,7 +677,7 @@ export const OperationsPage = () => {
                 onClick={handleRefresh}
                 loading={loading}
               >
-                Refresh
+                {t(($) => $.page.refresh)}
               </Button>
               <Button
                 type="primary"
@@ -667,7 +685,7 @@ export const OperationsPage = () => {
                 onClick={() => setWizardVisible(true)}
                 disabled={!canCreateOperation}
               >
-                New Operation
+                {t(($) => $.page.newOperation)}
               </Button>
             </Space>
           )}
@@ -678,12 +696,12 @@ export const OperationsPage = () => {
         list={(
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <EntityList
-              title="Operations Catalog"
+              title={t(($) => $.page.catalogTitle)}
               extra={(
                 <Input.Search
-                  aria-label="Search operations"
+                  aria-label={t(($) => $.page.searchAriaLabel)}
                   allowClear
-                  placeholder="Search operations"
+                  placeholder={t(($) => $.page.searchPlaceholder)}
                   value={table.search}
                   onChange={(event) => table.setSearch(event.target.value)}
                   style={{ width: '100%', maxWidth: 260 }}
@@ -691,7 +709,7 @@ export const OperationsPage = () => {
               )}
               toolbar={operationsToolbar}
               loading={loading}
-              emptyDescription="No operations match the current filters."
+              emptyDescription={t(($) => $.page.emptyDescription)}
               dataSource={catalogOperations}
               renderItem={(operation) => {
                 const selected = operation.id === selectedOperationIdFromUrl
@@ -700,7 +718,7 @@ export const OperationsPage = () => {
                     key={operation.id}
                     type="text"
                     block
-                    aria-label={`Open operation ${operation.name}`}
+                    aria-label={t(($) => $.page.openOperation, { name: operation.name })}
                     aria-pressed={selected}
                     onClick={() => handleViewDetails(operation)}
                     style={buildCatalogButtonStyle(selected)}
@@ -708,19 +726,26 @@ export const OperationsPage = () => {
                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
                       <Space wrap size={[8, 8]}>
                         <Typography.Text strong>{operation.name}</Typography.Text>
-                        <Tag color={getStatusColor(operation.status)}>{operation.status.toUpperCase()}</Tag>
+                        <Tag color={getStatusColor(operation.status)}>{getOperationStatusLabel(operation.status, t)}</Tag>
                         {operation.workflow_execution_id ? (
-                          <Typography.Text code>{`workflow ${formatShortRef(operation.workflow_execution_id)}`}</Typography.Text>
+                          <Typography.Text code>
+                            {t(($) => $.page.workflowShort, { value: formatShortRef(operation.workflow_execution_id) ?? operation.workflow_execution_id })}
+                          </Typography.Text>
                         ) : null}
                       </Space>
                       <Typography.Text type="secondary">
-                        {`${getOperationTypeLabel(operation.operation_type)} · ${operation.target_entity || 'No target entity'}`}
+                        {t(($) => $.page.typeAndTarget, {
+                          type: getOperationTypeLabel(operation.operation_type, t),
+                          target: operation.target_entity || t(($) => $.page.noTargetEntity),
+                        })}
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        {`${formatOperationTaskSummary(operation)} · ${operation.database_names.length} db(s)`}
+                        {`${formatOperationTaskSummary(operation)} · ${t(($) => $.page.databaseCount, { value: String(operation.database_names.length) })}`}
                       </Typography.Text>
                       <Typography.Text type="secondary">
-                        {`Created ${new Date(operation.created_at).toLocaleString()}`}
+                        {t(($) => $.page.createdAt, {
+                          value: formatters.dateTime(operation.created_at, { fallback: t(($) => $.inspect.noValue) }),
+                        })}
                       </Typography.Text>
                     </Space>
                   </Button>
@@ -757,15 +782,15 @@ export const OperationsPage = () => {
             onCancel={handleCancel}
           />
         ) : (
-          <EntityDetails title="Operation Inspect">
+          <EntityDetails title={t(($) => $.inspect.title)}>
             <Typography.Text type="secondary">
-              Select an operation to inspect status, task execution, and workflow context.
+              {t(($) => $.page.inspectEmptyDescription)}
             </Typography.Text>
           </EntityDetails>
         )}
         detailOpen={inspectVisible}
         onCloseDetail={handleInspectClose}
-        detailDrawerTitle={selectedOperation?.name ?? 'Operation Details'}
+        detailDrawerTitle={selectedOperation?.name ?? t(($) => $.page.detailDrawerTitle)}
         listMinWidth={420}
         listMaxWidth={560}
       />

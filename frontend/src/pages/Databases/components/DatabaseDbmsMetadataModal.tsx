@@ -3,6 +3,7 @@ import type { FormInstance } from 'antd'
 
 import type { Database } from '../../../api/generated/model/database'
 import { ModalFormShell } from '../../../components/platform'
+import { useDatabasesTranslation } from '../../../i18n'
 
 export type DatabaseDbmsMetadataModalProps = {
   open: boolean
@@ -23,6 +24,7 @@ export function DatabaseDbmsMetadataModal({
   onSave,
   onReset,
 }: DatabaseDbmsMetadataModalProps) {
+  const { t } = useDatabasesTranslation()
   const dbAny = (database ?? null) as (Database & { dbms?: string | null; db_server?: string | null; db_name?: string | null }) | null
   const disableReset = !dbAny?.dbms && !dbAny?.db_server && !dbAny?.db_name
 
@@ -31,27 +33,29 @@ export function DatabaseDbmsMetadataModal({
       open={open}
       onClose={onCancel}
       onSubmit={onSave}
-      title={database ? `DBMS metadata: ${database.name}` : 'DBMS metadata'}
-      subtitle="Database-scoped DBMS identity override"
-      submitText="Save"
+      title={database
+        ? t(($) => $.modals.dbms.titleWithName, { name: database.name })
+        : t(($) => $.modals.dbms.title)}
+      subtitle={t(($) => $.modals.dbms.subtitle)}
+      submitText={t(($) => $.modals.dbms.save)}
       confirmLoading={saving}
       forceRender
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
           <Button danger onClick={onReset} disabled={disableReset}>
-            Reset
+            {t(($) => $.modals.dbms.reset)}
           </Button>
         </Space>
         <Form form={form} layout="vertical">
-          <Form.Item label="DBMS" name="dbms" htmlFor="database-dbms-metadata-dbms">
-            <Input id="database-dbms-metadata-dbms" placeholder="e.g. PostgreSQL" />
+          <Form.Item label={t(($) => $.modals.dbms.dbmsLabel)} name="dbms" htmlFor="database-dbms-metadata-dbms">
+            <Input id="database-dbms-metadata-dbms" placeholder={t(($) => $.modals.dbms.dbmsPlaceholder)} />
           </Form.Item>
-          <Form.Item label="DB server" name="db_server" htmlFor="database-dbms-metadata-db-server">
-            <Input id="database-dbms-metadata-db-server" placeholder="e.g. db.example.local" />
+          <Form.Item label={t(($) => $.modals.dbms.serverLabel)} name="db_server" htmlFor="database-dbms-metadata-db-server">
+            <Input id="database-dbms-metadata-db-server" placeholder={t(($) => $.modals.dbms.serverPlaceholder)} />
           </Form.Item>
-          <Form.Item label="DB name" name="db_name" htmlFor="database-dbms-metadata-db-name">
-            <Input id="database-dbms-metadata-db-name" placeholder="e.g. my_infobase" />
+          <Form.Item label={t(($) => $.modals.dbms.nameLabel)} name="db_name" htmlFor="database-dbms-metadata-db-name">
+            <Input id="database-dbms-metadata-db-name" placeholder={t(($) => $.modals.dbms.namePlaceholder)} />
           </Form.Item>
         </Form>
       </Space>

@@ -1,16 +1,25 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 import { buildOperationsColumns } from '../OperationsTableColumns'
 import type { UIBatchOperation } from '../../types'
+import { changeLanguage, ensureNamespaces, i18n } from '@/i18n/runtime'
+import type { useOperationsTranslation } from '@/i18n'
 
 describe('OperationsTableColumns a11y', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'operations')
+  })
+
   it('adds aria-label for icon-only filter controls', () => {
     const columns = buildOperationsColumns({
       onViewDetails: vi.fn(),
       onCancel: vi.fn(),
       onFilterWorkflow: vi.fn(),
       onFilterNode: vi.fn(),
+      formatDateTime: (value) => value,
+      t: i18n.getFixedT('en', 'operations') as ReturnType<typeof useOperationsTranslation>['t'],
     })
 
     const workflowColumn = columns.find((col) => col.key === 'workflow_execution_id')
@@ -39,4 +48,3 @@ describe('OperationsTableColumns a11y', () => {
     expect(screen.getByLabelText('Filter by node')).toBeInTheDocument()
   })
 })
-

@@ -10,6 +10,8 @@ import { Button, Descriptions, Space, Typography } from 'antd'
 
 import type { Database } from '../../../api/generated/model/database'
 import { EntityDetails, RouteButton, StatusBadge } from '../../../components/platform'
+import { useDatabasesTranslation, useLocaleFormatters } from '../../../i18n'
+import { getHealthTag, getStatusTag } from '../../../utils/databaseStatus'
 
 const { Text } = Typography
 
@@ -31,10 +33,10 @@ type DatabaseWorkspaceDetailPanelProps = {
   onOpenContext: (context: Exclude<DatabaseManagementContext, 'inspect'>) => void
 }
 
-const formatValue = (value?: string | number | null) => {
-  if (value === null || value === undefined) return 'n/a'
+const formatValue = (value: string | number | null | undefined, fallback: string) => {
+  if (value === null || value === undefined) return fallback
   if (typeof value === 'string') {
-    return value.trim() ? value : 'n/a'
+    return value.trim() ? value : fallback
   }
   return String(value)
 }
@@ -61,19 +63,56 @@ export function DatabaseWorkspaceDetailPanel({
   mutatingDisabled,
   onOpenContext,
 }: DatabaseWorkspaceDetailPanelProps) {
+  const { t } = useDatabasesTranslation()
+  const formatters = useLocaleFormatters()
   const mutatingContextDisabled = mutatingDisabled || !canManage
   const extensionsDisabled = mutatingDisabled || !canOperate
+  const notAvailable = t(($) => $.shared.notAvailable)
+  const statusLabels = {
+    active: t(($) => $.status.active),
+    inactive: t(($) => $.status.inactive),
+    maintenance: t(($) => $.status.maintenance),
+    error: t(($) => $.status.error),
+    unknown: t(($) => $.status.unknown),
+  } as const
+  const healthLabels = {
+    ok: t(($) => $.health.ok),
+    degraded: t(($) => $.health.degraded),
+    down: t(($) => $.health.down),
+    unknown: t(($) => $.health.unknown),
+  } as const
+  const statusTag = getStatusTag(database.status, statusLabels)
+  const healthTag = getHealthTag(database.last_check_status, healthLabels)
+  const restrictionsValue = t(($) => $.detail.restrictionsValue, {
+    jobs: database.scheduled_jobs_deny == null
+      ? t(($) => $.shared.unknown)
+      : database.scheduled_jobs_deny
+        ? t(($) => $.shared.yes)
+        : t(($) => $.shared.no),
+    sessions: database.sessions_deny == null
+      ? t(($) => $.shared.unknown)
+      : database.sessions_deny
+        ? t(($) => $.shared.yes)
+        : t(($) => $.shared.no),
+  })
 
   return (
-    <EntityDetails title={`Database Workspace: ${database.name}`}>
+    <EntityDetails title={t(($) => $.detail.titleWithName, { name: database.name })}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <Space size={[8, 8]} wrap>
-          <StatusBadge status={database.status ?? 'unknown'} label={database.status_display || database.status || 'Unknown'} />
-          <StatusBadge status={mapHealthStatus(database.last_check_status)} label={`Health: ${database.last_check_status}`} />
-          <StatusBadge status={database.password_configured ? 'active' : 'warning'} label={database.password_configured ? 'Credentials configured' : 'Credentials missing'} />
+          <StatusBadge status={database.status ?? 'unknown'} label={statusTag.label} />
+          <StatusBadge status={mapHealthStatus(database.last_check_status)} label={t(($) => $.detail.badges.health, { value: healthTag.label })} />
+          <StatusBadge
+            status={database.password_configured ? 'active' : 'warning'}
+            label={database.password_configured
+              ? t(($) => $.detail.badges.credentialsConfigured)
+              : t(($) => $.detail.badges.credentialsMissing)}
+          />
           <StatusBadge
             status={database.ibcmd_connection ? 'active' : 'warning'}
-            label={database.ibcmd_connection ? 'IBCMD profile configured' : 'IBCMD profile missing'}
+            label={database.ibcmd_connection
+              ? t(($) => $.detail.badges.ibcmdConfigured)
+              : t(($) => $.detail.badges.ibcmdMissing)}
           />
         </Space>
 
@@ -85,7 +124,7 @@ export function DatabaseWorkspaceDetailPanel({
             disabled={!canView}
             data-testid="database-workspace-open-metadata"
           >
-            Metadata management
+            {t(($) => $.detail.actions.metadata)}
           </Button>
           <Button
             icon={<DatabaseOutlined />}
@@ -94,7 +133,7 @@ export function DatabaseWorkspaceDetailPanel({
             disabled={mutatingContextDisabled}
             data-testid="database-workspace-open-dbms"
           >
-            DBMS metadata
+            {t(($) => $.detail.actions.dbms)}
           </Button>
           <Button
             icon={<LinkOutlined />}
@@ -103,7 +142,7 @@ export function DatabaseWorkspaceDetailPanel({
             disabled={mutatingContextDisabled}
             data-testid="database-workspace-open-ibcmd"
           >
-            IBCMD profile
+            {t(($) => $.detail.actions.ibcmd)}
           </Button>
           <Button
             icon={<KeyOutlined />}
@@ -112,7 +151,7 @@ export function DatabaseWorkspaceDetailPanel({
             disabled={mutatingContextDisabled}
             data-testid="database-workspace-open-credentials"
           >
-            Credentials
+            {t(($) => $.detail.actions.credentials)}
           </Button>
           <Button
             icon={<AppstoreOutlined />}
@@ -121,79 +160,78 @@ export function DatabaseWorkspaceDetailPanel({
             disabled={extensionsDisabled}
             data-testid="database-workspace-open-extensions"
           >
-            Extensions
+            {t(($) => $.detail.actions.extensions)}
           </Button>
           <RouteButton
             icon={<ThunderboltOutlined />}
             to={`/operations?wizard=true&databases=${database.id}`}
             data-testid="database-workspace-open-operations"
           >
-            Open operations workspace
+            {t(($) => $.detail.actions.operations)}
           </RouteButton>
         </Space>
 
         {mutatingDisabled ? (
           <Text type="warning">
-            Mutating actions require an active tenant context before credentials, DBMS metadata,
-            IBCMD profile, or extensions changes can be launched.
+            {t(($) => $.detail.mutatingDisabled)}
           </Text>
         ) : null}
 
         <Descriptions
-          title="Database Summary"
+          title={t(($) => $.detail.summaryTitle)}
           size="small"
           bordered
           column={1}
           items={[
             {
               key: 'id',
-              label: 'Database ID',
+              label: t(($) => $.detail.fields.databaseId),
               children: <Text code data-testid="database-workspace-selected-id">{database.id}</Text>,
             },
             {
               key: 'cluster',
-              label: 'Cluster ID',
-              children: formatValue(database.cluster_id),
+              label: t(($) => $.detail.fields.clusterId),
+              children: formatValue(database.cluster_id, notAvailable),
             },
             {
               key: 'host',
-              label: 'Host',
-              children: formatValue(database.host),
+              label: t(($) => $.detail.fields.host),
+              children: formatValue(database.host, notAvailable),
             },
             {
               key: 'server_address',
-              label: '1C server',
-              children: `${formatValue(database.server_address)}:${formatValue(database.server_port)}`,
+              label: t(($) => $.detail.fields.server),
+              children: `${formatValue(database.server_address, notAvailable)}:${formatValue(database.server_port, notAvailable)}`,
             },
             {
               key: 'infobase',
-              label: 'Infobase',
-              children: formatValue(database.infobase_name || database.base_name),
+              label: t(($) => $.detail.fields.infobase),
+              children: formatValue(database.infobase_name || database.base_name, notAvailable),
             },
             {
               key: 'version',
-              label: 'Version',
-              children: formatValue(database.version),
+              label: t(($) => $.detail.fields.version),
+              children: formatValue(database.version, notAvailable),
             },
             {
               key: 'last_check',
-              label: 'Last check',
-              children: formatValue(database.last_check),
+              label: t(($) => $.detail.fields.lastCheck),
+              children: formatters.dateTime(database.last_check, { fallback: notAvailable }),
             },
             {
               key: 'dbms',
-              label: 'DBMS metadata',
-              children: `${formatValue(database.dbms)} / ${formatValue(database.db_server)} / ${formatValue(database.db_name)}`,
+              label: t(($) => $.detail.fields.dbms),
+              children: `${formatValue(database.dbms, notAvailable)} / ${formatValue(database.db_server, notAvailable)} / ${formatValue(database.db_name, notAvailable)}`,
             },
             {
               key: 'odata',
-              label: 'OData URL',
-              children: formatValue(database.odata_url),
+              label: t(($) => $.detail.fields.odata),
+              children: formatValue(database.odata_url, notAvailable),
             },
             {
               key: 'restrictions',
-              label: 'Restrictions',
-              children: `jobs=${String(database.scheduled_jobs_deny)} sessions=${String(database.sessions_deny)}`,
+              label: t(($) => $.detail.fields.restrictions),
+              children: restrictionsValue,
             },
           ]}
         />

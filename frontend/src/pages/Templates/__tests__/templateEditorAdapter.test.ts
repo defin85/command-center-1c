@@ -52,7 +52,7 @@ describe('templateEditorAdapter', () => {
     const result = buildTemplateWritePayloadFromEditor(values)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.error).toBe('Command is required')
+      expect(result.errorKey).toBe('commandRequired')
     }
   })
 
@@ -65,7 +65,7 @@ describe('templateEditorAdapter', () => {
     const result = buildTemplateWritePayloadFromEditor(values)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.error).toBe('Workflow is required')
+      expect(result.errorKey).toBe('workflowRequired')
     }
   })
 

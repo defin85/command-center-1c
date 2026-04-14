@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, Form } from 'antd'
 import type { FormInstance } from 'antd'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import type { Database } from '../../../../api/generated/model/database'
 import { DatabaseIbcmdConnectionProfileModal } from '../DatabaseIbcmdConnectionProfileModal'
@@ -103,8 +104,15 @@ function requireForm(getForm: () => FormInstance | null): FormInstance {
 }
 
 describe('DatabaseIbcmdConnectionProfileModal', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'databases')
     mockOfflineKeys = {}
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
   })
 
   it('does not render default offline rows for empty profile', () => {
@@ -155,7 +163,7 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText(/без префикса/i)).toBeInTheDocument()
+      expect(screen.getByText(/without the -- prefix/i)).toBeInTheDocument()
     })
   })
 
@@ -173,7 +181,7 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
     })
 
     await waitFor(() => {
-      expect(screen.getByText(/ssh:\/\//i)).toBeInTheDocument()
+      expect(screen.getByText(/must start with ssh:\/\//i)).toBeInTheDocument()
     })
   })
 

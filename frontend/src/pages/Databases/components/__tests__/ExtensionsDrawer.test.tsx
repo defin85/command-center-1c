@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { App } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 const { mockTrackUiAction } = vi.hoisted(() => ({
   mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
@@ -46,7 +47,9 @@ vi.mock('../../../../components/ibcmd/ibcmdCliUiErrors', () => ({
 }))
 
 describe('ExtensionsDrawer', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'databases')
     mockPostExtensionsPlan.mockReset()
     mockPostExtensionsApply.mockReset()
     mockListOperationCatalogExposures.mockReset()
@@ -107,6 +110,11 @@ describe('ExtensionsDrawer', () => {
       isPending: false,
     })
     mockTryShowIbcmdCliUiError.mockReturnValue(false)
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
   })
 
   it('renders manual operations controls and snapshot payload', async () => {

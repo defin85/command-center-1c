@@ -5,7 +5,7 @@ import { isPlainObject, parseJson, safeJsonStringify } from '../Settings/actionC
 
 type TemplatePayloadBuildResult =
   | { ok: true; payload: OperationTemplateWrite }
-  | { ok: false; error: string }
+  | { ok: false; errorKey: 'nameRequired' | 'workflowRequired' | 'commandRequired' }
 
 const EXECUTOR_KINDS = new Set(['ibcmd_cli', 'designer_cli', 'workflow'])
 
@@ -144,7 +144,7 @@ export const buildTemplateWritePayloadFromEditor = (
   const executorKind = normalizeExecutorKind(values.executor.kind)
   const name = (values.name || '').trim()
   if (!name) {
-    return { ok: false, error: 'Name is required' }
+    return { ok: false, errorKey: 'nameRequired' }
   }
 
   const parsedParams = parseJson(typeof values.executor.params_json === 'string' ? values.executor.params_json : '{}')
@@ -170,7 +170,7 @@ export const buildTemplateWritePayloadFromEditor = (
   if (executorKind === 'workflow') {
     const workflowId = typeof values.executor.workflow_id === 'string' ? values.executor.workflow_id.trim() : ''
     if (!workflowId) {
-      return { ok: false, error: 'Workflow is required' }
+      return { ok: false, errorKey: 'workflowRequired' }
     }
     templateData.kind = 'workflow'
     templateData.workflow_id = workflowId
@@ -178,7 +178,7 @@ export const buildTemplateWritePayloadFromEditor = (
   } else {
     const command = typeof values.executor.command_id === 'string' ? values.executor.command_id.trim() : ''
     if (!command) {
-      return { ok: false, error: 'Command is required' }
+      return { ok: false, errorKey: 'commandRequired' }
     }
 
     const driver = executorKind === 'designer_cli' ? 'cli' : 'ibcmd'

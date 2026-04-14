@@ -23,6 +23,8 @@ import type {
 import { REQUIRED_CONFIG_FIELDS } from './types'
 import { isSensitiveKey, maskDeep } from '../../../../lib/masking'
 import { tryShowIbcmdCliUiError } from '../../../../components/ibcmd/ibcmdCliUiErrors'
+import { useOperationsTranslation } from '../../../../i18n'
+import { getOperationTypeLabel } from '../../utils'
 
 // Initialize API
 const api = getV2()
@@ -31,13 +33,6 @@ const { Text } = Typography
 /**
  * Step configuration
  */
-const STEPS = [
-  { title: 'Type', description: 'Select operation' },
-  { title: 'Target', description: 'Choose databases' },
-  { title: 'Configure', description: 'Set options' },
-  { title: 'Review', description: 'Confirm & execute' },
-]
-
 /**
  * Initial wizard state
  */
@@ -62,6 +57,7 @@ export const NewOperationWizard = ({
   preselectedDatabases,
 }: NewOperationWizardProps) => {
   const { message, modal } = App.useApp()
+  const { t } = useOperationsTranslation()
   // Wizard state
   const [state, setState] = useState<WizardState>(() =>
     getInitialState(preselectedDatabases)
@@ -71,7 +67,7 @@ export const NewOperationWizard = ({
   const [databaseNamesById, setDatabaseNamesById] = useState<Record<string, string>>({})
   const [templateValidationErrors, setTemplateValidationErrors] = useState<DynamicFormValidationError[]>([])
 
-  const selectedTypeLabel = state.operationType ?? null
+  const selectedTypeLabel = state.operationType ? getOperationTypeLabel(state.operationType, t) : null
   const selectedTemplateLabel = state.selectedTemplateId ?? null
 
   const configSummary = useMemo(() => {
@@ -371,20 +367,20 @@ export const NewOperationWizard = ({
     if (!canProceed) {
       // Show validation message
       if (state.currentStep === 0) {
-        message.warning('Please select an operation type or custom template')
+        message.warning(t(($) => $.wizard.messages.selectType))
       } else if (state.currentStep === 1) {
-        message.warning('Please select at least one database')
+        message.warning(t(($) => $.wizard.messages.selectDatabase))
       } else if (state.currentStep === 2) {
-        message.warning('Please fill in all required configuration fields')
+        message.warning(t(($) => $.wizard.messages.fillRequiredConfig))
       }
       return
     }
 
     setState((prev) => ({
       ...prev,
-      currentStep: Math.min(prev.currentStep + 1, STEPS.length - 1),
+      currentStep: Math.min(prev.currentStep + 1, 3),
     }))
-  }, [canProceed, state.currentStep, message])
+  }, [canProceed, state.currentStep, message, t])
 
   const handlePrevious = useCallback(() => {
     setState((prev) => ({
@@ -396,12 +392,12 @@ export const NewOperationWizard = ({
   const handleSubmit = useCallback(async () => {
     // Validate: need either operation type or template
     if (!state.operationType && !state.selectedTemplateId) {
-      message.error('Operation type or template is required')
+      message.error(t(($) => $.wizard.messages.typeOrTemplateRequired))
       return
     }
 
     if (state.selectedDatabases.length === 0) {
-      message.error('At least one database must be selected')
+      message.error(t(($) => $.wizard.messages.atLeastOneDatabase))
       return
     }
 
@@ -425,7 +421,7 @@ export const NewOperationWizard = ({
     setSubmitting(true)
     try {
       await onSubmit(data)
-      message.success('Operation created successfully')
+      message.success(t(($) => $.wizard.messages.createdSuccessfully))
       onClose()
     } catch (error) {
       console.error('Failed to create operation:', error)
@@ -458,7 +454,7 @@ export const NewOperationWizard = ({
         return
       }
 
-      message.error('Failed to create operation')
+      message.error(t(($) => $.wizard.messages.failedToCreate))
     } finally {
       setSubmitting(false)
     }
@@ -472,6 +468,7 @@ export const NewOperationWizard = ({
     onClose,
     message,
     modal,
+    t,
   ])
 
   const handleClose = useCallback(() => {
@@ -530,28 +527,47 @@ export const NewOperationWizard = ({
   }
 
   // Check if we're on the last step
-  const isLastStep = state.currentStep === STEPS.length - 1
+  const isLastStep = state.currentStep === 3
 
   // Determine submit button text based on type
   const submitButtonText = state.selectedTemplateId
-    ? 'Execute Template'
-    : 'Execute Operation'
+    ? t(($) => $.wizard.buttons.executeTemplate)
+    : t(($) => $.wizard.buttons.executeOperation)
+
+  const stepItems = useMemo(() => ([
+    {
+      title: t(($) => $.wizard.steps.typeTitle),
+      description: t(($) => $.wizard.steps.typeDescription),
+    },
+    {
+      title: t(($) => $.wizard.steps.targetTitle),
+      description: t(($) => $.wizard.steps.targetDescription),
+    },
+    {
+      title: t(($) => $.wizard.steps.configureTitle),
+      description: t(($) => $.wizard.steps.configureDescription),
+    },
+    {
+      title: t(($) => $.wizard.steps.reviewTitle),
+      description: t(($) => $.wizard.steps.reviewDescription),
+    },
+  ]), [t])
 
   return (
     <Modal
-      title="New Operation"
+      title={t(($) => $.page.newOperation)}
       open={visible}
       onCancel={handleClose}
       width={900}
       footer={
         <Space style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
           <Button onClick={handleClose} disabled={submitting}>
-            Cancel
+            {t(($) => $.wizard.buttons.cancel)}
           </Button>
           <Space>
             {state.currentStep > 0 && (
               <Button onClick={handlePrevious} disabled={submitting}>
-                Previous
+                {t(($) => $.wizard.buttons.previous)}
               </Button>
             )}
             {isLastStep ? (
@@ -565,7 +581,7 @@ export const NewOperationWizard = ({
               </Button>
             ) : (
               <Button type="primary" onClick={handleNext} disabled={!canProceed}>
-                Next
+                {t(($) => $.wizard.buttons.next)}
               </Button>
             )}
           </Space>
@@ -578,15 +594,15 @@ export const NewOperationWizard = ({
       <Card size="small" style={{ marginBottom: 16 }}>
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <div>
-            <Text strong>Type:</Text>{' '}
+            <Text strong>{t(($) => $.wizard.stepSummary.type)}</Text>{' '}
             {selectedTemplateLabel
-              ? <Tag color="blue">Template: {selectedTemplateLabel}</Tag>
+              ? <Tag color="blue">{t(($) => $.wizard.stepSummary.template, { value: selectedTemplateLabel })}</Tag>
               : selectedTypeLabel
                 ? <Tag color="green">{selectedTypeLabel}</Tag>
-                : <Text type="secondary">Not selected</Text>}
+                : <Text type="secondary">{t(($) => $.wizard.stepSummary.notSelected)}</Text>}
           </div>
           <div>
-            <Text strong>Databases:</Text>{' '}
+            <Text strong>{t(($) => $.wizard.stepSummary.databases)}</Text>{' '}
             {state.selectedDatabases.length > 0
               ? (
                 <Space size={4} wrap>
@@ -595,10 +611,10 @@ export const NewOperationWizard = ({
                   ))}
                 </Space>
               )
-              : <Text type="secondary">Not selected</Text>}
+              : <Text type="secondary">{t(($) => $.wizard.stepSummary.notSelected)}</Text>}
           </div>
           <div>
-            <Text strong>Config:</Text>{' '}
+            <Text strong>{t(($) => $.wizard.stepSummary.config)}</Text>{' '}
             {configSummary.length > 0
               ? (
                 <Space size={4} wrap>
@@ -607,14 +623,14 @@ export const NewOperationWizard = ({
                   ))}
                 </Space>
               )
-              : <Text type="secondary">Not set</Text>}
+              : <Text type="secondary">{t(($) => $.wizard.stepSummary.notSet)}</Text>}
           </div>
         </Space>
       </Card>
 
       <Steps
         current={state.currentStep}
-        items={STEPS.map((step, index) => ({
+        items={stepItems.map((step, index) => ({
           title: step.title,
           description: step.description,
           status:

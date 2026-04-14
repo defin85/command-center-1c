@@ -1,6 +1,7 @@
 import { isValidElement, type ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import type { Database } from '../../../../api/generated/model/database'
 import { useDatabasesColumns } from '../useDatabasesColumns'
@@ -111,6 +112,16 @@ function NameCell({ selectedDatabaseId = 'db-1' }: { selectedDatabaseId?: string
 }
 
 describe('useDatabasesColumns', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'databases')
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
+  })
+
   it('renders metadata management action for canonical /databases handoff', () => {
     render(<ActionsCell />)
 

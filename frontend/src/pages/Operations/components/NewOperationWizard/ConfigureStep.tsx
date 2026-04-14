@@ -30,6 +30,8 @@ import type { ValidationError } from '../../../../components/DynamicForm/types'
 import { DynamicForm } from '../../../../components/DynamicForm'
 import { useTemplateSchema } from '../../../../hooks/useTemplateSchema'
 import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../../../../components/driverCommands/DriverCommandBuilder'
+import { useOperationsTranslation } from '../../../../i18n'
+import { getOperationTypeDescription, getOperationTypeLabel } from '../../utils'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -55,6 +57,7 @@ const BlockSessionsForm = ({
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
 }) => {
+  const { t } = useOperationsTranslation()
   const deniedFromValue = config.denied_from ? dayjs(config.denied_from as string) : null
   const deniedToValue = config.denied_to ? dayjs(config.denied_to as string) : null
 
@@ -67,8 +70,8 @@ const BlockSessionsForm = ({
   return (
     <Form layout="vertical">
       <Form.Item
-        label="Block start (optional)"
-        help="Start time for blocking new sessions"
+        label={t(($) => $.wizard.configure.blockStart)}
+        help={t(($) => $.wizard.configure.blockStartHelp)}
         htmlFor="wizard-block-start"
       >
         <DatePicker
@@ -83,8 +86,8 @@ const BlockSessionsForm = ({
       </Form.Item>
 
       <Form.Item
-        label="Block end (optional)"
-        help="End time for blocking new sessions"
+        label={t(($) => $.wizard.configure.blockEnd)}
+        help={t(($) => $.wizard.configure.blockEndHelp)}
         htmlFor="wizard-block-end"
       >
         <DatePicker
@@ -99,41 +102,41 @@ const BlockSessionsForm = ({
       </Form.Item>
 
       <Form.Item
-        label="Message for users"
+        label={t(($) => $.wizard.configure.userMessage)}
         required
-        help="This message will be shown to users trying to connect"
+        help={t(($) => $.wizard.configure.userMessageHelp)}
         htmlFor="wizard-block-message"
       >
         <TextArea
           id="wizard-block-message"
           rows={3}
-          placeholder="Technical maintenance. Please wait\u2026"
+          placeholder={t(($) => $.wizard.configure.userMessagePlaceholder)}
           value={config.message || ''}
           onChange={(e) => onChange({ message: e.target.value })}
         />
       </Form.Item>
 
       <Form.Item
-        label="Permission code (optional)"
-        help="Users with this code can still connect"
+        label={t(($) => $.wizard.configure.permissionCode)}
+        help={t(($) => $.wizard.configure.permissionCodeHelp)}
         htmlFor="wizard-block-permission-code"
       >
         <Input
           id="wizard-block-permission-code"
-          placeholder="Enter permission code"
+          placeholder={t(($) => $.wizard.configure.permissionCodePlaceholder)}
           value={config.permission_code || ''}
           onChange={(e) => onChange({ permission_code: e.target.value })}
         />
       </Form.Item>
 
       <Form.Item
-        label="Block parameter (optional)"
-        help="Additional block parameter for 1C"
+        label={t(($) => $.wizard.configure.blockParameter)}
+        help={t(($) => $.wizard.configure.blockParameterHelp)}
         htmlFor="wizard-block-parameter"
       >
         <Input
           id="wizard-block-parameter"
-          placeholder="Enter block parameter"
+          placeholder={t(($) => $.wizard.configure.blockParameterPlaceholder)}
           value={config.parameter || ''}
           onChange={(e) => onChange({ parameter: e.target.value })}
         />
@@ -151,32 +154,35 @@ const TerminateSessionsForm = ({
 }: {
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
-}) => (
-  <Form layout="vertical">
-    <Form.Item
-      label="Filter by application (optional)"
-      help="Only terminate sessions from this application (e.g., '1C:Enterprise', 'Designer')"
-      htmlFor="wizard-terminate-filter-app"
-    >
-      <Input
-        id="wizard-terminate-filter-app"
-        placeholder="Application name filter"
-        value={config.filter_by_app || ''}
-        onChange={(e) => onChange({ filter_by_app: e.target.value })}
-      />
-    </Form.Item>
-
-    <Form.Item>
-      <Checkbox
-        id="wizard-terminate-exclude-admin"
-        checked={config.exclude_admin || false}
-        onChange={(e) => onChange({ exclude_admin: e.target.checked })}
+}) => {
+  const { t } = useOperationsTranslation()
+  return (
+    <Form layout="vertical">
+      <Form.Item
+        label={t(($) => $.wizard.configure.filterByApplication)}
+        help={t(($) => $.wizard.configure.filterByApplicationHelp)}
+        htmlFor="wizard-terminate-filter-app"
       >
-        Exclude administrator sessions
-      </Checkbox>
-    </Form.Item>
-  </Form>
-)
+        <Input
+          id="wizard-terminate-filter-app"
+          placeholder={t(($) => $.wizard.configure.filterByApplicationPlaceholder)}
+          value={config.filter_by_app || ''}
+          onChange={(e) => onChange({ filter_by_app: e.target.value })}
+        />
+      </Form.Item>
+
+      <Form.Item>
+        <Checkbox
+          id="wizard-terminate-exclude-admin"
+          checked={config.exclude_admin || false}
+          onChange={(e) => onChange({ exclude_admin: e.target.checked })}
+        >
+          {t(($) => $.wizard.configure.excludeAdmins)}
+        </Checkbox>
+      </Form.Item>
+    </Form>
+  )
+}
 
 const DriverCommandsForm = ({
   driver,
@@ -227,83 +233,87 @@ const QueryForm = ({
 }: {
   config: OperationConfig
   onChange: (updates: Partial<OperationConfig>) => void
-}) => (
-  <Form layout="vertical">
-    <Form.Item
-      label="OData Entity"
-      required
-      help="Name of the OData entity to query (e.g., 'Catalog_Kontragenty', 'Document_RaskhodnyiOrder')"
-      htmlFor="wizard-query-entity"
-    >
-      <Input
-        id="wizard-query-entity"
-        placeholder="Entity name"
-        value={config.entity || ''}
-        onChange={(e) => onChange({ entity: e.target.value })}
-      />
-    </Form.Item>
+}) => {
+  const { t } = useOperationsTranslation()
+  return (
+    <Form layout="vertical">
+      <Form.Item
+        label={t(($) => $.wizard.configure.odataEntity)}
+        required
+        help={t(($) => $.wizard.configure.odataEntityHelp)}
+        htmlFor="wizard-query-entity"
+      >
+        <Input
+          id="wizard-query-entity"
+          placeholder={t(($) => $.wizard.configure.odataEntityPlaceholder)}
+          value={config.entity || ''}
+          onChange={(e) => onChange({ entity: e.target.value })}
+        />
+      </Form.Item>
 
-    <Form.Item
-      label="Filter (optional)"
-      help={'OData filter expression (e.g., "NeIspolzovat eq false")'}
-      htmlFor="wizard-query-filter"
-    >
-      <TextArea
-        id="wizard-query-filter"
-        rows={2}
-        placeholder="$filter expression"
-        value={config.filter || ''}
-        onChange={(e) => onChange({ filter: e.target.value })}
-      />
-    </Form.Item>
+      <Form.Item
+        label={t(($) => $.wizard.configure.filter)}
+        help={t(($) => $.wizard.configure.filterHelp)}
+        htmlFor="wizard-query-filter"
+      >
+        <TextArea
+          id="wizard-query-filter"
+          rows={2}
+          placeholder={t(($) => $.wizard.configure.filterPlaceholder)}
+          value={config.filter || ''}
+          onChange={(e) => onChange({ filter: e.target.value })}
+        />
+      </Form.Item>
 
-    <Form.Item
-      label="Select fields (optional)"
-      help="Comma-separated list of fields to return"
-      htmlFor="wizard-query-select"
-    >
-      <Input
-        id="wizard-query-select"
-        placeholder="Field1,Field2,Field3"
-        value={config.select || ''}
-        onChange={(e) => onChange({ select: e.target.value })}
-      />
-    </Form.Item>
+      <Form.Item
+        label={t(($) => $.wizard.configure.selectFields)}
+        help={t(($) => $.wizard.configure.selectFieldsHelp)}
+        htmlFor="wizard-query-select"
+      >
+        <Input
+          id="wizard-query-select"
+          placeholder={t(($) => $.wizard.configure.selectFieldsPlaceholder)}
+          value={config.select || ''}
+          onChange={(e) => onChange({ select: e.target.value })}
+        />
+      </Form.Item>
 
-    <Form.Item
-      label="Limit (optional)"
-      help="Maximum number of records to return"
-      htmlFor="wizard-query-limit"
-    >
-      <InputNumber
-        id="wizard-query-limit"
-        min={1}
-        max={10000}
-        placeholder="100"
-        value={config.top}
-        onChange={(value) => onChange({ top: value ?? undefined })}
-        style={{ width: '100%' }}
-      />
-    </Form.Item>
-  </Form>
-)
+      <Form.Item
+        label={t(($) => $.wizard.configure.limit)}
+        help={t(($) => $.wizard.configure.limitHelp)}
+        htmlFor="wizard-query-limit"
+      >
+        <InputNumber
+          id="wizard-query-limit"
+          min={1}
+          max={10000}
+          placeholder={t(($) => $.wizard.configure.limitPlaceholder)}
+          value={config.top}
+          onChange={(value) => onChange({ top: value ?? undefined })}
+          style={{ width: '100%' }}
+        />
+      </Form.Item>
+    </Form>
+  )
+}
 
 /**
  * No configuration required placeholder
  */
-const NoConfigRequired = ({ operationLabel }: { operationLabel: string }) => (
-  <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
-    <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a', marginBottom: 16 }} />
-    <Title level={5} style={{ marginBottom: 8 }}>
-      No Additional Configuration Required
-    </Title>
-    <Text type="secondary">
-      "{operationLabel}" operation is ready to execute.
-      <br />
-      Click "Next" to review and confirm.
-    </Text>
-  </Card>
-)
+const NoConfigRequired = ({ operationLabel }: { operationLabel: string }) => {
+  const { t } = useOperationsTranslation()
+  return (
+    <Card style={{ textAlign: 'center', padding: '40px 20px' }}>
+      <CheckCircleOutlined style={{ fontSize: 48, color: '#52c41a', marginBottom: 16 }} />
+      <Title level={5} style={{ marginBottom: 8 }}>
+        {t(($) => $.wizard.configure.noAdditionalConfigTitle)}
+      </Title>
+      <Text type="secondary">
+        {t(($) => $.wizard.configure.noAdditionalConfigDescription, { value: operationLabel })}
+      </Text>
+    </Card>
+  )
+}
 
 /**
  * Custom template configuration using DynamicForm
@@ -325,6 +335,7 @@ const CustomTemplateForm = ({
   onFileRemove?: (fieldName: string) => void
   onValidationErrorsChange?: (errors: DynamicFormValidationError[]) => void
 }) => {
+  const { t } = useOperationsTranslation()
   // Fetch schema for this template
   const { schema, workflowName, loading, error } = useTemplateSchema(templateId)
 
@@ -334,7 +345,7 @@ const CustomTemplateForm = ({
       <div style={{ textAlign: 'center', padding: '60px 20px' }}>
         <Spin indicator={<LoadingOutlined style={{ fontSize: 32 }} spin />} />
         <Text type="secondary" style={{ display: 'block', marginTop: 16 }}>
-          Loading template configuration{'\u2026'}
+          {t(($) => $.wizard.configure.loadingTemplateConfiguration)}
         </Text>
       </div>
     )
@@ -344,7 +355,7 @@ const CustomTemplateForm = ({
   if (error) {
     return (
       <Alert
-        message="Failed to load template configuration"
+        message={t(($) => $.wizard.configure.failedToLoadTemplateConfiguration)}
         description={error}
         type="error"
         showIcon
@@ -354,7 +365,7 @@ const CustomTemplateForm = ({
 
   // No schema means no configuration needed
   if (!schema) {
-    return <NoConfigRequired operationLabel={workflowName || 'Custom Template'} />
+    return <NoConfigRequired operationLabel={workflowName || t(($) => $.wizard.configure.customTemplateFallback)} />
   }
 
   // Handle DynamicForm value change - cast to OperationConfig
@@ -400,6 +411,7 @@ export const ConfigureStep = ({
   onFileRemove,
   onValidationErrorsChange,
 }: ConfigureStepProps) => {
+  const { t } = useOperationsTranslation()
   // Find operation config for built-in operations
   const operationConfig = OPERATION_TYPES.find((op) => op.type === operationType)
 
@@ -419,12 +431,14 @@ export const ConfigureStep = ({
 
   // Determine title and description
   const title = isCustomTemplate
-    ? 'Configure Custom Template'
-    : `Configure: ${operationConfig?.label || operationType || 'Operation'}`
+    ? t(($) => $.wizard.configure.configureCustomTemplate)
+    : t(($) => $.wizard.configure.configureOperation, {
+      value: operationType ? getOperationTypeLabel(operationType, t) : 'Operation',
+    })
 
   const description = isCustomTemplate
-    ? 'Fill in the required fields for this template'
-    : operationConfig?.description
+    ? t(($) => $.wizard.configure.customTemplateDescription)
+    : (operationType ? getOperationTypeDescription(operationType, t) : operationConfig?.description)
 
   // Render appropriate form based on operation type or template
   const renderForm = () => {
@@ -447,8 +461,8 @@ export const ConfigureStep = ({
     if (!operationType) {
       return (
         <Alert
-          message="No operation type selected"
-          description="Please go back and select an operation type."
+          message={t(($) => $.wizard.configure.noOperationSelectedTitle)}
+          description={t(($) => $.wizard.configure.noOperationSelectedDescription)}
           type="warning"
           showIcon
         />
@@ -457,7 +471,7 @@ export const ConfigureStep = ({
 
     // Built-in operation without configuration
     if (!requiresConfig) {
-      return <NoConfigRequired operationLabel={operationConfig?.label || operationType} />
+      return <NoConfigRequired operationLabel={operationType ? getOperationTypeLabel(operationType, t) : (operationConfig?.label || 'Operation')} />
     }
 
     // Built-in operation with legacy form
@@ -491,8 +505,8 @@ export const ConfigureStep = ({
       default:
         return (
           <Alert
-            message="Configuration not available"
-            description={`Configuration form for "${operationType}" is not implemented yet.`}
+            message={t(($) => $.wizard.configure.configurationUnavailableTitle)}
+            description={t(($) => $.wizard.configure.configurationUnavailableDescription, { value: operationType })}
             type="info"
             showIcon
           />

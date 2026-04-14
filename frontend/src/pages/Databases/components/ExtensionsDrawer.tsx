@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Checkbox, Select, Space, Spin, Switch, Typography } from 'antd'
-import dayjs from 'dayjs'
 
 import { getV2 } from '../../../api/generated'
 import type { DatabaseExtensionsSnapshotResponse } from '../../../api/generated/model/databaseExtensionsSnapshotResponse'
@@ -14,6 +13,7 @@ import {
 import { listOperationCatalogExposures } from '../../../api/operationCatalog'
 import { tryShowIbcmdCliUiError } from '../../../components/ibcmd/ibcmdCliUiErrors'
 import { DrawerFormShell } from '../../../components/platform'
+import { useDatabasesTranslation, useLocaleFormatters } from '../../../i18n'
 import { confirmWithTracking } from '../../../observability/confirmWithTracking'
 import { trackUiAction } from '../../../observability/uiActionJournal'
 
@@ -72,31 +72,33 @@ const hasSetFlagsMaskSelection = (applyMask: { active: boolean; safe_mode: boole
   Boolean(applyMask.active || applyMask.safe_mode || applyMask.unsafe_action_protection)
 )
 
-const renderBindingPreviewFields = (binding: UIBinding): BindingPreviewField[] => [
+type DatabasesT = ReturnType<typeof useDatabasesTranslation>['t']
+
+const renderBindingPreviewFields = (binding: UIBinding, t: DatabasesT): BindingPreviewField[] => [
   {
     key: 'target',
-    label: 'Target',
-    value: typeof binding.target_ref === 'string' && binding.target_ref.trim() ? binding.target_ref : 'n/a',
+    label: t(($) => $.extensions.bindingFields.target),
+    value: typeof binding.target_ref === 'string' && binding.target_ref.trim() ? binding.target_ref : t(($) => $.shared.notAvailable),
   },
   {
     key: 'source',
-    label: 'Source',
-    value: typeof binding.source_ref === 'string' && binding.source_ref.trim() ? binding.source_ref : 'n/a',
+    label: t(($) => $.extensions.bindingFields.source),
+    value: typeof binding.source_ref === 'string' && binding.source_ref.trim() ? binding.source_ref : t(($) => $.shared.notAvailable),
   },
   {
     key: 'resolve',
-    label: 'Resolve',
-    value: typeof binding.resolve_at === 'string' && binding.resolve_at.trim() ? binding.resolve_at : 'n/a',
+    label: t(($) => $.extensions.bindingFields.resolve),
+    value: typeof binding.resolve_at === 'string' && binding.resolve_at.trim() ? binding.resolve_at : t(($) => $.shared.notAvailable),
   },
   {
     key: 'status',
-    label: 'Status',
-    value: typeof binding.status === 'string' && binding.status.trim() ? binding.status : 'n/a',
+    label: t(($) => $.extensions.bindingFields.status),
+    value: typeof binding.status === 'string' && binding.status.trim() ? binding.status : t(($) => $.shared.notAvailable),
   },
   {
     key: 'reason',
-    label: 'Reason',
-    value: typeof binding.reason === 'string' && binding.reason.trim() ? binding.reason : 'n/a',
+    label: t(($) => $.extensions.bindingFields.reason),
+    value: typeof binding.reason === 'string' && binding.reason.trim() ? binding.reason : t(($) => $.shared.notAvailable),
   },
 ]
 
@@ -129,7 +131,7 @@ const renderInlinePill = (label: string, tone: InlinePillTone = 'default') => {
   )
 }
 
-const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
+const renderBindingProvenancePreview = (bindings: UIBinding[], t: DatabasesT) => (
   <div data-testid="database-extensions-binding-provenance" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
     {bindings.map((binding, index) => (
       <div
@@ -145,8 +147,13 @@ const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
         }}
       >
         <Space size={8} wrap>
-          {renderInlinePill(`binding ${index + 1}`, 'geekblue')}
-          {renderInlinePill(`sensitive: ${binding.sensitive ? 'yes' : 'no'}`, binding.sensitive ? 'red' : 'default')}
+          {renderInlinePill(t(($) => $.extensions.binding, { count: index + 1 }), 'geekblue')}
+          {renderInlinePill(
+            binding.sensitive
+              ? t(($) => $.extensions.sensitiveYes)
+              : t(($) => $.extensions.sensitiveNo),
+            binding.sensitive ? 'red' : 'default'
+          )}
         </Space>
         <div
           style={{
@@ -155,7 +162,7 @@ const renderBindingProvenancePreview = (bindings: UIBinding[]) => (
             gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           }}
         >
-          {renderBindingPreviewFields(binding).map((field) => (
+          {renderBindingPreviewFields(binding, t).map((field) => (
             <div
               key={field.key}
               style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
@@ -196,6 +203,8 @@ export const ExtensionsDrawer = ({
   onOperationQueued,
 }: ExtensionsDrawerProps) => {
   const { message, modal } = App.useApp()
+  const { t } = useDatabasesTranslation()
+  const formatters = useLocaleFormatters()
 
   const [manualOperation, setManualOperation] = useState<ManualOperationKey>('extensions.sync')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(undefined)
@@ -317,7 +326,7 @@ export const ExtensionsDrawer = ({
 
   const savePreferredBinding = async () => {
     if (!selectedTemplateId) {
-      message.info('Select template first')
+      message.info(t(($) => $.extensions.selectTemplateFirst))
       return
     }
     if (mutatingDisabled) return
@@ -326,11 +335,11 @@ export const ExtensionsDrawer = ({
         manualOperation,
         templateId: selectedTemplateId,
       })
-      message.success('Preferred template binding updated')
+      message.success(t(($) => $.extensions.preferredBindingUpdated))
     } catch (e: unknown) {
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to update preferred binding: ${errorMessage}`)
+        message.error(t(($) => $.extensions.failedUpdatePreferredBinding, { error: errorMessage }))
       }
     }
   }
@@ -340,11 +349,11 @@ export const ExtensionsDrawer = ({
     if (mutatingDisabled) return
     try {
       await deleteBindingMutation.mutateAsync(manualOperation)
-      message.success('Preferred template binding removed')
+      message.success(t(($) => $.extensions.preferredBindingRemoved))
     } catch (e: unknown) {
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to remove preferred binding: ${errorMessage}`)
+        message.error(t(($) => $.extensions.failedRemovePreferredBinding, { error: errorMessage }))
       }
     }
   }
@@ -354,7 +363,7 @@ export const ExtensionsDrawer = ({
     if (planPending || applyPending) return
     if (mutatingDisabled) return
     if (templateSelectionMissing) {
-      message.error('Select template or configure preferred binding')
+      message.error(t(($) => $.extensions.selectTemplateOrBinding))
       return
     }
 
@@ -373,11 +382,11 @@ export const ExtensionsDrawer = ({
     if (isSetFlagsOperation) {
       const name = extensionName.trim()
       if (!name) {
-        message.error('extension_name is required for extensions.set_flags')
+        message.error(t(($) => $.extensions.extensionNameRequired))
         return
       }
       if (!hasSetFlagsMaskSelection(applyMask)) {
-        message.error('Select at least one flag to apply')
+        message.error(t(($) => $.extensions.selectAtLeastOneFlag))
         return
       }
     }
@@ -407,52 +416,54 @@ export const ExtensionsDrawer = ({
       const bindings = extractBindings(plan.bindings)
 
       confirmWithTracking(modal, {
-        title: isSetFlagsOperation ? 'Apply selected flags?' : 'Launch extensions sync?',
+        title: isSetFlagsOperation ? t(($) => $.extensions.confirmSetFlagsTitle) : t(($) => $.extensions.confirmSyncTitle),
         content: (
           <div>
             <div style={{ marginBottom: 8 }}>
-              Database: <Typography.Text code>{databaseName || databaseId}</Typography.Text>
+              {t(($) => $.extensions.databaseLabel)}: <Typography.Text code>{databaseName || databaseId}</Typography.Text>
             </div>
             <div style={{ marginBottom: 8 }}>
-              Manual operation: <Typography.Text code>{manualOperation}</Typography.Text>
+              {t(($) => $.extensions.manualOperationValue)}: <Typography.Text code>{manualOperation}</Typography.Text>
             </div>
             <div style={{ marginBottom: 8 }}>
-              Template: <Typography.Text code>{selectedTemplateId || preferredBinding?.template_id || 'preferred binding'}</Typography.Text>
+              {t(($) => $.extensions.templateValue)}: <Typography.Text code>{selectedTemplateId || preferredBinding?.template_id || t(($) => $.shared.preferredBindingFallback)}</Typography.Text>
             </div>
             {isSetFlagsOperation && (
               <>
                 <div style={{ marginBottom: 8 }}>
-                  Extension: <Typography.Text code>{extensionName.trim()}</Typography.Text>
+                  {t(($) => $.extensions.extensionLabel)}: <Typography.Text code>{extensionName.trim()}</Typography.Text>
                 </div>
                 <Space size={8} wrap style={{ marginBottom: 8 }}>
-                  <div>Active: {applyMask.active ? renderInlinePill(flagsValues.active ? 'on' : 'off', flagsValues.active ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
-                  <div>Safe mode: {applyMask.safe_mode ? renderInlinePill(flagsValues.safe_mode ? 'on' : 'off', flagsValues.safe_mode ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
-                  <div>Unsafe action protection: {applyMask.unsafe_action_protection ? renderInlinePill(flagsValues.unsafe_action_protection ? 'on' : 'off', flagsValues.unsafe_action_protection ? 'green' : 'red') : <Typography.Text type="secondary">skipped</Typography.Text>}</div>
+                  <div>{t(($) => $.extensions.active)}: {applyMask.active ? renderInlinePill(flagsValues.active ? t(($) => $.extensions.on) : t(($) => $.extensions.off), flagsValues.active ? 'green' : 'red') : <Typography.Text type="secondary">{t(($) => $.extensions.skipped)}</Typography.Text>}</div>
+                  <div>{t(($) => $.extensions.safeMode)}: {applyMask.safe_mode ? renderInlinePill(flagsValues.safe_mode ? t(($) => $.extensions.on) : t(($) => $.extensions.off), flagsValues.safe_mode ? 'green' : 'red') : <Typography.Text type="secondary">{t(($) => $.extensions.skipped)}</Typography.Text>}</div>
+                  <div>{t(($) => $.extensions.unsafeActionProtection)}: {applyMask.unsafe_action_protection ? renderInlinePill(flagsValues.unsafe_action_protection ? t(($) => $.extensions.on) : t(($) => $.extensions.off), flagsValues.unsafe_action_protection ? 'green' : 'red') : <Typography.Text type="secondary">{t(($) => $.extensions.skipped)}</Typography.Text>}</div>
                 </Space>
               </>
             )}
             {previewText ? (
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{previewText}</pre>
             ) : (
-              <div style={{ opacity: 0.7 }}>Preview not available</div>
+              <div style={{ opacity: 0.7 }}>{t(($) => $.extensions.previewNotAvailable)}</div>
             )}
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>Binding Provenance:</div>
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>{t(($) => $.extensions.bindingProvenanceTitle)}</div>
               {bindings.length > 0 ? (
-                renderBindingProvenancePreview(bindings)
+                renderBindingProvenancePreview(bindings, t)
               ) : (
-                <div style={{ opacity: 0.7 }}>No bindings</div>
+                <div style={{ opacity: 0.7 }}>{t(($) => $.extensions.noBindings)}</div>
               )}
             </div>
           </div>
         ),
-        okText: 'Apply',
-        cancelText: 'Cancel',
+        okText: t(($) => $.extensions.apply),
+        cancelText: t(($) => $.confirm.cancel),
         onOk: async () => {
           setApplyPending(true)
           try {
             const res = await api.postExtensionsApply({ plan_id: plan.plan_id })
-            message.success(isSetFlagsOperation ? 'Operation queued: set_flags rollout' : 'Operation queued: extensions sync')
+            message.success(isSetFlagsOperation
+              ? t(($) => $.extensions.operationQueuedSetFlags)
+              : t(($) => $.extensions.operationQueuedSync))
             const operationId = typeof res.operation_id === 'string' ? res.operation_id : null
             if (operationId) {
               onOperationQueued?.(operationId)
@@ -473,16 +484,16 @@ export const ExtensionsDrawer = ({
       }
       const code = extractErrorCode(maybe?.response?.data)
       if (code === 'MISSING_TEMPLATE_BINDING') {
-        message.error('Preferred template binding is missing. Select a template or configure preferred binding.')
+        message.error(t(($) => $.extensions.missingTemplateBinding))
         return
       }
       if (code === 'CONFIGURATION_ERROR') {
-        message.error('Selected template is incompatible with this manual operation.')
+        message.error(t(($) => $.extensions.configurationError))
         return
       }
       if (!tryShowIbcmdCliUiError(e, modal, message)) {
         const errorMessage = e instanceof Error ? e.message : 'unknown error'
-        message.error(`Failed to launch manual operation: ${errorMessage}`)
+        message.error(t(($) => $.extensions.failedLaunchManualOperation, { error: errorMessage }))
       }
     } finally {
       setPlanPending(false)
@@ -505,7 +516,7 @@ export const ExtensionsDrawer = ({
 
   return (
     <DrawerFormShell
-      title={databaseName ? `Extensions: ${databaseName}` : 'Extensions'}
+      title={databaseName ? t(($) => $.extensions.titleWithName, { name: databaseName }) : t(($) => $.extensions.title)}
       open={open}
       onClose={onClose}
       width={760}
@@ -516,17 +527,17 @@ export const ExtensionsDrawer = ({
           <Alert
             type="warning"
             showIcon
-            message="Mutating actions are disabled"
-            description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+            message={t(($) => $.extensions.mutatingDisabledTitle)}
+            description={t(($) => $.extensions.mutatingDisabledDescription)}
           />
         )}
 
         <Typography.Title level={5} style={{ marginTop: 0 }}>
-          Manual Operations
+          {t(($) => $.extensions.manualOperationsTitle)}
         </Typography.Title>
         <Space direction="vertical" size={8} style={{ width: '100%' }}>
           <Space align="center" wrap>
-            <Typography.Text type="secondary">Operation</Typography.Text>
+            <Typography.Text type="secondary">{t(($) => $.extensions.operationLabel)}</Typography.Text>
             <Select
               value={manualOperation}
               options={MANUAL_OPERATION_OPTIONS}
@@ -535,14 +546,16 @@ export const ExtensionsDrawer = ({
             />
           </Space>
           <Space align="center" wrap>
-            <Typography.Text type="secondary">Template</Typography.Text>
+            <Typography.Text type="secondary">{t(($) => $.extensions.templateLabel)}</Typography.Text>
             <Select
               value={selectedTemplateId}
               options={templateOptions}
               onChange={(value) => setSelectedTemplateId(value)}
               allowClear
               loading={templatesQuery.isLoading}
-              placeholder={templatesQuery.isLoading ? 'Loading templates…' : 'Select template (or rely on preferred)'}
+              placeholder={templatesQuery.isLoading
+                ? t(($) => $.extensions.loadingTemplatesPlaceholder)
+                : t(($) => $.extensions.selectTemplatePlaceholder)}
               style={{ minWidth: 420 }}
             />
             <Button
@@ -553,7 +566,7 @@ export const ExtensionsDrawer = ({
               loading={upsertBindingMutation.isPending}
               disabled={!selectedTemplateId || mutatingDisabled}
             >
-              Save preferred
+              {t(($) => $.extensions.savePreferred)}
             </Button>
             <Button
               size="small"
@@ -563,45 +576,45 @@ export const ExtensionsDrawer = ({
               loading={deleteBindingMutation.isPending}
               disabled={!preferredBinding || mutatingDisabled}
             >
-              Clear preferred
+              {t(($) => $.extensions.clearPreferred)}
             </Button>
           </Space>
           {templatesQuery.isError && (
             <Alert
               type="error"
               showIcon
-              message="Failed to load compatible templates"
-              description="Template list is unavailable. Retry later or reload the page."
+              message={t(($) => $.extensions.compatibleTemplatesFailedTitle)}
+              description={t(($) => $.extensions.compatibleTemplatesFailedDescription)}
             />
           )}
           {bindingsQuery.isError && (
             <Alert
               type="warning"
               showIcon
-              message="Preferred binding is unavailable"
-              description="Binding API is temporarily unavailable. You can still launch with explicit template override."
+              message={t(($) => $.extensions.preferredBindingUnavailableTitle)}
+              description={t(($) => $.extensions.preferredBindingUnavailableDescription)}
             />
           )}
           {preferredBinding && (
             <Space size={8} wrap>
-              {renderInlinePill('preferred', 'geekblue')}
+              {renderInlinePill(t(($) => $.extensions.preferred), 'geekblue')}
               {renderInlinePill(preferredBinding.template_id)}
-              {preferredBinding.updated_at && renderInlinePill(dayjs(preferredBinding.updated_at).format('DD.MM.YYYY HH:mm'))}
+              {preferredBinding.updated_at && renderInlinePill(formatters.dateTime(preferredBinding.updated_at, { fallback: t(($) => $.shared.notAvailable) }))}
               {preferredBinding.updated_by && renderInlinePill(preferredBinding.updated_by)}
             </Space>
           )}
           {selectedTemplate && (
             <Space size={8} wrap>
               {renderInlinePill(selectedTemplate.value, 'blue')}
-              {renderInlinePill(selectedTemplate.capability || 'no capability')}
+              {renderInlinePill(selectedTemplate.capability || t(($) => $.shared.noCapability))}
             </Space>
           )}
           {templateSelectionMissing && (
             <Alert
               type="warning"
               showIcon
-              message="Template is not resolved"
-              description="Choose a template override or configure preferred template binding for this manual operation."
+              message={t(($) => $.extensions.templateNotResolvedTitle)}
+              description={t(($) => $.extensions.templateNotResolvedDescription)}
             />
           )}
           {setFlagsOperationSelected && (
@@ -613,24 +626,24 @@ export const ExtensionsDrawer = ({
                 options={extensionNameOptions}
                 onChange={(value) => setExtensionName(value || '')}
                 onSearch={(value) => setExtensionName(value)}
-                placeholder="extension_name"
+                placeholder={t(($) => $.extensions.extensionNamePlaceholder)}
                 style={{ minWidth: 320 }}
               />
               <Space align="center" wrap>
                 <Checkbox checked={applyActiveEnabled} onChange={(e) => setApplyActiveEnabled(e.target.checked)}>
-                  Active
+                  {t(($) => $.extensions.active)}
                 </Checkbox>
                 <Switch checked={applyActiveValue} onChange={setApplyActiveValue} disabled={!applyActiveEnabled} />
               </Space>
               <Space align="center" wrap>
                 <Checkbox checked={applySafeModeEnabled} onChange={(e) => setApplySafeModeEnabled(e.target.checked)}>
-                  Safe mode
+                  {t(($) => $.extensions.safeMode)}
                 </Checkbox>
                 <Switch checked={applySafeModeValue} onChange={setApplySafeModeValue} disabled={!applySafeModeEnabled} />
               </Space>
               <Space align="center" wrap>
                 <Checkbox checked={applyUnsafeActionProtectionEnabled} onChange={(e) => setApplyUnsafeActionProtectionEnabled(e.target.checked)}>
-                  Unsafe action protection
+                  {t(($) => $.extensions.unsafeActionProtection)}
                 </Checkbox>
                 <Switch
                   checked={applyUnsafeActionProtectionValue}
@@ -648,12 +661,12 @@ export const ExtensionsDrawer = ({
             loading={planPending || applyPending}
             disabled={mutatingDisabled || templateSelectionMissing || !databaseId}
           >
-            Apply
+            {t(($) => $.extensions.apply)}
           </Button>
         </Space>
 
         <Typography.Title level={5} style={{ marginTop: 8 }}>
-          Snapshot
+          {t(($) => $.extensions.snapshotTitle)}
         </Typography.Title>
         <Space style={{ marginBottom: 8 }}>
           <Button
@@ -663,17 +676,16 @@ export const ExtensionsDrawer = ({
             }}
             loading={snapshotFetching}
           >
-            Refresh
+            {t(($) => $.extensions.refresh)}
           </Button>
           <Typography.Text type="secondary">
-            Updated:{' '}
-            {snapshot?.updated_at
-              ? dayjs(snapshot.updated_at).format('DD.MM.YYYY HH:mm')
-              : 'n/a'}
+            {t(($) => $.extensions.updatedAt, {
+              value: formatters.dateTime(snapshot?.updated_at, { fallback: t(($) => $.shared.notAvailable) }),
+            })}
           </Typography.Text>
           {snapshot?.source_operation_id && (
             <Typography.Text type="secondary">
-              Source op: {snapshot.source_operation_id}
+              {t(($) => $.extensions.sourceOperation, { id: snapshot.source_operation_id })}
             </Typography.Text>
           )}
         </Space>

@@ -51,6 +51,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, useTemplatesTranslation } from '../../i18n'
 import {
   type ModalValidationIssue,
   type TemplateModalProvenance,
@@ -115,14 +116,6 @@ const parseComposeMode = (value: string | null): TemplateComposeMode => {
   return null
 }
 
-const formatDateTime = (value?: string | null) => (
-  value ? new Date(value).toLocaleString() : '—'
-)
-
-const formatCompactDateTime = (value?: string | null) => (
-  value ? new Date(value).toLocaleDateString() : '—'
-)
-
 const buildCatalogButtonStyle = (selected: boolean) => ({
   width: '100%',
   justifyContent: 'flex-start',
@@ -161,18 +154,18 @@ const isValidationIssue = (value: unknown): value is ModalValidationIssue => (
   && typeof (value as { message?: unknown }).message === 'string'
 )
 
-const toValidationIssues = (value: unknown): ModalValidationIssue[] => {
+const toValidationIssues = (value: unknown, fallbackMessage: string): ModalValidationIssue[] => {
   if (!Array.isArray(value)) return []
   return value
     .filter(isValidationIssue)
     .map((item) => ({
       path: normalizeText(item.path) || 'global',
       code: normalizeText(item.code) || undefined,
-      message: normalizeText(item.message) || 'Validation failed',
+      message: normalizeText(item.message) || fallbackMessage,
     }))
 }
 
-const extractValidationIssuesFromError = (error: unknown): ModalValidationIssue[] => {
+const extractValidationIssuesFromError = (error: unknown, fallback: string): ModalValidationIssue[] => {
   const err = error as {
     response?: {
       data?: {
@@ -184,12 +177,12 @@ const extractValidationIssuesFromError = (error: unknown): ModalValidationIssue[
   } | null
   const data = err?.response?.data
   const direct = [
-    ...toValidationIssues(data?.validation_errors),
-    ...toValidationIssues(data?.errors),
+    ...toValidationIssues(data?.validation_errors, fallback),
+    ...toValidationIssues(data?.errors, fallback),
   ]
   if (direct.length > 0) return direct
   const nested = data?.error?.message
-  return toValidationIssues(nested)
+  return toValidationIssues(nested, fallback)
 }
 
 const isFormValidationError = (error: unknown): boolean => (
@@ -326,6 +319,8 @@ function OperationTemplateListShell({
 }) {
   const { message } = App.useApp()
   const screens = useBreakpoint()
+  const { t, ready } = useTemplatesTranslation()
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const tableRouteHydratedRef = useRef(false)
@@ -348,28 +343,43 @@ function OperationTemplateListShell({
   const [form] = Form.useForm<ActionFormValues>()
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'id', label: 'Alias', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'system_managed', label: 'Managed', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'domain', label: 'Domain', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'operation_type', label: 'Operation Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'executor_kind', label: 'Executor Kind', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'executor_command_id', label: 'Command ID', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'target_entity', label: 'Target', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'template_exposure_id', label: 'Exposure ID', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'template_exposure_revision', label: 'Exposure Revision', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'capability', label: 'Capability', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'status', label: 'Status', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_active', label: 'Active', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', sortable: false, groupKey: 'meta', groupLabel: 'Meta' },
-  ], [])
+    { key: 'name', label: t(($) => $.table.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.groups.core) },
+    { key: 'id', label: t(($) => $.table.alias), sortable: true, groupKey: 'core', groupLabel: t(($) => $.groups.core) },
+    { key: 'system_managed', label: t(($) => $.table.managed), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'domain', label: t(($) => $.table.domain), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'operation_type', label: t(($) => $.table.operationType), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'executor_kind', label: t(($) => $.table.executorKind), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'executor_command_id', label: t(($) => $.table.commandId), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'target_entity', label: t(($) => $.table.target), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'template_exposure_id', label: t(($) => $.table.exposureId), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'template_exposure_revision', label: t(($) => $.table.exposureRevision), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'capability', label: t(($) => $.table.capability), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'status', label: t(($) => $.table.status), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'is_active', label: t(($) => $.table.active), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'updated_at', label: t(($) => $.table.updated), sortable: true, groupKey: 'time', groupLabel: t(($) => $.groups.time) },
+    { key: 'actions', label: t(($) => $.table.actions), sortable: false, groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+  ], [t])
 
   const syncMutation = useSyncTemplatesFromRegistry()
   const createMutation = useCreateTemplate()
   const updateMutation = useUpdateTemplate()
   const deleteMutation = useDeleteTemplate()
   const poolRuntimeRegistryQuery = usePoolRuntimeRegistryInspect(showPoolRuntimeDiagnostics)
+  const formatDateTime = useCallback((value?: string | null) => (
+    formatters.dateTime(value, { fallback: '—' })
+  ), [formatters])
+  const formatCompactDateTime = useCallback((value?: string | null) => (
+    formatters.date(value, { fallback: '—' })
+  ), [formatters])
+  const getTemplateStatusLabel = useCallback((status: string) => {
+    if (status === 'published') {
+      return t(($) => $.detail.statusPublished)
+    }
+    if (status === 'draft') {
+      return t(($) => $.detail.draft)
+    }
+    return status
+  }, [t])
 
   const closeModal = useCallback(() => {
     routeUpdateModeRef.current = 'push'
@@ -388,18 +398,18 @@ function OperationTemplateListShell({
 
   const openEditTemplateModal = useCallback((template: TemplateRow) => {
     if (isSystemManagedPoolRuntimeTemplate(template)) {
-      message.warning('System-managed pool runtime template is read-only')
+      message.warning(t(($) => $.messages.readOnlySystemManaged))
       return
     }
     routeUpdateModeRef.current = 'push'
     setSelectedTemplateId(template.id)
     setIsDetailDrawerOpen(true)
     setComposeMode('edit')
-  }, [message])
+  }, [message, t])
 
   const handleDeleteTemplate = useCallback(async (template: TemplateRow) => {
     if (isSystemManagedPoolRuntimeTemplate(template)) {
-      message.warning('System-managed pool runtime template is read-only')
+      message.warning(t(($) => $.messages.readOnlySystemManaged))
       return
     }
     try {
@@ -411,11 +421,11 @@ function OperationTemplateListShell({
         setIsDetailDrawerOpen(false)
       }
       setExposuresReloadTick((value) => value + 1)
-      message.success('Template deleted')
+      message.success(t(($) => $.messages.templateDeleted))
     } catch (err) {
-      message.error(toErrorMessage(err, 'Failed to delete template'))
+      message.error(toErrorMessage(err, t(($) => $.errors.failedToDelete)))
     }
-  }, [deleteMutation, message, selectedTemplateId])
+  }, [deleteMutation, message, selectedTemplateId, t])
 
   const table = useTableToolkit<TemplateRow>({
     tableId: 'operation-templates',
@@ -727,8 +737,8 @@ function OperationTemplateListShell({
   }, [canManageAnyTemplate, composeMode, selectedTemplate, selectedTemplateCanMutate])
 
   const modalTitle = useMemo(() => (
-    editingTemplate ? 'Edit Template' : 'New Template'
-  ), [editingTemplate])
+    editingTemplate ? t(($) => $.page.editTemplate) : t(($) => $.page.newTemplate)
+  ), [editingTemplate, t])
 
   const modalProvenance = useMemo<TemplateModalProvenance | null>(() => {
     if (!editingTemplate) return null
@@ -785,7 +795,7 @@ function OperationTemplateListShell({
       const values = await form.validateFields()
       const built = buildTemplateWritePayloadFromEditor(values, { existingId: editingTemplate?.id })
       if (!built.ok) {
-        message.error(built.error)
+        message.error(t(($) => $.errors[built.errorKey]))
         return
       }
 
@@ -795,19 +805,19 @@ function OperationTemplateListShell({
         exposure: upsertPayload.exposure,
       })
       if (!validation.valid) {
-        const issues = toValidationIssues(validation.errors)
+        const issues = toValidationIssues(validation.errors, t(($) => $.errors.validationFailed))
         applyBackendValidationIssues(issues)
-        message.error('Save blocked: fix validation errors before publish/save')
+        message.error(t(($) => $.errors.saveBlocked))
         return
       }
 
       let result
       if (editingTemplate) {
         result = await updateMutation.mutateAsync(built.payload)
-        message.success('Template updated')
+        message.success(t(($) => $.messages.templateUpdated))
       } else {
         result = await createMutation.mutateAsync(built.payload)
-        message.success('Template created')
+        message.success(t(($) => $.messages.templateCreated))
       }
       routeUpdateModeRef.current = 'push'
       setSelectedTemplateId(result.template.id)
@@ -816,15 +826,20 @@ function OperationTemplateListShell({
       closeModal()
     } catch (err) {
       if (isFormValidationError(err)) return
-      const issues = extractValidationIssuesFromError(err)
+      const issues = extractValidationIssuesFromError(err, t(($) => $.errors.validationFailed))
       if (issues.length > 0) {
         applyBackendValidationIssues(issues)
-        message.error('Save blocked: fix validation errors before publish/save')
+        message.error(t(($) => $.errors.saveBlocked))
         return
       }
-      message.error(toErrorMessage(err, editingTemplate ? 'Failed to update template' : 'Failed to create template'))
+      message.error(
+        toErrorMessage(
+          err,
+          editingTemplate ? t(($) => $.errors.failedToUpdate) : t(($) => $.errors.failedToCreate)
+        )
+      )
     }
-  }, [applyBackendValidationIssues, closeModal, createMutation, editingTemplate, form, message, updateMutation])
+  }, [applyBackendValidationIssues, closeModal, createMutation, editingTemplate, form, message, t, updateMutation])
 
   const onSync = useCallback(async () => {
     try {
@@ -832,24 +847,29 @@ function OperationTemplateListShell({
         dry_run: dryRun,
         include_pool_runtime: true,
       })
-      message.success(`${result.message}: created=${result.created}, updated=${result.updated}, unchanged=${result.unchanged}`)
+      message.success(t(($) => $.messages.syncSummary, {
+        message: String(result.message),
+        created: String(result.created),
+        updated: String(result.updated),
+        unchanged: String(result.unchanged),
+      }))
       setExposuresReloadTick((value) => value + 1)
     } catch (err) {
       const status = (err as { response?: { status?: number } } | null)?.response?.status
       if (status === 403) {
-        message.error('Sync requires staff access')
+        message.error(t(($) => $.messages.syncRequiresStaff))
         return
       }
-      message.error('Failed to sync templates from registry')
+      message.error(t(($) => $.errors.syncFailed))
     }
-  }, [dryRun, message, syncMutation])
+  }, [dryRun, message, syncMutation, t])
 
   const detailLoading = Boolean(selectedTemplateId) && !selectedTemplate && (exposuresQuery.isLoading || selectedTemplateQuery.isLoading)
   const detailError = selectedTemplateId && !selectedTemplate && selectedTemplateQuery.isError
-    ? 'Failed to load the selected template.'
+    ? t(($) => $.errors.failedToLoadSelected)
     : null
   const catalogError = !showAccessWarning && exposuresQuery.isError
-    ? 'Failed to load templates catalog.'
+    ? t(($) => $.errors.failedToLoadCatalog)
     : null
   const activeFilterSummaries = useMemo(() => (
     table.filterConfigs.flatMap((config) => {
@@ -866,14 +886,14 @@ function OperationTemplateListShell({
     }
     const config = table.columnConfigs.find((item) => item.key === table.sort.key)
     const label = config?.label || table.sort.key
-    return `${label}: ${table.sort.order === 'asc' ? 'ascending' : 'descending'}`
-  }, [table.columnConfigs, table.sort.key, table.sort.order])
+    return `${label}: ${table.sort.order === 'asc' ? t(($) => $.sort.ascending) : t(($) => $.sort.descending)}`
+  }, [t, table.columnConfigs, table.sort.key, table.sort.order])
   const catalogStateToolbar = activeFilterSummaries.length > 0 || activeSortSummary
     ? (
       <Alert
         type="info"
         showIcon
-        message="Route filters active"
+        message={t(($) => $.alerts.routeFiltersActive)}
         description={(
           <Space wrap size={[8, 8]}>
             {activeFilterSummaries.map((summary) => (
@@ -887,23 +907,27 @@ function OperationTemplateListShell({
     )
     : null
 
+  if (!ready) {
+    return null
+  }
+
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Operation Templates"
-          subtitle="Atomic operation catalog for manual execution and workflow nodes. Analyst-authored schemes belong in /workflows."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Space wrap>
-              {canManageAnyTemplate ? <Button onClick={openCreateModal}>New Template</Button> : null}
+              {canManageAnyTemplate ? <Button onClick={openCreateModal}>{t(($) => $.page.newTemplate)}</Button> : null}
               {canManageAnyTemplate ? (
                 <>
                   <Space>
-                    <Text>Dry run</Text>
+                    <Text>{t(($) => $.page.dryRun)}</Text>
                     <Switch checked={dryRun} onChange={setDryRun} />
                   </Space>
                   <Button type="primary" loading={syncMutation.isPending} onClick={() => void onSync()}>
-                    Sync from registry
+                    {t(($) => $.page.syncFromRegistry)}
                   </Button>
                 </>
               ) : null}
@@ -915,8 +939,8 @@ function OperationTemplateListShell({
       {showAccessWarning ? (
         <Alert
           type="warning"
-          message="Access denied"
-          description="Operation templates are not available for your permissions."
+          message={t(($) => $.alerts.accessDeniedTitle)}
+          description={t(($) => $.alerts.accessDeniedDescription)}
           showIcon
         />
       ) : null}
@@ -924,28 +948,32 @@ function OperationTemplateListShell({
       <Alert
         type="info"
         showIcon
-        message="Atomic operations only"
-        description="Use /workflows to model analyst-facing schemes. workflow executor templates remain available here only as a compatibility/integration path."
+        message={t(($) => $.alerts.atomicOnlyTitle)}
+        description={t(($) => $.alerts.atomicOnlyDescription)}
       />
 
       {showPoolRuntimeDiagnostics ? (
         <Alert
           data-testid="templates-pool-runtime-registry"
           type={poolRuntimeRegistryQuery.isError || poolRuntimeRegistrySummary.missingCount > 0 || poolRuntimeRegistrySummary.driftCount > 0 ? 'warning' : 'success'}
-          message={poolRuntimeRegistryQuery.isLoading ? 'Pool runtime registry diagnostics: loading' : 'Pool runtime registry diagnostics'}
+          message={poolRuntimeRegistryQuery.isLoading ? t(($) => $.registry.loadingTitle) : t(($) => $.registry.title)}
           description={poolRuntimeRegistryQuery.isError ? (
-            'Failed to load pool runtime registry diagnostics.'
+            t(($) => $.registry.loadFailed)
           ) : (
             <Space direction="vertical" size={2}>
               <Text type="secondary">
-                {`contract_version=${poolRuntimeRegistrySummary.contractVersion}`}
+                {t(($) => $.registry.contractVersion, { value: String(poolRuntimeRegistrySummary.contractVersion) })}
               </Text>
               <Text type="secondary">
-                {`configured=${poolRuntimeRegistrySummary.configuredCount}, missing=${poolRuntimeRegistrySummary.missingCount}, drift=${poolRuntimeRegistrySummary.driftCount}`}
+                {t(($) => $.registry.summary, {
+                  configured: String(poolRuntimeRegistrySummary.configuredCount),
+                  missing: String(poolRuntimeRegistrySummary.missingCount),
+                  drift: String(poolRuntimeRegistrySummary.driftCount),
+                })}
               </Text>
               {poolRuntimeRegistrySummary.issuePreview.length > 0 ? (
                 <Text type="secondary">
-                  {`issues: ${poolRuntimeRegistrySummary.issuePreview.join(' | ')}`}
+                  {t(($) => $.registry.issues, { value: poolRuntimeRegistrySummary.issuePreview.join(' | ') })}
                 </Text>
               ) : null}
             </Space>
@@ -960,16 +988,16 @@ function OperationTemplateListShell({
           routeUpdateModeRef.current = 'push'
           setIsDetailDrawerOpen(false)
         }}
-        detailDrawerTitle={selectedTemplate?.name || 'Template detail'}
+        detailDrawerTitle={selectedTemplate?.name || t(($) => $.detail.drawerTitle)}
         list={(
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <EntityList
-              title="Template Catalog"
+              title={t(($) => $.catalog.title)}
               extra={(
                 <Input.Search
-                  aria-label="Search templates"
+                  aria-label={t(($) => $.catalog.searchAriaLabel)}
                   allowClear
-                  placeholder="Search templates"
+                  placeholder={t(($) => $.catalog.searchPlaceholder)}
                   value={table.search}
                   onChange={(event) => table.setSearch(event.target.value)}
                   style={{ width: '100%', maxWidth: 260 }}
@@ -978,19 +1006,19 @@ function OperationTemplateListShell({
               toolbar={catalogStateToolbar}
               error={catalogError}
               loading={exposuresQuery.isLoading}
-              emptyDescription="No templates match the current catalog state."
+              emptyDescription={t(($) => $.catalog.emptyDescription)}
               dataSource={pagedRows.rows}
               renderItem={(template) => {
                 const selected = template.id === selectedTemplateId
                 const readOnlySystemTemplate = isSystemManagedPoolRuntimeTemplate(template)
                 const executionSummary = [
-                  normalizeText(template.executor_kind) || normalizeText(template.operation_type) || 'unknown executor',
-                  normalizeText(template.executor_command_id) || normalizeText(template.capability) || 'no command binding',
+                  normalizeText(template.executor_kind) || normalizeText(template.operation_type) || t(($) => $.catalog.unknownExecutor),
+                  normalizeText(template.executor_command_id) || normalizeText(template.capability) || t(($) => $.catalog.noCommandBinding),
                 ].join(' · ')
                 const provenanceSummary = [
-                  template.template_exposure_revision ? `Revision ${template.template_exposure_revision}` : null,
-                  template.target_entity ? `Target ${template.target_entity}` : null,
-                  template.updated_at ? `Updated ${formatCompactDateTime(template.updated_at)}` : null,
+                  template.template_exposure_revision ? t(($) => $.catalog.revision, { value: String(template.template_exposure_revision) }) : null,
+                  template.target_entity ? t(($) => $.catalog.target, { value: template.target_entity }) : null,
+                  template.updated_at ? t(($) => $.catalog.updated, { value: formatCompactDateTime(template.updated_at) }) : null,
                 ].filter(Boolean).join(' · ')
 
                 return (
@@ -999,7 +1027,7 @@ function OperationTemplateListShell({
                     type="text"
                     block
                     data-testid={`templates-catalog-item-${template.id}`}
-                    aria-label={`Open template ${template.name}`}
+                    aria-label={t(($) => $.catalog.openTemplate, { name: template.name })}
                     aria-pressed={selected}
                     onClick={() => {
                       routeUpdateModeRef.current = 'push'
@@ -1013,22 +1041,22 @@ function OperationTemplateListShell({
                         <Text strong>{template.name}</Text>
                         <StatusBadge
                           status={template.status === 'published' ? 'published' : 'inactive'}
-                          label={template.status}
+                          label={getTemplateStatusLabel(template.status)}
                         />
                         <StatusBadge
                           status={template.is_active ? 'active' : 'inactive'}
-                          label={template.is_active ? 'Active' : 'Inactive'}
+                          label={template.is_active ? t(($) => $.catalog.active) : t(($) => $.catalog.inactive)}
                         />
-                        {readOnlySystemTemplate ? <Tag color="gold">system-managed</Tag> : null}
+                        {readOnlySystemTemplate ? <Tag color="gold">{t(($) => $.catalog.systemManaged)}</Tag> : null}
                         {isWorkflowExecutorTemplate(template) ? (
                           <Tag color="orange" data-testid="templates-executor-kind-compatibility-tag">
-                            compatibility
+                            {t(($) => $.catalog.compatibility)}
                           </Tag>
                         ) : null}
                       </Space>
                       {renderCellText(template.id, { code: true, secondary: true, maxWidth: 360 })}
                       <Text type="secondary">{executionSummary}</Text>
-                      <Text type="secondary">{provenanceSummary || 'No provenance summary'}</Text>
+                      <Text type="secondary">{provenanceSummary || t(($) => $.catalog.noProvenanceSummary)}</Text>
                     </Space>
                   </Button>
                 )
@@ -1053,11 +1081,11 @@ function OperationTemplateListShell({
         )}
         detail={(
           <EntityDetails
-            title="Template detail"
+            title={t(($) => $.detail.title)}
             loading={detailLoading}
             error={detailError}
             empty={!selectedTemplateId || (!selectedTemplate && !detailLoading)}
-            emptyDescription="Select a template from the catalog to inspect its execution contract."
+            emptyDescription={t(($) => $.detail.emptyDescription)}
             extra={selectedTemplate ? (
               <Space wrap>
                 <Button
@@ -1065,12 +1093,12 @@ function OperationTemplateListShell({
                   disabled={!selectedTemplateCanMutate}
                   onClick={() => openEditTemplateModal(selectedTemplate)}
                 >
-                  Edit
+                  {t(($) => $.detail.edit)}
                 </Button>
                 <Popconfirm
-                  title="Delete template?"
-                  okText="Delete"
-                  cancelText="Cancel"
+                  title={t(($) => $.detail.deleteConfirmTitle)}
+                  okText={t(($) => $.detail.deleteConfirmOk)}
+                  cancelText={t(($) => $.detail.deleteConfirmCancel)}
                   onConfirm={() => {
                     void handleDeleteTemplate(selectedTemplate)
                   }}
@@ -1081,7 +1109,7 @@ function OperationTemplateListShell({
                     title={selectedTemplateDisabledReason}
                     disabled={!selectedTemplateCanMutate}
                   >
-                    Delete
+                    {t(($) => $.detail.delete)}
                   </Button>
                 </Popconfirm>
               </Space>
@@ -1093,8 +1121,8 @@ function OperationTemplateListShell({
                   <Alert
                     type="warning"
                     showIcon
-                    message="Compatibility path only"
-                    description="Use /workflows for analyst-authored schemes. Keep /templates focused on atomic operations and integration building blocks."
+                    message={t(($) => $.alerts.compatibilityOnlyTitle)}
+                    description={t(($) => $.alerts.compatibilityOnlyDescription)}
                   />
                 ) : null}
 
@@ -1102,79 +1130,81 @@ function OperationTemplateListShell({
                   <Alert
                     type="info"
                     showIcon
-                    message="System-managed pool runtime template"
-                    description="This template is managed from the pool runtime registry and remains read-only in the workspace."
+                    message={t(($) => $.alerts.systemManagedTitle)}
+                    description={t(($) => $.alerts.systemManagedDescription)}
                   />
                 ) : null}
 
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Name">
+                  <Descriptions.Item label={t(($) => $.detail.fields.name)}>
                     <Text strong data-testid="templates-selected-name">{selectedTemplate.name}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Alias">
+                  <Descriptions.Item label={t(($) => $.detail.fields.alias)}>
                     <Text code data-testid="templates-selected-id">{selectedTemplate.id}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Status">
+                  <Descriptions.Item label={t(($) => $.detail.fields.status)}>
                     <span data-testid="templates-selected-status">
-                      <StatusBadge status={selectedTemplate.status} />
+                      <StatusBadge status={selectedTemplate.status} label={getTemplateStatusLabel(selectedTemplate.status)} />
                     </span>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Managed">
+                  <Descriptions.Item label={t(($) => $.detail.fields.managed)}>
                     {selectedTemplateReadOnly ? (
                       <Space size={6}>
-                        <Tag color="gold">system-managed</Tag>
+                        <Tag color="gold">{t(($) => $.detail.systemManaged)}</Tag>
                         {renderCellText(selectedTemplate.domain || 'pool_runtime', { code: true, maxWidth: 160 })}
                       </Space>
                     ) : (
-                      <Tag>user-managed</Tag>
+                      <Tag>{t(($) => $.detail.userManaged)}</Tag>
                     )}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Operation type">
+                  <Descriptions.Item label={t(($) => $.detail.fields.operationType)}>
                     {renderCellText(selectedTemplate.operation_type, { code: true, maxWidth: 260 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Executor kind">
+                  <Descriptions.Item label={t(($) => $.detail.fields.executorKind)}>
                     {isWorkflowExecutorTemplate(selectedTemplate) ? (
                       <Space size={6} wrap>
-                        <Tag color="orange">compatibility</Tag>
+                        <Tag color="orange">{t(($) => $.detail.compatibility)}</Tag>
                         {renderCellText(selectedTemplate.executor_kind, { code: true, maxWidth: 260 })}
                       </Space>
                     ) : renderCellText(selectedTemplate.executor_kind, { code: true, maxWidth: 260 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Command ID">
+                  <Descriptions.Item label={t(($) => $.detail.fields.commandId)}>
                     {renderCellText(selectedTemplate.executor_command_id, { code: true, maxWidth: 320 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Target">
+                  <Descriptions.Item label={t(($) => $.detail.fields.target)}>
                     {renderCellText(selectedTemplate.target_entity, { code: true, maxWidth: 260 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Capability">
+                  <Descriptions.Item label={t(($) => $.detail.fields.capability)}>
                     {renderCellText(selectedTemplate.capability, { code: true, maxWidth: 320 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Active">{selectedTemplate.is_active ? 'yes' : 'no'}</Descriptions.Item>
-                  <Descriptions.Item label="Template exposure ID">
+                  <Descriptions.Item label={t(($) => $.detail.fields.active)}>
+                    {selectedTemplate.is_active ? t(($) => $.detail.yes) : t(($) => $.detail.no)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t(($) => $.detail.fields.exposureId)}>
                     {renderCellText(selectedTemplate.template_exposure_id, { code: true, maxWidth: 360 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Template exposure revision">
+                  <Descriptions.Item label={t(($) => $.detail.fields.exposureRevision)}>
                     {typeof selectedTemplate.template_exposure_revision === 'number'
                       ? String(selectedTemplate.template_exposure_revision)
                       : '—'}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Definition ID">
+                  <Descriptions.Item label={t(($) => $.detail.fields.definitionId)}>
                     {renderCellText(selectedTemplate.definition_id, { code: true, maxWidth: 360 })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Updated at">{formatDateTime(selectedTemplate.updated_at)}</Descriptions.Item>
-                  <Descriptions.Item label="Created at">{formatDateTime(selectedTemplate.created_at)}</Descriptions.Item>
-                  <Descriptions.Item label="Description">{selectedTemplate.description || '—'}</Descriptions.Item>
+                  <Descriptions.Item label={t(($) => $.detail.fields.updatedAt)}>{formatDateTime(selectedTemplate.updated_at)}</Descriptions.Item>
+                  <Descriptions.Item label={t(($) => $.detail.fields.createdAt)}>{formatDateTime(selectedTemplate.created_at)}</Descriptions.Item>
+                  <Descriptions.Item label={t(($) => $.detail.fields.description)}>{selectedTemplate.description || '—'}</Descriptions.Item>
                 </Descriptions>
 
                 <JsonBlock
-                  title="Executor template_data"
+                  title={t(($) => $.detail.executorTemplateData)}
                   value={selectedTemplate.template_data}
                   dataTestId="templates-selected-template-data"
                   height={screens.lg ? 260 : 220}
                 />
 
                 <JsonBlock
-                  title="Capability config"
+                  title={t(($) => $.detail.capabilityConfig)}
                   value={selectedTemplate.capability_config}
                   dataTestId="templates-selected-capability-config"
                   height={screens.lg ? 220 : 180}

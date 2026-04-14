@@ -1,9 +1,10 @@
 import { isValidElement, type ReactNode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import type { Database } from '../../../api/generated/model/database'
 import { Databases } from '../Databases'
@@ -355,7 +356,9 @@ function renderDatabasesPage(initialEntry = '/databases') {
 }
 
 describe('Databases', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'databases')
     vi.clearAllMocks()
     mockConfirmWithTracking.mockClear()
     mockUpdateDatabaseCredentialsMutate.mockReset()
@@ -375,6 +378,11 @@ describe('Databases', () => {
       isLoading: false,
       error: null,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'databases')
+    await changeLanguage('ru')
   })
 
   it('restores selected database and active management context from query params', async () => {
@@ -468,7 +476,8 @@ describe('Databases', () => {
     expect(mockConfirmWithTracking).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        okText: 'Сбросить',
+        okText: 'Reset',
+        cancelText: 'Cancel',
       }),
       expect.objectContaining({
         actionKind: 'operator.action',
