@@ -197,7 +197,7 @@ describe('Extensions i18n', () => {
   it('renders localized page chrome and overview labels for the extensions workspace', () => {
     renderExtensionsPage()
 
-    expect(screen.getByRole('heading', { name: 'Extensions' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Расширения' })).toBeInTheDocument()
     expect(
       screen.getByText('Рабочее место управления расширениями с URL-backed выбранным extension и secondary drill-down surface.'),
     ).toBeInTheDocument()

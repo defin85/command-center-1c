@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Collapse, Progress, Space, Typography } from 'antd'
+import type { TFunction } from 'i18next'
 
 import {
   applyPoolFactualReviewAction as applyPoolFactualReviewActionRequest,
@@ -15,17 +16,23 @@ import {
   refreshPoolFactualWorkspace,
 } from '../../api/intercompanyPools'
 import { EntityTable, RouteButton, StatusBadge } from '../../components/platform'
+import { usePoolFactualTranslation } from '../../i18n'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import {
   getPoolFactualReviewActionLabel,
   getPoolFactualReviewReasonLabel,
+  getPoolFactualReviewStatusLabel,
   getPoolFactualReviewStatusTone,
   type PoolFactualReviewAction,
   type PoolFactualReviewRow,
 } from './poolFactualReviewQueue'
 import {
+  getPoolFactualAvailabilityLabel,
+  getPoolFactualFreshnessStatusLabel,
   getPoolFactualPrimaryActionLabel,
   getPoolFactualPrimaryReason,
+  getPoolFactualSettlementStatusLabel,
+  getPoolFactualSyncStatusLabel,
   resolvePoolFactualPrioritySignal,
   getPoolFactualVerdictLabel,
   getPoolFactualVerdictTone,
@@ -77,9 +84,25 @@ type PoolFactualRefreshCardState = {
 const FACTUAL_WORKSPACE_POLL_INTERVAL_MS = 120_000
 const FACTUAL_REFRESH_STATE_POLL_INTERVAL_MS = 5_000
 
+type PoolFactualTranslation = TFunction<'poolFactual', undefined>
+type PoolFactualFormatters = {
+  dateTime: (
+    value: string | Date | null | undefined,
+    options?: Intl.DateTimeFormatOptions & { fallback?: string }
+  ) => string
+  date: (
+    value: string | Date | null | undefined,
+    options?: Intl.DateTimeFormatOptions & { fallback?: string }
+  ) => string
+  number: (
+    value: number | null | undefined,
+    options?: Intl.NumberFormatOptions & { fallback?: string }
+  ) => string
+}
+
 const formatShortId = (value: string | null | undefined) => {
   if (!value) {
-    return '-'
+    return '—'
   }
   return value.slice(0, 8)
 }
@@ -89,19 +112,53 @@ const parseAmount = (value: string | null | undefined) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-const formatTimestamp = (value: string | null | undefined) => {
-  if (!value) {
-    return '-'
+const formatTimestamp = (
+  formatters: PoolFactualFormatters,
+  value: string | null | undefined,
+) => (
+  formatters.dateTime(value, {
+    fallback: '—',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  })
+)
+
+const formatQuarterWindow = (
+  formatters: PoolFactualFormatters,
+  quarterStart: string | null | undefined,
+  quarterEnd: string | null | undefined,
+) => {
+  if (quarterStart && quarterEnd) {
+    return `${formatters.date(quarterStart)} -> ${formatters.date(quarterEnd)}`
   }
-  return value.replace('T', ' ').replace('Z', ' UTC')
+  if (quarterStart) {
+    return formatters.date(quarterStart)
+  }
+  if (quarterEnd) {
+    return formatters.date(quarterEnd)
+  }
+  return '—'
 }
 
-const formatQuarterWindow = (quarterStart: string | null | undefined, quarterEnd: string | null | undefined) => {
-  if (quarterStart && quarterEnd) {
-    return `${quarterStart} -> ${quarterEnd}`
-  }
-  return quarterStart ?? quarterEnd ?? '-'
-}
+const formatAmount = (
+  formatters: PoolFactualFormatters,
+  value: string | null | undefined,
+) => (
+  value == null || value === ''
+    ? '—'
+    : formatters.number(parseAmount(value), {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+      fallback: '—',
+    })
+)
 
 const buildRefreshStateFromResponse = (
   response: PoolFactualRefreshResponse
@@ -158,11 +215,19 @@ const getRefreshTone = (refreshState: PoolFactualRefreshCardState | null) => {
   }
 }
 
-const getRefreshCopy = (refreshState: PoolFactualRefreshCardState | null) => {
+const getRefreshCopy = (
+  t: PoolFactualTranslation,
+  refreshState: PoolFactualRefreshCardState | null,
+) => {
   if (!refreshState) {
-    return 'Use the shipped refresh control when the operator needs an immediate bounded sync for this pool and quarter.'
+    return t('detail.refresh.emptyDescription')
   }
-  return `${refreshState.checkpointsRunning} running, ${refreshState.checkpointsPending} pending, ${refreshState.checkpointsFailed} failed, ${refreshState.checkpointsReady} ready checkpoint(s).`
+  return t('detail.refresh.summary', {
+    running: refreshState.checkpointsRunning,
+    pending: refreshState.checkpointsPending,
+    failed: refreshState.checkpointsFailed,
+    ready: refreshState.checkpointsReady,
+  })
 }
 
 const getSyncCheckpointTone = (checkpoint: PoolFactualRefreshCheckpoint) => {
@@ -179,12 +244,20 @@ const getSyncCheckpointTone = (checkpoint: PoolFactualRefreshCheckpoint) => {
   }
 }
 
-const getSyncCheckpointStatusLabel = (checkpoint: PoolFactualRefreshCheckpoint) => (
-  checkpoint.workflow_status.trim() || 'ready'
+const getSyncCheckpointStatusLabel = (
+  t: PoolFactualTranslation,
+  checkpoint: PoolFactualRefreshCheckpoint,
+) => (
+  getPoolFactualSyncStatusLabel(t, checkpoint.workflow_status)
 )
 
-const getSyncCheckpointDatabaseLabel = (checkpoint: PoolFactualRefreshCheckpoint) => (
-  checkpoint.database_name?.trim() || `Database ${formatShortId(checkpoint.database_id)}`
+const getSyncCheckpointDatabaseLabel = (
+  t: PoolFactualTranslation,
+  checkpoint: PoolFactualRefreshCheckpoint,
+) => (
+  checkpoint.database_name?.trim() || t('detail.diagnostics.databaseFallback', {
+    value: formatShortId(checkpoint.database_id),
+  })
 )
 
 const buildWorkflowExecutionDetailsHref = (executionId: string) => (
@@ -210,21 +283,27 @@ const getCarryForwardSummary = (row: PoolBatch) => {
   }
 }
 
-const buildReviewSummary = (item: PoolFactualReviewQueueItem) => {
+const buildReviewSummary = (
+  t: PoolFactualTranslation,
+  item: PoolFactualReviewQueueItem,
+) => {
   if (item.reason === 'late_correction') {
-    return 'Frozen-quarter correction requires manual reconcile before close.'
+    return t('review.summaries.lateCorrection')
   }
-  return 'Operator must confirm attribution before settlement can close on the default path.'
+  return t('review.summaries.unattributed')
 }
 
-const mapReviewRows = (queue: PoolFactualReviewQueue | null | undefined): ReviewRowWithTargets[] => (
+const mapReviewRows = (
+  t: PoolFactualTranslation,
+  queue: PoolFactualReviewQueue | null | undefined,
+): ReviewRowWithTargets[] => (
   queue?.items.map((item) => ({
     id: item.id,
     reason: item.reason,
     status: item.status,
     quarter: item.quarter,
     sourceDocumentRef: item.source_document_ref,
-    summary: buildReviewSummary(item),
+    summary: buildReviewSummary(t, item),
     attentionRequired: item.attention_required,
     allowedActions: item.allowed_actions,
     batchId: item.batch_id,
@@ -249,14 +328,19 @@ const getFreshnessTone = (summary: PoolFactualSummary | null) => {
   return summary.last_synced_at ? 'active' : 'unknown'
 }
 
-const getBacklogCopy = (summary: PoolFactualSummary | null) => {
+const getBacklogCopy = (
+  t: PoolFactualTranslation,
+  summary: PoolFactualSummary | null,
+) => {
   if (!summary) {
-    return 'Source availability, backlog, and the latest sync timestamp will appear here.'
+    return t('detail.freshness.emptyDescription')
   }
   if (summary.backlog_total > 0) {
-    return `Read backlog has ${summary.backlog_total} overdue checkpoint(s) on the default sync lane.`
+    return t('detail.freshness.backlogOverdue', {
+      count: summary.backlog_total,
+    })
   }
-  return 'Read backlog is clear on the default sync lane.'
+  return t('detail.freshness.backlogClear')
 }
 
 const getScopeLineageTone = (summary: PoolFactualSummary | null) => {
@@ -321,8 +405,11 @@ const getOverallStateAlertType = (workspaceError: string | null, summary: PoolFa
   }
 }
 
-const resolvePrimaryAction = (summary: PoolFactualSummary | null | undefined) => {
-  const label = getPoolFactualPrimaryActionLabel(summary)
+const resolvePrimaryAction = (
+  t: PoolFactualTranslation,
+  summary: PoolFactualSummary | null | undefined,
+) => {
+  const label = getPoolFactualPrimaryActionLabel(t, summary)
   switch (resolvePoolFactualPrioritySignal(summary)) {
     case 'source_unavailable':
     case 'sync_failed':
@@ -365,6 +452,7 @@ export function PoolFactualWorkspaceDetail({
   poolCatalogHref,
   runWorkspaceHref,
 }: PoolFactualWorkspaceDetailProps) {
+  const { t } = usePoolFactualTranslation()
   const formatters = useLocaleFormatters()
   const [workspace, setWorkspace] = useState<PoolFactualWorkspace | null>(null)
   const [loadingWorkspace, setLoadingWorkspace] = useState(true)
@@ -418,7 +506,7 @@ export function PoolFactualWorkspaceDetail({
         if (cancelled) {
           return
         }
-        const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
+        const resolved = resolveApiError(error, t('messages.failedLoadWorkspace'))
         setWorkspaceError(resolved.message)
         if (!background) {
           setSyncCheckpoints([])
@@ -440,7 +528,7 @@ export function PoolFactualWorkspaceDetail({
       cancelled = true
       window.clearInterval(pollId)
     }
-  }, [quarterStart, selectedPool.id])
+  }, [quarterStart, selectedPool.id, t])
 
   useEffect(() => {
     if (!isRefreshStateInFlight(refreshState)) {
@@ -491,14 +579,14 @@ export function PoolFactualWorkspaceDetail({
       setSyncCheckpoints(response.checkpoints ?? [])
       setRefreshState(buildRefreshStateFromResponse(response))
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to refresh factual workspace sync.')
+      const resolved = resolveApiError(error, t('messages.failedRefreshWorkspace'))
       setRefreshError(resolved.message)
     } finally {
       setRefreshingWorkspace(false)
     }
   }
 
-  const reviewRows = mapReviewRows(workspace?.review_queue)
+  const reviewRows = mapReviewRows(t, workspace?.review_queue)
   const linkedSettlement = runId
     ? (workspace?.settlements.find((row) => row.run_id === runId) ?? null)
     : null
@@ -526,7 +614,7 @@ export function PoolFactualWorkspaceDetail({
         batch_id: targets ? targets.batch_id ?? undefined : row.batchId ?? undefined,
         edge_id: targets ? targets.edge_id ?? undefined : row.edgeId ?? undefined,
         organization_id: targets ? targets.organization_id ?? undefined : row.organizationId ?? undefined,
-        note: 'Triggered from factual workspace',
+        note: t('messages.reviewActionNote'),
       })
       try {
         const refreshedWorkspace = await getPoolFactualWorkspace({
@@ -535,7 +623,7 @@ export function PoolFactualWorkspaceDetail({
         })
         setWorkspace(refreshedWorkspace)
       } catch (error) {
-        const resolved = resolveApiError(error, 'Factual review action succeeded but workspace refresh failed.')
+        const resolved = resolveApiError(error, t('messages.workspaceRefreshFailedAfterReview'))
         setReviewActionError(resolved.message)
         setWorkspace((current) => {
           if (!current) {
@@ -559,7 +647,7 @@ export function PoolFactualWorkspaceDetail({
         setAttributeReviewRow(null)
       }
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to apply factual review action.')
+      const resolved = resolveApiError(error, t('messages.failedApplyReviewAction'))
       setReviewActionError(resolved.message)
     } finally {
       setPendingReviewItemId(null)
@@ -585,18 +673,21 @@ export function PoolFactualWorkspaceDetail({
 
   const reviewColumns = [
     {
-      title: 'Reason',
+      title: t('detail.reviewTable.columns.reason'),
       dataIndex: 'reason',
       key: 'reason',
       render: (_: string, row: PoolFactualReviewRow) => (
         <Space direction="vertical" size={4}>
-          <StatusBadge status={getPoolFactualReviewStatusTone(row)} label={getPoolFactualReviewReasonLabel(row.reason)} />
+          <StatusBadge
+            status={getPoolFactualReviewStatusTone(row)}
+            label={getPoolFactualReviewReasonLabel(t, row.reason)}
+          />
           <Text type="secondary">{row.quarter}</Text>
         </Space>
       ),
     },
     {
-      title: 'Document',
+      title: t('detail.reviewTable.columns.document'),
       dataIndex: 'sourceDocumentRef',
       key: 'sourceDocumentRef',
       render: (value: string, row: PoolFactualReviewRow) => (
@@ -607,18 +698,21 @@ export function PoolFactualWorkspaceDetail({
       ),
     },
     {
-      title: 'Status',
+      title: t('detail.reviewTable.columns.status'),
       dataIndex: 'status',
       key: 'status',
       render: (_: string, row: PoolFactualReviewRow) => (
         <Space direction="vertical" size={4}>
-          <StatusBadge status={getPoolFactualReviewStatusTone(row)} label={row.status} />
-          {row.attentionRequired ? <Text type="secondary">attention required</Text> : null}
+          <StatusBadge
+            status={getPoolFactualReviewStatusTone(row)}
+            label={getPoolFactualReviewStatusLabel(t, row.status)}
+          />
+          {row.attentionRequired ? <Text type="secondary">{t('detail.reviewTable.attentionRequired')}</Text> : null}
         </Space>
       ),
     },
     {
-      title: 'Action',
+      title: t('detail.reviewTable.columns.action'),
       key: 'action',
       render: (_: unknown, row: PoolFactualReviewRow) => (
         row.allowedActions.length > 0 ? (
@@ -629,7 +723,10 @@ export function PoolFactualWorkspaceDetail({
                 size="small"
                 type={action === 'resolve_without_change' ? 'default' : 'primary'}
                 loading={pendingReviewItemId === row.id}
-                aria-label={`${getPoolFactualReviewActionLabel(action)} review item ${row.id}`}
+                aria-label={t('detail.reviewTable.actionAria', {
+                  action: getPoolFactualReviewActionLabel(t, action),
+                  id: row.id,
+                })}
                 onClick={() => {
                   if (action === 'attribute') {
                     handleOpenAttributeReview(row as ReviewRowWithTargets)
@@ -638,12 +735,12 @@ export function PoolFactualWorkspaceDetail({
                   void handleReviewAction(row as ReviewRowWithTargets, action)
                 }}
               >
-                {getPoolFactualReviewActionLabel(action)}
+                {getPoolFactualReviewActionLabel(t, action)}
               </Button>
             ))}
           </Space>
         ) : (
-          <Text type="secondary">Closed in factual workspace</Text>
+          <Text type="secondary">{t('detail.reviewTable.closed')}</Text>
         )
       ),
     },
@@ -652,9 +749,9 @@ export function PoolFactualWorkspaceDetail({
   const summary = workspace?.summary ?? null
   const overallVerdict = workspaceError ? 'critical' : resolvePoolFactualVerdict(summary)
   const overallTone = getPoolFactualVerdictTone(overallVerdict)
-  const overallLabel = getPoolFactualVerdictLabel(overallVerdict)
-  const overallReason = workspaceError ?? getPoolFactualPrimaryReason(summary)
-  const primaryAction = resolvePrimaryAction(summary)
+  const overallLabel = getPoolFactualVerdictLabel(t, overallVerdict)
+  const overallReason = workspaceError ?? getPoolFactualPrimaryReason(t, summary)
+  const primaryAction = resolvePrimaryAction(t, summary)
   const showRunLinkedSettlementHandoff = Boolean(runId && focus === 'settlement')
   const incomingAmount = parseAmount(summary?.incoming_amount)
   const outgoingAmount = parseAmount(summary?.outgoing_amount)
@@ -700,7 +797,7 @@ export function PoolFactualWorkspaceDetail({
         return next ?? current
       })
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to load factual workspace data.')
+      const resolved = resolveApiError(error, t('messages.failedLoadWorkspace'))
       setWorkspaceError(resolved.message)
       setSyncCheckpoints([])
       setWorkspace(null)
@@ -741,22 +838,25 @@ export function PoolFactualWorkspaceDetail({
           <Text code>{selectedPool.code}</Text>
           <StatusBadge status={overallTone} label={overallLabel} />
           {summary ? <Text type="secondary">{summary.quarter}</Text> : null}
-          {runId ? <Text type="secondary">Linked run {formatShortId(runId)}</Text> : null}
-          <Text type="secondary">Focus {focus}</Text>
+          {runId ? <Text type="secondary">{t('common.linkedRun', { value: formatShortId(runId) })}</Text> : null}
+          <Text type="secondary">{t('common.focus', { value: focus })}</Text>
         </Space>
       </div>
 
       <Alert
         type={getOverallStateAlertType(workspaceError, summary)}
         showIcon
-        message="Overall state"
+        message={t('detail.overallState.title')}
         description={(
           <Space direction="vertical" size={8} style={{ width: '100%' }}>
             <Space wrap>
               <StatusBadge status={overallTone} label={overallLabel} />
               {summary ? (
                 <Text type="secondary">
-                  Resolved quarter {summary.quarter} ({formatQuarterWindow(summary.quarter_start, summary.quarter_end)})
+                  {t('detail.overallState.resolvedQuarter', {
+                    quarter: summary.quarter,
+                    window: formatQuarterWindow(formatters, summary.quarter_start, summary.quarter_end),
+                  })}
                 </Text>
               ) : null}
             </Space>
@@ -764,17 +864,19 @@ export function PoolFactualWorkspaceDetail({
             <Space wrap>
               {summary?.last_synced_at ? (
                 <Text type="secondary">
-                  Last successful sync {formatTimestamp(summary.last_synced_at)}.
+                  {t('detail.overallState.lastSuccessfulSync', {
+                    value: formatTimestamp(formatters, summary.last_synced_at),
+                  })}
                 </Text>
               ) : (
-                <Text type="secondary">No successful sync has been recorded yet.</Text>
+                <Text type="secondary">{t('detail.overallState.noSuccessfulSync')}</Text>
               )}
               <Button
                 type="primary"
                 disabled={!workspaceError && !primaryAction.targetId}
                 onClick={handlePrimaryAction}
               >
-                {workspaceError ? 'Retry workspace load' : primaryAction.label}
+                {workspaceError ? t('detail.overallState.retryWorkspaceLoad') : primaryAction.label}
               </Button>
             </Space>
           </Space>
@@ -791,10 +893,10 @@ export function PoolFactualWorkspaceDetail({
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Space wrap>
-            <Text strong>Pool movement</Text>
+            <Text strong>{t('detail.movement.title')}</Text>
             <StatusBadge
               status={openBalanceAmount > 0 ? 'warning' : 'active'}
-              label={summary ? summary.quarter : (loadingWorkspace ? 'loading' : 'awaiting data')}
+              label={summary ? summary.quarter : (loadingWorkspace ? t('common.loading') : t('health.compactSummary.unknown'))}
             />
           </Space>
           <div
@@ -812,7 +914,7 @@ export function PoolFactualWorkspaceDetail({
                 background: '#fafafa',
               }}
             >
-              <Text type="secondary">Incoming</Text>
+              <Text type="secondary">{t('detail.movement.incoming')}</Text>
               <div style={{ marginTop: 8 }}>
                 <Text strong style={{ fontSize: 24 }}>
                   {formatters.number(incomingAmount, {
@@ -830,7 +932,7 @@ export function PoolFactualWorkspaceDetail({
                 background: '#fafafa',
               }}
             >
-              <Text type="secondary">Outgoing</Text>
+              <Text type="secondary">{t('detail.movement.outgoing')}</Text>
               <div style={{ marginTop: 8 }}>
                 <Text strong style={{ fontSize: 24 }}>
                   {formatters.number(outgoingAmount, {
@@ -848,7 +950,7 @@ export function PoolFactualWorkspaceDetail({
                 background: '#fafafa',
               }}
             >
-              <Text type="secondary">Open balance</Text>
+              <Text type="secondary">{t('detail.movement.openBalance')}</Text>
               <div style={{ marginTop: 8 }}>
                 <Text strong style={{ fontSize: 24 }}>
                   {formatters.number(openBalanceAmount, {
@@ -863,16 +965,19 @@ export function PoolFactualWorkspaceDetail({
             <Space direction="vertical" size={8} style={{ width: '100%' }}>
               {incomingAmount > 0 ? (
                 <Text type="secondary">
-                  Outgoing share {formatters.number(outgoingPercent, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}% of incoming volume; open balance remains {formatters.number(openBalancePercent, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}%.
+                  {t('detail.movement.outgoingShare', {
+                    outgoingPercent: formatters.number(outgoingPercent, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }),
+                    openBalancePercent: formatters.number(openBalancePercent, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }),
+                  })}
                 </Text>
               ) : (
-                <Text type="secondary">No incoming volume was recorded for this quarter.</Text>
+                <Text type="secondary">{t('detail.movement.noIncoming')}</Text>
               )}
               <Progress
                 percent={outgoingPercent}
@@ -881,22 +986,24 @@ export function PoolFactualWorkspaceDetail({
                 trailColor={openBalanceAmount > 0 ? '#faad14' : '#f0f0f0'}
               />
               <Text type="secondary">
-                With VAT {formatters.number(vatWithAmount, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}, without VAT {formatters.number(vatWithoutAmount, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}, VAT {formatters.number(vatAmount, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}.
+                {t('detail.movement.vatSummary', {
+                  withVat: formatters.number(vatWithAmount, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }),
+                  withoutVat: formatters.number(vatWithoutAmount, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }),
+                  vat: formatters.number(vatAmount, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }),
+                })}
               </Text>
             </Space>
           ) : (
-            <Text type="secondary">
-              Incoming, outgoing, and open-balance totals appear after the factual workspace payload loads.
-            </Text>
+            <Text type="secondary">{t('detail.movement.emptyDescription')}</Text>
           )}
         </Space>
       </div>
@@ -905,7 +1012,7 @@ export function PoolFactualWorkspaceDetail({
         <Alert
           type="error"
           showIcon
-          message="Factual refresh request failed"
+          message={t('detail.refresh.failedTitle')}
           description={refreshError}
         />
       ) : null}
@@ -926,22 +1033,26 @@ export function PoolFactualWorkspaceDetail({
               background: '#f6ffed',
             }}
           >
-            <Text strong>Run-linked settlement handoff</Text>
+            <Text strong>{t('detail.runLinkedSettlement.title')}</Text>
             <div style={{ marginTop: 12 }}>
               <Space direction="vertical" size={8}>
                 <Space wrap>
-                  <StatusBadge status="active" label="focus=settlement" />
+                  <StatusBadge status="active" label={t('common.focusBadge', { value: 'settlement' })} />
                   {linkedSettlement?.settlement?.status ? (
                     <StatusBadge
                       status={getSettlementStatusTone(linkedSettlement.settlement.status)}
-                      label={linkedSettlement.settlement.status}
+                      label={getPoolFactualSettlementStatusLabel(t, linkedSettlement.settlement.status)}
                     />
                   ) : null}
                 </Space>
                 <Text type="secondary">
                   {linkedSettlement
-                    ? `Matched run-linked settlement ${linkedSettlement.source_reference || formatShortId(linkedSettlement.id)} is ${linkedSettlement.settlement?.status ?? 'pending'} with open balance ${linkedSettlement.settlement?.open_balance ?? '-'}.`
-                    : 'This deep link keeps the operator in factual dashboard context while starting from the linked run report and its batch settlement handoff.'}
+                    ? t('detail.runLinkedSettlement.matchedSettlement', {
+                      settlement: linkedSettlement.source_reference || formatShortId(linkedSettlement.id),
+                      status: getPoolFactualSettlementStatusLabel(t, linkedSettlement.settlement?.status),
+                      openBalance: formatAmount(formatters, linkedSettlement.settlement?.open_balance),
+                    })
+                    : t('detail.runLinkedSettlement.emptyDescription')}
                 </Text>
               </Space>
             </div>
@@ -956,24 +1067,25 @@ export function PoolFactualWorkspaceDetail({
             background: '#fff',
           }}
         >
-          <Text strong>Freshness</Text>
+          <Text strong>{t('detail.freshness.title')}</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
               <StatusBadge
                 status={getFreshnessTone(summary)}
-                label={summary ? summary.freshness_state : 'not connected'}
+                label={summary ? getPoolFactualFreshnessStatusLabel(t, summary.freshness_state) : t('common.notConnected')}
               />
               {summary ? (
                 <Space direction="vertical" size={4}>
                   <Text type="secondary">
-                    Source {summary.source_availability}; last sync {formatTimestamp(summary.last_synced_at)}.
+                    {t('detail.freshness.sourceSummary', {
+                      availability: getPoolFactualAvailabilityLabel(t, summary.source_availability),
+                      value: formatTimestamp(formatters, summary.last_synced_at),
+                    })}
                   </Text>
-                  <Text type="secondary">{getBacklogCopy(summary)}</Text>
+                  <Text type="secondary">{getBacklogCopy(t, summary)}</Text>
                 </Space>
               ) : (
-                <Text type="secondary">
-                  {getBacklogCopy(null)}
-                </Text>
+                <Text type="secondary">{getBacklogCopy(t, null)}</Text>
               )}
             </Space>
           </div>
@@ -987,21 +1099,23 @@ export function PoolFactualWorkspaceDetail({
             background: '#fff',
           }}
         >
-          <Text strong>Manual review</Text>
+          <Text strong>{t('detail.reviewSummary.title')}</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
               <StatusBadge
                 status={reviewSummary.attentionRequiredTotal > 0 ? 'warning' : 'active'}
-                label={`${reviewSummary.pendingTotal} pending`}
+                label={t('detail.reviewSummary.pending', { count: reviewSummary.pendingTotal })}
               />
               <Text type="secondary">
                 {reviewSummary.attentionRequiredTotal > 0
-                  ? `${reviewSummary.attentionRequiredTotal} item(s) currently require manual reconcile.`
-                  : 'Manual intervention is not currently required.'}
+                  ? t('detail.reviewSummary.attentionRequired', {
+                    count: reviewSummary.attentionRequiredTotal,
+                  })
+                  : t('detail.reviewSummary.clear')}
               </Text>
               {summary ? (
                 <Text type="secondary">
-                  Review queue is scoped to {summary.quarter} and stays separate from run-local execution controls.
+                  {t('detail.reviewSummary.scoped', { quarter: summary.quarter })}
                 </Text>
               ) : null}
             </Space>
@@ -1016,31 +1130,38 @@ export function PoolFactualWorkspaceDetail({
             background: '#fff',
           }}
         >
-          <Text strong>Sync control</Text>
+          <Text strong>{t('detail.refresh.title')}</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
               <Space wrap>
                 <StatusBadge
                   status={getRefreshTone(refreshState)}
-                  label={refreshState?.status ?? 'idle'}
+                  label={getPoolFactualSyncStatusLabel(t, refreshState?.status ?? 'idle')}
                 />
                 <Button
                   type="primary"
                   loading={refreshingWorkspace}
-                  aria-label="Refresh factual sync"
+                  aria-label={t('detail.refresh.button')}
                   onClick={() => {
                     void handleRefreshWorkspace()
                   }}
                 >
-                  Refresh factual sync
+                  {t('detail.refresh.button')}
                 </Button>
               </Space>
-              <Text type="secondary">{getRefreshCopy(refreshState)}</Text>
+              <Text type="secondary">{getRefreshCopy(t, refreshState)}</Text>
               {refreshState ? (
                 <Text type="secondary">
                   {refreshState.requestedAt
-                    ? `Requested ${formatTimestamp(refreshState.requestedAt)} on ${refreshState.pollingTier || 'unknown'} tier (${refreshState.pollIntervalSeconds}s).`
-                    : `Current ${refreshState.pollingTier || 'unknown'} tier (${refreshState.pollIntervalSeconds}s) for this workspace context.`}
+                    ? t('common.requestedTier', {
+                      value: formatTimestamp(formatters, refreshState.requestedAt),
+                      tier: refreshState.pollingTier || t('common.unknown'),
+                      seconds: refreshState.pollIntervalSeconds,
+                    })
+                    : t('common.currentTier', {
+                      tier: refreshState.pollingTier || t('common.unknown'),
+                      seconds: refreshState.pollIntervalSeconds,
+                    })}
                 </Text>
               ) : null}
             </Space>
@@ -1055,29 +1176,36 @@ export function PoolFactualWorkspaceDetail({
             background: '#fff',
           }}
         >
-          <Text strong>Settlement handoff</Text>
+          <Text strong>{t('detail.settlementHandoff.title')}</Text>
           <div style={{ marginTop: 12 }}>
             <Space direction="vertical" size={8}>
               <StatusBadge
                 status={getSettlementHandoffTone(workspace)}
-                label={summary ? `${summary.attention_required_total} attention required` : 'batch queue pending'}
+                label={summary
+                  ? t('detail.settlementHandoff.attentionRequiredLabel', {
+                    count: summary.attention_required_total,
+                  })
+                  : t('detail.settlementHandoff.pendingLabel')}
               />
               {summary ? (
                 <>
                   <Text type="secondary">
-                    {workspace?.settlements.length ?? 0} batch settlement row(s) are active for {summary.quarter}.
+                    {t('detail.settlementHandoff.activeBatches', {
+                      count: workspace?.settlements.length ?? 0,
+                      quarter: summary.quarter,
+                    })}
                   </Text>
                   <Text type="secondary">
-                    Open balance remains {formatters.number(openBalanceAmount, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} for the current quarter.
+                    {t('detail.settlementHandoff.openBalance', {
+                      value: formatters.number(openBalanceAmount, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }),
+                    })}
                   </Text>
                 </>
               ) : (
-                <Text type="secondary">
-                  Receipt distribution and closing sale handoff stay visible here without mixing execution diagnostics.
-                </Text>
+                <Text type="secondary">{t('detail.settlementHandoff.emptyDescription')}</Text>
               )}
             </Space>
           </div>
@@ -1096,45 +1224,49 @@ export function PoolFactualWorkspaceDetail({
         items={[
           {
             key: 'scope',
-            label: 'Scope lineage',
+            label: t('detail.scope.title'),
             children: (
               <Space direction="vertical" size={8} style={{ width: '100%' }}>
                 <Space wrap>
                   <StatusBadge
                     status={getScopeLineageTone(summary)}
-                    label={summary?.scope_contract_version || 'legacy scope only'}
+                    label={summary?.scope_contract_version || t('detail.scope.legacyScopeOnly')}
                   />
                 </Space>
                 {summary?.scope_contract ? (
                   <>
                     <Text type="secondary">
-                      Fingerprint {summary.scope_fingerprint}; revision {summary.gl_account_set_revision_id}.
+                      {t('detail.scope.fingerprint', {
+                        fingerprint: summary.scope_fingerprint,
+                        revision: summary.gl_account_set_revision_id,
+                      })}
                     </Text>
                     <Text type="secondary">
-                      Selector {summary.scope_contract.selector_key}.
+                      {t('detail.scope.selector', {
+                        value: summary.scope_contract.selector_key,
+                      })}
                     </Text>
                     <Text type="secondary">
-                      {summary.scope_contract.effective_members.length} effective member(s), {summary.scope_contract.resolved_bindings.length} pinned binding(s).
+                      {t('detail.scope.counts', {
+                        members: summary.scope_contract.effective_members.length,
+                        bindings: summary.scope_contract.resolved_bindings.length,
+                      })}
                     </Text>
                   </>
                 ) : (
-                  <Text type="secondary">
-                    Pinned selector lineage appears once the workspace is backed by factual_scope_contract.v2 metadata.
-                  </Text>
+                  <Text type="secondary">{t('detail.scope.emptyDescription')}</Text>
                 )}
               </Space>
             ),
           },
           {
             key: 'diagnostics',
-            label: 'Sync diagnostics',
+            label: t('detail.diagnostics.title'),
             children: (
               <div id="pool-factual-sync-diagnostics">
                 {syncCheckpoints.length > 0 ? (
                   <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Text type="secondary">
-                      Secondary workflow and operations handoff for factual sync checkpoints stays local to this workspace.
-                    </Text>
+                    <Text type="secondary">{t('detail.diagnostics.summary')}</Text>
                     {syncCheckpoints.map((checkpoint) => (
                       <div
                         key={checkpoint.checkpoint_id}
@@ -1147,45 +1279,58 @@ export function PoolFactualWorkspaceDetail({
                       >
                         <Space direction="vertical" size={8} style={{ width: '100%' }}>
                           <Space wrap>
-                            <Text strong>{getSyncCheckpointDatabaseLabel(checkpoint)}</Text>
+                            <Text strong>{getSyncCheckpointDatabaseLabel(t, checkpoint)}</Text>
                             <StatusBadge
                               status={getSyncCheckpointTone(checkpoint)}
-                              label={getSyncCheckpointStatusLabel(checkpoint)}
+                              label={getSyncCheckpointStatusLabel(t, checkpoint)}
                             />
                             <Text code>{formatShortId(checkpoint.checkpoint_id)}</Text>
                           </Space>
 
                           <Text type="secondary">
                             {checkpoint.last_error_code
-                              ? `Error ${checkpoint.last_error_code}${checkpoint.last_error ? ` · ${checkpoint.last_error}` : ''}`
+                              ? t('detail.diagnostics.error', {
+                                code: checkpoint.last_error_code,
+                                suffix: checkpoint.last_error ? ` · ${checkpoint.last_error}` : '',
+                              })
                               : checkpoint.last_synced_at
-                                ? `Last sync ${formatTimestamp(checkpoint.last_synced_at)}`
-                                : 'No sync error recorded for this checkpoint.'}
+                                ? t('detail.diagnostics.lastSync', {
+                                  value: formatTimestamp(formatters, checkpoint.last_synced_at),
+                                })
+                                : t('detail.diagnostics.noSyncError')}
                           </Text>
 
                           <Space wrap>
                             {checkpoint.execution_id ? (
                               <RouteButton
                                 size="small"
-                                aria-label={`Open workflow execution ${checkpoint.execution_id}`}
+                                aria-label={t('detail.diagnostics.openWorkflowExecutionAria', {
+                                  value: checkpoint.execution_id,
+                                })}
                                 to={buildWorkflowExecutionDetailsHref(checkpoint.execution_id)}
                               >
-                                Workflow execution {formatShortId(checkpoint.execution_id)}
+                                {t('detail.diagnostics.openWorkflowExecution', {
+                                  value: formatShortId(checkpoint.execution_id),
+                                })}
                               </RouteButton>
                             ) : (
-                              <Text type="secondary">No workflow execution linked.</Text>
+                              <Text type="secondary">{t('detail.diagnostics.noWorkflowExecution')}</Text>
                             )}
 
                             {checkpoint.operation_id ? (
                               <RouteButton
                                 size="small"
-                                aria-label={`Open operation monitor ${checkpoint.operation_id}`}
+                                aria-label={t('detail.diagnostics.openOperationAria', {
+                                  value: checkpoint.operation_id,
+                                })}
                                 to={buildOperationMonitorHref(checkpoint.operation_id)}
                               >
-                                Operation {formatShortId(checkpoint.operation_id)}
+                                {t('detail.diagnostics.openOperation', {
+                                  value: formatShortId(checkpoint.operation_id),
+                                })}
                               </RouteButton>
                             ) : (
-                              <Text type="secondary">No operation projection linked.</Text>
+                              <Text type="secondary">{t('detail.diagnostics.noOperationProjection')}</Text>
                             )}
                           </Space>
                         </Space>
@@ -1193,9 +1338,7 @@ export function PoolFactualWorkspaceDetail({
                     ))}
                   </Space>
                 ) : (
-                  <Text type="secondary">
-                    No sync checkpoint diagnostics are recorded for this workspace yet.
-                  </Text>
+                  <Text type="secondary">{t('detail.diagnostics.emptyDescription')}</Text>
                 )}
               </div>
             ),
@@ -1204,89 +1347,107 @@ export function PoolFactualWorkspaceDetail({
       />
 
       <EntityTable
-        title="Batch settlement"
+        title={t('detail.tables.settlements.title')}
         extra={(
           <Space wrap>
-            {focus === 'settlement' ? <StatusBadge status="active" label="run-linked focus" /> : null}
-            <RouteButton to={runWorkspaceHref}>Open linked run context</RouteButton>
+            {focus === 'settlement' ? <StatusBadge status="active" label={t('common.runLinkedFocus')} /> : null}
+            <RouteButton to={runWorkspaceHref}>{t('detail.tables.settlements.openLinkedRunContext')}</RouteButton>
           </Space>
         )}
         loading={loadingWorkspace}
         dataSource={settlements}
         columns={[
           {
-            title: 'Batch',
+            title: t('detail.tables.settlements.columns.batch'),
             dataIndex: 'id',
             key: 'id',
             render: (_: string, row: PoolBatch) => (
               <Space direction="vertical" size={4}>
                 <Text>{row.source_reference || formatShortId(row.id)}</Text>
-                <Text type="secondary">{row.batch_kind} · {row.period_start}</Text>
-                {row.run_id ? <Text type="secondary">run {formatShortId(row.run_id)}</Text> : null}
-                {runId && row.run_id === runId ? <Text type="secondary">linked from run report</Text> : null}
+                <Text type="secondary">
+                  {t('detail.tables.settlements.batchMeta', {
+                    kind: row.batch_kind,
+                    periodStart: formatters.date(row.period_start),
+                  })}
+                </Text>
+                {row.run_id ? <Text type="secondary">{t('detail.tables.settlements.run', { value: formatShortId(row.run_id) })}</Text> : null}
+                {runId && row.run_id === runId ? <Text type="secondary">{t('detail.tables.settlements.linkedFromRunReport')}</Text> : null}
               </Space>
             ),
           },
           {
-            title: 'Status',
+            title: t('detail.tables.settlements.columns.status'),
             key: 'status',
             render: (_: unknown, row: PoolBatch) => (
               <StatusBadge
                 status={getSettlementStatusTone(row.settlement?.status)}
-                label={row.settlement?.status ?? 'pending'}
+                label={getPoolFactualSettlementStatusLabel(t, row.settlement?.status)}
               />
             ),
           },
           {
-            title: 'Amounts',
+            title: t('detail.tables.settlements.columns.amounts'),
             key: 'amounts',
             render: (_: unknown, row: PoolBatch) => (
               <Space direction="vertical" size={4}>
-                <Text>Incoming {row.settlement?.incoming_amount ?? '-'}</Text>
-                <Text>Outgoing {row.settlement?.outgoing_amount ?? '-'}</Text>
-                <Text>Open balance {row.settlement?.open_balance ?? '-'}</Text>
+                <Text>{t('page.list.compactMoneyLine', {
+                  incoming: formatAmount(formatters, row.settlement?.incoming_amount),
+                  outgoing: formatAmount(formatters, row.settlement?.outgoing_amount),
+                  open: formatAmount(formatters, row.settlement?.open_balance),
+                })}</Text>
               </Space>
             ),
           },
           {
-            title: 'Carry-forward',
+            title: t('detail.tables.settlements.columns.carryForward'),
             key: 'carry_forward',
             render: (_: unknown, row: PoolBatch) => {
               const carryForward = getCarryForwardSummary(row)
               if (!carryForward) {
-                return <Text type="secondary">-</Text>
+                return <Text type="secondary">{t('common.noValue')}</Text>
               }
               return (
                 <Space direction="vertical" size={4}>
-                  <Text>{`Target quarter ${formatQuarterWindow(carryForward.targetQuarterStart, carryForward.targetQuarterEnd)}`}</Text>
+                  <Text>{t('common.targetQuarter', {
+                    value: formatQuarterWindow(formatters, carryForward.targetQuarterStart, carryForward.targetQuarterEnd),
+                  })}</Text>
                   <Text type="secondary">
-                    {`source ${formatShortId(carryForward.sourceSnapshotId)} -> target ${formatShortId(carryForward.targetSnapshotId)}`}
+                    {t('common.sourceTarget', {
+                      source: formatShortId(carryForward.sourceSnapshotId),
+                      target: formatShortId(carryForward.targetSnapshotId),
+                    })}
                   </Text>
-                  {carryForward.appliedAt ? <Text type="secondary">Applied {formatTimestamp(carryForward.appliedAt)}</Text> : null}
+                  {carryForward.appliedAt ? (
+                    <Text type="secondary">
+                      {t('detail.tables.settlements.applied', {
+                        value: formatTimestamp(formatters, carryForward.appliedAt),
+                      })}
+                    </Text>
+                  ) : null}
                 </Space>
               )
             },
           },
           {
-            title: 'Freshness',
+            title: t('detail.tables.settlements.columns.freshness'),
             key: 'freshness',
             render: (_: unknown, row: PoolBatch) => (
-              <Text type="secondary">{formatTimestamp(row.settlement?.freshness_at)}</Text>
+              <Text type="secondary">{formatTimestamp(formatters, row.settlement?.freshness_at)}</Text>
             ),
           },
         ]}
         rowKey="id"
-        emptyDescription="No batch settlements were recorded for this quarter."
+        emptyDescription={t('detail.tables.settlements.emptyDescription')}
       />
 
       <EntityTable
-        title="Edge drill-down"
-        extra={<RouteButton to={poolCatalogHref}>Open pool topology context</RouteButton>}
+        title={t('detail.tables.edgeBalances.title')}
+        extra={<RouteButton to={poolCatalogHref}>{t('detail.tables.edgeBalances.openTopologyContext')}</RouteButton>}
         loading={loadingWorkspace}
         dataSource={workspace?.edge_balances ?? []}
         columns={[
           {
-            title: 'Edge',
+            title: t('detail.tables.edgeBalances.columns.edge'),
             dataIndex: 'id',
             key: 'id',
             render: (_: string, row: PoolFactualEdgeBalance) => (
@@ -1297,39 +1458,41 @@ export function PoolFactualWorkspaceDetail({
             ),
           },
           {
-            title: 'Amounts',
+            title: t('detail.tables.edgeBalances.columns.amounts'),
             key: 'amounts',
             render: (_: unknown, row: PoolFactualEdgeBalance) => (
               <Space direction="vertical" size={4}>
-                <Text>Incoming {row.incoming_amount}</Text>
-                <Text>Outgoing {row.outgoing_amount}</Text>
-                <Text>Open balance {row.open_balance}</Text>
+                <Text>{t('page.list.compactMoneyLine', {
+                  incoming: formatAmount(formatters, row.incoming_amount),
+                  outgoing: formatAmount(formatters, row.outgoing_amount),
+                  open: formatAmount(formatters, row.open_balance),
+                })}</Text>
               </Space>
             ),
           },
         ]}
         rowKey="id"
-        emptyDescription="No edge-level factual balances were projected for this quarter."
+        emptyDescription={t('detail.tables.edgeBalances.emptyDescription')}
       />
 
       {reviewActionError ? (
         <Alert
           type="error"
           showIcon
-          message="Manual review action failed"
+          message={t('detail.reviewTable.failedTitle')}
           description={reviewActionError}
         />
       ) : null}
 
       <div id="pool-factual-review-queue">
         <EntityTable
-          title="Manual review queue"
-          extra={focus === 'review' ? <StatusBadge status="active" label="review focus" /> : null}
+          title={t('detail.reviewTable.title')}
+          extra={focus === 'review' ? <StatusBadge status="active" label={t('common.reviewFocus')} /> : null}
           loading={loadingWorkspace}
           dataSource={reviewRows}
           columns={reviewColumns}
           rowKey="id"
-          emptyDescription="No pending factual review items were recorded for this quarter."
+          emptyDescription={t('detail.reviewTable.emptyDescription')}
         />
       </div>
 

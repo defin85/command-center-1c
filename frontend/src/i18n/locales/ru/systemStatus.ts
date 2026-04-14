@@ -1,6 +1,6 @@
 const systemStatus = {
   header: {
-    title: 'System status',
+    title: 'Статус системы',
     autoRefreshPaused: 'Auto-refresh приостановлен.',
     autoRefreshEvery: 'Auto-refresh каждые {{seconds}}с.',
     lastUpdate: 'Последнее обновление: {{value}}',

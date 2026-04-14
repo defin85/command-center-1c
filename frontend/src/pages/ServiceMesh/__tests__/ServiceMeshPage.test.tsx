@@ -75,7 +75,7 @@ describe('ServiceMeshPage i18n', () => {
   it('renders localized page chrome and restores route context', () => {
     renderServiceMeshPage('/service-mesh?service=worker&operation=op-42')
 
-    expect(screen.getByRole('heading', { name: 'Service mesh' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Сервисная шина' })).toBeInTheDocument()
     expect(
       screen.getByText('Наблюдение за топологией и метриками в реальном времени внутри общего observability workspace.'),
     ).toBeInTheDocument()

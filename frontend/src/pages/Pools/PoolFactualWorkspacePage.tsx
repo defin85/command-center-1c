@@ -13,6 +13,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { usePoolFactualTranslation } from '../../i18n'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolFactualWorkspaceDetail } from './PoolFactualWorkspaceDetail'
@@ -56,7 +57,7 @@ const normalizeFactualFocus = (value: string | null): PoolFactualFocus => {
 
 const formatShortId = (value: string | null | undefined) => {
   if (!value) {
-    return '-'
+    return '—'
   }
   return value.slice(0, 8)
 }
@@ -67,6 +68,7 @@ const parseAmount = (value: string | null | undefined) => {
 }
 
 export function PoolFactualWorkspacePage() {
+  const { t } = usePoolFactualTranslation()
   const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
@@ -108,7 +110,7 @@ export function PoolFactualWorkspacePage() {
         if (cancelled) {
           return
         }
-        const resolved = resolveApiError(error, 'Failed to load factual overview rows.')
+        const resolved = resolveApiError(error, t('messages.failedLoadOverview'))
         setLoadError(resolved.message)
       } finally {
         if (!cancelled) {
@@ -122,7 +124,7 @@ export function PoolFactualWorkspacePage() {
     return () => {
       cancelled = true
     }
-  }, [quarterStartFromUrl])
+  }, [quarterStartFromUrl, t])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)
@@ -213,19 +215,20 @@ export function PoolFactualWorkspacePage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Pool Factual Monitoring"
+          title={t('page.title')}
           subtitle={(
             <>
-              Separate operator workspace on <Text code>{POOL_FACTUAL_ROUTE}</Text> for factual balances,
-              settlement state, and manual review without turning <Text code>{POOL_RUNS_ROUTE}</Text> into a
-              mixed execution dashboard.
+              {t('page.subtitle', {
+                route: POOL_FACTUAL_ROUTE,
+                runsRoute: POOL_RUNS_ROUTE,
+              })}
             </>
           )}
           actions={(
             <Space wrap>
-              <RouteButton to={runWorkspaceHref}>Open Pool Runs</RouteButton>
+              <RouteButton to={runWorkspaceHref}>{t('page.actions.openPoolRuns')}</RouteButton>
               <RouteButton type="primary" to={poolCatalogHref} disabled={!selectedPoolId}>
-                Open Pool Catalog
+                {t('page.actions.openPoolCatalog')}
               </RouteButton>
             </Space>
           )}
@@ -235,28 +238,34 @@ export function PoolFactualWorkspacePage() {
       <MasterDetailShell
         detailOpen={Boolean(selectedPoolId) && isDetailOpen}
         onCloseDetail={handleCloseDetail}
-        detailDrawerTitle={selectedPool ? `${selectedPool.code} · factual workspace` : 'Factual workspace'}
+        detailDrawerTitle={selectedPool
+          ? t('page.drawerTitle', { code: selectedPool.code })
+          : t('page.drawerTitleFallback')}
         list={(
           <EntityList
-            title="Pools"
+            title={t('page.list.title')}
             loading={loadingOverview}
             error={loadError}
-            emptyDescription="No pools available for factual monitoring yet."
+            emptyDescription={t('page.list.emptyDescription')}
             dataSource={sortedOverviewItems}
             renderItem={(pool) => {
               const selected = pool.pool_id === selectedPoolId
               const verdict = resolvePoolFactualVerdict(pool.summary)
               const verdictTone = getPoolFactualVerdictTone(verdict)
-              const moneyLine = `In ${formatters.number(parseAmount(pool.summary.incoming_amount), {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })} · Out ${formatters.number(parseAmount(pool.summary.outgoing_amount), {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })} · Open ${formatters.number(parseAmount(pool.summary.open_balance), {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}`
+              const moneyLine = t('page.list.compactMoneyLine', {
+                incoming: formatters.number(parseAmount(pool.summary.incoming_amount), {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+                outgoing: formatters.number(parseAmount(pool.summary.outgoing_amount), {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+                open: formatters.number(parseAmount(pool.summary.open_balance), {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                }),
+              })
               return (
                 <RouteButton
                   key={pool.pool_id}
@@ -267,7 +276,7 @@ export function PoolFactualWorkspacePage() {
                     event.preventDefault()
                     handleSelectPool(pool.pool_id)
                   }}
-                  aria-label={`Open factual workspace for ${pool.pool_name}`}
+                  aria-label={t('page.list.openWorkspaceAria', { name: pool.pool_name })}
                   aria-pressed={selected}
                   style={{
                     justifyContent: 'flex-start',
@@ -284,15 +293,17 @@ export function PoolFactualWorkspacePage() {
                   <Space direction="vertical" size={2} style={{ width: '100%', textAlign: 'left' }}>
                     <Space wrap>
                       <Text strong>{pool.pool_code}</Text>
-                      <StatusBadge status={verdictTone} label={getPoolFactualVerdictLabel(verdict)} />
+                      <StatusBadge status={verdictTone} label={getPoolFactualVerdictLabel(t, verdict)} />
                       <StatusBadge status={pool.pool_is_active ? 'active' : 'inactive'} />
                     </Space>
                     <Text>{pool.pool_name}</Text>
-                    <Text type="secondary">{getPoolFactualCompactSummary(pool.summary)}</Text>
+                    <Text type="secondary">{getPoolFactualCompactSummary(t, pool.summary)}</Text>
                     <Text type="secondary">
                       {pool.summary.quarter}
                       {' · '}
-                      resolved from {formatters.date(pool.summary.quarter_start)}
+                      {t('page.list.compactResolvedFrom', {
+                        value: formatters.date(pool.summary.quarter_start),
+                      })}
                     </Text>
                     <Text type="secondary">{moneyLine}</Text>
                     {pool.pool_description ? <Text type="secondary">{pool.pool_description}</Text> : null}
@@ -304,12 +315,12 @@ export function PoolFactualWorkspacePage() {
         )}
         detail={(
           <EntityDetails
-            title="Factual operator workspace"
-            extra={selectedPoolId ? <RouteButton to={poolCatalogHref}>Open pool detail</RouteButton> : null}
+            title={t('page.detail.title')}
+            extra={selectedPoolId ? <RouteButton to={poolCatalogHref}>{t('page.actions.openPoolDetail')}</RouteButton> : null}
             loading={loadingOverview}
             error={loadError}
             empty={!selectedPoolId}
-            emptyDescription="Select a pool to open the factual workspace."
+            emptyDescription={t('page.detail.emptyDescription')}
           >
             {selectedPool ? (
               <PoolFactualWorkspaceDetail
@@ -328,16 +339,17 @@ export function PoolFactualWorkspacePage() {
       <Alert
         type="info"
         showIcon
-        message="Execution controls stay in Pool Runs"
+        message={t('page.executionControls.title')}
         description={(
           <Space direction="vertical" size={8}>
-            <Text>
-              This route answers whether the selected pool is healthy, how much money came in and went out, and where
-              manual follow-up is still required. Create-run, retry, and approvals remain in Pool Runs.
-            </Text>
+            <Text>{t('page.executionControls.description')}</Text>
             <Space wrap>
-              <RouteButton to={runWorkspaceHref}>Open Pool Runs</RouteButton>
-              {runFromUrl ? <Text type="secondary">Linked run: {formatShortId(runFromUrl)}</Text> : null}
+              <RouteButton to={runWorkspaceHref}>{t('page.actions.openPoolRuns')}</RouteButton>
+              {runFromUrl ? (
+                <Text type="secondary">
+                  {t('page.executionControls.linkedRun', { value: formatShortId(runFromUrl) })}
+                </Text>
+              ) : null}
             </Space>
           </Space>
         )}

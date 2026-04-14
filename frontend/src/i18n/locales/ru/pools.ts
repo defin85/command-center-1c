@@ -58,7 +58,7 @@ const pools = {
   },
   schemaTemplates: {
     page: {
-      title: 'Pool Schema Templates',
+      title: 'Шаблоны схем пулов',
       subtitle: 'Канонический workspace для schema templates на bottom-up import surfaces и compatibility hints.',
       create: 'Создать шаблон',
       refresh: 'Обновить',
@@ -130,7 +130,7 @@ const pools = {
   },
   topologyTemplates: {
     page: {
-      title: 'Topology Templates',
+      title: 'Шаблоны топологий пулов',
       subtitle: 'Reusable producer workspace для authoring topology templates и публикации immutable revisions. Consumer materialization остаётся в /pools/catalog.',
       create: 'Создать шаблон',
       returnToPool: 'Вернуться к topology pool',
@@ -215,7 +215,7 @@ const pools = {
   },
   executionPacks: {
     page: {
-      title: 'Execution Packs',
+      title: 'Пакеты выполнения пулов',
       subtitle: 'Reusable execution-pack workspace для выбора execution pack, проверки его использования и публикации следующей ревизии. Pool-local attachments остаются в /pools/catalog.',
       create: 'Создать execution pack',
       openAttachmentWorkspace: 'Открыть workspace привязок',
@@ -910,7 +910,7 @@ const pools = {
   },
   masterData: {
     page: {
-      title: 'Pool Master Data',
+      title: 'Master Data пулов',
       subtitle: 'Канонический multi-zone workspace для reusable master-data authoring, bindings, diagnostics и bootstrap flows.',
       detailDrawerTitle: '{{zone}} · pool master data',
     },
@@ -1711,7 +1711,7 @@ const pools = {
       unscoped: 'unscoped',
     },
     page: {
-      title: 'Pool Runs',
+      title: 'Запуски пулов',
       refresh: 'Обновить данные',
       subtitle: 'Stage-based operator workspace на {{route}} для создания, инспекции, safe actions и retry в рамках одного выбранного run context.',
       contextPoolLabel: 'Pool',

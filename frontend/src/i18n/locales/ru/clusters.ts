@@ -1,6 +1,6 @@
 const clusters = {
   page: {
-    title: 'Clusters',
+    title: 'Кластеры',
     subtitle: 'Управление RAS-кластерами в общем platform workspace.',
   },
   statusOptions: {

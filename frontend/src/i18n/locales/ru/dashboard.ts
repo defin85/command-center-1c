@@ -1,6 +1,6 @@
 const dashboard = {
   page: {
-    title: 'Dashboard',
+    title: 'Панель управления',
     errorMessage: 'Не удалось загрузить dashboard',
     refreshTooltip: 'Обновить dashboard',
     refreshAriaLabel: 'Обновить dashboard',

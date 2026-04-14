@@ -70,3 +70,4 @@ export const useDatabasesTranslation = () => useNamespaceTranslation('databases'
 export const useTemplatesTranslation = () => useNamespaceTranslation('templates')
 export const useWorkflowTranslation = () => useNamespaceTranslation('workflows')
 export const usePoolsTranslation = () => useNamespaceTranslation('pools')
+export const usePoolFactualTranslation = () => useNamespaceTranslation('poolFactual')

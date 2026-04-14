@@ -15,6 +15,7 @@ export {
   useErrorsTranslation,
   useClustersTranslation,
   useOperationsTranslation,
+  usePoolFactualTranslation,
   usePlatformTranslation,
   usePoolsTranslation,
   useRbacTranslation,

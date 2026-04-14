@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next'
+
 import type { PoolFactualSummary } from '../../api/intercompanyPools'
 
 export type PoolFactualVerdict = 'critical' | 'warning' | 'healthy' | 'unknown'
@@ -94,89 +96,185 @@ export const getPoolFactualVerdictTone = (verdict: PoolFactualVerdict) => {
   }
 }
 
-export const getPoolFactualVerdictLabel = (verdict: PoolFactualVerdict) => {
+export const getPoolFactualVerdictLabel = (
+  t: TFunction<'poolFactual', undefined>,
+  verdict: PoolFactualVerdict,
+) => {
   switch (verdict) {
     case 'critical':
-      return 'Critical issue'
+      return t('health.verdicts.critical')
     case 'warning':
-      return 'Needs attention'
+      return t('health.verdicts.warning')
     case 'healthy':
-      return 'Healthy'
+      return t('health.verdicts.healthy')
     default:
-      return 'Awaiting data'
+      return t('health.verdicts.unknown')
   }
 }
 
 export const getPoolFactualPrimaryReason = (
+  t: TFunction<'poolFactual', undefined>,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
     case 'unknown':
-      return 'Factual state will appear after the workspace payload loads.'
+      return t('health.primaryReasons.unknown')
     case 'source_unavailable':
-      return summary?.source_availability_detail || `Source availability is ${summary?.source_availability}.`
+      return summary?.source_availability_detail || t('health.primaryReasons.sourceUnavailable', {
+        value: summary?.source_availability || t('common.unknown'),
+      })
     case 'sync_failed':
-      return 'The factual sync lane failed for the selected quarter.'
+      return t('health.primaryReasons.syncFailed')
     case 'checkpoint_failed':
-      return `${summary?.checkpoints_failed ?? 0} failed checkpoint(s) are blocking a healthy factual projection.`
+      return t('health.primaryReasons.checkpointFailed', {
+        count: summary?.checkpoints_failed ?? 0,
+      })
     case 'stale':
-      return 'The factual read model is stale for the selected quarter.'
+      return t('health.primaryReasons.stale')
     case 'backlog':
-      return `${summary?.backlog_total ?? 0} overdue checkpoint(s) are keeping the read model behind.`
+      return t('health.primaryReasons.backlog', {
+        count: summary?.backlog_total ?? 0,
+      })
     case 'attention_required':
-      return `${summary?.attention_required_total ?? 0} settlement or review item(s) require manual intervention.`
+      return t('health.primaryReasons.attentionRequired', {
+        count: summary?.attention_required_total ?? 0,
+      })
     case 'pending_review':
-      return `${summary?.pending_review_total ?? 0} review item(s) are still waiting in the queue.`
+      return t('health.primaryReasons.pendingReview', {
+        count: summary?.pending_review_total ?? 0,
+      })
     case 'healthy':
-      return 'Data is fresh and no manual intervention is currently required.'
+      return t('health.primaryReasons.healthy')
     default:
-      return 'No successful sync has been recorded for this workspace yet.'
+      return t('health.primaryReasons.unsynced')
   }
 }
 
 export const getPoolFactualCompactSummary = (
+  t: TFunction<'poolFactual', undefined>,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
     case 'source_unavailable':
-      return 'Source unavailable'
+      return t('health.compactSummary.sourceUnavailable')
     case 'sync_failed':
-      return 'Sync failed'
+      return t('health.compactSummary.syncFailed')
     case 'checkpoint_failed':
-      return `${summary?.checkpoints_failed ?? 0} failed sync checkpoint(s)`
+      return t('health.compactSummary.checkpointFailed', {
+        count: summary?.checkpoints_failed ?? 0,
+      })
     case 'stale':
-      return 'Data is stale'
+      return t('health.compactSummary.stale')
     case 'backlog':
-      return `${summary?.backlog_total ?? 0} overdue checkpoint(s)`
+      return t('health.compactSummary.backlog', {
+        count: summary?.backlog_total ?? 0,
+      })
     case 'attention_required':
-      return `${summary?.attention_required_total ?? 0} attention required`
+      return t('health.compactSummary.attentionRequired', {
+        count: summary?.attention_required_total ?? 0,
+      })
     case 'pending_review':
-      return `${summary?.pending_review_total ?? 0} pending review item(s)`
+      return t('health.compactSummary.pendingReview', {
+        count: summary?.pending_review_total ?? 0,
+      })
     case 'healthy':
-      return 'Data is fresh'
+      return t('health.compactSummary.healthy')
     default:
-      return 'Awaiting factual data'
+      return t('health.compactSummary.unknown')
   }
 }
 
 export const getPoolFactualPrimaryActionLabel = (
+  t: TFunction<'poolFactual', undefined>,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
     case 'source_unavailable':
     case 'sync_failed':
     case 'checkpoint_failed':
-      return 'Open sync diagnostics'
+      return t('health.primaryActions.diagnostics')
     case 'stale':
     case 'backlog':
-      return 'Open freshness details'
+      return t('health.primaryActions.freshness')
     case 'attention_required':
     case 'pending_review':
-      return 'Open manual review queue'
+      return t('health.primaryActions.review')
     case 'healthy':
     case 'unsynced':
-      return 'Open settlement handoff'
+      return t('health.primaryActions.settlement')
     default:
-      return 'Wait for factual data'
+      return t('health.primaryActions.wait')
+  }
+}
+
+export const getPoolFactualSyncStatusLabel = (
+  t: TFunction<'poolFactual', undefined>,
+  status: string | null | undefined,
+): string => {
+  switch (status?.trim()) {
+    case 'running':
+      return t('statuses.running')
+    case 'pending':
+      return t('statuses.pending')
+    case 'failed':
+      return t('statuses.failed')
+    case 'success':
+      return t('statuses.success')
+    case '':
+    case undefined:
+    case null:
+      return t('statuses.ready')
+    default:
+      return status?.trim() || t('common.unknown')
+  }
+}
+
+export const getPoolFactualFreshnessStatusLabel = (
+  t: TFunction<'poolFactual', undefined>,
+  status: string | null | undefined,
+): string => {
+  switch (status?.trim()) {
+    case 'fresh':
+      return t('statuses.fresh')
+    case 'stale':
+      return t('statuses.stale')
+    default:
+      return status?.trim() || t('common.notConnected')
+  }
+}
+
+export const getPoolFactualAvailabilityLabel = (
+  t: TFunction<'poolFactual', undefined>,
+  status: string | null | undefined,
+): string => {
+  switch (status?.trim()) {
+    case 'available':
+      return t('statuses.available')
+    case 'unavailable':
+      return t('statuses.unavailable')
+    default:
+      return status?.trim() || t('common.unknown')
+  }
+}
+
+export const getPoolFactualSettlementStatusLabel = (
+  t: TFunction<'poolFactual', undefined>,
+  status: string | null | undefined,
+): string => {
+  switch (status?.trim()) {
+    case 'closed':
+      return t('statuses.closed')
+    case 'attention_required':
+      return t('statuses.attentionRequired')
+    case 'partially_closed':
+      return t('statuses.partiallyClosed')
+    case 'carried_forward':
+      return t('statuses.carriedForward')
+    case 'distributed':
+      return t('statuses.distributed')
+    case 'pending':
+      return t('statuses.pending')
+    default:
+      return status?.trim() || t('common.unknown')
   }
 }

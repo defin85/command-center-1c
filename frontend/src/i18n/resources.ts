@@ -6,6 +6,7 @@ import decisionsEn from './locales/en/decisions'
 import errorsEn from './locales/en/errors'
 import type operationsSchema from './locales/ru/operations'
 import platformEn from './locales/en/platform'
+import type poolFactualSchema from './locales/ru/poolFactual'
 import type poolsSchema from './locales/ru/pools'
 import serviceMeshEn from './locales/en/serviceMesh'
 import shellEn from './locales/en/shell'
@@ -45,6 +46,7 @@ export const lazyNamespaces = [
   'templates',
   'workflows',
   'pools',
+  'poolFactual',
 ] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
@@ -70,6 +72,7 @@ export type AppCatalogSchema = {
   templates: typeof templatesSchema
   workflows: typeof workflowsSchema
   pools: typeof poolsSchema
+  poolFactual: typeof poolFactualSchema
 }
 
 export const defaultNamespace = 'common'

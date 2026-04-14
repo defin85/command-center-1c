@@ -1,7 +1,12 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { usePoolsTranslation, useSystemStatusTranslation, useWorkflowTranslation } from '../useAppTranslation'
+import {
+  usePoolFactualTranslation,
+  usePoolsTranslation,
+  useSystemStatusTranslation,
+  useWorkflowTranslation,
+} from '../useAppTranslation'
 import { changeLanguage, ensureNamespaces, i18n } from '../runtime'
 
 describe('useAppTranslation', () => {
@@ -16,6 +21,8 @@ describe('useAppTranslation', () => {
     await ensureNamespaces('en', 'systemStatus')
     await ensureNamespaces('ru', 'pools')
     await ensureNamespaces('en', 'pools')
+    await ensureNamespaces('ru', 'poolFactual')
+    await ensureNamespaces('en', 'poolFactual')
     await ensureNamespaces('ru', 'workflows')
     await ensureNamespaces('en', 'workflows')
     await changeLanguage('ru')
@@ -33,15 +40,19 @@ describe('useAppTranslation', () => {
 
   it('exposes pools and workflows translations once their route namespaces are loaded', async () => {
     await ensureNamespaces('en', 'pools')
+    await ensureNamespaces('en', 'poolFactual')
     await ensureNamespaces('en', 'workflows')
 
     const poolsHook = renderHook(() => usePoolsTranslation())
+    const poolFactualHook = renderHook(() => usePoolFactualTranslation())
     const workflowsHook = renderHook(() => useWorkflowTranslation())
 
     expect(poolsHook.result.current.ready).toBe(true)
+    expect(poolFactualHook.result.current.ready).toBe(true)
     expect(workflowsHook.result.current.ready).toBe(true)
 
     expect(poolsHook.result.current.t('executionPacks.page.title')).toBe('Execution Packs')
+    expect(poolFactualHook.result.current.t('page.title')).toBe('Pool Factual Monitoring')
     expect(workflowsHook.result.current.t('list.page.title')).toBe('Workflow Scheme Library')
   })
 })

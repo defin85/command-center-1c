@@ -1,6 +1,6 @@
 const decisions = {
   page: {
-    title: 'Библиотека decision policies',
+    title: 'Политики решений',
     subtitle: 'Создавайте и пересматривайте document policies для выбранной базы, не покидая рабочее пространство.',
     databaseAriaLabel: 'Целевая база',
     databasePlaceholder: 'Выберите базу',

@@ -1,6 +1,6 @@
 const serviceMesh = {
   page: {
-    title: 'Service mesh',
+    title: 'Сервисная шина',
     subtitle: 'Наблюдение за топологией и метриками в реальном времени внутри общего observability workspace.',
     openSystemStatus: 'Открыть system status',
     restoredOperationContext: 'Контекст operation timeline восстановлен из состояния маршрута.',

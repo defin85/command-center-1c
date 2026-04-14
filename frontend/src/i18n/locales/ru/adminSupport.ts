@@ -145,7 +145,7 @@ const adminSupport = {
       unknown: 'Неизвестно',
     },
     page: {
-      title: 'Extensions',
+      title: 'Расширения',
       subtitle: 'Рабочее место управления расширениями с URL-backed выбранным extension и secondary drill-down surface.',
       refresh: 'Обновить',
       searchPlaceholder: 'Поиск по имени расширения',
@@ -295,7 +295,7 @@ const adminSupport = {
   },
   commandSchemas: {
     page: {
-      title: 'Command Schemas',
+      title: 'Схемы команд',
       subtitle: 'Рабочее место command schemas с route-addressable driver, mode и выбранной командой.',
       loadFailed: 'Не удалось загрузить command schemas',
       commandsTitle: 'Команды ({{count}})',
@@ -307,7 +307,7 @@ const adminSupport = {
       noteLatestDiffers: 'Примечание: base latest отличается от approved. Переключитесь в Guided mode, чтобы редактировать overrides относительно approved base.',
     },
     header: {
-      title: 'Command Schemas',
+      title: 'Схемы команд',
       subtitle: 'Редактор driver command schemas, ориентированный на человека (MinIO artifacts).',
       modeLabel: 'Режим',
       raw: 'Raw',

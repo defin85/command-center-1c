@@ -274,7 +274,17 @@ export const routeGovernanceInventory = [
   {
     routePath: '/pools/factual',
     modulePath: 'src/pages/Pools/PoolFactualPage.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
+    lintProfile: 'canonical-page-route',
+    workspaceKind: 'catalog-detail',
+    stateTransport: 'search-params',
+    detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Pools/PoolFactualWorkspacePage.tsx',
+      'src/pages/Pools/PoolFactualWorkspaceDetail.tsx',
+      'src/pages/Pools/poolFactualHealth.ts',
+      'src/pages/Pools/poolFactualReviewQueue.ts',
+    ],
   },
   {
     routePath: '/pools/runs',
@@ -495,7 +505,7 @@ export const shellSurfaceGovernanceInventory = [
   },
   {
     filePath: 'src/pages/Pools/PoolFactualReviewAttributeModal.tsx',
-    tier: 'legacy-monitored',
+    tier: 'platform-governed',
     shellKinds: ['modal'],
     ownerRoutes: ['/pools/factual'],
   },

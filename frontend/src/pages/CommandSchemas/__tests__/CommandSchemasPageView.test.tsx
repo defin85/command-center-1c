@@ -146,7 +146,7 @@ describe('CommandSchemasPageView i18n', () => {
       </AntApp>,
     )
 
-    expect(screen.getByRole('heading', { name: 'Command Schemas' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Схемы команд' })).toBeInTheDocument()
     expect(
       screen.getByText('Рабочее место command schemas с route-addressable driver, mode и выбранной командой.'),
     ).toBeInTheDocument()

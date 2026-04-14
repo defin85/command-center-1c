@@ -4514,6 +4514,67 @@ test('UI platform: /pools/factual opens review detail in a mobile-safe drawer wi
   await expectNoHorizontalOverflow(page)
 })
 
+test('UI platform: /pools/factual keeps locale switch, reload, and review modal copy aligned with shell i18n', async ({ page }) => {
+  const observedLocaleHeaders: string[] = []
+  const localeSelect = page.getByTestId('shell-locale-select')
+
+  await setupAuth(page, { localeOverride: 'ru' })
+  await setupPersistentDatabaseStream(page)
+  await setupUiPlatformMocks(page, { observedLocaleHeaders })
+
+  await page.goto(`/pools/factual?pool=${POOL_WITH_ATTACHMENT.id}&run=${POOL_RUN.id}&focus=review&detail=1`, {
+    waitUntil: 'domcontentloaded',
+  })
+
+  await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Язык')
+  await expect(page.getByRole('menuitem', { name: 'Факты пулов' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Фактический мониторинг пулов', level: 2 })).toBeVisible()
+  await expect(page.getByText('Операторский factual workspace')).toBeVisible()
+  await expect(page.getByText('Ручной review', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('Фокус review', { exact: true })).toBeVisible()
+  await expect.poll(() => observedLocaleHeaders[0]).toBe('ru')
+
+  await page.getByRole('button', { name: 'Атрибутировать review item unattributed-pool-main' }).click()
+  const reviewDialogRu = page.getByRole('dialog')
+  await expect(reviewDialogRu).toBeVisible()
+  await expect(reviewDialogRu.locator('.ant-modal-title')).toContainText('Подтвердить атрибуцию')
+  await expect(reviewDialogRu.getByRole('button', { name: 'Подтвердить атрибуцию' })).toBeVisible()
+  await reviewDialogRu.locator('.ant-modal-close').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await switchShellLocaleToEnglish(page)
+
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+  await expect(page.getByRole('menuitem', { name: 'Pool Factual' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
+  await expect(page.getByText('Factual operator workspace')).toBeVisible()
+  await expect(page.getByText('Manual review queue', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('Focus review', { exact: true })).toBeVisible()
+  await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
+
+  await page.getByRole('button', { name: 'Attribute review item unattributed-pool-main' }).click()
+  const reviewDialogEn = page.getByRole('dialog')
+  await expect(reviewDialogEn).toBeVisible()
+  await expect(reviewDialogEn.locator('.ant-modal-title')).toContainText('Confirm attribution')
+  await expect(reviewDialogEn.getByRole('button', { name: 'Confirm attribution' })).toBeVisible()
+  await reviewDialogEn.locator('.ant-modal-close').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+
+  await page.reload({ waitUntil: 'domcontentloaded' })
+
+  await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+  await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+  await expect(page.getByRole('menuitem', { name: 'Pool Factual' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pool Factual Monitoring', level: 2 })).toBeVisible()
+  await expect(page.getByText('Factual operator workspace')).toBeVisible()
+  await expect(page.getByText('Manual review queue', { exact: true }).last()).toBeVisible()
+  await expect(page.getByText('Focus review', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Attribute review item unattributed-pool-main' })).toBeVisible()
+  await expect(page.getByText('Ручной review', { exact: true })).toHaveCount(0)
+  await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
+})
+
 test('UI platform: /operations restores selected operation and inspect context from a deep-link', async ({ page }) => {
   await setupAuth(page)
   await setupPersistentDatabaseStream(page)
@@ -4609,7 +4670,7 @@ test('UI platform: /clusters restores selected cluster context and opens edit fl
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Кластеры', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   const editModal = page.getByRole('dialog')
@@ -4633,7 +4694,7 @@ test('Runtime contract: /clusters hands off to /databases without replaying shel
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Кластеры', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByRole('button', { name: 'Открыть базы' })).toBeVisible()
@@ -4662,7 +4723,7 @@ test('Runtime contract: /clusters ignores same-route menu re-entry and keeps sel
     waitUntil: 'domcontentloaded',
   })
 
-  const clustersMenuItem = page.getByRole('menuitem', { name: /Clusters/i })
+  const clustersMenuItem = page.getByRole('menuitem', { name: /Кластеры/i })
 
   await expect(page.getByRole('button', { name: 'Открыть базы' })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
@@ -4697,7 +4758,7 @@ test('UI platform: /clusters opens inspect detail in a mobile-safe drawer withou
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Кластеры', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   const detailDrawer = page.getByRole('dialog')
@@ -4718,7 +4779,7 @@ test('Runtime contract: /clusters normalizes unauthorized mutating deep-links to
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Кластеры', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(page.getByRole('button', { name: 'Обновить' })).toHaveCount(0)
@@ -4747,7 +4808,7 @@ test('UI platform: /clusters keeps detail loading fail-closed until the detail s
     waitUntil: 'domcontentloaded',
   })
 
-  await expect(page.getByRole('heading', { name: 'Clusters', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Кластеры', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await page.waitForTimeout(200)
@@ -4763,6 +4824,12 @@ test('UI platform: /system-status keeps locale switch and reload aligned with th
   const localeSelectTrigger = localeSelect.locator('.ant-select-selector')
   const refreshButtonRu = page.locator('button').filter({ hasText: /^Обновить$/ })
   const refreshButtonEn = page.locator('button').filter({ hasText: /^Refresh$/ })
+  const systemStatusMenuItemRu = page.getByRole('menuitem', { name: 'Статус системы' })
+  const databasesMenuItemRu = page.getByRole('menuitem', { name: 'Базы' })
+  const poolCatalogMenuItemRu = page.getByRole('menuitem', { name: 'Каталог пулов' })
+  const systemStatusMenuItemEn = page.getByRole('menuitem', { name: 'System Status' })
+  const databasesMenuItemEn = page.getByRole('menuitem', { name: 'Databases' })
+  const poolCatalogMenuItemEn = page.getByRole('menuitem', { name: 'Pool Catalog' })
 
   await setupAuth(page, { localeOverride: 'ru' })
   await setupPersistentDatabaseStream(page)
@@ -4773,6 +4840,9 @@ test('UI platform: /system-status keeps locale switch and reload aligned with th
   await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
   await expect(localeSelect).toHaveAttribute('aria-label', 'Язык')
   await expect(refreshButtonRu).toBeVisible()
+  await expect(systemStatusMenuItemRu).toBeVisible()
+  await expect(databasesMenuItemRu).toBeVisible()
+  await expect(poolCatalogMenuItemRu).toBeVisible()
   await expect.poll(() => observedLocaleHeaders[0]).toBe('ru')
 
   await localeSelectTrigger.click()
@@ -4780,6 +4850,9 @@ test('UI platform: /system-status keeps locale switch and reload aligned with th
 
   await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
   await expect(refreshButtonEn).toBeVisible()
+  await expect(systemStatusMenuItemEn).toBeVisible()
+  await expect(databasesMenuItemEn).toBeVisible()
+  await expect(poolCatalogMenuItemEn).toBeVisible()
   await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
 
   await page.reload({ waitUntil: 'domcontentloaded' })
@@ -4787,6 +4860,9 @@ test('UI platform: /system-status keeps locale switch and reload aligned with th
   await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
   await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
   await expect(refreshButtonEn).toBeVisible()
+  await expect(systemStatusMenuItemEn).toBeVisible()
+  await expect(databasesMenuItemEn).toBeVisible()
+  await expect(poolCatalogMenuItemEn).toBeVisible()
   await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
 })
 

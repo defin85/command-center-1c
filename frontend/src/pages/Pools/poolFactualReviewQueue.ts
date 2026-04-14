@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next'
+
 export type PoolFactualReviewReason = 'unattributed' | 'late_correction'
 export type PoolFactualReviewStatus = 'pending' | 'attributed' | 'reconciled' | 'resolved_without_change'
 export type PoolFactualReviewAction = 'attribute' | 'reconcile' | 'resolve_without_change'
@@ -20,17 +22,41 @@ export function getPoolFactualReviewStatusTone(row: PoolFactualReviewRow): strin
   return 'active'
 }
 
-export function getPoolFactualReviewReasonLabel(reason: PoolFactualReviewReason): string {
-  return reason === 'late_correction' ? 'late correction' : 'unattributed'
+export function getPoolFactualReviewReasonLabel(
+  t: TFunction<'poolFactual', undefined>,
+  reason: PoolFactualReviewReason,
+): string {
+  return reason === 'late_correction'
+    ? t('review.reasons.lateCorrection')
+    : t('review.reasons.unattributed')
 }
 
-export function getPoolFactualReviewActionLabel(action: PoolFactualReviewAction): string {
+export function getPoolFactualReviewStatusLabel(
+  t: TFunction<'poolFactual', undefined>,
+  status: PoolFactualReviewStatus,
+): string {
+  switch (status) {
+    case 'attributed':
+      return t('statuses.attributed')
+    case 'reconciled':
+      return t('statuses.reconciled')
+    case 'resolved_without_change':
+      return t('statuses.resolvedWithoutChange')
+    default:
+      return t('statuses.pending')
+  }
+}
+
+export function getPoolFactualReviewActionLabel(
+  t: TFunction<'poolFactual', undefined>,
+  action: PoolFactualReviewAction,
+): string {
   switch (action) {
     case 'attribute':
-      return 'Attribute'
+      return t('review.actions.attribute')
     case 'reconcile':
-      return 'Reconcile'
+      return t('review.actions.reconcile')
     case 'resolve_without_change':
-      return 'Resolve w/o change'
+      return t('review.actions.resolveWithoutChange')
   }
 }

@@ -377,6 +377,14 @@ describe('DecisionsPage', () => {
     await changeLanguage('ru')
   })
 
+  it('renders localized page chrome in Russian when the locale switches to ru', async () => {
+    await changeLanguage('ru')
+    renderPage()
+
+    expect(await screen.findByText('Политики решений')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Целевая база' })).toBeInTheDocument()
+  })
+
   it('renders decision lifecycle list with metadata context and selected detail', async () => {
     const user = userEvent.setup()
     renderPage()

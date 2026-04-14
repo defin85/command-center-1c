@@ -1,5 +1,5 @@
 import { StrictMode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
@@ -13,6 +13,8 @@ import type {
   PoolFactualReviewQueueItem,
   PoolFactualWorkspace,
 } from '../../../api/intercompanyPools'
+import { createLocaleFormatters } from '../../../i18n'
+import { changeLanguage, ensureNamespaces, i18n } from '../../../i18n/runtime'
 import { resetQueryClient } from '../../../lib/queryClient'
 import { PoolFactualPage } from '../PoolFactualPage'
 import { buildPoolFactualRoute } from '../routes'
@@ -22,6 +24,33 @@ const mockListPoolFactualOverview = vi.fn()
 const mockGetPoolFactualWorkspace = vi.fn()
 const mockRefreshPoolFactualWorkspace = vi.fn()
 const mockApplyPoolFactualReviewAction = vi.fn()
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
+const englishFormatters = createLocaleFormatters('en')
+
+const translatePoolFactual = (key: string, options?: Record<string, unknown>) => (
+  (i18n.t as unknown as (fullKey: string, values?: Record<string, unknown>) => string)(`poolFactual:${key}`, options)
+)
+
+const formatPoolFactualTimestamp = (value: string | null | undefined) => (
+  englishFormatters.dateTime(value, {
+    fallback: '—',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+    timeZoneName: 'short',
+  })
+)
+
+const formatPoolFactualDate = (value: string | null | undefined) => (
+  englishFormatters.date(value, {
+    fallback: '—',
+  })
+)
 
 vi.mock('../../../api/intercompanyPools', async () => {
   const actual = await vi.importActual<typeof import('../../../api/intercompanyPools')>(
@@ -386,12 +415,26 @@ function LocationProbe() {
 }
 
 describe('PoolFactualPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetQueryClient()
     mockListPoolFactualOverview.mockReset()
     mockGetPoolFactualWorkspace.mockReset()
     mockRefreshPoolFactualWorkspace.mockReset()
     mockApplyPoolFactualReviewAction.mockReset()
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const [firstArg] = args
+      if (typeof firstArg === 'string' && firstArg.includes('not wrapped in act')) {
+        return
+      }
+    })
+    await ensureNamespaces('en', 'poolFactual')
+    await changeLanguage('en')
+  })
+
+  afterEach(async () => {
+    consoleErrorSpy?.mockRestore()
+    consoleErrorSpy = null
+    await changeLanguage('ru')
   })
 
   it('renders live factual summary, settlement, drill-down, and review sections for the selected pool', async () => {
@@ -468,9 +511,16 @@ describe('PoolFactualPage', () => {
     expect(screen.getAllByText('55.00').length).toBeGreaterThan(0)
     expect(screen.getByText('With VAT 120.00, without VAT 100.00, VAT 20.00.')).toBeInTheDocument()
     expect(
-      screen.getByText('Matched run-linked settlement receipt-q1 is partially_closed with open balance 40.00.')
+      screen.getByText(translatePoolFactual('detail.runLinkedSettlement.matchedSettlement', {
+        settlement: 'receipt-q1',
+        status: 'partially closed',
+        openBalance: '40.00',
+      }))
     ).toBeInTheDocument()
-    expect(screen.getByText('Source available; last sync 2026-03-27 10:00:00 UTC.')).toBeInTheDocument()
+    expect(screen.getByText(translatePoolFactual('detail.freshness.sourceSummary', {
+      availability: 'available',
+      value: formatPoolFactualTimestamp('2026-03-27T10:00:00Z'),
+    }))).toBeInTheDocument()
     expect(screen.getByText('Read backlog is clear on the default sync lane.')).toBeInTheDocument()
     expect(screen.getByText('Scope lineage')).toBeInTheDocument()
     await user.click(screen.getByText('Scope lineage'))
@@ -481,8 +531,10 @@ describe('PoolFactualPage', () => {
     expect(screen.getByText('2 effective member(s), 2 pinned binding(s).')).toBeInTheDocument()
     expect(screen.getByText('sale-q1')).toBeInTheDocument()
     expect(screen.getByText('Leaf Alpha · edge-alp')).toBeInTheDocument()
-    expect(screen.getAllByText('Outgoing 80.00').length).toBeGreaterThan(0)
-    expect(screen.getByText('Target quarter 2026-04-01 -> 2026-06-30')).toBeInTheDocument()
+    expect(screen.getAllByText('In 120.00 · Out 80.00 · Open 40.00').length).toBeGreaterThan(0)
+    expect(screen.getByText(translatePoolFactual('common.targetQuarter', {
+      value: `${englishFormatters.date('2026-04-01')} -> ${englishFormatters.date('2026-06-30')}`,
+    }))).toBeInTheDocument()
     expect(screen.getByText('source 11111111 -> target 22222222')).toBeInTheDocument()
     expect(screen.getByText("Document_РеализацияТоваровУслуг(guid'pool-alpha-sale')")).toBeInTheDocument()
     expect(screen.getByText("Document_КорректировкаРеализации(guid'pool-alpha-late')")).toBeInTheDocument()
@@ -497,7 +549,10 @@ describe('PoolFactualPage', () => {
 
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
 
-    await screen.findByText('Source available; last sync 2026-03-27 10:00:00 UTC.')
+    await screen.findByText(translatePoolFactual('detail.freshness.sourceSummary', {
+      availability: 'available',
+      value: formatPoolFactualTimestamp('2026-03-27T10:00:00Z'),
+    }))
     expect(
       screen.queryAllByText('Read backlog has 2 overdue checkpoint(s) on the default sync lane.').length
     ).toBeGreaterThan(0)
@@ -553,7 +608,7 @@ describe('PoolFactualPage', () => {
     renderPage('/pools/factual?pool=11111111-1111-1111-1111-111111111111&detail=1')
 
     await screen.findByText('Pool movement')
-    expect(screen.getByText('No incoming volume was recorded for this quarter.')).toBeInTheDocument()
+    expect(screen.getByText(translatePoolFactual('detail.movement.noIncoming'))).toBeInTheDocument()
     expect(screen.queryByText(/Outgoing share /)).not.toBeInTheDocument()
   })
 
@@ -729,7 +784,11 @@ describe('PoolFactualPage', () => {
       })
     })
     expect(screen.getByText('1 running, 0 pending, 0 failed, 0 ready checkpoint(s).')).toBeInTheDocument()
-    expect(screen.getByText('Requested 2026-03-27 10:01:00 UTC on active tier (120s).')).toBeInTheDocument()
+    expect(screen.getByText(translatePoolFactual('common.requestedTier', {
+      value: formatPoolFactualTimestamp('2026-03-27T10:01:00Z'),
+      tier: 'active',
+      seconds: 120,
+    }))).toBeInTheDocument()
   })
 
   it('converges refresh state to terminal workspace status without another manual click', async () => {
@@ -805,7 +864,11 @@ describe('PoolFactualPage', () => {
         expect(mockGetPoolFactualWorkspace).toHaveBeenCalledTimes(2)
       })
       expect(screen.getByText('0 running, 0 pending, 0 failed, 1 ready checkpoint(s).')).toBeInTheDocument()
-      expect(screen.getByText('Requested 2026-03-27 10:01:00 UTC on active tier (120s).')).toBeInTheDocument()
+      expect(screen.getByText(translatePoolFactual('common.requestedTier', {
+        value: formatPoolFactualTimestamp('2026-03-27T10:01:00Z'),
+        tier: 'active',
+        seconds: 120,
+      }))).toBeInTheDocument()
     } finally {
       setIntervalSpy.mockRestore()
       clearIntervalSpy.mockRestore()
@@ -960,15 +1023,15 @@ describe('PoolFactualPage', () => {
     expect(within(lateCorrectionRow as HTMLElement).queryByRole('button', { name: 'Attribute review item late-correction-pool-alpha' })).not.toBeInTheDocument()
 
     await user.click(within(unattributedRow as HTMLElement).getByRole('button', { name: 'Attribute review item unattributed-pool-alpha' }))
-    await screen.findByText('Choose or confirm attribution targets')
-    const attributeDialog = screen.getByRole('dialog')
+    const attributeDialog = await screen.findByRole('dialog')
+    await within(attributeDialog).findByText(translatePoolFactual('modal.infoTitle'))
     openSelectByTestId('pool-factual-attribute-batch-select')
-    await selectDropdownOption('receipt-q2 · 2026-04-01 · receipt')
+    await selectDropdownOption(`receipt-q2 · ${formatPoolFactualDate('2026-04-01')} · receipt`)
     openSelectByTestId('pool-factual-attribute-edge-select')
     await selectDropdownOption('Leaf Beta · edge-bet')
     openSelectByTestId('pool-factual-attribute-organization-select')
     await selectDropdownOption('Leaf Beta')
-    await user.click(within(attributeDialog).getByRole('button', { name: 'Confirm attribution' }))
+    await user.click(within(attributeDialog).getByRole('button', { name: translatePoolFactual('modal.submit') }))
     await waitFor(() => {
       expect(within(unattributedRow as HTMLElement).getByText('attributed')).toBeInTheDocument()
     })

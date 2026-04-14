@@ -1,8 +1,10 @@
 import { Alert, Form, Select, Space, Typography } from 'antd'
 import { useEffect, useMemo } from 'react'
 
-import type { PoolBatch, PoolFactualEdgeBalance, PoolFactualWorkspace } from '../../api/intercompanyPools'
+import type { PoolFactualWorkspace } from '../../api/intercompanyPools'
 import { ModalFormShell } from '../../components/platform'
+import { usePoolFactualTranslation } from '../../i18n'
+import { useLocaleFormatters } from '../../i18n/formatters'
 import type { PoolFactualReviewRow } from './poolFactualReviewQueue'
 
 const { Text } = Typography
@@ -40,14 +42,6 @@ const shortId = (value: string | null | undefined) => {
   return value.slice(0, 8)
 }
 
-const buildBatchLabel = (batch: PoolBatch) => (
-  `${batch.source_reference} · ${batch.period_start}${batch.batch_kind ? ` · ${batch.batch_kind}` : ''}`
-)
-
-const buildEdgeLabel = (edge: PoolFactualEdgeBalance) => (
-  `${edge.organization_name}${edge.edge_id ? ` · ${shortId(edge.edge_id)}` : ''}`
-)
-
 export function PoolFactualReviewAttributeModal({
   open,
   reviewRow,
@@ -56,6 +50,8 @@ export function PoolFactualReviewAttributeModal({
   onCancel,
   onSubmit,
 }: PoolFactualReviewAttributeModalProps) {
+  const { t } = usePoolFactualTranslation()
+  const formatters = useLocaleFormatters()
   const [form] = Form.useForm<PoolFactualReviewAttributeValues>()
 
   useEffect(() => {
@@ -80,10 +76,14 @@ export function PoolFactualReviewAttributeModal({
       seen.add(batch.id)
       return [{
         value: batch.id,
-        label: buildBatchLabel(batch),
+        label: [
+          batch.source_reference,
+          formatters.date(batch.period_start),
+          batch.batch_kind || null,
+        ].filter(Boolean).join(' · '),
       }]
     })
-  }, [workspace])
+  }, [formatters, workspace])
 
   const edgeOptions = useMemo<SelectOption[]>(() => {
     const seen = new Set<string>()
@@ -94,7 +94,7 @@ export function PoolFactualReviewAttributeModal({
       seen.add(edge.edge_id)
       return [{
         value: edge.edge_id,
-        label: buildEdgeLabel(edge),
+        label: `${edge.organization_name}${edge.edge_id ? ` · ${shortId(edge.edge_id)}` : ''}`,
       }]
     })
   }, [workspace])
@@ -128,9 +128,9 @@ export function PoolFactualReviewAttributeModal({
       open={open}
       onClose={onCancel}
       onSubmit={() => { void handleSubmit().catch(() => undefined) }}
-      title="Confirm attribution"
-      subtitle={reviewRow ? `Review item ${reviewRow.id}` : 'Choose attribution targets before confirming the review item.'}
-      submitText="Confirm attribution"
+      title={t('modal.title')}
+      subtitle={reviewRow ? t('modal.subtitle', { id: reviewRow.id }) : t('modal.emptySubtitle')}
+      submitText={t('modal.submit')}
       confirmLoading={saving}
       forceRender
       width={720}
@@ -139,16 +139,17 @@ export function PoolFactualReviewAttributeModal({
         <Alert
           type="info"
           showIcon
-          message="Choose or confirm attribution targets"
+          message={t('modal.infoTitle')}
           description={(
             <Space direction="vertical" size={4}>
-              <Text>
-                The review action requires at least one explicit target. You can keep the current values or change them
-                before submitting.
-              </Text>
+              <Text>{t('modal.infoDescription')}</Text>
               {reviewRow ? (
                 <Text type="secondary">
-                  Current row targets: batch {shortId(reviewRow.batchId)}, edge {shortId(reviewRow.edgeId)}, organization {shortId(reviewRow.organizationId)}.
+                  {t('modal.currentTargets', {
+                    batch: shortId(reviewRow.batchId),
+                    edge: shortId(reviewRow.edgeId),
+                    organization: shortId(reviewRow.organizationId),
+                  })}
                 </Text>
               ) : null}
             </Space>
@@ -158,8 +159,8 @@ export function PoolFactualReviewAttributeModal({
         <Form form={form} layout="vertical">
           <Form.Item
             name="batch_id"
-            label="Batch"
-            extra="Optional. Select the batch that should own the attribution."
+            label={t('modal.fields.batch.label')}
+            extra={t('modal.fields.batch.extra')}
             rules={[
               {
                 validator: async (_, value) => {
@@ -168,7 +169,7 @@ export function PoolFactualReviewAttributeModal({
                   if (value || edgeId || organizationId) {
                     return
                   }
-                  throw new Error('Select at least one attribution target.')
+                  throw new Error(t('modal.validation.targetRequired'))
                 },
               },
             ]}
@@ -176,7 +177,7 @@ export function PoolFactualReviewAttributeModal({
             <Select
               data-testid="pool-factual-attribute-batch-select"
               allowClear
-              placeholder="Select batch"
+              placeholder={t('modal.fields.batch.placeholder')}
               options={batchOptions}
               showSearch
               optionFilterProp="label"
@@ -185,13 +186,13 @@ export function PoolFactualReviewAttributeModal({
 
           <Form.Item
             name="edge_id"
-            label="Edge"
-            extra="Optional. Select the topology edge that should receive the attribution."
+            label={t('modal.fields.edge.label')}
+            extra={t('modal.fields.edge.extra')}
           >
             <Select
               data-testid="pool-factual-attribute-edge-select"
               allowClear
-              placeholder="Select edge"
+              placeholder={t('modal.fields.edge.placeholder')}
               options={edgeOptions}
               showSearch
               optionFilterProp="label"
@@ -200,13 +201,13 @@ export function PoolFactualReviewAttributeModal({
 
           <Form.Item
             name="organization_id"
-            label="Organization"
-            extra="Optional. Select the organization that should receive the attribution."
+            label={t('modal.fields.organization.label')}
+            extra={t('modal.fields.organization.extra')}
           >
             <Select
               data-testid="pool-factual-attribute-organization-select"
               allowClear
-              placeholder="Select organization"
+              placeholder={t('modal.fields.organization.placeholder')}
               options={organizationOptions}
               showSearch
               optionFilterProp="label"
