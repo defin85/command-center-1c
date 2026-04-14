@@ -7,6 +7,7 @@ import type {
   PoolTopologyTemplate,
 } from '../../api/intercompanyPools'
 import { DrawerFormShell } from '../../components/platform'
+import { usePoolsTranslation } from '../../i18n'
 import { resolveApiError } from './masterData/errorUtils'
 import {
   buildCreatePoolTopologyTemplateRequest,
@@ -49,6 +50,7 @@ export function PoolTopologyTemplatesEditorDrawer({
   onCancel,
   onSubmit,
 }: PoolTopologyTemplatesEditorDrawerProps) {
+  const { t } = usePoolsTranslation()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -88,7 +90,7 @@ export function PoolTopologyTemplatesEditorDrawer({
       onCancel()
       form.resetFields()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to save topology template.')
+      const resolved = resolveApiError(error, t('topologyTemplates.messages.failedToSave'))
       setSubmitError(resolved.message)
     } finally {
       setSubmitting(false)
@@ -100,11 +102,15 @@ export function PoolTopologyTemplatesEditorDrawer({
       open={open}
       onClose={onCancel}
       onSubmit={() => handleSubmit()}
-      title={mode === 'create' ? 'Create reusable topology template' : 'Publish topology template revision'}
+      title={mode === 'create'
+        ? t('topologyTemplates.editor.createTitle')
+        : t('topologyTemplates.editor.reviseTitle')}
       subtitle={mode === 'create'
-        ? 'Author the reusable abstract graph here, then materialize a selected revision in /pools/catalog.'
-        : 'Publish the next immutable revision for the selected reusable template.'}
-      submitText={mode === 'create' ? 'Create template' : 'Publish revision'}
+        ? t('topologyTemplates.editor.createSubtitle')
+        : t('topologyTemplates.editor.reviseSubtitle')}
+      submitText={mode === 'create'
+        ? t('topologyTemplates.editor.createSubmit')
+        : t('topologyTemplates.editor.reviseSubmit')}
       confirmLoading={submitting}
       submitButtonTestId={buildFieldTestId(mode, 'submit')}
       drawerTestId={`pool-topology-templates-${mode}-drawer`}
@@ -121,12 +127,10 @@ export function PoolTopologyTemplatesEditorDrawer({
       <Alert
         type="info"
         showIcon
-        message="Reusable producer surface"
+        message={t('topologyTemplates.editor.infoTitle')}
         description={(
           <Text>
-            Use this drawer to author reusable topology templates and publish revisions. Use `/pools/catalog`
-            {' '}
-            only to instantiate a selected revision inside a concrete pool context.
+            {t('topologyTemplates.editor.infoDescription')}
           </Text>
         )}
         style={{ marginBottom: 16 }}
@@ -136,28 +140,28 @@ export function PoolTopologyTemplatesEditorDrawer({
           <>
             <Form.Item
               name="code"
-              label="Template code"
-              rules={[{ required: true, message: 'Template code is required.' }]}
+              label={t('topologyTemplates.editor.templateCode')}
+              rules={[{ required: true, message: t('topologyTemplates.editor.validation.templateCodeRequired') }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'code')} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Template name"
-              rules={[{ required: true, message: 'Template name is required.' }]}
+              label={t('topologyTemplates.editor.templateName')}
+              rules={[{ required: true, message: t('topologyTemplates.editor.validation.templateNameRequired') }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'name')} />
             </Form.Item>
-            <Form.Item name="description" label="Description">
+            <Form.Item name="description" label={t('common.description')}>
               <Input data-testid={buildFieldTestId(mode, 'description')} />
             </Form.Item>
-            <Form.Item name="metadata_json" label="Template metadata JSON" initialValue="{}">
+            <Form.Item name="metadata_json" label={t('topologyTemplates.editor.templateMetadataJson')} initialValue="{}">
               <TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
             </Form.Item>
           </>
         ) : null}
 
-        <Form.Item name="revision_metadata_json" label="Revision metadata JSON" initialValue="{}">
+        <Form.Item name="revision_metadata_json" label={t('topologyTemplates.editor.revisionMetadataJson')} initialValue="{}">
           <TextArea autoSize={{ minRows: 3, maxRows: 8 }} />
         </Form.Item>
 
@@ -170,7 +174,7 @@ export function PoolTopologyTemplatesEditorDrawer({
             }}
           >
             <Space align="center" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text strong>Abstract nodes</Text>
+              <Text strong>{t('topologyTemplates.editor.abstractNodes')}</Text>
               <Button
                 onClick={() => {
                   const current = form.getFieldValue('nodes') ?? []
@@ -178,7 +182,7 @@ export function PoolTopologyTemplatesEditorDrawer({
                 }}
                 data-testid={buildFieldTestId(mode, 'add-node')}
               >
-                Add node
+                {t('topologyTemplates.editor.addNode')}
               </Button>
             </Space>
             <Form.List name="nodes">
@@ -193,7 +197,9 @@ export function PoolTopologyTemplatesEditorDrawer({
                         padding: 16,
                       }}
                     >
-                      <Text strong style={{ display: 'block', marginBottom: 12 }}>{`Node ${index + 1}`}</Text>
+                      <Text strong style={{ display: 'block', marginBottom: 12 }}>
+                        {t('topologyTemplates.editor.nodeLabel', { value: index + 1 })}
+                      </Text>
                       <div
                         style={{
                           display: 'grid',
@@ -206,15 +212,15 @@ export function PoolTopologyTemplatesEditorDrawer({
                       >
                         <Form.Item
                           name={[field.name, 'slot_key']}
-                          label="Slot key"
-                          rules={[{ required: true, message: 'Slot key is required.' }]}
+                          label={t('topologyTemplates.editor.slotKey')}
+                          rules={[{ required: true, message: t('topologyTemplates.editor.validation.slotKeyRequired') }]}
                         >
                           <Input data-testid={buildFieldTestId(mode, 'node-slot-key', index)} />
                         </Form.Item>
-                        <Form.Item name={[field.name, 'label']} label="Label">
+                        <Form.Item name={[field.name, 'label']} label={t('topologyTemplates.editor.label')}>
                           <Input data-testid={buildFieldTestId(mode, 'node-label', index)} />
                         </Form.Item>
-                        <Form.Item name={[field.name, 'is_root']} label="Root" valuePropName="checked">
+                        <Form.Item name={[field.name, 'is_root']} label={t('topologyTemplates.editor.root')} valuePropName="checked">
                           <Switch data-testid={buildFieldTestId(mode, 'node-root', index)} />
                         </Form.Item>
                         <Button
@@ -225,10 +231,10 @@ export function PoolTopologyTemplatesEditorDrawer({
                             form.setFieldValue('nodes', nextNodes)
                           }}
                         >
-                          Remove
+                          {t('common.remove')}
                         </Button>
                       </div>
-                      <Form.Item name={[field.name, 'metadata_json']} label="Node metadata JSON" initialValue="{}">
+                      <Form.Item name={[field.name, 'metadata_json']} label={t('topologyTemplates.editor.nodeMetadataJson')} initialValue="{}">
                         <TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
                       </Form.Item>
                     </div>
@@ -246,7 +252,7 @@ export function PoolTopologyTemplatesEditorDrawer({
             }}
           >
             <Space align="center" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text strong>Edges</Text>
+              <Text strong>{t('topologyTemplates.editor.edges')}</Text>
               <Button
                 onClick={() => {
                   const current = form.getFieldValue('edges') ?? []
@@ -254,7 +260,7 @@ export function PoolTopologyTemplatesEditorDrawer({
                 }}
                 data-testid={buildFieldTestId(mode, 'add-edge')}
               >
-                Add edge
+                {t('topologyTemplates.editor.addEdge')}
               </Button>
             </Space>
             <Form.List name="edges">
@@ -262,7 +268,7 @@ export function PoolTopologyTemplatesEditorDrawer({
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   {fields.length === 0 ? (
                     <Text type="secondary">
-                      Add an edge when the reusable topology needs an explicit abstract relationship.
+                      {t('topologyTemplates.editor.noEdges')}
                     </Text>
                   ) : null}
                   {fields.map((field, index) => (
@@ -274,7 +280,9 @@ export function PoolTopologyTemplatesEditorDrawer({
                         padding: 16,
                       }}
                     >
-                      <Text strong style={{ display: 'block', marginBottom: 12 }}>{`Edge ${index + 1}`}</Text>
+                      <Text strong style={{ display: 'block', marginBottom: 12 }}>
+                        {t('topologyTemplates.editor.edgeLabel', { value: index + 1 })}
+                      </Text>
                       <div
                         style={{
                           display: 'grid',
@@ -287,26 +295,26 @@ export function PoolTopologyTemplatesEditorDrawer({
                       >
                         <Form.Item
                           name={[field.name, 'parent_slot_key']}
-                          label="Parent slot key"
-                          rules={[{ required: true, message: 'Parent slot key is required.' }]}
+                          label={t('topologyTemplates.editor.parentSlotKey')}
+                          rules={[{ required: true, message: t('topologyTemplates.editor.validation.parentSlotKeyRequired') }]}
                         >
                           <Input data-testid={buildFieldTestId(mode, 'edge-parent-slot-key', index)} />
                         </Form.Item>
                         <Form.Item
                           name={[field.name, 'child_slot_key']}
-                          label="Child slot key"
-                          rules={[{ required: true, message: 'Child slot key is required.' }]}
+                          label={t('topologyTemplates.editor.childSlotKey')}
+                          rules={[{ required: true, message: t('topologyTemplates.editor.validation.childSlotKeyRequired') }]}
                         >
                           <Input data-testid={buildFieldTestId(mode, 'edge-child-slot-key', index)} />
                         </Form.Item>
                         <Form.Item
                           name={[field.name, 'weight']}
-                          label="Weight"
-                          rules={[{ required: true, message: 'Weight is required.' }]}
+                          label={t('topologyTemplates.editor.weight')}
+                          rules={[{ required: true, message: t('topologyTemplates.editor.validation.weightRequired') }]}
                         >
                           <Input data-testid={buildFieldTestId(mode, 'edge-weight', index)} />
                         </Form.Item>
-                        <Form.Item name={[field.name, 'document_policy_key']} label="Document policy key">
+                        <Form.Item name={[field.name, 'document_policy_key']} label={t('topologyTemplates.editor.documentPolicyKey')}>
                           <Input data-testid={buildFieldTestId(mode, 'edge-document-policy-key', index)} />
                         </Form.Item>
                         <Button
@@ -317,7 +325,7 @@ export function PoolTopologyTemplatesEditorDrawer({
                             form.setFieldValue('edges', nextEdges)
                           }}
                         >
-                          Remove
+                          {t('common.remove')}
                         </Button>
                       </div>
                       <div
@@ -329,14 +337,14 @@ export function PoolTopologyTemplatesEditorDrawer({
                           gap: 12,
                         }}
                       >
-                        <Form.Item name={[field.name, 'min_amount']} label="Minimum amount">
+                        <Form.Item name={[field.name, 'min_amount']} label={t('topologyTemplates.editor.minimumAmount')}>
                           <Input />
                         </Form.Item>
-                        <Form.Item name={[field.name, 'max_amount']} label="Maximum amount">
+                        <Form.Item name={[field.name, 'max_amount']} label={t('topologyTemplates.editor.maximumAmount')}>
                           <Input />
                         </Form.Item>
                       </div>
-                      <Form.Item name={[field.name, 'metadata_json']} label="Edge metadata JSON" initialValue="{}">
+                      <Form.Item name={[field.name, 'metadata_json']} label={t('topologyTemplates.editor.edgeMetadataJson')} initialValue="{}">
                         <TextArea autoSize={{ minRows: 2, maxRows: 6 }} />
                       </Form.Item>
                     </div>

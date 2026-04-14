@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import type { PoolTopologyTemplate } from '../../../api/intercompanyPools'
 import { PoolTopologyTemplatesPage } from '../PoolTopologyTemplatesPage'
 
@@ -187,6 +188,11 @@ function renderPageWithRoutes(path = '/pools/topology-templates') {
 }
 
 describe('PoolTopologyTemplatesPage', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'pools')
+  })
+
   beforeEach(() => {
     mockUsePoolTopologyTemplates.mockReset()
     mockUseCreatePoolTopologyTemplate.mockReset()
@@ -216,6 +222,11 @@ describe('PoolTopologyTemplatesPage', () => {
     })
   })
 
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'pools')
+    await changeLanguage('ru')
+  })
+
   it('renders a dedicated reusable topology template catalog with return handoff context', async () => {
     renderPage('/pools/topology-templates?template=template-1&detail=1&return_pool_id=pool-1&return_tab=topology&return_date=2026-03-23')
 
@@ -223,7 +234,7 @@ describe('PoolTopologyTemplatesPage', () => {
     expect(screen.getByText(/Reusable producer workspace for authoring topology templates and publishing immutable revisions./i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Return to pool topology' })).toBeInTheDocument()
     expect(screen.getByTestId('pool-topology-templates-selected-code')).toHaveTextContent('top-down-template')
-    expect(screen.getByTestId('pool-topology-templates-status')).toHaveTextContent('active')
+    expect(screen.getByTestId('pool-topology-templates-status')).toHaveTextContent('Active')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeEnabled()
     expect(screen.getByText('Branching Template')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Revision' })).toBeInTheDocument()

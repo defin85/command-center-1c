@@ -2,6 +2,7 @@ import { Alert, Button, Card, Descriptions, Drawer, Space, Tag, Typography } fro
 import { ExportOutlined, LinkOutlined } from '@ant-design/icons'
 
 import type { NodeStatus } from '../../../hooks/useWorkflowExecution'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../../i18n'
 
 const { Text } = Typography
 
@@ -26,9 +27,12 @@ export function NodeDetailsDrawer({
   onClose: () => void
   onOpenTraceDetails: (nodeId: string) => void
 }) {
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
+
   return (
     <Drawer
-      title={selectedNode?.nodeName || 'Node Details'}
+      title={selectedNode?.nodeName || t('nodeDetails.title')}
       open={open}
       onClose={onClose}
       width={400}
@@ -36,12 +40,12 @@ export function NodeDetailsDrawer({
       {selectedNode && (
         <div className="node-details">
           <Descriptions column={1} size="small" bordered>
-            <Descriptions.Item label="Node ID">
+            <Descriptions.Item label={t('nodeDetails.fields.nodeId')}>
               <Text copyable className="mono-text">
                 {selectedNode.nodeId}
               </Text>
             </Descriptions.Item>
-            <Descriptions.Item label="Status">
+            <Descriptions.Item label={t('nodeDetails.fields.status')}>
               <Tag color={
                 selectedNode.status.status === 'completed' ? 'success' :
                 selectedNode.status.status === 'failed' ? 'error' :
@@ -49,26 +53,26 @@ export function NodeDetailsDrawer({
                 selectedNode.status.status === 'skipped' ? 'warning' :
                 'default'
               }>
-                {selectedNode.status.status}
+                {t(`statuses.${selectedNode.status.status}`)}
               </Tag>
             </Descriptions.Item>
             {selectedNode.status.startedAt && (
-              <Descriptions.Item label="Started">
-                {new Date(selectedNode.status.startedAt).toLocaleString()}
+              <Descriptions.Item label={t('nodeDetails.fields.started')}>
+                {formatters.dateTime(selectedNode.status.startedAt, { fallback: t('common.notAvailable') })}
               </Descriptions.Item>
             )}
             {selectedNode.status.completedAt && (
-              <Descriptions.Item label="Completed">
-                {new Date(selectedNode.status.completedAt).toLocaleString()}
+              <Descriptions.Item label={t('nodeDetails.fields.completed')}>
+                {formatters.dateTime(selectedNode.status.completedAt, { fallback: t('common.notAvailable') })}
               </Descriptions.Item>
             )}
             {selectedNode.status.durationMs !== undefined && (
-              <Descriptions.Item label="Duration">
+              <Descriptions.Item label={t('nodeDetails.fields.duration')}>
                 {(selectedNode.status.durationMs / 1000).toFixed(3)}s
               </Descriptions.Item>
             )}
             {selectedNode.status.spanId && (
-              <Descriptions.Item label="Span ID">
+              <Descriptions.Item label={t('nodeDetails.fields.spanId')}>
                 <Text copyable className="mono-text">
                   {selectedNode.status.spanId}
                 </Text>
@@ -77,7 +81,7 @@ export function NodeDetailsDrawer({
           </Descriptions>
 
           {selectedNode.status.output && (
-            <Card title="Output" size="small" className="detail-card">
+            <Card title={t('nodeDetails.output')} size="small" className="detail-card">
               <pre className="json-output">
                 {JSON.stringify(selectedNode.status.output, null, 2)}
               </pre>
@@ -87,7 +91,7 @@ export function NodeDetailsDrawer({
           {selectedNode.status.error && (
             <Alert
               type="error"
-              message="Error"
+              message={t('nodeDetails.error')}
               description={selectedNode.status.error}
               showIcon
               className="error-detail"
@@ -102,7 +106,7 @@ export function NodeDetailsDrawer({
                 onClick={() => onOpenTraceDetails(selectedNode.nodeId)}
                 block
               >
-                View Trace Details
+                {t('nodeDetails.viewTraceDetails')}
               </Button>
               <Button
                 type="link"
@@ -116,7 +120,7 @@ export function NodeDetailsDrawer({
                 }}
                 className="trace-link"
               >
-                Open in Jaeger
+                {t('nodeDetails.openInJaeger')}
               </Button>
             </Space>
           )}

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
@@ -9,6 +9,7 @@ import type { BindingProfileDetail } from '../../../api/generated/model/bindingP
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
 import type { BindingProfileSummary } from '../../../api/generated/model/bindingProfileSummary'
 import type { BindingProfileUsageSummary } from '../../../api/generated/model/bindingProfileUsageSummary'
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import type { AvailableDecisionRevision, AvailableWorkflowRevision } from '../../../types/workflow'
 import { PoolBindingProfilesPage } from '../PoolBindingProfilesPage'
@@ -280,6 +281,11 @@ function renderPageWithRoutes(path = '/pools/execution-packs') {
 }
 
 describe('PoolBindingProfilesPage', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'pools')
+  })
+
   beforeEach(() => {
     mockUseBindingProfiles.mockReset()
     mockUseBindingProfileDetail.mockReset()
@@ -326,6 +332,11 @@ describe('PoolBindingProfilesPage', () => {
     })
   })
 
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'pools')
+    await changeLanguage('ru')
+  })
+
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -352,7 +363,7 @@ describe('PoolBindingProfilesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open execution pack legacy-archive' }))
 
     expect(await screen.findByTestId('pool-binding-profiles-selected-code')).toHaveTextContent('legacy-archive')
-    expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('deactivated')
+    expect(screen.getByTestId('pool-binding-profiles-status')).toHaveTextContent('Deactivated')
     expect(screen.getByRole('button', { name: 'Publish new revision' })).toBeDisabled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 

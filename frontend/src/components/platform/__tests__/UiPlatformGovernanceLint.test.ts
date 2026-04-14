@@ -312,12 +312,31 @@ describe('ui platform governance lint', () => {
     'src/pages/Users/UsersPage.tsx',
     'src/pages/Operations/OperationsPage.tsx',
     'src/pages/Artifacts/ArtifactDetailsDrawer.tsx',
+    'src/pages/Workflows/components/NodeDetailsDrawer.tsx',
+    'src/components/workflow/TraceViewerModal.tsx',
+    'src/pages/Pools/PoolRunsRouteCanvas.tsx',
   ])('rejects raw locale formatting in inventory-backed governed module %s', async (filePath) => {
     const messages = await lintSnippet(
       filePath,
       `
         export default function GovernedPilotRoute() {
           return <div>{new Date('2026-03-10T12:00:00Z').toLocaleString()}</div>
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/governed-modules-must-use-canonical-i18n-boundaries'
+        && message.message.includes('useLocaleFormatters')
+    ))).toBe(true)
+  })
+
+  it('rejects raw locale formatting in governed non-TSX helper modules', async () => {
+    const messages = await lintSnippet(
+      'src/pages/Pools/masterData/formatters.ts',
+      `
+        export function formatDateTime(value) {
+          return new Date(value ?? '2026-03-10T12:00:00Z').toLocaleString()
         }
       `,
     )

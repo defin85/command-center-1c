@@ -7,6 +7,8 @@ export const compactMasterPaneModes = ['compact-selection']
  * Checked-in route governance inventory for operator-facing frontend surfaces.
  *
  * `modulePath` points to the route-entry module used from `src/App.tsx`.
+ * `ownedLocaleBoundaryFiles` extends locale-boundary governance to the effective
+ * route-owned canvases/helpers that render default user-facing copy or formatting.
  * Redirect-only helper aliases keep `modulePath: null` and document the redirect target instead.
  */
 export const routeGovernanceInventory = [
@@ -141,6 +143,15 @@ export const routeGovernanceInventory = [
     workspaceKind: 'authoring-workspace',
     stateTransport: 'search-params',
     detailMobileFallback: 'mixed',
+    ownedLocaleBoundaryFiles: [
+      'src/components/workflow/NodePalette.tsx',
+      'src/components/workflow/PropertyEditor.tsx',
+      'src/components/workflow/nodes/OperationNode.tsx',
+      'src/components/workflow/nodes/ConditionNode.tsx',
+      'src/components/workflow/nodes/ParallelNode.tsx',
+      'src/components/workflow/nodes/LoopNode.tsx',
+      'src/components/workflow/nodes/SubWorkflowNode.tsx',
+    ],
   },
   {
     routePath: '/workflows/:id',
@@ -150,6 +161,15 @@ export const routeGovernanceInventory = [
     workspaceKind: 'authoring-workspace',
     stateTransport: 'mixed',
     detailMobileFallback: 'mixed',
+    ownedLocaleBoundaryFiles: [
+      'src/components/workflow/NodePalette.tsx',
+      'src/components/workflow/PropertyEditor.tsx',
+      'src/components/workflow/nodes/OperationNode.tsx',
+      'src/components/workflow/nodes/ConditionNode.tsx',
+      'src/components/workflow/nodes/ParallelNode.tsx',
+      'src/components/workflow/nodes/LoopNode.tsx',
+      'src/components/workflow/nodes/SubWorkflowNode.tsx',
+    ],
   },
   {
     routePath: '/workflows/executions/:executionId',
@@ -159,6 +179,15 @@ export const routeGovernanceInventory = [
     workspaceKind: 'diagnostics-workspace',
     stateTransport: 'mixed',
     detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Workflows/components/NodeDetailsDrawer.tsx',
+      'src/components/workflow/TraceViewerModal.tsx',
+      'src/components/workflow/nodes/OperationNode.tsx',
+      'src/components/workflow/nodes/ConditionNode.tsx',
+      'src/components/workflow/nodes/ParallelNode.tsx',
+      'src/components/workflow/nodes/LoopNode.tsx',
+      'src/components/workflow/nodes/SubWorkflowNode.tsx',
+    ],
   },
   {
     routePath: '/templates',
@@ -199,6 +228,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'task-workspace',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Pools/PoolWorkflowBindingSlotsEditor.tsx',
+      'src/pages/Pools/executionPackTopologyCompatibility.ts',
+    ],
   },
   {
     routePath: '/pools/topology-templates',
@@ -221,6 +254,10 @@ export const routeGovernanceInventory = [
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Pools/BindingProfileDecisionRefsEditor.tsx',
+      'src/pages/Pools/executionPackTopologyCompatibility.ts',
+    ],
   },
   {
     routePath: '/pools/master-data',
@@ -230,6 +267,9 @@ export const routeGovernanceInventory = [
     workspaceKind: 'multi-zone-workspace',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Pools/masterData/formatters.ts',
+    ],
   },
   {
     routePath: '/pools/factual',
@@ -244,6 +284,9 @@ export const routeGovernanceInventory = [
     workspaceKind: 'stage-workspace',
     stateTransport: 'search-params',
     detailMobileFallback: 'drawer',
+    ownedLocaleBoundaryFiles: [
+      'src/pages/Pools/PoolRunsRouteCanvas.tsx',
+    ],
   },
   {
     routePath: '/service-mesh',
@@ -525,6 +568,13 @@ export const platformGovernedRouteModuleFileSet = new Set(
     .filter((modulePath) => Boolean(modulePath))
 )
 
+export const platformGovernedRouteLocaleBoundaryFileSet = new Set(
+  platformGovernedRouteInventory.flatMap((entry) => [
+    ...(entry.modulePath ? [entry.modulePath] : []),
+    ...((entry.ownedLocaleBoundaryFiles ?? []).filter(Boolean)),
+  ])
+)
+
 export const platformGovernedShellSurfaceFileSet = new Set(
   shellSurfaceGovernanceInventory
     .filter((entry) => entry.tier === 'platform-governed')
@@ -566,7 +616,7 @@ const sharedLocaleBoundaryGovernedFiles = [
 ]
 
 export const localeBoundaryGovernedFileSet = new Set([
-  ...platformGovernedRouteModuleFileSet,
+  ...platformGovernedRouteLocaleBoundaryFileSet,
   ...platformGovernedShellSurfaceFileSet,
   ...sharedLocaleBoundaryGovernedFiles,
 ])

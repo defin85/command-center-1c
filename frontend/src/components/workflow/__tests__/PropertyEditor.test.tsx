@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import userEvent from '@testing-library/user-event'
@@ -8,6 +8,7 @@ const { mockTrackUiAction } = vi.hoisted(() => ({
 }))
 
 import type { OperationTemplateListItem, WorkflowNodeData } from '../../../types/workflow'
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import PropertyEditor from '../PropertyEditor'
 
 vi.mock('../../../observability/uiActionJournal', () => ({
@@ -78,6 +79,16 @@ const openSelect = async (testId: string) => {
 describe('PropertyEditor', () => {
   beforeEach(() => {
     mockTrackUiAction.mockClear()
+  })
+
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'workflows')
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'workflows')
+    await changeLanguage('ru')
   })
 
   it('keeps fresh decision gates on pinned-decision path by default', async () => {

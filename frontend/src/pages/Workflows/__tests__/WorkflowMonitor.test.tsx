@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 const mockGetWorkflowsGetExecution = vi.fn()
 const mockGetWorkflowsGetWorkflow = vi.fn()
@@ -70,7 +71,9 @@ function renderPage(initialEntry = '/workflows/executions/exec-1?node=start') {
 }
 
 describe('WorkflowMonitor', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'workflows')
     mockGetWorkflowsGetExecution.mockReset()
     mockGetWorkflowsGetWorkflow.mockReset()
     mockUseWorkflowExecution.mockReset()
@@ -164,6 +167,11 @@ describe('WorkflowMonitor', () => {
       subscribeToNodes: vi.fn(),
       disconnect: vi.fn(),
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'workflows')
+    await changeLanguage('ru')
   })
 
   it('restores selected node inspection from node query parameter', async () => {

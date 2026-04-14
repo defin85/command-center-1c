@@ -26,6 +26,7 @@ import {
   DeleteOutlined,
   CopyOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../i18n'
 import type {
   WorkflowNodeData,
   NodeConfig,
@@ -180,6 +181,7 @@ const OperationForm = ({
   templates,
   readOnly,
   idPrefix,
+  t,
 }: {
   config: NodeConfig
   io?: OperationIO
@@ -190,6 +192,7 @@ const OperationForm = ({
   templates: OperationTemplateListItem[]
   readOnly: boolean
   idPrefix: string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) => {
   const normalizedIo: OperationIO = io ?? {
     mode: 'implicit_legacy',
@@ -266,11 +269,11 @@ const OperationForm = ({
 
   return (
     <>
-      <Form.Item label="Template" htmlFor={`${idPrefix}-operation-template`} required>
+      <Form.Item label={t('propertyEditor.operation.fields.template')} htmlFor={`${idPrefix}-operation-template`} required>
         <Select
           id={`${idPrefix}-operation-template`}
           value={templateId}
-          placeholder="Select operation template"
+          placeholder={t('propertyEditor.operation.placeholders.selectTemplate')}
           disabled={readOnly}
           showSearch
           optionFilterProp="children"
@@ -284,7 +287,7 @@ const OperationForm = ({
       </Form.Item>
 
       {executionContract && (
-        <Card size="small" title="Execution contract" style={{ marginBottom: 12 }}>
+        <Card size="small" title={t('propertyEditor.operation.executionContract.title')} style={{ marginBottom: 12 }}>
           <Space direction="vertical" size={4} style={{ width: '100%' }}>
             <Text strong>{executionContract.capability.id}</Text>
             <Text type="secondary">
@@ -294,25 +297,35 @@ const OperationForm = ({
               {`Input (${executionContract.input.mode}): required ${formatExecutionContractList(executionContract.input.requiredParameters)}`}
             </Text>
             <Text>
-              {`Optional inputs: ${formatExecutionContractList(executionContract.input.optionalParameters)}`}
+              {t('propertyEditor.operation.executionContract.optionalInputs', {
+                value: formatExecutionContractList(executionContract.input.optionalParameters),
+              })}
             </Text>
             <Text>
-              {`Output path: ${executionContract.output.resultPath}`}
+              {t('propertyEditor.operation.executionContract.outputPath', {
+                value: executionContract.output.resultPath,
+              })}
             </Text>
             <Text>
-              {`Side effects: ${executionContract.sideEffect.effectKind} / ${executionContract.sideEffect.executionMode}`}
+              {t('propertyEditor.operation.executionContract.sideEffects', {
+                effectKind: executionContract.sideEffect.effectKind,
+                executionMode: executionContract.sideEffect.executionMode,
+              })}
             </Text>
             {executionContract.sideEffect.summary && (
               <Text>{executionContract.sideEffect.summary}</Text>
             )}
             <Text type="secondary">
-              {`Binding provenance: ${executionContract.provenance.alias} · r${executionContract.provenance.exposureRevision ?? '?'}`}
+              {t('propertyEditor.operation.executionContract.bindingProvenance', {
+                alias: executionContract.provenance.alias,
+                revision: executionContract.provenance.exposureRevision ?? '?',
+              })}
             </Text>
           </Space>
         </Card>
       )}
 
-      <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-operation-timeout`}>
+      <Form.Item label={t('propertyEditor.operation.fields.timeoutSeconds')} htmlFor={`${idPrefix}-operation-timeout`}>
         <InputNumber
           id={`${idPrefix}-operation-timeout`}
           value={config.timeout}
@@ -324,7 +337,7 @@ const OperationForm = ({
         />
       </Form.Item>
 
-      <Form.Item label="Retries" htmlFor={`${idPrefix}-operation-retries`}>
+      <Form.Item label={t('propertyEditor.operation.fields.retries')} htmlFor={`${idPrefix}-operation-retries`}>
         <InputNumber
           id={`${idPrefix}-operation-retries`}
           value={config.retries}
@@ -336,7 +349,7 @@ const OperationForm = ({
         />
       </Form.Item>
 
-      <Form.Item label="Retry Delay (seconds)" htmlFor={`${idPrefix}-operation-retry-delay`}>
+      <Form.Item label={t('propertyEditor.operation.fields.retryDelaySeconds')} htmlFor={`${idPrefix}-operation-retry-delay`}>
         <InputNumber
           id={`${idPrefix}-operation-retry-delay`}
           value={config.retry_delay}
@@ -351,9 +364,9 @@ const OperationForm = ({
       <Divider style={{ margin: '12px 0' }} />
 
       <Form.Item
-        label="Data Flow Mode"
+        label={t('propertyEditor.operation.fields.dataFlowMode')}
         htmlFor={`${idPrefix}-operation-io-mode`}
-        help="implicit_legacy keeps old behavior; explicit_strict uses only declared input/output mappings."
+        help={t('propertyEditor.operation.fields.dataFlowModeHelp')}
       >
         <Select
           id={`${idPrefix}-operation-io-mode`}
@@ -361,8 +374,8 @@ const OperationForm = ({
           disabled={readOnly}
           onChange={(value) => handleIoModeChange(value as OperationIOMode)}
           options={[
-            { value: 'implicit_legacy', label: 'implicit_legacy (backward-compatible)' },
-            { value: 'explicit_strict', label: 'explicit_strict (mapped only)' },
+            { value: 'implicit_legacy', label: t('propertyEditor.operation.ioModes.implicitLegacy') },
+            { value: 'explicit_strict', label: t('propertyEditor.operation.ioModes.explicitStrict') },
           ]}
         />
       </Form.Item>
@@ -374,23 +387,21 @@ const OperationForm = ({
               type="error"
               showIcon
               style={{ marginBottom: 12 }}
-              message={`Missing required mappings: ${missingRequiredMappings.join(', ')}`}
-              description="Selected template declares mandatory inputs that must be mapped explicitly on the workflow step."
+              message={t('propertyEditor.operation.missingRequiredMappings', { value: missingRequiredMappings.join(', ') })}
+              description={t('propertyEditor.operation.missingRequiredMappingsDescription')}
             />
           )}
           <Alert
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="Mapping rules"
-            description={
-              'Use JSON object format {"target.path": "source.path"}. Target roots "nodes", "_*", and "node_*" are reserved.'
-            }
+            message={t('propertyEditor.operation.mappingRules.title')}
+            description={t('propertyEditor.operation.mappingRules.description')}
           />
           <Collapse ghost>
-            <Panel header="Input Mapping (before render)" key="operation-io-input">
+            <Panel header={t('propertyEditor.operation.mappingPanels.input.title')} key="operation-io-input">
               <Form.Item
-                help={inputMappingError ? inputMappingError : 'Map workflow context -> template render context'}
+                help={inputMappingError ? inputMappingError : t('propertyEditor.operation.mappingPanels.input.help')}
                 validateStatus={inputMappingError ? 'error' : undefined}
               >
                 <LazyJsonCodeEditor
@@ -403,9 +414,9 @@ const OperationForm = ({
                 />
               </Form.Item>
             </Panel>
-            <Panel header="Output Mapping (after success)" key="operation-io-output">
+            <Panel header={t('propertyEditor.operation.mappingPanels.output.title')} key="operation-io-output">
               <Form.Item
-                help={outputMappingError ? outputMappingError : 'Map operation output -> workflow context'}
+                help={outputMappingError ? outputMappingError : t('propertyEditor.operation.mappingPanels.output.help')}
                 validateStatus={outputMappingError ? 'error' : undefined}
               >
                 <LazyJsonCodeEditor
@@ -434,6 +445,7 @@ const ConditionForm = ({
   availableDecisions,
   readOnly,
   idPrefix,
+  t,
 }: {
   config: NodeConfig
   decisionRef?: DecisionRef
@@ -442,6 +454,7 @@ const ConditionForm = ({
   availableDecisions: AvailableDecisionRevision[]
   readOnly: boolean
   idPrefix: string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) => {
   const legacyExpression = typeof config.expression === 'string'
     ? config.expression.trim()
@@ -462,16 +475,16 @@ const ConditionForm = ({
   return (
     <>
       <Form.Item
-        label="Decision Table"
+        label={t('propertyEditor.condition.fields.decisionTable')}
         htmlFor={`${idPrefix}-condition-decision`}
-        help="Pin a fail-closed decision table for analyst-facing routing. Leave empty only for legacy expression mode."
+        help={t('propertyEditor.condition.fields.decisionTableHelp')}
       >
         <DecisionRevisionSelect
           id={`${idPrefix}-condition-decision`}
           testId={`${idPrefix}-condition-decision`}
           currentDecision={decisionRef}
           availableDecisions={availableDecisions}
-          placeholder="Select decision table"
+          placeholder={t('propertyEditor.condition.placeholders.selectDecisionTable')}
           disabled={readOnly}
           allowClear
           onChange={onDecisionChange}
@@ -484,17 +497,20 @@ const ConditionForm = ({
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="Decision-gate expression is managed by the pinned decision table"
+            message={t('propertyEditor.condition.messages.managedByDecisionTable')}
             description={
               selectedDecision
-                ? `${selectedDecision.name} evaluates into decisions.${selectedDecision.decisionKey} and is compiled fail-closed.`
-                : 'Pinned decision ref is preserved in the workflow definition and compiled into decisions.<key>.'
+                ? t('propertyEditor.condition.messages.managedByDecisionTableSelected', {
+                    name: selectedDecision.name,
+                    key: selectedDecision.decisionKey,
+                  })
+                : t('propertyEditor.condition.messages.managedByDecisionTableFallback')
             }
           />
           <Form.Item
-            label="Compiled Expression"
+            label={t('propertyEditor.condition.fields.compiledExpression')}
             htmlFor={`${idPrefix}-condition-expression`}
-            help="Read-only compatibility expression synthesized from decision_ref."
+            help={t('propertyEditor.condition.fields.compiledExpressionHelp')}
           >
             <TextArea
               id={`${idPrefix}-condition-expression`}
@@ -508,16 +524,16 @@ const ConditionForm = ({
       ) : hasLegacyExpression ? (
         <>
           <Form.Item
-            label="Legacy Expression"
+            label={t('propertyEditor.condition.fields.legacyExpression')}
             htmlFor={`${idPrefix}-condition-expression`}
             required
-            help="Jinja2 expression that evaluates to true/false. Example: {{ amount > 100 }}"
+            help={t('propertyEditor.condition.fields.legacyExpressionHelp')}
           >
             <TextArea
               id={`${idPrefix}-condition-expression`}
               data-testid={`${idPrefix}-condition-expression`}
               value={config.expression}
-              placeholder="{{ variable > value }}"
+              placeholder={t('propertyEditor.condition.placeholders.legacyExpression')}
               disabled={readOnly}
               rows={3}
               onChange={(e) => onChange({ ...config, expression: e.target.value })}
@@ -526,8 +542,8 @@ const ConditionForm = ({
 
           <Alert
             type="warning"
-            message="Legacy condition mode"
-            description="This construct remains visible for compatibility, but the default analyst surface no longer allows editing raw expressions."
+            message={t('propertyEditor.condition.messages.legacyMode')}
+            description={t('propertyEditor.condition.messages.legacyModeDescription')}
             showIcon
             style={{ marginTop: 8 }}
           />
@@ -536,8 +552,8 @@ const ConditionForm = ({
         <Alert
           type="info"
           showIcon
-          message="Select a pinned decision table to configure this gate."
-          description="Default analyst authoring uses fail-closed decision tables. Raw expressions are shown only for existing compatibility workflows."
+          message={t('propertyEditor.condition.messages.selectPinnedDecision')}
+          description={t('propertyEditor.condition.messages.selectPinnedDecisionDescription')}
         />
       )}
     </>
@@ -550,48 +566,50 @@ const ParallelForm = ({
   onChange,
   readOnly,
   idPrefix,
+  t,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   readOnly: boolean
   idPrefix: string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) => (
   <>
     <Alert
       type="warning"
       showIcon
       style={{ marginBottom: 12 }}
-      message="Runtime-only workflow construct"
-      description="Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them."
+      message={t('propertyEditor.runtimeOnly.message')}
+      description={t('propertyEditor.runtimeOnly.description')}
     />
-    <Form.Item label="Parallel Nodes" htmlFor={`${idPrefix}-parallel-nodes`} help="Node IDs to execute in parallel">
+    <Form.Item label={t('propertyEditor.parallel.fields.parallelNodes')} htmlFor={`${idPrefix}-parallel-nodes`} help={t('propertyEditor.parallel.fields.parallelNodesHelp')}>
       <Select
         id={`${idPrefix}-parallel-nodes`}
         mode="tags"
         value={config.parallel_nodes || []}
-        placeholder="Enter node IDs"
+        placeholder={t('propertyEditor.parallel.placeholders.parallelNodes')}
         disabled={readOnly}
         onChange={(value) => onChange({ ...config, parallel_nodes: value })}
       />
     </Form.Item>
 
-    <Form.Item label="Wait For" htmlFor={`${idPrefix}-parallel-wait-for`}>
+    <Form.Item label={t('propertyEditor.parallel.fields.waitFor')} htmlFor={`${idPrefix}-parallel-wait-for`}>
       <Select
         id={`${idPrefix}-parallel-wait-for`}
         value={config.wait_for || 'all'}
         disabled={readOnly}
         onChange={(value) => onChange({ ...config, wait_for: value })}
         options={[
-          { value: 'all', label: 'All nodes complete' },
-          { value: 'any', label: 'Any node completes' },
-          { value: 1, label: '1 node completes' },
-          { value: 2, label: '2 nodes complete' },
-          { value: 3, label: '3 nodes complete' }
+          { value: 'all', label: t('propertyEditor.parallel.waitOptions.all') },
+          { value: 'any', label: t('propertyEditor.parallel.waitOptions.any') },
+          { value: 1, label: t('propertyEditor.parallel.waitOptions.one') },
+          { value: 2, label: t('propertyEditor.parallel.waitOptions.two') },
+          { value: 3, label: t('propertyEditor.parallel.waitOptions.three') }
         ]}
       />
     </Form.Item>
 
-    <Form.Item label="Timeout (seconds)" htmlFor={`${idPrefix}-parallel-timeout`}>
+    <Form.Item label={t('propertyEditor.parallel.fields.timeoutSeconds')} htmlFor={`${idPrefix}-parallel-timeout`}>
       <InputNumber
         id={`${idPrefix}-parallel-timeout`}
         value={config.timeout}
@@ -611,36 +629,38 @@ const LoopForm = ({
   onChange,
   readOnly,
   idPrefix,
+  t,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   readOnly: boolean
   idPrefix: string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) => (
   <>
     <Alert
       type="warning"
       showIcon
       style={{ marginBottom: 12 }}
-      message="Runtime-only workflow construct"
-      description="Parallel and loop nodes remain inspectable for compatibility, but default analyst authoring no longer edits them."
+      message={t('propertyEditor.runtimeOnly.message')}
+      description={t('propertyEditor.runtimeOnly.description')}
     />
-    <Form.Item label="Loop Mode" htmlFor={`${idPrefix}-loop-mode`} required>
+    <Form.Item label={t('propertyEditor.loop.fields.loopMode')} htmlFor={`${idPrefix}-loop-mode`} required>
       <Select
         id={`${idPrefix}-loop-mode`}
         value={config.loop_mode || 'count'}
         disabled={readOnly}
         onChange={(value) => onChange({ ...config, loop_mode: value })}
         options={[
-          { value: 'count', label: 'Count (repeat N times)' },
-          { value: 'while', label: 'While (condition-based)' },
-          { value: 'foreach', label: 'For Each (iterate items)' }
+          { value: 'count', label: t('propertyEditor.loop.modeOptions.count') },
+          { value: 'while', label: t('propertyEditor.loop.modeOptions.while') },
+          { value: 'foreach', label: t('propertyEditor.loop.modeOptions.foreach') }
         ]}
       />
     </Form.Item>
 
     {config.loop_mode === 'count' && (
-      <Form.Item label="Loop Count" htmlFor={`${idPrefix}-loop-count`}>
+      <Form.Item label={t('propertyEditor.loop.fields.loopCount')} htmlFor={`${idPrefix}-loop-count`}>
         <InputNumber
           id={`${idPrefix}-loop-count`}
           value={config.loop_count}
@@ -655,14 +675,14 @@ const LoopForm = ({
 
     {config.loop_mode === 'while' && (
       <Form.Item
-        label="Loop Condition"
+        label={t('propertyEditor.loop.fields.loopCondition')}
         htmlFor={`${idPrefix}-loop-condition`}
-        help="Jinja2 expression. Loop continues while true."
+        help={t('propertyEditor.loop.fields.loopConditionHelp')}
       >
         <TextArea
           id={`${idPrefix}-loop-condition`}
           value={config.loop_condition}
-          placeholder="{{ counter < 10 }}"
+          placeholder={t('propertyEditor.loop.placeholders.loopCondition')}
           disabled={readOnly}
           rows={2}
           onChange={(e) => onChange({ ...config, loop_condition: e.target.value })}
@@ -672,14 +692,14 @@ const LoopForm = ({
 
     {config.loop_mode === 'foreach' && (
       <Form.Item
-        label="Items Expression"
+        label={t('propertyEditor.loop.fields.itemsExpression')}
         htmlFor={`${idPrefix}-loop-items`}
-        help="Jinja2 expression that returns a list."
+        help={t('propertyEditor.loop.fields.itemsExpressionHelp')}
       >
         <TextArea
           id={`${idPrefix}-loop-items`}
           value={config.loop_items}
-          placeholder="{{ databases }}"
+          placeholder={t('propertyEditor.loop.placeholders.itemsExpression')}
           disabled={readOnly}
           rows={2}
           onChange={(e) => onChange({ ...config, loop_items: e.target.value })}
@@ -687,7 +707,7 @@ const LoopForm = ({
       </Form.Item>
     )}
 
-    <Form.Item label="Max Iterations" htmlFor={`${idPrefix}-loop-max-iterations`} help="Safety limit">
+    <Form.Item label={t('propertyEditor.loop.fields.maxIterations')} htmlFor={`${idPrefix}-loop-max-iterations`} help={t('propertyEditor.loop.fields.maxIterationsHelp')}>
       <InputNumber
         id={`${idPrefix}-loop-max-iterations`}
         value={config.max_iterations || 100}
@@ -708,12 +728,14 @@ const SubWorkflowForm = ({
   workflows,
   readOnly,
   idPrefix,
+  t,
 }: {
   config: NodeConfig
   onChange: (config: NodeConfig) => void
   workflows: AvailableWorkflowRevision[]
   readOnly: boolean
   idPrefix: string
+  t: (key: string, options?: Record<string, unknown>) => string
 }) => {
   const [inputMappingRaw, setInputMappingRaw] = useState<string>(() => JSON.stringify(config.input_mapping || {}, null, 2))
   const [outputMappingRaw, setOutputMappingRaw] = useState<string>(() => JSON.stringify(config.output_mapping || {}, null, 2))
@@ -777,10 +799,10 @@ const SubWorkflowForm = ({
   return (
     <>
       <Form.Item
-        label="Sub-Workflow"
+        label={t('propertyEditor.subworkflow.fields.subWorkflow')}
         htmlFor={`${idPrefix}-subworkflow`}
         required
-        help="Analyst-facing subworkflow calls pin an explicit workflow revision by default."
+        help={t('propertyEditor.subworkflow.fields.subWorkflowHelp')}
       >
         <WorkflowRevisionSelect
           id={`${idPrefix}-subworkflow`}
@@ -791,7 +813,7 @@ const SubWorkflowForm = ({
             workflowRevision: config.subworkflow_ref?.workflow_revision,
           }}
           workflows={workflows}
-          placeholder="Select workflow"
+          placeholder={t('propertyEditor.subworkflow.placeholders.selectWorkflow')}
           disabled={readOnly}
           onChange={(selectedWorkflow) => {
             if (!selectedWorkflow) {
@@ -817,9 +839,9 @@ const SubWorkflowForm = ({
       </Form.Item>
 
       <Collapse ghost>
-        <Panel header="Input Mapping" key="input">
+        <Panel header={t('propertyEditor.subworkflow.mappingPanels.input.title')} key="input">
             <Form.Item
-              help={inputMappingError ? inputMappingError : 'Map parent context to sub-workflow input'}
+              help={inputMappingError ? inputMappingError : t('propertyEditor.subworkflow.mappingPanels.input.help')}
               validateStatus={inputMappingError ? 'error' : undefined}
             >
             <LazyJsonCodeEditor
@@ -832,9 +854,9 @@ const SubWorkflowForm = ({
             />
           </Form.Item>
         </Panel>
-        <Panel header="Output Mapping" key="output">
+        <Panel header={t('propertyEditor.subworkflow.mappingPanels.output.title')} key="output">
           <Form.Item
-            help={outputMappingError ? outputMappingError : 'Map sub-workflow output to parent context'}
+            help={outputMappingError ? outputMappingError : t('propertyEditor.subworkflow.mappingPanels.output.help')}
             validateStatus={outputMappingError ? 'error' : undefined}
           >
             <LazyJsonCodeEditor
@@ -863,6 +885,7 @@ const PropertyEditor = ({
   availableDecisions = [],
   readOnly = false
 }: PropertyEditorProps) => {
+  const { t } = useWorkflowTranslation()
   const [localData, setLocalData] = useState<WorkflowNodeData | null>(null)
   const idPrefix = nodeId ? `workflow-${nodeId}` : 'workflow-node'
 
@@ -875,7 +898,7 @@ const PropertyEditor = ({
     return (
       <Card className="property-editor empty">
         <div className="empty-state">
-          <Text type="secondary">Select a scheme step to edit its contract</Text>
+          <Text type="secondary">{t('propertyEditor.emptyState')}</Text>
         </div>
       </Card>
     )
@@ -999,6 +1022,7 @@ const PropertyEditor = ({
             templates={operationTemplates}
             readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
+            t={t}
           />
         )
       case 'condition':
@@ -1011,6 +1035,7 @@ const PropertyEditor = ({
             availableDecisions={availableDecisions}
             readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
+            t={t}
           />
         )
       case 'parallel':
@@ -1020,6 +1045,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
+            t={t}
           />
         )
       case 'loop':
@@ -1029,6 +1055,7 @@ const PropertyEditor = ({
             onChange={handleConfigChange}
             readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
+            t={t}
           />
         )
       case 'subworkflow':
@@ -1039,6 +1066,7 @@ const PropertyEditor = ({
             workflows={availableWorkflows}
             readOnly={effectiveReadOnly}
             idPrefix={idPrefix}
+            t={t}
           />
         )
       default:
@@ -1050,19 +1078,19 @@ const PropertyEditor = ({
     <Card className="property-editor" size="small">
       <div className="editor-header">
         <div className="node-type-badge" style={{ backgroundColor: nodeInfo.color }}>
-          {nodeInfo.label}
+          {t(`palette.nodes.${localData.nodeType}.label`)}
         </div>
         <Text type="secondary" className="node-id">
-          ID: {nodeId}
+          {t('propertyEditor.labels.nodeId', { value: nodeId })}
         </Text>
       </div>
 
       <Form layout="vertical" size="small">
-        <Form.Item label="Step Name" required htmlFor={`${idPrefix}-node-name`}>
+        <Form.Item label={t('propertyEditor.fields.stepName')} required htmlFor={`${idPrefix}-node-name`}>
           <Input
             id={`${idPrefix}-node-name`}
             value={localData.label}
-            placeholder="Step name"
+            placeholder={t('propertyEditor.placeholders.stepName')}
             disabled={effectiveReadOnly}
             onChange={(e) => handleLabelChange(e.target.value)}
           />
@@ -1083,7 +1111,7 @@ const PropertyEditor = ({
                 size="small"
                 onClick={handleDuplicate}
               >
-                Duplicate
+                {t('propertyEditor.actions.duplicate')}
               </Button>
             )}
             <Button
@@ -1092,7 +1120,7 @@ const PropertyEditor = ({
               size="small"
               onClick={handleDelete}
             >
-              Delete
+              {t('propertyEditor.actions.delete')}
             </Button>
           </Space>
         </>

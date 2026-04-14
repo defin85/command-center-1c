@@ -1,9 +1,10 @@
 import { StrictMode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import WorkflowList from '../WorkflowList'
 
@@ -67,7 +68,9 @@ function WorkflowListLocationProbe() {
 }
 
 describe('WorkflowList', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'workflows')
     mockGetWorkflowsListWorkflows.mockReset()
     mockGetWorkflowsGetWorkflow.mockReset()
     mockNavigate.mockReset()
@@ -124,6 +127,11 @@ describe('WorkflowList', () => {
       },
       executions: [],
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'workflows')
+    await changeLanguage('ru')
   })
 
   it('renders workflow authoring phase rollout banner', async () => {

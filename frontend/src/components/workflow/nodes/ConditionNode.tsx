@@ -15,6 +15,7 @@ import {
   ClockCircleOutlined,
   MinusCircleOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../../i18n'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
 
@@ -27,6 +28,7 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
 }
 
 const ConditionNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
+  const { t } = useWorkflowTranslation()
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
@@ -70,9 +72,11 @@ const ConditionNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
 
           {data.output?.result !== undefined && (
             <div className="node-field">
-              <span className="field-label">Result:</span>
+              <span className="field-label">{t('nodeViews.condition.fields.result')}</span>
               <Tag color={data.output.result ? 'green' : 'red'}>
-                {data.output.result ? 'TRUE' : 'FALSE'}
+                {data.output.result
+                  ? t('nodeViews.condition.values.true')
+                  : t('nodeViews.condition.values.false')}
               </Tag>
             </div>
           )}

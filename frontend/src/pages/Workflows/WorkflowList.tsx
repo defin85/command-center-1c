@@ -38,6 +38,7 @@ import {
   serializeRouteTableFilters,
   serializeRouteTableSort,
 } from '../../components/table/routeState'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../i18n'
 import { buildRelativeHref } from './routeState'
 
 const api = getV2()
@@ -86,14 +87,6 @@ const countRawRouteFilterKeys = (rawValue: string | null): number => {
   }
 }
 
-const formatDateTime = (value: string | null | undefined) => (
-  value ? new Date(value).toLocaleString() : '—'
-)
-
-const formatCompactDateTime = (value: string | null | undefined) => (
-  value ? new Date(value).toLocaleDateString() : '—'
-)
-
 const buildCatalogButtonStyle = (selected: boolean) => ({
   width: '100%',
   justifyContent: 'flex-start',
@@ -138,19 +131,24 @@ const buildWorkflowHref = (
   return query ? `/workflows/${id}?${query}` : `/workflows/${id}`
 }
 
-const renderStatusSummary = (workflow: Pick<WorkflowTemplateList, 'is_active' | 'is_valid' | 'visibility_surface'>) => (
+const renderStatusSummary = (
+  workflow: Pick<WorkflowTemplateList, 'is_active' | 'is_valid' | 'visibility_surface'>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => (
   <Space wrap size={8}>
     <StatusBadge
       status={workflow.is_active ? 'active' : 'inactive'}
-      label={workflow.is_active ? 'Active' : 'Inactive'}
+      label={workflow.is_active ? t('statuses.active') : t('statuses.inactive')}
     />
     <StatusBadge
       status={workflow.is_valid ? 'compatible' : 'error'}
-      label={workflow.is_valid ? 'Valid' : 'Invalid'}
+      label={workflow.is_valid ? t('statuses.valid') : t('statuses.invalid')}
     />
     <StatusBadge
       status={workflow.visibility_surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE ? 'warning' : 'unknown'}
-      label={workflow.visibility_surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE ? 'Runtime diagnostics' : 'Analyst library'}
+      label={workflow.visibility_surface === WORKFLOW_RUNTIME_DIAGNOSTICS_SURFACE
+        ? t('common.runtimeDiagnostics')
+        : t('common.analystLibrary')}
     />
   </Space>
 )
@@ -171,6 +169,8 @@ const WorkflowList = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const tableRouteHydratedRef = useRef(false)
   const tableRouteSyncRef = useRef(false)
@@ -202,18 +202,18 @@ const WorkflowList = () => {
   const routeUrlSyncPrimedRef = useRef(false)
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'workflow_type', label: 'Type', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'is_active', label: 'Status', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'node_count', label: 'Nodes', sortable: true, groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'updated_at', label: 'Updated', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    { key: 'name', label: t('list.columns.name'), sortable: true, groupKey: 'core', groupLabel: t('list.columns.core') },
+    { key: 'workflow_type', label: t('list.columns.type'), sortable: true, groupKey: 'meta', groupLabel: t('list.columns.meta') },
+    { key: 'is_active', label: t('list.columns.status'), groupKey: 'meta', groupLabel: t('list.columns.meta') },
+    { key: 'node_count', label: t('list.columns.nodes'), sortable: true, groupKey: 'meta', groupLabel: t('list.columns.meta') },
+    { key: 'updated_at', label: t('list.columns.updated'), sortable: true, groupKey: 'time', groupLabel: t('list.columns.time') },
+    { key: 'actions', label: t('list.columns.actions'), groupKey: 'actions', groupLabel: t('list.columns.actions') },
+  ], [t])
 
   const handleDelete = useCallback(async (id: string) => {
     try {
       await api.postWorkflowsDeleteWorkflow({ workflow_id: id })
-      message.success('Workflow deleted')
+      message.success(t('list.messages.workflowDeleted'))
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       routeUpdateModeRef.current = 'push'
       if (selectedWorkflowId === id) {
@@ -221,9 +221,9 @@ const WorkflowList = () => {
         setIsDetailDrawerOpen(false)
       }
     } catch (_error) {
-      message.error('Failed to delete workflow')
+      message.error(t('list.messages.failedToDelete'))
     }
-  }, [message, queryClient, selectedWorkflowId])
+  }, [message, queryClient, selectedWorkflowId, t])
 
   const buildWorkflowLibraryHref = useCallback(({
     detailOpen,
@@ -281,15 +281,15 @@ const WorkflowList = () => {
         workflow_id: id,
         new_name: `${name} (Copy)`,
       })
-      message.success('Workflow cloned')
+      message.success(t('list.messages.workflowCloned'))
       navigate(buildWorkflowHref(cloned.workflow.id, {
         databaseId: decisionDatabaseId,
         returnTo: buildWorkflowLibraryHref({ workflowId: cloned.workflow.id, detailOpen: true }),
       }))
     } catch (_error) {
-      message.error('Failed to clone workflow')
+      message.error(t('list.messages.failedToClone'))
     }
-  }, [buildWorkflowLibraryHref, decisionDatabaseId, message, navigate])
+  }, [buildWorkflowLibraryHref, decisionDatabaseId, message, navigate, t])
 
   const openWorkflow = useCallback((id: string, isSystemManaged?: boolean) => {
     navigate(buildWorkflowHref(id, {
@@ -561,10 +561,10 @@ const WorkflowList = () => {
 
   const detailLoading = Boolean(selectedWorkflowId) && !selectedWorkflow && (workflowsQuery.isLoading || selectedWorkflowDetailQuery.isLoading)
   const detailError = selectedWorkflowId && !selectedWorkflow && selectedWorkflowDetailQuery.isError
-    ? 'Failed to load the selected workflow.'
+    ? t('list.detail.failedToLoadSelected')
     : null
   const catalogError = workflowsQuery.isError
-    ? 'Failed to load workflow catalog.'
+    ? t('list.detail.failedToLoadCatalog')
     : null
   const selectedWorkflowNodeCount = resolveNodeCount(selectedWorkflowSummary, selectedWorkflowDetail)
   const selectedWorkflowExecutionCount = selectedWorkflowDetail?.execution_count ?? selectedWorkflowSummary?.execution_count ?? 0
@@ -583,14 +583,14 @@ const WorkflowList = () => {
     }
     const config = table.columnConfigs.find((item) => item.key === table.sort.key)
     const label = config?.label || table.sort.key
-    return `${label}: ${table.sort.order === 'asc' ? 'ascending' : 'descending'}`
-  }, [table.columnConfigs, table.sort.key, table.sort.order])
+    return `${label}: ${table.sort.order === 'asc' ? t('sort.ascending') : t('sort.descending')}`
+  }, [t, table.columnConfigs, table.sort.key, table.sort.order])
   const catalogStateToolbar = activeFilterSummaries.length > 0 || activeSortSummary
     ? (
       <Alert
         type="info"
         showIcon
-        message="Route filters active"
+        message={t('list.alerts.routeFiltersActive')}
         description={(
           <Space wrap size={[8, 8]}>
             {activeFilterSummaries.map((summary) => (
@@ -608,17 +608,17 @@ const WorkflowList = () => {
     <WorkspacePage
       header={(
         <PageHeader
-          title={isRuntimeDiagnosticsSurface ? 'Workflow Runtime Diagnostics' : 'Workflow Scheme Library'}
+          title={isRuntimeDiagnosticsSurface ? t('list.page.runtimeTitle') : t('list.page.title')}
           subtitle={isRuntimeDiagnosticsSurface
-            ? 'Read-only generated projections compiled from pool bindings and analyst-authored definitions.'
-            : 'Reusable analyst-authored workflow definitions for pool distribution and publication.'}
+            ? t('list.page.runtimeSubtitle')
+            : t('list.page.subtitle')}
           actions={(
             <Space wrap>
               <Button
                 icon={<ClockCircleOutlined />}
                 onClick={() => navigate('/workflows/executions')}
               >
-                Executions
+                {t('list.page.executions')}
               </Button>
               <Button
                 onClick={() => {
@@ -632,7 +632,7 @@ const WorkflowList = () => {
                   setSearchParams(next)
                 }}
               >
-                {isRuntimeDiagnosticsSurface ? 'Analyst Library' : 'Runtime Diagnostics'}
+                {isRuntimeDiagnosticsSurface ? t('list.page.analystLibrary') : t('list.page.runtimeDiagnostics')}
               </Button>
               {!isRuntimeDiagnosticsSurface ? (
                 <Button
@@ -643,7 +643,7 @@ const WorkflowList = () => {
                     returnTo: buildWorkflowLibraryHref(),
                   }))}
                 >
-                  New Scheme
+                  {t('list.page.newScheme')}
                 </Button>
               ) : null}
             </Space>
@@ -655,8 +655,8 @@ const WorkflowList = () => {
         <Alert
           showIcon
           type="warning"
-          message="Runtime diagnostics surface"
-          description="System-managed runtime workflow projections are listed separately and remain read-only."
+          message={t('list.alerts.runtimeSurfaceTitle')}
+          description={t('list.alerts.runtimeSurfaceDescription')}
         />
       ) : null}
 
@@ -668,11 +668,8 @@ const WorkflowList = () => {
           description={(
             <Space direction="vertical" size={4}>
               <span>{authoringPhase.description}</span>
-              <span>{`Primary analyst surface: ${authoringPhase.analyst_surface}`}</span>
-              <span>
-                Compose analyst-authored schemes in /workflows. Use /templates for atomic
-                operations and /decisions for versioned decision resources.
-              </span>
+              <span>{t('list.alerts.authoringPrimarySurface', { surface: authoringPhase.analyst_surface })}</span>
+              <span>{t('list.alerts.authoringGuidance')}</span>
               <Space wrap size={[8, 8]}>
                 {authoringPhase.rollout_scope.map((scope) => (
                   <Tag key={scope} color="blue">
@@ -681,12 +678,12 @@ const WorkflowList = () => {
                 ))}
                 {authoringPhase.deferred_scope.map((scope) => (
                   <Tag key={scope} color="gold">
-                    {`Deferred: ${scope}`}
+                    {t('list.alerts.deferred', { value: scope })}
                   </Tag>
                 ))}
                 {authoringPhase.follow_up_changes.map((changeId) => (
                   <Tag key={changeId} color="purple">
-                    {`Follow-up: ${changeId}`}
+                    {t('list.alerts.followUp', { value: changeId })}
                   </Tag>
                 ))}
               </Space>
@@ -701,16 +698,16 @@ const WorkflowList = () => {
           routeUpdateModeRef.current = 'push'
           setIsDetailDrawerOpen(false)
         }}
-        detailDrawerTitle={selectedWorkflow?.name || 'Workflow detail'}
+        detailDrawerTitle={selectedWorkflow?.name || t('list.detail.drawerTitle')}
         list={(
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <EntityList
-              title={isRuntimeDiagnosticsSurface ? 'Runtime Workflow Catalog' : 'Workflow Catalog'}
+              title={isRuntimeDiagnosticsSurface ? t('list.catalog.runtimeTitle') : t('list.catalog.title')}
               extra={(
                 <Input.Search
-                  aria-label="Search workflows"
+                  aria-label={t('list.catalog.searchAriaLabel')}
                   allowClear
-                  placeholder="Search workflow schemes"
+                  placeholder={t('list.catalog.searchPlaceholder')}
                   value={table.search}
                   onChange={(event) => table.setSearch(event.target.value)}
                   style={{ width: '100%', maxWidth: 260 }}
@@ -719,18 +716,20 @@ const WorkflowList = () => {
               toolbar={catalogStateToolbar}
               error={catalogError}
               loading={workflowsQuery.isLoading}
-              emptyDescription="No workflows match the current catalog state."
+              emptyDescription={t('list.catalog.emptyDescription')}
               dataSource={workflows}
               renderItem={(workflow) => {
                 const selected = workflow.id === selectedWorkflowId
-                const primarySummary = [
-                  workflow.category || 'uncategorized',
-                  workflow.workflow_type || 'unknown',
-                  `${workflow.node_count ?? 0} node(s)`,
-                ].join(' · ')
+                const primarySummary = t('list.catalog.primarySummary', {
+                  category: workflow.category || t('common.uncategorized'),
+                  type: workflow.workflow_type || t('common.unknown'),
+                  nodes: workflow.node_count ?? 0,
+                })
                 const secondarySummary = [
-                  `${workflow.execution_count ?? 0} execution(s)`,
-                  `Updated ${formatCompactDateTime(workflow.updated_at)}`,
+                  t('list.catalog.secondaryExecutionCount', { count: workflow.execution_count ?? 0 }),
+                  t('list.catalog.secondaryUpdated', {
+                    value: formatters.date(workflow.updated_at, { fallback: t('common.noValue') }),
+                  }),
                   workflow.created_by_username || null,
                 ].filter(Boolean).join(' · ')
 
@@ -740,7 +739,7 @@ const WorkflowList = () => {
                     type="text"
                     block
                     data-testid={`workflow-list-catalog-item-${workflow.id}`}
-                    aria-label={`Open workflow ${workflow.name}`}
+                    aria-label={t('list.catalog.openWorkflow', { name: workflow.name })}
                     aria-pressed={selected}
                     onClick={() => {
                       routeUpdateModeRef.current = 'push'
@@ -752,10 +751,10 @@ const WorkflowList = () => {
                     <Space direction="vertical" size={4} style={{ width: '100%' }}>
                       <Space wrap size={[8, 8]}>
                         <Text strong>{workflow.name}</Text>
-                        {workflow.is_system_managed ? <Tag color="gold">System managed</Tag> : null}
+                        {workflow.is_system_managed ? <Tag color="gold">{t('common.systemManaged')}</Tag> : null}
                       </Space>
                       <Space wrap size={[8, 8]}>
-                        {renderStatusSummary(workflow)}
+                        {renderStatusSummary(workflow, t)}
                       </Space>
                       <Text type="secondary">{primarySummary}</Text>
                       <Text type="secondary">{secondarySummary}</Text>
@@ -783,18 +782,18 @@ const WorkflowList = () => {
         )}
         detail={(
           <EntityDetails
-            title="Workflow detail"
+            title={t('list.detail.title')}
             loading={detailLoading}
             error={detailError}
             empty={!selectedWorkflowId || (!selectedWorkflow && !detailLoading)}
-            emptyDescription="Select a workflow from the library to inspect authoring context and runtime posture."
+            emptyDescription={t('list.detail.emptyDescription')}
             extra={selectedWorkflow ? (
               <Space wrap>
                 <Button
                   data-testid="workflow-list-detail-open"
                   onClick={() => openWorkflow(selectedWorkflow.id, selectedWorkflow.is_system_managed)}
                 >
-                  {selectedWorkflow.is_system_managed ? 'Inspect workflow' : 'Edit workflow'}
+                  {selectedWorkflow.is_system_managed ? t('list.detail.inspectWorkflow') : t('list.detail.editWorkflow')}
                 </Button>
                 {!selectedWorkflow.is_system_managed ? (
                   <>
@@ -802,7 +801,7 @@ const WorkflowList = () => {
                       data-testid="workflow-list-detail-clone"
                       onClick={() => void handleClone(selectedWorkflow.id, selectedWorkflow.name)}
                     >
-                      Clone
+                      {t('list.detail.clone')}
                     </Button>
                     <Button
                       type="primary"
@@ -814,16 +813,16 @@ const WorkflowList = () => {
                         returnTo: buildWorkflowLibraryHref({ workflowId: selectedWorkflow.id, detailOpen: true }),
                       }))}
                     >
-                      Execute
+                      {t('list.detail.execute')}
                     </Button>
                     <Popconfirm
-                      title="Delete workflow?"
-                      description="This action cannot be undone."
+                      title={t('list.detail.deleteConfirmTitle')}
+                      description={t('list.detail.deleteConfirmDescription')}
                       onConfirm={() => handleDelete(selectedWorkflow.id)}
-                      okText="Delete"
+                      okText={t('list.detail.deleteConfirmOk')}
                       okButtonProps={{ danger: true }}
                     >
-                      <Button danger data-testid="workflow-list-detail-delete">Delete</Button>
+                      <Button danger data-testid="workflow-list-detail-delete">{t('list.detail.delete')}</Button>
                     </Popconfirm>
                   </>
                 ) : null}
@@ -836,50 +835,56 @@ const WorkflowList = () => {
                   <Alert
                     type="warning"
                     showIcon
-                    message="System-managed runtime projection"
-                    description={selectedWorkflow.read_only_reason || 'This workflow is generated for runtime diagnostics and remains read-only.'}
+                    message={t('list.alerts.systemManagedTitle')}
+                    description={selectedWorkflow.read_only_reason || t('list.alerts.systemManagedDescription')}
                   />
                 ) : null}
 
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Name">
+                  <Descriptions.Item label={t('list.detail.fields.name')}>
                     <Text strong data-testid="workflow-list-selected-name">{selectedWorkflow.name}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Workflow ID">
+                  <Descriptions.Item label={t('list.detail.fields.workflowId')}>
                     <Text code data-testid="workflow-list-selected-id">{selectedWorkflow.id}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Status">
-                    {renderStatusSummary(selectedWorkflow)}
+                  <Descriptions.Item label={t('list.detail.fields.status')}>
+                    {renderStatusSummary(selectedWorkflow, t)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Category">{selectedWorkflow.category}</Descriptions.Item>
-                  <Descriptions.Item label="Workflow type">
+                  <Descriptions.Item label={t('list.detail.fields.category')}>{selectedWorkflow.category}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.workflowType')}>
                     <Tag color={workflowTypeColors[String(selectedWorkflow.workflow_type)] || 'default'}>
-                      {String(selectedWorkflow.workflow_type || 'unknown')}
+                      {String(selectedWorkflow.workflow_type || t('common.unknown'))}
                     </Tag>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Management mode">{selectedWorkflow.management_mode}</Descriptions.Item>
-                  <Descriptions.Item label="Visibility surface">{selectedWorkflow.visibility_surface}</Descriptions.Item>
-                  <Descriptions.Item label="Version">{selectedWorkflow.version_number}</Descriptions.Item>
-                  <Descriptions.Item label="Nodes">{selectedWorkflowNodeCount}</Descriptions.Item>
-                  <Descriptions.Item label="Executions">{selectedWorkflowExecutionCount}</Descriptions.Item>
-                  <Descriptions.Item label="Created by">
-                    {selectedWorkflow.created_by_username || '—'}
+                  <Descriptions.Item label={t('list.detail.fields.managementMode')}>{selectedWorkflow.management_mode}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.visibilitySurface')}>{selectedWorkflow.visibility_surface}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.version')}>{selectedWorkflow.version_number}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.nodes')}>{selectedWorkflowNodeCount}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.executions')}>{selectedWorkflowExecutionCount}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.createdBy')}>
+                    {selectedWorkflow.created_by_username || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Created at">{formatDateTime(selectedWorkflow.created_at)}</Descriptions.Item>
-                  <Descriptions.Item label="Updated at">{formatDateTime(selectedWorkflow.updated_at)}</Descriptions.Item>
-                  <Descriptions.Item label="Description">{selectedWorkflow.description || '—'}</Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.createdAt')}>
+                    {formatters.dateTime(selectedWorkflow.created_at, { fallback: t('common.noValue') })}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.updatedAt')}>
+                    {formatters.dateTime(selectedWorkflow.updated_at, { fallback: t('common.noValue') })}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('list.detail.fields.description')}>
+                    {selectedWorkflow.description || t('common.noValue')}
+                  </Descriptions.Item>
                 </Descriptions>
 
                 {selectedWorkflowDetail ? (
                   <>
                     <JsonBlock
-                      title="DAG structure"
+                      title={t('list.detail.dagStructure')}
                       value={selectedWorkflowDetail.dag_structure}
                       dataTestId="workflow-list-selected-dag"
                       height={260}
                     />
                     <JsonBlock
-                      title="Workflow config"
+                      title={t('list.detail.workflowConfig')}
                       value={selectedWorkflowDetail.config ?? {}}
                       dataTestId="workflow-list-selected-config"
                       height={220}

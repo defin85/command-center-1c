@@ -15,6 +15,7 @@ import {
   ClockCircleOutlined,
   MinusCircleOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../../i18n'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
 
@@ -38,12 +39,20 @@ const toNumber = (value: unknown): number | null => {
 }
 
 const ParallelNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
+  const { t } = useWorkflowTranslation()
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
   const parallelNodes = data.config?.parallel_nodes || []
   const waitFor = data.config?.wait_for || 'all'
   const completedCount = toNumber(data.output?.completed_count)
+  const waitForLabel = (
+    waitFor === 'all'
+      ? t('nodeViews.parallel.waitValues.all')
+      : waitFor === 'any'
+        ? t('nodeViews.parallel.waitValues.any')
+        : `${waitFor}`
+  )
 
   return (
     <div className={`workflow-node parallel-node ${selected ? 'selected' : ''}`}>
@@ -70,13 +79,13 @@ const ParallelNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
       >
         <div className="node-content">
           <div className="node-field">
-            <span className="field-label">Parallel:</span>
-            <span className="field-value">{parallelNodes.length} nodes</span>
+            <span className="field-label">{t('nodeViews.parallel.fields.parallel')}</span>
+            <span className="field-value">{t('nodeViews.parallel.values.nodes', { count: parallelNodes.length })}</span>
           </div>
 
           <div className="node-field">
-            <span className="field-label">Wait for:</span>
-            <Tag color="blue">{waitFor}</Tag>
+            <span className="field-label">{t('nodeViews.parallel.fields.waitFor')}</span>
+            <Tag color="blue">{waitForLabel}</Tag>
           </div>
 
           {status === 'running' && completedCount !== null && parallelNodes.length > 0 && (

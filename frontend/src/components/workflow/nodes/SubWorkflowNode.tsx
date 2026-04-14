@@ -16,6 +16,7 @@ import {
   MinusCircleOutlined,
   ExportOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../../i18n'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
 
@@ -38,6 +39,7 @@ const toStringValue = (value: unknown): string | null => {
 }
 
 const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
+  const { t } = useWorkflowTranslation()
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
@@ -81,8 +83,8 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
         <div className="node-content">
           {workflowTargetId && (
             <div className="node-field">
-              <span className="field-label">Workflow:</span>
-              <Tooltip title="Open sub-workflow">
+              <span className="field-label">{t('nodeViews.subworkflow.fields.workflow')}</span>
+              <Tooltip title={t('nodeViews.subworkflow.tooltips.open')}>
                 <Button
                   type="link"
                   size="small"
@@ -105,9 +107,9 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
               }
             >
               <div className="node-field">
-                <span className="field-label">Pinned:</span>
+                <span className="field-label">{t('nodeViews.subworkflow.fields.pinned')}</span>
                 <Tag color="magenta">
-                  {pinnedSubworkflowRef.workflow_definition_key || 'subworkflow'}{' '}
+                  {pinnedSubworkflowRef.workflow_definition_key || t('nodeViews.subworkflow.values.subworkflow')}{' '}
                   {pinnedSubworkflowRef.workflow_revision ? `r${pinnedSubworkflowRef.workflow_revision}` : ''}
                 </Tag>
               </div>
@@ -117,8 +119,8 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {Object.keys(inputMapping).length > 0 && (
             <Tooltip title={JSON.stringify(inputMapping, null, 2)}>
               <div className="node-field">
-                <span className="field-label">Inputs:</span>
-                <span className="field-value">{Object.keys(inputMapping).length} mapped</span>
+                <span className="field-label">{t('nodeViews.subworkflow.fields.inputs')}</span>
+                <span className="field-value">{t('nodeViews.subworkflow.values.mapped', { count: Object.keys(inputMapping).length })}</span>
               </div>
             </Tooltip>
           )}
@@ -126,22 +128,22 @@ const SubWorkflowNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {Object.keys(outputMapping).length > 0 && (
             <Tooltip title={JSON.stringify(outputMapping, null, 2)}>
               <div className="node-field">
-                <span className="field-label">Outputs:</span>
-                <span className="field-value">{Object.keys(outputMapping).length} mapped</span>
+                <span className="field-label">{t('nodeViews.subworkflow.fields.outputs')}</span>
+                <span className="field-value">{t('nodeViews.subworkflow.values.mapped', { count: Object.keys(outputMapping).length })}</span>
               </div>
             </Tooltip>
           )}
 
           {status === 'running' && subExecutionId && (
             <div className="node-field">
-              <span className="field-label">Execution:</span>
+              <span className="field-label">{t('nodeViews.subworkflow.fields.execution')}</span>
               <span className="field-value mono">{subExecutionId.slice(0, 8)}{'\u2026'}</span>
             </div>
           )}
 
           {data.durationMs !== undefined && status !== 'pending' && status !== 'running' && (
             <div className="node-field">
-              <span className="field-label">Duration:</span>
+              <span className="field-label">{t('nodeViews.subworkflow.fields.duration')}</span>
               <span className="field-value">{(data.durationMs / 1000).toFixed(2)}s</span>
             </div>
           )}

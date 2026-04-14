@@ -3566,6 +3566,12 @@ async function setupUiPlatformMocks(
   })
 }
 
+async function switchShellLocaleToEnglish(page: Page) {
+  const localeSelect = page.getByTestId('shell-locale-select')
+  await localeSelect.locator('.ant-select-selector').click()
+  await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) [title="English"]').click()
+}
+
 async function expectNoHorizontalOverflow(page: Page) {
   const overflowDetails = await page.evaluate(() => {
     const ignoredTags = new Set(['svg', 'g', 'path', 'ellipse', 'circle'])
@@ -4783,6 +4789,74 @@ test('UI platform: /system-status keeps locale switch and reload aligned with th
   await expect(refreshButtonEn).toBeVisible()
   await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
 })
+
+for (const localeWaveCase of [
+  {
+    label: '2.1 /extensions',
+    path: '/extensions',
+    ruVisible: (page: Page) => page.getByPlaceholder('Поиск по имени расширения'),
+    enVisible: (page: Page) => page.getByPlaceholder('Search extension name'),
+  },
+  {
+    label: '2.2 /artifacts',
+    path: '/artifacts',
+    ruVisible: (page: Page) => page.getByRole('heading', { name: 'Артефакты', level: 2 }),
+    enVisible: (page: Page) => page.getByRole('heading', { name: 'Artifacts', level: 2 }),
+  },
+  {
+    label: '2.3 /operations',
+    path: '/operations',
+    ruVisible: (page: Page) => page.getByRole('heading', { name: 'Монитор операций', level: 2 }),
+    enVisible: (page: Page) => page.getByRole('heading', { name: 'Operations Monitor', level: 2 }),
+  },
+  {
+    label: '2.4 /workflows',
+    path: '/workflows',
+    ruVisible: (page: Page) => page.getByRole('heading', { name: 'Библиотека workflow-схем', level: 2 }),
+    enVisible: (page: Page) => page.getByRole('heading', { name: 'Workflow Scheme Library', level: 2 }),
+  },
+  {
+    label: '2.5 /pools/templates',
+    path: '/pools/templates',
+    ruVisible: (page: Page) => page.getByRole('button', { name: 'Создать шаблон' }),
+    enVisible: (page: Page) => page.getByRole('button', { name: 'Create Template' }),
+  },
+  {
+    label: '2.6 /pools/runs',
+    path: '/pools/runs',
+    ruVisible: (page: Page) => page.getByRole('button', { name: 'Обновить данные' }),
+    enVisible: (page: Page) => page.getByRole('button', { name: 'Refresh Data' }),
+  },
+] as const) {
+  test(`UI platform: ${localeWaveCase.label} keeps locale switch and reload aligned with shell i18n`, async ({ page }) => {
+    const observedLocaleHeaders: string[] = []
+    const localeSelect = page.getByTestId('shell-locale-select')
+
+    await setupAuth(page, { localeOverride: 'ru' })
+    await setupPersistentDatabaseStream(page)
+    await setupUiPlatformMocks(page, { isStaff: true, observedLocaleHeaders })
+
+    await page.goto(localeWaveCase.path, { waitUntil: 'domcontentloaded' })
+
+    await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+    await expect(localeSelect).toHaveAttribute('aria-label', 'Язык')
+    await expect(localeWaveCase.ruVisible(page)).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+    await expect.poll(() => observedLocaleHeaders[0]).toBe('ru')
+
+    await switchShellLocaleToEnglish(page)
+
+    await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+    await expect(localeWaveCase.enVisible(page)).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+
+    await expect(localeSelect).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+    await expect(localeSelect).toHaveAttribute('aria-label', 'Language')
+    await expect(localeWaveCase.enVisible(page)).toBeVisible({ timeout: ROUTE_MOUNT_TIMEOUT_MS })
+    await expect(localeWaveCase.ruVisible(page)).toHaveCount(0)
+    await expect.poll(() => observedLocaleHeaders.at(-1)).toBe('en')
+  })
+}
 
 test('UI platform: /system-status restores diagnostics context in a mobile-safe drawer with paused polling', async ({ page }) => {
   const counts = createRequestCounts()

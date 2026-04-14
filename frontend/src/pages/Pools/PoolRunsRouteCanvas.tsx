@@ -88,6 +88,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
+import { createLocaleFormatters, getCurrentAppLocale, usePoolsTranslation } from '../../i18n'
 import { PoolBatchIntakeDrawer } from './PoolBatchIntakeDrawer'
 import { buildPoolFactualRoute, POOL_RUNS_ROUTE } from './routes'
 
@@ -304,32 +305,6 @@ const MASTER_DATA_WORKSPACE_TAB_LABELS: Record<string, string> = {
 }
 
 const DEFAULT_STAGE: PoolRunsStage = 'create'
-const STAGE_LABELS: Record<PoolRunsStage, string> = {
-  create: 'Create',
-  inspect: 'Inspect',
-  safe: 'Safe Actions',
-  retry: 'Retry Failed',
-}
-const STAGE_DETAIL_TITLES: Record<PoolRunsStage, string> = {
-  create: 'Create run',
-  inspect: 'Inspect run',
-  safe: 'Safe actions',
-  retry: 'Retry failed targets',
-}
-const STAGE_MESSAGES: Record<PoolRunsStage, string> = {
-  create: (
-    'Start a run from the selected pool context, preview the pinned workflow binding, and keep heavy runtime lineage out of the primary authoring flow.'
-  ),
-  inspect: (
-    'Inspect lineage, readiness, master-data gate, verification, and workflow runtime for the selected run without mixing authoring and remediation as primary content.'
-  ),
-  safe: (
-    'Confirm or abort safe publication only after inspect stage shows that readiness blockers are resolved and the selected run is in the correct approval state.'
-  ),
-  retry: (
-    'Retry failed targets for the selected run from a dedicated remediation stage with explicit payload review, instead of mixing retry controls into the default inspect canvas.'
-  ),
-}
 
 const getDefaultGraphDate = () => new Date().toISOString().slice(0, 10)
 
@@ -350,7 +325,7 @@ const parsePoolRunsStage = (value: string | null): PoolRunsStage => (
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  return createLocaleFormatters(getCurrentAppLocale()).dateTime(value, { fallback: '-' })
 }
 
 const formatShortId = (value: string | null | undefined) => {
@@ -1426,6 +1401,34 @@ const normalizePreviewSlotCoverageSummary = (
 
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
+  const stageLabels = useMemo<Record<PoolRunsStage, string>>(
+    () => ({
+      create: t('runs.page.stages.create'),
+      inspect: t('runs.page.stages.inspect'),
+      safe: t('runs.page.stages.safe'),
+      retry: t('runs.page.stages.retry'),
+    }),
+    [t]
+  )
+  const stageDetailTitles = useMemo<Record<PoolRunsStage, string>>(
+    () => ({
+      create: t('runs.page.detailTitles.create'),
+      inspect: t('runs.page.detailTitles.inspect'),
+      safe: t('runs.page.detailTitles.safe'),
+      retry: t('runs.page.detailTitles.retry'),
+    }),
+    [t]
+  )
+  const stageMessages = useMemo<Record<PoolRunsStage, string>>(
+    () => ({
+      create: t('runs.page.stageMessages.create'),
+      inspect: t('runs.page.stageMessages.inspect'),
+      safe: t('runs.page.stageMessages.safe'),
+      retry: t('runs.page.stageMessages.retry'),
+    }),
+    [t]
+  )
   const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -2638,16 +2641,8 @@ export function PoolRunsPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Pool Runs"
-          subtitle={(
-            <>
-              Stage-based operator workspace on
-              {' '}
-              <Text code>{POOL_RUNS_ROUTE}</Text>
-              {' '}
-              for create, inspect, safe actions, and retry against one selected run context.
-            </>
-          )}
+          title={t('runs.page.title')}
+          subtitle={t('runs.page.subtitle', { route: POOL_RUNS_ROUTE })}
           actions={(
             <Space wrap size={16} align="start">
               <Space direction="vertical" size={4}>
@@ -2656,7 +2651,7 @@ export function PoolRunsPage() {
                   aria-label="Run pool"
                   data-testid="pool-runs-context-pool"
                   style={{ width: 320 }}
-                  placeholder="Select pool"
+                  placeholder={t('catalog.fields.selectPool')}
                   value={selectedPoolId ?? undefined}
                   options={pools.map((pool) => ({
                     value: pool.id,
@@ -2680,7 +2675,7 @@ export function PoolRunsPage() {
                 loading={loadingGraph || loadingRuns || loadingReport}
                 style={{ marginTop: 28 }}
               >
-                Refresh Data
+                {t('runs.page.refresh')}
               </Button>
             </Space>
           )}
@@ -2690,28 +2685,28 @@ export function PoolRunsPage() {
       <Alert
         type="info"
         showIcon
-        message={`Lifecycle stage: ${STAGE_LABELS[activeStageTab]}`}
-        description={STAGE_MESSAGES[activeStageTab]}
+        message={t('runs.page.lifecycleStage', { stage: stageLabels[activeStageTab] })}
+        description={stageMessages[activeStageTab]}
       />
 
       {error && <Alert type="error" message={error} />}
 
-      <Card title="Run Context" loading={loadingPools}>
+      <Card title={t('runs.page.runContextTitle')} loading={loadingPools}>
         <Space wrap>
           <Text>
-            Selected pool:
+            {t('runs.page.selectedPool')}
             {' '}
-            <Text strong>{selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : 'none'}</Text>
+            <Text strong>{selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : t('runs.page.none')}</Text>
           </Text>
           <Text>
-            Graph date:
+            {t('runs.page.graphDate')}
             {' '}
             <Text strong>{graphDate}</Text>
           </Text>
           <Text>
-            Selected run:
+            {t('runs.page.selectedRun')}
             {' '}
-            <Text strong>{selectedRunId ? formatShortId(selectedRunId) : 'none'}</Text>
+            <Text strong>{selectedRunId ? formatShortId(selectedRunId) : t('runs.page.none')}</Text>
           </Text>
         </Space>
       </Card>
@@ -2723,22 +2718,22 @@ export function PoolRunsPage() {
         items={[
           {
             key: 'create',
-            label: STAGE_LABELS.create,
+            label: stageLabels.create,
             children: (
-              <Card title="Create Run">
+              <Card title={t('runs.create.title')}>
                 <Form form={createForm} layout="vertical" initialValues={CREATE_RUN_FORM_INITIAL_VALUES}>
                   <Alert
                     type="info"
                     showIcon
-                    message="Pool publication OData credentials source: /rbac"
-                    description="`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping)."
+                    message={t('runs.create.alerts.odataSourceTitle')}
+                    description={t('runs.create.alerts.odataSourceDescription')}
                     style={{ marginBottom: 12 }}
                   />
                   <Alert
                     type="info"
                     showIcon
-                    message="Canonical batch intake stays on the checked-in operator path"
-                    description="Use the drawer below to create receipt/sale batches through schema-template normalization. Receipt intake queues the linked safe run without manual batch UUID entry."
+                    message={t('runs.create.alerts.batchIntakeTitle')}
+                    description={t('runs.create.alerts.batchIntakeDescription')}
                     action={(
                       <Button
                         type="primary"
@@ -2747,7 +2742,7 @@ export function PoolRunsPage() {
                         disabled={!selectedPoolId}
                         onClick={() => setIsBatchIntakeDrawerOpen(true)}
                       >
-                        Create canonical batch
+                        {t('runs.create.actions.createCanonicalBatch')}
                       </Button>
                     )}
                     style={{ marginBottom: 12 }}
@@ -2757,24 +2752,26 @@ export function PoolRunsPage() {
                       type="error"
                       showIcon
                       data-testid="pool-runs-create-binding-read-error"
-                      message={`Binding diagnostics: ${selectedPoolWorkflowBindingsReadError.code}`}
+                      message={t('runs.create.alerts.bindingDiagnostics', {
+                        code: selectedPoolWorkflowBindingsReadError.code,
+                      })}
                       description={selectedPoolWorkflowBindingsReadError.detail}
                       style={{ marginBottom: 12 }}
                     />
                   ) : null}
                   <Row gutter={12}>
                     <Col span={5}>
-                      <Form.Item name="period_start" label="Period start" rules={[{ required: true }]}>
+                      <Form.Item name="period_start" label={t('runs.create.fields.periodStart')} rules={[{ required: true }]}>
                         <Input type="date" />
                       </Form.Item>
                     </Col>
                     <Col span={5}>
-                      <Form.Item name="period_end" label="Period end">
+                      <Form.Item name="period_end" label={t('runs.create.fields.periodEnd')}>
                         <Input type="date" />
                       </Form.Item>
                     </Col>
                     <Col span={4}>
-                      <Form.Item name="direction" label="Direction" rules={[{ required: true }]}>
+                      <Form.Item name="direction" label={t('runs.create.fields.direction')} rules={[{ required: true }]}>
                         <Radio.Group data-testid="pool-runs-create-direction" optionType="button" buttonStyle="solid">
                           <Radio.Button value="top_down">top_down</Radio.Button>
                           <Radio.Button value="bottom_up">bottom_up</Radio.Button>
@@ -2782,7 +2779,7 @@ export function PoolRunsPage() {
                       </Form.Item>
                     </Col>
                     <Col span={4}>
-                      <Form.Item name="mode" label="Mode" rules={[{ required: true }]}>
+                      <Form.Item name="mode" label={t('runs.create.fields.mode')} rules={[{ required: true }]}>
                         <Select
                           data-testid="pool-runs-create-mode"
                           options={[
@@ -2794,23 +2791,23 @@ export function PoolRunsPage() {
                     </Col>
                     <Col span={6}>
                       {createDirection === 'top_down' ? (
-                        <Form.Item name="top_down_input_mode" label="Top-down source" rules={[{ required: true }]}>
+                        <Form.Item name="top_down_input_mode" label={t('runs.create.fields.topDownSource')} rules={[{ required: true }]}>
                           <Radio.Group
                             data-testid="pool-runs-create-top-down-input-mode"
                             optionType="button"
                             buttonStyle="solid"
                           >
-                            <Radio.Button value="manual">manual amount</Radio.Button>
-                            <Radio.Button value="batch_backed">receipt batch</Radio.Button>
+                            <Radio.Button value="manual">{t('runs.create.options.manualAmount')}</Radio.Button>
+                            <Radio.Button value="batch_backed">{t('runs.create.options.receiptBatch')}</Radio.Button>
                           </Radio.Group>
                         </Form.Item>
                       ) : (
-                        <Form.Item name="schema_template_id" label="Schema template">
+                        <Form.Item name="schema_template_id" label={t('runs.create.fields.schemaTemplate')}>
                           <Select
                             data-testid="pool-runs-create-schema-template"
                             allowClear
                             loading={loadingSchemaTemplates}
-                            placeholder="Optional template"
+                            placeholder={t('runs.create.placeholders.optionalTemplate')}
                             options={schemaTemplates.map((item) => ({
                               value: item.id,
                               label: `${item.code} - ${item.name}`,
@@ -2827,22 +2824,22 @@ export function PoolRunsPage() {
                           <Col span={8}>
                             <Form.Item
                               name="batch_id"
-                              label="Receipt batch"
+                              label={t('runs.create.fields.receiptBatch')}
                               rules={[
-                                { required: true, message: 'batch_id required' },
+                                { required: true, message: t('runs.create.validation.batchIdRequired') },
                                 {
                                   validator: async (_rule, value) => {
                                     const normalized = String(value || '').trim()
                                     if (!normalized) {
-                                      throw new Error('batch_id required')
+                                      throw new Error(t('runs.create.validation.batchIdRequired'))
                                     }
                                   },
                                 },
                               ]}
                               extra={
                                 receiptBatchOptions.length === 0
-                                  ? 'Create a canonical receipt batch from the drawer above, then reuse it from this select.'
-                                  : 'Select an existing canonical receipt batch for the explicit batch-backed run path.'
+                                  ? t('runs.create.extras.createCanonicalReceiptBatchFirst')
+                                  : t('runs.create.extras.selectExistingCanonicalReceiptBatch')
                               }
                             >
                               <Select
@@ -2850,7 +2847,7 @@ export function PoolRunsPage() {
                                 loading={loadingReceiptBatches}
                                 showSearch
                                 optionFilterProp="label"
-                                placeholder="Select canonical receipt batch"
+                                placeholder={t('runs.create.placeholders.selectCanonicalReceiptBatch')}
                                 options={receiptBatchOptions}
                               />
                             </Form.Item>
@@ -2858,17 +2855,17 @@ export function PoolRunsPage() {
                           <Col span={8}>
                             <Form.Item
                               name="start_organization_id"
-                              label="Start organization"
-                              rules={[{ required: true, message: 'start_organization_id required' }]}
+                              label={t('runs.create.fields.startOrganization')}
+                              rules={[{ required: true, message: t('runs.create.validation.startOrganizationRequired') }]}
                               extra={
                                 activeTopologyOrganizations.length === 0
-                                  ? 'Сначала загрузите активную topology для выбранного периода.'
-                                  : 'Выберите организацию из активной topology пула на period_start.'
+                                  ? t('runs.create.extras.noActiveTopologyForPeriod')
+                                  : t('runs.create.extras.chooseOrganizationFromTopology')
                               }
                             >
                               <Select
                                 data-testid="pool-runs-create-start-organization"
-                                placeholder="Select start organization"
+                                placeholder={t('runs.create.placeholders.selectStartOrganization')}
                                 options={activeTopologyOrganizations}
                               />
                             </Form.Item>
@@ -2878,13 +2875,13 @@ export function PoolRunsPage() {
                         <Col span={8}>
                           <Form.Item
                             name="starting_amount"
-                            label="Starting amount"
+                            label={t('runs.create.fields.startingAmount')}
                             rules={[
-                              { required: true, message: 'starting_amount required' },
+                              { required: true, message: t('runs.create.validation.startingAmountRequired') },
                               {
                                 validator: async (_rule, value) => {
                                   if (value == null || Number(value) <= 0) {
-                                    throw new Error('starting_amount must be > 0')
+                                    throw new Error(t('runs.create.validation.startingAmountPositive'))
                                   }
                                 },
                               },
@@ -2901,28 +2898,30 @@ export function PoolRunsPage() {
                     <Col span={12}>
                       <Form.Item
                         name="pool_workflow_binding_id"
-                        label="Workflow binding"
-                        rules={[{ required: true, message: 'workflow binding required' }]}
+                        label={t('runs.create.fields.workflowBinding')}
+                        rules={[{ required: true, message: t('runs.create.validation.workflowBindingRequired') }]}
                         extra={
                           selectedPoolWorkflowBindingsReadError
-                            ? `Active bindings are unavailable: ${selectedPoolWorkflowBindingsReadError.detail}`
+                            ? t('runs.create.extras.activeBindingsUnavailable', {
+                              detail: selectedPoolWorkflowBindingsReadError.detail,
+                            })
                             : matchingWorkflowBindings.length === 0
-                            ? 'Для выбранного pool/direction/mode/period_start нет активного workflow binding.'
-                            : 'Run запускается по pinned workflow binding, а не по raw selector.'
+                              ? t('runs.create.extras.noMatchingBinding')
+                              : t('runs.create.extras.pinnedWorkflowBinding')
                         }
                       >
                         <Select
                           data-testid="pool-runs-create-workflow-binding"
-                          aria-label="Workflow binding"
+                          aria-label={t('runs.create.fields.workflowBinding')}
                           aria-disabled={Boolean(selectedPoolWorkflowBindingsReadError) || matchingWorkflowBindings.length === 0}
                           allowClear={matchingWorkflowBindings.length > 1}
                           disabled={Boolean(selectedPoolWorkflowBindingsReadError) || matchingWorkflowBindings.length === 0}
                           placeholder={
                             selectedPoolWorkflowBindingsReadError
-                              ? 'Bindings unavailable'
+                              ? t('runs.create.placeholders.bindingsUnavailable')
                               : matchingWorkflowBindings.length === 0
-                                ? 'No matching binding'
-                                : 'Select binding'
+                                ? t('runs.create.placeholders.noMatchingBinding')
+                                : t('runs.create.placeholders.selectBinding')
                           }
                           options={matchingWorkflowBindings.map((binding) => ({
                             value: binding.binding_id,
@@ -2937,64 +2936,64 @@ export function PoolRunsPage() {
                       type="warning"
                       showIcon
                       data-testid="pool-runs-create-binding-ambiguity"
-                      message="Binding context is ambiguous"
-                      description="Для выбранного pool/direction/mode найдено несколько active bindings. Выберите binding явно, чтобы увидеть slot coverage и построить preview."
+                      message={t('runs.create.alerts.ambiguousContextTitle')}
+                      description={t('runs.create.alerts.ambiguousContextDescription')}
                     />
                   ) : null}
                   {selectedCreateBinding ? (
                     <Card
                       size="small"
-                      title="Selected Attachment"
+                      title={t('runs.create.fields.selectedAttachmentTitle')}
                       data-testid="pool-runs-create-selected-binding"
                       style={{ marginBottom: 12 }}
                     >
                       <Descriptions bordered size="small" column={detailDescriptionColumns}>
-                        <Descriptions.Item label="Attachment ID" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.attachmentId')} span={1}>
                           <Text code>{selectedCreateBinding.binding_id ?? '-'}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Attachment Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.attachmentRevision')} span={1}>
                           <Text data-testid="pool-runs-create-attachment-revision">
                             {selectedCreateBinding.revision != null ? `r${selectedCreateBinding.revision}` : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Execution Pack" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.executionPack')} span={1}>
                           <Text data-testid="pool-runs-create-profile">{resolvePoolWorkflowBindingProfileLabel(selectedCreateBinding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Pack Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.pinnedPackRevision')} span={1}>
                           <Text data-testid="pool-runs-create-profile-revision">
                             {selectedCreateBinding.binding_profile_revision_number != null
                               ? `r${selectedCreateBinding.binding_profile_revision_number}`
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Scheme" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.workflowScheme')} span={1}>
                           <Text>
                             {selectedCreateBindingWorkflow?.workflow_name
                               || selectedCreateBindingWorkflow?.workflow_definition_key
                               || '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.workflowRevision')} span={1}>
                           <Text>
                             {selectedCreateBindingWorkflow?.workflow_revision != null
                               ? `r${selectedCreateBindingWorkflow.workflow_revision}`
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Binding Scope" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.bindingScope')} span={1}>
                           <Text>{formatWorkflowBindingScope(selectedCreateBinding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Effective Period" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.effectivePeriod')} span={1}>
                           <Text>{formatWorkflowBindingEffectivePeriod(selectedCreateBinding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pack Status" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.packStatus')} span={1}>
                           <Text>{resolvePoolWorkflowBindingProfileStatus(selectedCreateBinding) ?? '-'}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Revision ID" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.pinnedRevisionId')} span={1}>
                           <Text code>{selectedCreateBinding.binding_profile_revision_id ?? '-'}</Text>
                         </Descriptions.Item>
                         {selectedCreateBindingLifecycleWarning ? (
-                          <Descriptions.Item label="Lifecycle Warning" span={2}>
+                          <Descriptions.Item label={t('runs.create.fields.lifecycleWarning')} span={2}>
                             <Alert
                               type="warning"
                               showIcon
@@ -3214,17 +3213,21 @@ export function PoolRunsPage() {
           },
           {
             key: 'inspect',
-            label: STAGE_LABELS.inspect,
+            label: stageLabels.inspect,
             children: (
               <MasterDetailShell
                 detailOpen={Boolean(selectedRunId) && isRunDetailOpen}
                 onCloseDetail={handleCloseRunDetail}
-                detailDrawerTitle={selectedRunId ? `${STAGE_DETAIL_TITLES.inspect} · ${formatShortId(selectedRunId)}` : STAGE_DETAIL_TITLES.inspect}
+                detailDrawerTitle={selectedRunId
+                  ? `${stageDetailTitles.inspect} · ${formatShortId(selectedRunId)}`
+                  : stageDetailTitles.inspect}
                 list={(
                   <EntityTable
-                    title="Runs"
+                    title={t('runs.inspect.listTitle')}
                     loading={loadingRuns}
-                    emptyDescription={selectedPoolId ? 'No runs found for the selected pool.' : 'Select a pool to load runs.'}
+                    emptyDescription={selectedPoolId
+                      ? t('runs.inspect.emptySelectedPool')
+                      : t('runs.inspect.emptySelectPool')}
                     dataSource={runs}
                     columns={runColumns}
                     rowKey="id"
@@ -3240,7 +3243,7 @@ export function PoolRunsPage() {
                 )}
                 detail={(
                   <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                    <Card title="Pool Graph" loading={loadingGraph}>
+                    <Card title={t('runs.inspect.poolGraphTitle')} loading={loadingGraph}>
                       <div style={{ height: 460 }}>
                         <ReactFlow nodes={flow.nodes} edges={flow.edges} fitView>
                           <MiniMap />
@@ -3250,9 +3253,9 @@ export function PoolRunsPage() {
                       </div>
                     </Card>
 
-                    <Card title="Run Lineage / Operator Report">
+                    <Card title={t('runs.inspect.reportTitle')}>
                   {!runDetails && (
-                    <Text type="secondary">Select a run to inspect report.</Text>
+                    <Text type="secondary">{t('runs.inspect.selectRunToInspect')}</Text>
                   )}
                   {runDetails && (
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -3744,15 +3747,15 @@ export function PoolRunsPage() {
           },
           {
             key: 'safe',
-            label: STAGE_LABELS.safe,
+            label: stageLabels.safe,
             children: (
               <Card
-                title="Safe Mode Actions"
-                extra={<Text type="secondary">`Idempotency-Key` генерируется автоматически на каждый action.</Text>}
+                title={t('runs.safe.title')}
+                extra={<Text type="secondary">{t('runs.safe.idempotencyHint')}</Text>}
               >
-                {!runDetails && <Text type="secondary">Выберите run для управления safe-публикацией.</Text>}
+                {!runDetails && <Text type="secondary">{t('runs.safe.selectRun')}</Text>}
                 {runDetails && runDetails.mode !== 'safe' && (
-                  <Alert type="info" showIcon message="Этот run создан в unsafe режиме: confirm/abort недоступны." />
+                  <Alert type="info" showIcon message={t('runs.safe.unsafeMode')} />
                 )}
                 {runDetails && runDetails.mode === 'safe' && (
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
@@ -3766,33 +3769,31 @@ export function PoolRunsPage() {
                       <Alert
                         type="info"
                         showIcon
-                        message="Pre-publish ещё выполняется"
-                        description="Safe run находится на этапе предпросмотра. Дождитесь состояния awaiting_approval, затем станет доступен Confirm publication."
+                        message={t('runs.safe.prePublishTitle')}
+                        description={t('runs.safe.prePublishDescription')}
                       />
                     )}
                     {readinessBlockers.length > 0 && (
                       <Alert
                         type="error"
                         showIcon
-                        message="Readiness blockers detected"
-                        description={`Inspect stage показывает ${readinessBlockers.length} blocker(s). Confirm publication будет недоступен до их устранения.`}
+                        message={t('runs.safe.readinessBlockedTitle')}
+                        description={t('runs.safe.readinessBlockedDescription', { count: readinessBlockers.length })}
                       />
                     )}
                     <Text type="secondary">
-                      `preparing` — выполняется pre-publish (prepare/distribution/reconciliation/approval_gate).
-                      `awaiting_approval` — pre-publish завершён и run ждёт ручного подтверждения.
-                      Диагностика вынесена в Inspect stage (Diagnostics JSON).
+                      {t('runs.safe.diagnosticsNote')}
                     </Text>
                     <Space>
                       <Button
                         type="primary"
                         data-testid="pool-runs-safe-confirm"
                         loading={safeActionLoading === 'confirm-publication'}
-                        title={isSafePrePublishPreparing ? 'Доступно после завершения pre-publish (awaiting_approval)' : undefined}
+                        title={isSafePrePublishPreparing ? t('runs.safe.confirmAvailableAfter') : undefined}
                         disabled={!canConfirm}
                         onClick={() => void handleSafeCommand('confirm-publication')}
                       >
-                        Confirm publication
+                        {t('runs.safe.confirmPublication')}
                       </Button>
                       <Button
                         danger
@@ -3801,7 +3802,7 @@ export function PoolRunsPage() {
                         disabled={!canAbort}
                         onClick={() => void handleSafeCommand('abort-publication')}
                       >
-                        Abort publication
+                        {t('runs.safe.abortPublication')}
                       </Button>
                     </Space>
                   </Space>
@@ -3811,32 +3812,40 @@ export function PoolRunsPage() {
           },
           {
             key: 'retry',
-            label: STAGE_LABELS.retry,
+            label: stageLabels.retry,
             children: (
-              <Card title="Retry Failed Targets">
+              <Card title={t('runs.retry.title')}>
                 <Form form={retryForm} layout="vertical" initialValues={RETRY_FORM_INITIAL_VALUES}>
                   <Row gutter={16}>
                     <Col span={8}>
-                      <Form.Item name="entity_name" label="Entity Name" rules={[{ required: true }]}>
+                      <Form.Item name="entity_name" label={t('runs.retry.fields.entityName')} rules={[{ required: true }]}>
                         <Input />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item name="max_attempts" label="Max Attempts" rules={[{ required: true }]}>
+                      <Form.Item name="max_attempts" label={t('runs.retry.fields.maxAttempts')} rules={[{ required: true }]}>
                         <InputNumber min={1} max={5} style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item name="retry_interval_seconds" label="Retry Interval (sec)" rules={[{ required: true }]}>
+                      <Form.Item
+                        name="retry_interval_seconds"
+                        label={t('runs.retry.fields.retryIntervalSeconds')}
+                        rules={[{ required: true }]}
+                      >
                         <InputNumber min={0} max={120} style={{ width: '100%' }} />
                       </Form.Item>
                     </Col>
                   </Row>
-                  <Form.Item name="documents_json" label="documents_by_database JSON" rules={[{ required: true }]}>
+                  <Form.Item
+                    name="documents_json"
+                    label={t('runs.retry.fields.documentsJson')}
+                    rules={[{ required: true }]}
+                  >
                     <TextArea rows={8} />
                   </Form.Item>
                   <Button type="primary" loading={retrying} onClick={() => void handleRetryFailed()} disabled={!selectedRunId}>
-                    Retry Failed
+                    {t('runs.retry.submit')}
                   </Button>
                 </Form>
               </Card>

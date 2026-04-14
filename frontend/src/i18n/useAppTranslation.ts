@@ -68,3 +68,5 @@ export const useAdminSupportTranslation = () => useNamespaceTranslation('adminSu
 export const useOperationsTranslation = () => useNamespaceTranslation('operations')
 export const useDatabasesTranslation = () => useNamespaceTranslation('databases')
 export const useTemplatesTranslation = () => useNamespaceTranslation('templates')
+export const useWorkflowTranslation = () => useNamespaceTranslation('workflows')
+export const usePoolsTranslation = () => useNamespaceTranslation('pools')

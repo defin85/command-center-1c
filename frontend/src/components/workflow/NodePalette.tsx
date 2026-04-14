@@ -14,6 +14,7 @@ import {
   ApartmentOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../i18n'
 import type { NodeType } from '../../types/workflow'
 import { NODE_TYPE_INFO } from '../../types/workflow'
 import './NodePalette.css'
@@ -39,28 +40,28 @@ type PaletteItem = {
   preset?: 'approval_gate'
 }
 
-const paletteItems: PaletteItem[] = [
+const buildPaletteItems = (translate: (key: string) => string): PaletteItem[] => [
   {
     key: 'operation_task',
     type: 'operation',
-    label: NODE_TYPE_INFO.operation.label,
-    description: NODE_TYPE_INFO.operation.description,
+    label: translate('palette.nodes.operation.label'),
+    description: translate('palette.nodes.operation.description'),
     color: NODE_TYPE_INFO.operation.color,
     icon: nodeIcons.operation,
   },
   {
     key: 'decision_gate',
     type: 'condition',
-    label: NODE_TYPE_INFO.condition.label,
-    description: NODE_TYPE_INFO.condition.description,
+    label: translate('palette.nodes.condition.label'),
+    description: translate('palette.nodes.condition.description'),
     color: NODE_TYPE_INFO.condition.color,
     icon: nodeIcons.condition,
   },
   {
     key: 'approval_gate',
     type: 'operation',
-    label: 'Approval Gate',
-    description: 'Insert the operator approval checkpoint used by safe-mode publication workflows.',
+    label: translate('palette.nodes.approvalGate.label'),
+    description: translate('palette.nodes.approvalGate.description'),
     color: '#13c2c2',
     icon: <CheckCircleOutlined />,
     preset: 'approval_gate',
@@ -68,8 +69,8 @@ const paletteItems: PaletteItem[] = [
   {
     key: 'subworkflow_call',
     type: 'subworkflow',
-    label: NODE_TYPE_INFO.subworkflow.label,
-    description: NODE_TYPE_INFO.subworkflow.description,
+    label: translate('palette.nodes.subworkflow.label'),
+    description: translate('palette.nodes.subworkflow.description'),
     color: NODE_TYPE_INFO.subworkflow.color,
     icon: nodeIcons.subworkflow,
   },
@@ -80,9 +81,10 @@ interface NodePaletteItemProps {
 }
 
 const NodePaletteItem = ({ item }: NodePaletteItemProps) => {
+  const { t } = useWorkflowTranslation()
   const onDragStart = (event: React.DragEvent) => {
     event.dataTransfer.setData('application/workflow-node-type', item.type)
-    event.dataTransfer.setData('application/workflow-node-label', `New ${item.label}`)
+    event.dataTransfer.setData('application/workflow-node-label', t('palette.drag.newNodeLabel', { label: item.label }))
     if (item.preset) {
       event.dataTransfer.setData('application/workflow-node-preset', item.preset)
     }
@@ -113,6 +115,9 @@ interface NodePaletteProps {
 }
 
 const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
+  const { t } = useWorkflowTranslation()
+  const paletteItems = buildPaletteItems(t)
+
   if (collapsed) {
     return (
       <div className="node-palette collapsed">
@@ -123,7 +128,7 @@ const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('application/workflow-node-type', item.type)
-                e.dataTransfer.setData('application/workflow-node-label', `New ${item.label}`)
+                e.dataTransfer.setData('application/workflow-node-label', t('palette.drag.newNodeLabel', { label: item.label }))
                 if (item.preset) {
                   e.dataTransfer.setData('application/workflow-node-preset', item.preset)
                 }
@@ -142,10 +147,10 @@ const NodePalette = ({ collapsed = false }: NodePaletteProps) => {
   return (
     <Card className="node-palette" size="small">
       <Title level={5} className="palette-title">
-        Scheme Building Blocks
+        {t('palette.title')}
       </Title>
       <div className="palette-description">
-        Compose reusable analyst-authored schemes from operation tasks, decision gates, approval gates, and pinned subworkflow calls
+        {t('palette.description')}
       </div>
       <div className="palette-items">
         {paletteItems.map((item) => (

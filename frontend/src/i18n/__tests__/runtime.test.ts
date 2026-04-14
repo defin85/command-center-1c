@@ -12,6 +12,12 @@ const translateSystemStatusFailureMessage = (options?: Record<string, unknown>) 
 const translateAdminSupportUsersTitle = () => (
   (i18n.t as unknown as (key: string) => string)('adminSupport:users.page.title')
 )
+const translatePoolsExecutionPackTitle = () => (
+  (i18n.t as unknown as (key: string) => string)('pools:executionPacks.page.title')
+)
+const translateWorkflowListTitle = () => (
+  (i18n.t as unknown as (key: string) => string)('workflows:list.page.title')
+)
 
 describe('i18n runtime', () => {
   let originalEnglishSystemStatusCatalog: Record<string, unknown> = {}
@@ -19,6 +25,10 @@ describe('i18n runtime', () => {
   beforeAll(async () => {
     await ensureNamespaces('ru', 'systemStatus')
     await ensureNamespaces('en', 'systemStatus')
+    await ensureNamespaces('ru', 'pools')
+    await ensureNamespaces('en', 'pools')
+    await ensureNamespaces('ru', 'workflows')
+    await ensureNamespaces('en', 'workflows')
     originalEnglishSystemStatusCatalog = cloneCatalog(
       i18n.getResourceBundle('en', 'systemStatus') ?? {},
     )
@@ -52,5 +62,14 @@ describe('i18n runtime', () => {
 
     await changeLanguage('ru')
     expect(translateAdminSupportUsersTitle()).toBe('Пользователи')
+  })
+
+  it('loads lazy pools and workflows namespaces before route surfaces use them', async () => {
+    await changeLanguage('en')
+
+    expect(i18n.hasResourceBundle('en', 'pools')).toBe(true)
+    expect(i18n.hasResourceBundle('en', 'workflows')).toBe(true)
+    expect(translatePoolsExecutionPackTitle()).toBe('Execution Packs')
+    expect(translateWorkflowListTitle()).toBe('Workflow Scheme Library')
   })
 })

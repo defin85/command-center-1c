@@ -15,6 +15,7 @@ import {
   ClockCircleOutlined,
   MinusCircleOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../../i18n'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
 
@@ -24,12 +25,6 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
   completed: { color: 'success', icon: <CheckCircleOutlined /> },
   failed: { color: 'error', icon: <CloseCircleOutlined /> },
   skipped: { color: 'warning', icon: <MinusCircleOutlined /> }
-}
-
-const loopModeLabels: Record<string, string> = {
-  count: 'Count',
-  while: 'While',
-  foreach: 'For Each'
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -44,6 +39,7 @@ const toNumber = (value: unknown): number | null => {
 }
 
 const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
+  const { t } = useWorkflowTranslation()
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
@@ -52,6 +48,15 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
   const maxIterations = data.config?.max_iterations || 100
   const currentIteration = toNumber(data.output?.current_iteration)
   const totalIterations = toNumber(data.output?.total_iterations)
+  const loopModeLabel = (
+    loopMode === 'count'
+      ? t('nodeViews.loop.modeValues.count')
+      : loopMode === 'while'
+        ? t('nodeViews.loop.modeValues.while')
+        : loopMode === 'foreach'
+          ? t('nodeViews.loop.modeValues.foreach')
+          : loopMode
+  )
 
   return (
     <div className={`workflow-node loop-node ${selected ? 'selected' : ''}`}>
@@ -78,13 +83,13 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
       >
         <div className="node-content">
           <div className="node-field">
-            <span className="field-label">Mode:</span>
-            <Tag color="purple">{loopModeLabels[loopMode] || loopMode}</Tag>
+            <span className="field-label">{t('nodeViews.loop.fields.mode')}</span>
+            <Tag color="purple">{loopModeLabel}</Tag>
           </div>
 
           {loopMode === 'count' && (
             <div className="node-field">
-              <span className="field-label">Count:</span>
+              <span className="field-label">{t('nodeViews.loop.fields.count')}</span>
               <span className="field-value">{loopCount}</span>
             </div>
           )}
@@ -99,7 +104,7 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
 
           {loopMode === 'foreach' && data.config?.loop_items && (
             <div className="node-field">
-              <span className="field-label">Items:</span>
+              <span className="field-label">{t('nodeViews.loop.fields.items')}</span>
               <span className="field-value">{data.config.loop_items}</span>
             </div>
           )}
@@ -107,8 +112,15 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
           {status === 'running' && currentIteration !== null && (
             <div className="node-progress">
               <span className="iteration-counter">
-                Iteration {currentIteration + 1}
-                {loopMode === 'count' ? ` / ${loopCount}` : ` (max ${maxIterations})`}
+                {loopMode === 'count'
+                  ? t('nodeViews.loop.values.iterationWithCount', {
+                      current: currentIteration + 1,
+                      total: loopCount,
+                    })
+                  : t('nodeViews.loop.values.iterationWithMax', {
+                      current: currentIteration + 1,
+                      max: maxIterations,
+                    })}
               </span>
               {loopMode === 'count' && loopCount > 0 && (
                 <Progress
@@ -122,7 +134,7 @@ const LoopNode = ({ data, selected }: NodeProps<WorkflowNodeData>) => {
 
           {totalIterations !== null && status !== 'running' && (
             <div className="node-field">
-              <span className="field-label">Iterations:</span>
+              <span className="field-label">{t('nodeViews.loop.fields.iterations')}</span>
               <span className="field-value">{totalIterations}</span>
             </div>
           )}

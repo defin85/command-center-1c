@@ -13,6 +13,7 @@ import type {
   PoolRunReport,
   PoolWorkflowBinding,
 } from '../../../api/intercompanyPools'
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import { resetQueryClient } from '../../../lib/queryClient'
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolRunsPage } from '../PoolRunsPage'
@@ -542,6 +543,11 @@ async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) 
 }
 
 describe('PoolRunsPage', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'pools')
+  })
+
   beforeEach(() => {
     resetQueryClient()
     mockListOrganizationPools.mockReset()
@@ -653,6 +659,11 @@ describe('PoolRunsPage', () => {
       result: 'accepted',
       replayed: false,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'pools')
+    await changeLanguage('ru')
   })
 
   it('deduplicates initial pool reads in StrictMode on the default route', async () => {

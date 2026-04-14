@@ -6,9 +6,11 @@ import decisionsEn from './locales/en/decisions'
 import errorsEn from './locales/en/errors'
 import type operationsSchema from './locales/ru/operations'
 import platformEn from './locales/en/platform'
+import type poolsSchema from './locales/ru/pools'
 import serviceMeshEn from './locales/en/serviceMesh'
 import shellEn from './locales/en/shell'
 import type templatesSchema from './locales/ru/templates'
+import type workflowsSchema from './locales/ru/workflows'
 import adminSupportRu from './locales/ru/adminSupport'
 import artifactsRu from './locales/ru/artifacts'
 import commonRu from './locales/ru/common'
@@ -41,6 +43,8 @@ export const lazyNamespaces = [
   'operations',
   'databases',
   'templates',
+  'workflows',
+  'pools',
 ] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
@@ -64,6 +68,8 @@ export type AppCatalogSchema = {
   operations: typeof operationsSchema
   databases: typeof databasesSchema
   templates: typeof templatesSchema
+  workflows: typeof workflowsSchema
+  pools: typeof poolsSchema
 }
 
 export const defaultNamespace = 'common'

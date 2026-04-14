@@ -6,6 +6,7 @@ import type {
   PoolWorkflowBindingResolvedProfile,
 } from '../../api/intercompanyPools'
 import { RouteButton } from '../../components/platform'
+import { usePoolsTranslation } from '../../i18n'
 import { POOL_EXECUTION_PACKS_ROUTE } from './routes'
 import {
   createEmptyWorkflowBindingFormValue,
@@ -166,6 +167,7 @@ export function PoolWorkflowBindingsEditor({
   topologyEdgeSelectors = [],
   disabled = false,
 }: PoolWorkflowBindingsEditorProps) {
+  const { t } = usePoolsTranslation()
   const screens = useBreakpoint()
   const isNarrow = !screens.md
   const wrappingTextStyle = {
@@ -242,6 +244,14 @@ export function PoolWorkflowBindingsEditor({
                   const lifecycleWarning = resolvePoolWorkflowBindingLifecycleWarning(syntheticBinding)
                   const topologyCompatibility = describeExecutionPackTopologyCompatibility(
                     syntheticBinding?.resolved_profile?.topology_template_compatibility,
+                    {
+                      notAvailableStatus: t('executionPacks.compatibility.notAvailableStatus'),
+                      notAvailableMessage: t('executionPacks.compatibility.notAvailableMessage'),
+                      compatibleStatus: t('executionPacks.compatibility.compatibleStatus'),
+                      compatibleMessage: t('executionPacks.compatibility.compatibleMessage'),
+                      incompatibleStatus: t('executionPacks.compatibility.incompatibleStatus'),
+                      incompatibleMessage: t('executionPacks.compatibility.incompatibleMessage'),
+                    },
                   )
                   const showTopologyCompatibility = Boolean(
                     syntheticBinding?.binding_profile_revision_id || syntheticBinding?.resolved_profile,

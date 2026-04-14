@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import { MemoryRouter } from 'react-router-dom'
 
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import { PoolSchemaTemplatesPage } from '../PoolSchemaTemplatesPage'
 
 const mockListPoolSchemaTemplates = vi.fn()
@@ -27,6 +28,11 @@ function renderPage() {
 }
 
 describe('PoolSchemaTemplatesPage', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'pools')
+  })
+
   beforeEach(() => {
     mockListPoolSchemaTemplates.mockReset()
     mockCreatePoolSchemaTemplate.mockReset()
@@ -52,6 +58,11 @@ describe('PoolSchemaTemplatesPage', () => {
         updated_at: '2026-01-01T00:00:01Z',
       },
     ])
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'pools')
+    await changeLanguage('ru')
   })
 
   it('shows workflow_binding as compatibility compiler hint', async () => {

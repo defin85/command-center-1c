@@ -1,3 +1,5 @@
+import { createLocaleFormatters, getCurrentAppLocale } from '../../../i18n'
+
 export const formatDateTime = (value: string | null | undefined): string => {
   if (!value) {
     return '—'
@@ -6,5 +8,5 @@ export const formatDateTime = (value: string | null | undefined): string => {
   if (Number.isNaN(timestamp)) {
     return value
   }
-  return new Date(timestamp).toLocaleString()
+  return createLocaleFormatters(getCurrentAppLocale()).dateTime(new Date(timestamp), { fallback: '—' })
 }

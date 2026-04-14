@@ -2,6 +2,7 @@ import { Button, Card, Col, Form, Input, Row, Space, Tag, Typography } from 'ant
 
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { DecisionRevisionSelect } from '../../components/workflow/DecisionRevisionSelect'
+import { usePoolsTranslation } from '../../i18n'
 import type { TopologyEdgeSelector } from './topologySlotCoverage'
 
 const { Text } = Typography
@@ -25,13 +26,15 @@ export function PoolWorkflowBindingSlotsEditor({
   getFieldValue,
   setFieldValue,
 }: PoolWorkflowBindingSlotsEditorProps) {
+  const { t } = usePoolsTranslation()
+
   return (
-    <Card size="small" title="Publication slots">
+    <Card size="small" title={t('executionPacks.workflowBindingSlots.title')}>
       <Form.List name={[bindingIndex, 'decisions']}>
         {(decisionFields, decisionActions) => (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             {decisionFields.length === 0 ? (
-              <Text type="secondary">No publication slots pinned yet.</Text>
+              <Text type="secondary">{t('executionPacks.workflowBindingSlots.emptyDescription')}</Text>
             ) : null}
             {decisionFields.map((decisionField) => {
               const decisionTableId = String(
@@ -77,12 +80,12 @@ export function PoolWorkflowBindingSlotsEditor({
                     <Space direction="vertical" size={2} style={{ width: '100%' }}>
                       <Form.Item
                         name={[decisionField.name, 'slot_key']}
-                        label={decisionField.name === 0 ? 'Slot key' : undefined}
+                        label={decisionField.name === 0 ? t('executionPacks.workflowBindingSlots.slotKey') : undefined}
                         style={{ marginBottom: 0 }}
                       >
                         <Input
                           disabled={disabled}
-                          placeholder="sale, purchase, return"
+                          placeholder={t('executionPacks.workflowBindingSlots.slotKeyPlaceholder')}
                           data-testid={`pool-catalog-workflow-binding-slot-key-input-${bindingIndex}-${decisionField.name}`}
                         />
                       </Form.Item>
@@ -91,7 +94,9 @@ export function PoolWorkflowBindingSlotsEditor({
                         style={{ width: 'fit-content' }}
                         data-testid={`pool-catalog-workflow-binding-slot-coverage-${bindingIndex}-${decisionField.name}`}
                       >
-                        {matchedEdges.length > 0 ? `edges: ${matchedEdges.length}` : 'unused by topology'}
+                        {matchedEdges.length > 0
+                          ? t('executionPacks.workflowBindingSlots.coveredEdges', { count: matchedEdges.length })
+                          : t('executionPacks.workflowBindingSlots.unusedByTopology')}
                       </Tag>
                       {decisionTableId ? (
                         <Text
@@ -106,10 +111,10 @@ export function PoolWorkflowBindingSlotsEditor({
                   </Col>
                   <Col span={16}>
                     <Form.Item
-                      label={decisionField.name === 0 ? 'Pinned revision' : undefined}
+                      label={decisionField.name === 0 ? t('executionPacks.workflowBindingSlots.pinnedRevision') : undefined}
                       help={
                         decisionField.name === 0
-                          ? 'Select active revision from /decisions. Slot key is managed separately from the reusable decision key.'
+                          ? t('executionPacks.workflowBindingSlots.pinnedRevisionHelp')
                           : undefined
                       }
                     >
@@ -117,7 +122,7 @@ export function PoolWorkflowBindingSlotsEditor({
                         allowClear
                         disabled={disabled}
                         loading={decisionsLoading}
-                        placeholder="Select decision revision from /decisions"
+                        placeholder={t('executionPacks.workflowBindingSlots.revisionPlaceholder')}
                         testId={`pool-catalog-workflow-binding-decision-select-${bindingIndex}-${decisionField.name}`}
                         availableDecisions={availableDecisions}
                         currentDecision={(
@@ -173,7 +178,7 @@ export function PoolWorkflowBindingSlotsEditor({
               disabled={disabled}
               data-testid={`pool-catalog-workflow-binding-add-decision-${bindingIndex}`}
             >
-              Add slot
+              {t('executionPacks.workflowBindingSlots.addSlot')}
             </Button>
           </Space>
         )}

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -21,6 +21,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, usePoolsTranslation } from '../../i18n'
 import {
   useBindingProfileDetail,
   useBindingProfiles,
@@ -38,15 +39,10 @@ import type {
 import { resolveApiError } from './masterData/errorUtils'
 import { PoolBindingProfilesEditorModal } from './PoolBindingProfilesEditorModal'
 import { describeExecutionPackTopologyCompatibility } from './executionPackTopologyCompatibility'
-import { POOL_CATALOG_ROUTE, POOL_EXECUTION_PACKS_ROUTE } from './routes'
+import { POOL_CATALOG_ROUTE } from './routes'
 
 const { Title, Text } = Typography
 const { useBreakpoint } = Grid
-
-const formatDateTime = (value?: string | null) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
-}
 
 type BindingSelector = {
   direction?: string | null
@@ -69,13 +65,13 @@ type BindingProfileUsageRow = {
 
 const formatBindingScope = (selector?: BindingSelector | null) => {
   const parts = [
-    selector?.direction || 'any direction',
-    selector?.mode || 'any mode',
+    selector?.direction,
+    selector?.mode,
   ]
   if (selector?.tags?.length) {
     parts.push(selector.tags.join(', '))
   }
-  return parts.join(' · ')
+  return parts.filter(Boolean).join(' · ')
 }
 
 const normalizeRouteParam = (value: string | null): string | null => {
@@ -105,6 +101,8 @@ const filterBindingProfiles = (profiles: BindingProfileSummary[], searchTerm: st
 
 export function PoolBindingProfilesPage() {
   const screens = useBreakpoint()
+  const { t } = usePoolsTranslation()
+  const formatters = useLocaleFormatters()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -122,6 +120,23 @@ export function PoolBindingProfilesPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isUsageRequested, setIsUsageRequested] = useState(false)
   const deferredSearch = useDeferredValue(search)
+  const formatDateTime = useCallback(
+    (value?: string | null) => formatters.dateTime(value, { fallback: t('common.noValue') }),
+    [formatters, t]
+  )
+  const formatBindingScopeLabel = useCallback(
+    (selector?: BindingSelector | null) => {
+      const normalized = formatBindingScope(selector)
+      if (normalized) {
+        return normalized
+      }
+      return [
+        t('executionPacks.usage.anyDirection'),
+        t('executionPacks.usage.anyMode'),
+      ].join(' · ')
+    },
+    [t]
+  )
 
   const bindingProfilesQuery = useBindingProfiles()
   const createBindingProfileMutation = useCreateBindingProfile()
@@ -246,16 +261,23 @@ export function PoolBindingProfilesPage() {
       bindingProfileRevisionId: attachment.binding_profile_revision_id,
       bindingProfileRevisionNumber: attachment.binding_profile_revision_number ?? null,
       status: attachment.status,
-      scope: formatBindingScope(attachment.selector),
+      scope: formatBindingScopeLabel(attachment.selector),
     }))
-  }, [selectedProfile])
+  }, [formatBindingScopeLabel, selectedProfile])
   const selectedProfileUsageRevisionCount = useMemo(
     () => selectedProfile?.usage_summary?.revision_summary.length ?? 0,
     [selectedProfile]
   )
   const selectedProfileTopologyCompatibility = useMemo(
-    () => describeExecutionPackTopologyCompatibility(selectedProfile?.latest_revision.topology_template_compatibility),
-    [selectedProfile]
+    () => describeExecutionPackTopologyCompatibility(selectedProfile?.latest_revision.topology_template_compatibility, {
+      notAvailableStatus: t('executionPacks.compatibility.notAvailableStatus'),
+      notAvailableMessage: t('executionPacks.compatibility.notAvailableMessage'),
+      compatibleStatus: t('executionPacks.compatibility.compatibleStatus'),
+      compatibleMessage: t('executionPacks.compatibility.compatibleMessage'),
+      incompatibleStatus: t('executionPacks.compatibility.incompatibleStatus'),
+      incompatibleMessage: t('executionPacks.compatibility.incompatibleMessage'),
+    }),
+    [selectedProfile, t]
   )
   const visibleProfileUsage = isUsageRequested ? selectedProfileUsage : []
   const visibleProfileUsageRevisionCount = isUsageRequested ? selectedProfileUsageRevisionCount : 0
@@ -270,13 +292,13 @@ export function PoolBindingProfilesPage() {
 
   const listColumns: ColumnsType<BindingProfileSummary> = [
     {
-      title: 'Code',
+      title: t('common.code'),
       dataIndex: 'code',
       key: 'code',
       render: (value: string, record) => (
         <Button
           type="text"
-          aria-label={`Open execution pack ${record.code}`}
+          aria-label={t('executionPacks.list.openProfile', { code: record.code })}
           aria-pressed={record.binding_profile_id === selectedProfileId}
           onClick={() => handleSelectProfile(record.binding_profile_id)}
           style={{
@@ -296,41 +318,46 @@ export function PoolBindingProfilesPage() {
       ),
     },
     {
-      title: 'Name',
+      title: t('common.name'),
       dataIndex: 'name',
       key: 'name',
     },
     {
-      title: 'Status',
+      title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
       render: (value: string) => <StatusBadge status={value} />,
     },
     {
-      title: 'Latest revision',
+      title: t('executionPacks.list.latestRevision'),
       key: 'latest_revision',
       render: (_value, record) => (
-        <Text>{`r${record.latest_revision_number} · ${record.latest_revision.workflow.workflow_name}`}</Text>
+        <Text>
+          {t('executionPacks.list.latestRevisionSummary', {
+            revision: record.latest_revision_number,
+            workflow: record.latest_revision.workflow.workflow_name,
+          })}
+        </Text>
       ),
     },
   ]
 
   const revisionColumns: ColumnsType<BindingProfileRevision> = [
     {
-      title: 'Revision',
+      title: t('common.revision'),
       dataIndex: 'revision_number',
       key: 'revision_number',
       render: (value: number) => `r${value}`,
     },
     {
-      title: 'Workflow',
+      title: t('common.workflow'),
       key: 'workflow',
       render: (_value, record) => (
         <Text>{`${record.workflow.workflow_name} · rev ${record.workflow.workflow_revision}`}</Text>
       ),
     },
     {
-      title: 'Created at',
+      title: t('common.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (value: string) => formatDateTime(value),
@@ -338,18 +365,18 @@ export function PoolBindingProfilesPage() {
   ]
   const immutableRevisionColumns: ColumnsType<BindingProfileRevision> = [
     {
-      title: 'Revision',
+      title: t('common.revision'),
       dataIndex: 'revision_number',
       key: 'revision_number',
       render: (value: number) => `r${value}`,
     },
     {
-      title: 'Opaque pin',
+      title: t('executionPacks.detail.opaquePin'),
       dataIndex: 'binding_profile_revision_id',
       key: 'binding_profile_revision_id',
     },
     {
-      title: 'Created at',
+      title: t('common.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (value: string) => formatDateTime(value),
@@ -357,7 +384,7 @@ export function PoolBindingProfilesPage() {
   ]
   const usageColumns: ColumnsType<BindingProfileUsageRow> = [
     {
-      title: 'Pool',
+      title: t('executionPacks.usage.pool'),
       key: 'pool',
       render: (_value, record) => (
         <Space direction="vertical" size={0}>
@@ -367,44 +394,44 @@ export function PoolBindingProfilesPage() {
       ),
     },
     {
-      title: 'Binding',
+      title: t('executionPacks.usage.binding'),
       dataIndex: 'bindingId',
       key: 'bindingId',
       render: (value: string) => <Text code>{value}</Text>,
     },
     {
-      title: 'Pinned revision',
+      title: t('executionPacks.usage.pinnedRevision'),
       key: 'bindingProfileRevisionNumber',
       render: (_value, record) => (
         <Text>{record.bindingProfileRevisionNumber != null ? `r${record.bindingProfileRevisionNumber}` : record.bindingProfileRevisionId}</Text>
       ),
     },
     {
-      title: 'Attachment rev',
+      title: t('executionPacks.usage.attachmentRevision'),
       dataIndex: 'attachmentRevision',
       key: 'attachmentRevision',
       render: (value: number) => `r${value}`,
     },
     {
-      title: 'Status',
+      title: t('common.status'),
       dataIndex: 'status',
       key: 'status',
       render: (value: string) => <StatusBadge status={value} />,
     },
     {
-      title: 'Scope',
+      title: t('executionPacks.usage.scope'),
       dataIndex: 'scope',
       key: 'scope',
     },
     {
-      title: 'Action',
+      title: t('executionPacks.usage.action'),
       key: 'action',
       render: (_value, record) => (
         <Button
           size="small"
           onClick={() => openAttachmentWorkspace(record.poolId)}
         >
-          Open pool attachment
+          {t('executionPacks.usage.openPoolAttachment')}
         </Button>
       ),
     },
@@ -435,16 +462,16 @@ export function PoolBindingProfilesPage() {
       setSelectedProfileId(response.binding_profile.binding_profile_id)
       setIsDetailDrawerOpen(true)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to deactivate execution pack.')
+      const resolved = resolveApiError(error, t('executionPacks.messages.failedToDeactivate'))
       setActionError(resolved.message)
     }
   }
 
   const listError = bindingProfilesQuery.isError
-    ? resolveApiError(bindingProfilesQuery.error, 'Failed to load execution packs.').message
+    ? resolveApiError(bindingProfilesQuery.error, t('executionPacks.messages.failedToLoadList')).message
     : null
   const detailError = selectedProfileQuery.isError
-    ? resolveApiError(selectedProfileQuery.error, 'Failed to load execution pack detail.').message
+    ? resolveApiError(selectedProfileQuery.error, t('executionPacks.messages.failedToLoadDetail')).message
     : null
 
   function handleSelectProfile(profileId: string) {
@@ -466,19 +493,11 @@ export function PoolBindingProfilesPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Execution Packs"
-          subtitle={(
-            <>
-              Reusable execution-pack workspace for selecting an execution pack, checking where it is used, and publishing the next revision.
-              Pool-local attachments remain in
-              {' '}
-              {POOL_CATALOG_ROUTE}
-              .
-            </>
-          )}
+          title={t('executionPacks.page.title')}
+          subtitle={t('executionPacks.page.subtitle')}
           actions={(
             <Button type="primary" onClick={() => setIsCreateOpen(true)}>
-              Create execution pack
+              {t('executionPacks.page.create')}
             </Button>
           )}
         />
@@ -488,23 +507,14 @@ export function PoolBindingProfilesPage() {
       <Alert
         type="info"
         showIcon
-        message="Operator workflow"
+        message={t('executionPacks.alerts.operatorWorkflowTitle')}
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Start here when you need to inspect a reusable execution pack, see where it is attached, or publish the
-              next revision. Use
-              {' '}
-              <Text code>{POOL_EXECUTION_PACKS_ROUTE}</Text>
-              {' '}
-              for execution-pack authoring and
-              {' '}
-              <Text code>{POOL_CATALOG_ROUTE}</Text>
-              {' '}
-              when you need to attach an existing execution-pack revision to a concrete pool.
+              {t('executionPacks.alerts.operatorWorkflowDescription')}
             </Text>
             <Space wrap>
-              <Button onClick={() => openAttachmentWorkspace()}>Open attachment workspace</Button>
+              <Button onClick={() => openAttachmentWorkspace()}>{t('executionPacks.page.openAttachmentWorkspace')}</Button>
             </Space>
           </Space>
         )}
@@ -517,17 +527,17 @@ export function PoolBindingProfilesPage() {
       <MasterDetailShell
         detailOpen={isDetailDrawerOpen}
         onCloseDetail={handleCloseDetail}
-        detailDrawerTitle={selectedProfile?.name || 'Profile detail'}
+        detailDrawerTitle={selectedProfile?.name || t('executionPacks.detail.drawerTitle')}
         list={(
           <EntityTable
-            title="Catalog"
+            title={t('executionPacks.list.title')}
             extra={(
               <Input
-                aria-label="Search execution packs"
+                aria-label={t('executionPacks.list.searchAriaLabel')}
                 allowClear
                 autoComplete="off"
                 name="profile-search"
-                placeholder="Search code, name, workflow"
+                placeholder={t('executionPacks.list.searchPlaceholder')}
                 value={search}
                 onChange={(event) => handleSearchChange(event.target.value)}
                 style={{ width: screens.sm ? 240 : '100%' }}
@@ -535,7 +545,7 @@ export function PoolBindingProfilesPage() {
             )}
             error={listError}
             loading={bindingProfilesQuery.isLoading}
-            emptyDescription="No execution packs found."
+            emptyDescription={t('executionPacks.list.emptyDescription')}
             dataSource={filteredProfiles}
             columns={listColumns}
             rowKey="binding_profile_id"
@@ -550,11 +560,11 @@ export function PoolBindingProfilesPage() {
         )}
         detail={(
           <EntityDetails
-            title="Execution Pack detail"
+            title={t('executionPacks.detail.title')}
             error={detailError}
             loading={selectedProfileQuery.isLoading}
             empty={!selectedProfileId || (!selectedProfile && !selectedProfileQuery.isLoading)}
-            emptyDescription="Select an execution pack from the catalog."
+            emptyDescription={t('executionPacks.detail.emptyDescription')}
           >
             {selectedProfile ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -572,7 +582,7 @@ export function PoolBindingProfilesPage() {
                     disabled={!selectedProfile || selectedProfile.status === 'deactivated'}
                     style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
                   >
-                    Publish new revision
+                    {t('executionPacks.page.publishRevision')}
                   </Button>
                   <Button
                     danger
@@ -581,46 +591,46 @@ export function PoolBindingProfilesPage() {
                     loading={deactivateBindingProfileMutation.isPending}
                     style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
                   >
-                    Deactivate execution pack
+                    {t('executionPacks.page.deactivate')}
                   </Button>
                   <Button
                     onClick={() => openAttachmentWorkspace()}
                     style={{ width: screens.sm ? 'auto' : '100%', whiteSpace: 'normal', height: 'auto' }}
                   >
-                    Open attachment workspace
+                    {t('executionPacks.page.openAttachmentWorkspace')}
                   </Button>
                 </div>
 
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Code">
+                  <Descriptions.Item label={t('common.code')}>
                     <Text strong data-testid="pool-binding-profiles-selected-code">
                       {selectedProfile.code}
                     </Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Name">{selectedProfile.name}</Descriptions.Item>
-                  <Descriptions.Item label="Status">
+                  <Descriptions.Item label={t('common.name')}>{selectedProfile.name}</Descriptions.Item>
+                  <Descriptions.Item label={t('common.status')}>
                     <span data-testid="pool-binding-profiles-status">
                       <StatusBadge status={selectedProfile.status} />
                     </span>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Latest revision number">
+                  <Descriptions.Item label={t('common.latestRevisionNumber')}>
                     {`r${selectedProfile.latest_revision_number}`}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Description">
-                    {selectedProfile.description || '-'}
+                  <Descriptions.Item label={t('common.description')}>
+                    {selectedProfile.description || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Workflow">
+                  <Descriptions.Item label={t('common.workflow')}>
                     {`${selectedProfile.latest_revision.workflow.workflow_name} · r${selectedProfile.latest_revision.workflow.workflow_revision}`}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Template compatibility">
+                  <Descriptions.Item label={t('executionPacks.detail.templateCompatibility')}>
                     <Text data-testid="pool-binding-profiles-topology-compatibility-status">
                       {selectedProfileTopologyCompatibility.statusText}
                     </Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Updated at">
+                  <Descriptions.Item label={t('common.updatedAt')}>
                     {formatDateTime(selectedProfile.updated_at)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Deactivated at">
+                  <Descriptions.Item label={t('executionPacks.detail.deactivatedAt')}>
                     {formatDateTime(selectedProfile.deactivated_at)}
                   </Descriptions.Item>
                 </Descriptions>
@@ -629,7 +639,7 @@ export function PoolBindingProfilesPage() {
                   <Alert
                     type="warning"
                     showIcon
-                    message="Deactivated execution packs remain readable for pinned attachments, but cannot publish new revisions."
+                    message={t('executionPacks.alerts.deactivatedWarning')}
                   />
                 ) : null}
 
@@ -640,7 +650,9 @@ export function PoolBindingProfilesPage() {
                   description={(
                     <Space direction="vertical" size={8} style={{ width: '100%' }}>
                       <Text data-testid="pool-binding-profiles-topology-covered-slots">
-                        Covered slots: {selectedProfileTopologyCompatibility.coveredSlotsText}
+                        {t('executionPacks.detail.coveredSlots', {
+                          value: selectedProfileTopologyCompatibility.coveredSlotsText,
+                        })}
                       </Text>
                       {selectedProfileTopologyCompatibility.diagnostics.map((diagnostic, diagnosticIndex) => (
                         <Text
@@ -653,8 +665,8 @@ export function PoolBindingProfilesPage() {
                       ))}
                       {selectedProfileTopologyCompatibility.alertType === 'warning' ? (
                         <Space wrap>
-                          <Button onClick={() => navigate('/decisions')}>Open /decisions</Button>
-                          <Button onClick={() => openAttachmentWorkspace()}>Open attachment workspace</Button>
+                          <Button onClick={() => navigate('/decisions')}>{t('common.openDecisions')}</Button>
+                          <Button onClick={() => openAttachmentWorkspace()}>{t('common.openAttachmentWorkspace')}</Button>
                         </Space>
                       ) : null}
                     </Space>
@@ -663,17 +675,17 @@ export function PoolBindingProfilesPage() {
 
                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                   <Title level={3} style={{ margin: 0, fontSize: 18 }}>
-                    Where this execution pack is used
+                    {t('executionPacks.detail.usageTitle')}
                   </Title>
                   <Text type="secondary">
-                    Check current pool attachments before publishing a new revision or deactivating the reusable execution pack.
+                    {t('executionPacks.detail.usageSubtitle')}
                   </Text>
                 </Space>
 
                 <EntityTable
-                  title="Pool attachment usage"
+                  title={t('executionPacks.detail.poolAttachmentUsage')}
                   loading={selectedProfileQuery.isLoading && isUsageRequested}
-                  emptyDescription="No pool attachments are pinned on this profile yet."
+                  emptyDescription={t('executionPacks.detail.noAttachments')}
                   dataSource={visibleProfileUsage}
                   columns={usageColumns}
                   rowKey="key"
@@ -689,16 +701,16 @@ export function PoolBindingProfilesPage() {
                     >
                       {!isUsageRequested ? (
                         <Button onClick={() => setIsUsageRequested(true)}>
-                          Load attachment usage
+                          {t('executionPacks.page.loadUsage')}
                         </Button>
                       ) : null}
                       <Text>
-                        Attachments:
+                        {t('executionPacks.detail.attachmentsCount')}
                         {' '}
                         <Text strong data-testid="pool-binding-profiles-usage-total">{visibleProfileUsage.length}</Text>
                       </Text>
                       <Text>
-                        Revisions in use:
+                        {t('executionPacks.detail.revisionsInUse')}
                         {' '}
                         <Text strong data-testid="pool-binding-profiles-usage-revisions">{visibleProfileUsageRevisionCount}</Text>
                       </Text>
@@ -707,7 +719,7 @@ export function PoolBindingProfilesPage() {
                 />
 
                 <EntityTable
-                  title="Revision history"
+                  title={t('executionPacks.detail.revisionHistory')}
                   rowKey="binding_profile_revision_id"
                   columns={revisionColumns}
                   dataSource={selectedProfile.revisions}
@@ -718,24 +730,24 @@ export function PoolBindingProfilesPage() {
                   items={[
                     {
                       key: 'advanced-payload',
-                      label: 'Advanced payload and immutable pins',
+                      label: t('executionPacks.detail.advancedPayload'),
                       children: (
                         <Space direction="vertical" size={12} style={{ width: '100%' }}>
                           <Descriptions bordered size="small" column={1}>
-                            <Descriptions.Item label="Latest immutable revision">
+                            <Descriptions.Item label={t('executionPacks.detail.latestImmutableRevision')}>
                               <Text data-testid="pool-binding-profiles-latest-revision-id">
                                 {selectedProfile.latest_revision.binding_profile_revision_id}
                               </Text>
                             </Descriptions.Item>
-                            <Descriptions.Item label="Workflow definition key">
+                            <Descriptions.Item label={t('executionPacks.detail.workflowDefinitionKey')}>
                               {selectedProfile.latest_revision.workflow.workflow_definition_key}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Workflow pin">
+                            <Descriptions.Item label={t('executionPacks.detail.workflowPin')}>
                               {`${selectedProfile.latest_revision.workflow.workflow_revision_id} · rev ${selectedProfile.latest_revision.workflow.workflow_revision}`}
                             </Descriptions.Item>
                           </Descriptions>
                           <EntityTable
-                            title="Immutable revision lineage"
+                            title={t('executionPacks.detail.immutableRevisionLineage')}
                             rowKey="binding_profile_revision_id"
                             columns={immutableRevisionColumns}
                             dataSource={selectedProfile.revisions}
@@ -747,10 +759,10 @@ export function PoolBindingProfilesPage() {
                               gap: 16,
                             }}
                           >
-                            <JsonBlock title="Decision refs" value={selectedProfile.latest_revision.decisions} />
-                            <JsonBlock title="Parameters" value={selectedProfile.latest_revision.parameters} />
-                            <JsonBlock title="Role mapping" value={selectedProfile.latest_revision.role_mapping} />
-                            <JsonBlock title="Revision metadata" value={selectedProfile.latest_revision.metadata} />
+                            <JsonBlock title={t('executionPacks.detail.decisionRefs')} value={selectedProfile.latest_revision.decisions} />
+                            <JsonBlock title={t('executionPacks.detail.parameters')} value={selectedProfile.latest_revision.parameters} />
+                            <JsonBlock title={t('executionPacks.detail.roleMapping')} value={selectedProfile.latest_revision.role_mapping} />
+                            <JsonBlock title={t('executionPacks.detail.revisionMetadata')} value={selectedProfile.latest_revision.metadata} />
                           </div>
                         </Space>
                       ),

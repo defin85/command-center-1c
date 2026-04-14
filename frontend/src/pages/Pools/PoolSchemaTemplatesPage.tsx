@@ -29,6 +29,7 @@ import {
   PageHeader,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, usePoolsTranslation } from '../../i18n'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -67,15 +68,19 @@ const stringifyJsonObject = (value: unknown): string => {
   return JSON.stringify(value, null, 2)
 }
 
-const parseJsonObject = (text: string, fieldLabel: string): Record<string, unknown> => {
+const parseJsonObject = (
+  text: string,
+  invalidJsonMessage: string,
+  objectExpectedMessage: string,
+): Record<string, unknown> => {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
   } catch {
-    throw new Error(`${fieldLabel}: invalid JSON`)
+    throw new Error(invalidJsonMessage)
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${fieldLabel}: object expected`)
+    throw new Error(objectExpectedMessage)
   }
   return parsed as Record<string, unknown>
 }
@@ -120,11 +125,6 @@ const parseFormatFilter = (value: string | null): SchemaTemplateFilter => (
   value === 'xlsx' || value === 'json' ? value : 'all'
 )
 
-const formatDateTime = (value?: string | null) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
-}
-
 const filterTemplates = (templates: PoolSchemaTemplate[], searchTerm: string) => {
   const normalizedSearch = searchTerm.trim().toLowerCase()
   if (!normalizedSearch) {
@@ -160,6 +160,8 @@ const buildListButtonStyle = (selected: boolean) => ({
 
 export function PoolSchemaTemplatesPage() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const searchFromUrl = searchParams.get('q') ?? ''
@@ -185,6 +187,18 @@ export function PoolSchemaTemplatesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [form] = Form.useForm<FormValues>()
+  const formatDateTime = useCallback(
+    (value?: string | null) => formatters.dateTime(value, { fallback: t('common.noValue') }),
+    [formatters, t]
+  )
+  const formatVisibility = useCallback(
+    (isPublic: boolean) => t(isPublic ? 'common.public' : 'common.private'),
+    [t]
+  )
+  const formatStatus = useCallback(
+    (isActive: boolean) => t(isActive ? 'common.active' : 'common.inactive'),
+    [t]
+  )
 
   useEffect(() => {
     setSearch((current) => (current === searchFromUrl ? current : searchFromUrl))
@@ -236,11 +250,11 @@ export function PoolSchemaTemplatesPage() {
         return data[0]?.id ?? null
       })
     } catch {
-      setError('Не удалось загрузить шаблоны.')
+      setError(t('schemaTemplates.messages.failedToLoad'))
     } finally {
       setLoading(false)
     }
-  }, [formatFilter, includePrivate, includeInactive])
+  }, [formatFilter, includePrivate, includeInactive, t])
 
   useEffect(() => {
     void loadTemplates()
@@ -410,10 +424,18 @@ export function PoolSchemaTemplatesPage() {
     let schema: Record<string, unknown>
     let metadata: Record<string, unknown>
     try {
-      schema = parseJsonObject(values.schema_json, 'Schema')
-      metadata = parseJsonObject(values.metadata_json, 'Metadata')
+      schema = parseJsonObject(
+        values.schema_json,
+        t('schemaTemplates.form.jsonErrors.invalidJson', { field: t('schemaTemplates.form.jsonErrors.schemaField') }),
+        t('schemaTemplates.form.jsonErrors.objectExpected', { field: t('schemaTemplates.form.jsonErrors.schemaField') }),
+      )
+      metadata = parseJsonObject(
+        values.metadata_json,
+        t('schemaTemplates.form.jsonErrors.invalidJson', { field: t('schemaTemplates.form.jsonErrors.metadataField') }),
+        t('schemaTemplates.form.jsonErrors.objectExpected', { field: t('schemaTemplates.form.jsonErrors.metadataField') }),
+      )
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Неверный JSON.')
+      setSubmitError(err instanceof Error ? err.message : t('schemaTemplates.messages.invalidJson'))
       return
     }
 
@@ -431,24 +453,28 @@ export function PoolSchemaTemplatesPage() {
       }
       if (composeMode === 'edit') {
         if (!selectedTemplate) {
-          setSubmitError('Шаблон для редактирования не выбран.')
+          setSubmitError(t('schemaTemplates.messages.noTemplateSelected'))
           return
         }
         await updatePoolSchemaTemplate(selectedTemplate.id, payload)
-        message.success('Шаблон обновлён')
+        message.success(t('schemaTemplates.messages.updated'))
       } else {
         await createPoolSchemaTemplate(payload)
-        message.success('Шаблон создан')
+        message.success(t('schemaTemplates.messages.created'))
       }
       routeUpdateModeRef.current = 'push'
       setComposeMode(null)
       await loadTemplates()
     } catch {
-      setSubmitError(composeMode === 'edit' ? 'Не удалось обновить шаблон.' : 'Не удалось создать шаблон.')
+      setSubmitError(
+        composeMode === 'edit'
+          ? t('schemaTemplates.messages.failedToUpdate')
+          : t('schemaTemplates.messages.failedToCreate')
+      )
     } finally {
       setIsSubmitting(false)
     }
-  }, [composeMode, form, loadTemplates, message, selectedTemplate])
+  }, [composeMode, form, loadTemplates, message, selectedTemplate, t])
 
   const selectedWorkflowBindingHint = resolveWorkflowBindingHint(selectedTemplate?.metadata ?? {})
 
@@ -456,8 +482,8 @@ export function PoolSchemaTemplatesPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Pool Schema Templates"
-          subtitle="Canonical schema template workspace for bottom-up import surfaces and compatibility hints."
+          title={t('schemaTemplates.page.title')}
+          subtitle={t('schemaTemplates.page.subtitle')}
           actions={(
             <Button
               type="primary"
@@ -466,7 +492,7 @@ export function PoolSchemaTemplatesPage() {
                 setComposeMode('create')
               }}
             >
-              Create Template
+              {t('schemaTemplates.page.create')}
             </Button>
           )}
         />
@@ -475,8 +501,8 @@ export function PoolSchemaTemplatesPage() {
       <Alert
         type="info"
         showIcon
-        message="Unified execution source-of-truth"
-        description="workflow execution provenance lives in /pools/runs. metadata.workflow_binding stays available here only as a compatibility compiler hint."
+        message={t('schemaTemplates.alerts.sourceOfTruthTitle')}
+        description={t('schemaTemplates.alerts.sourceOfTruthDescription')}
       />
 
       <MasterDetailShell
@@ -485,18 +511,18 @@ export function PoolSchemaTemplatesPage() {
           routeUpdateModeRef.current = 'push'
           setIsDetailDrawerOpen(false)
         }}
-        detailDrawerTitle={selectedTemplate ? `${selectedTemplate.code} · schema template` : 'Schema template'}
+        detailDrawerTitle={selectedTemplate ? `${selectedTemplate.code} · ${t('schemaTemplates.detail.title').toLowerCase()}` : t('schemaTemplates.detail.drawerTitle')}
         list={(
           <EntityList
-            title="Schema Templates"
+            title={t('schemaTemplates.list.title')}
             loading={loading}
             error={error}
-            emptyDescription="Шаблоны schema import пока не созданы."
+            emptyDescription={t('schemaTemplates.list.emptyDescription')}
             toolbar={(
               <Space direction="vertical" size={12} style={{ width: '100%', marginBottom: 16 }}>
                 <Input
                   allowClear
-                  placeholder="Search templates"
+                  placeholder={t('schemaTemplates.list.searchPlaceholder')}
                   value={search}
                   onChange={(event) => handleSearchChange(event.target.value)}
                 />
@@ -505,7 +531,7 @@ export function PoolSchemaTemplatesPage() {
                     value={formatFilter}
                     style={{ width: 180 }}
                     options={[
-                      { value: 'all', label: 'All formats' },
+                      { value: 'all', label: t('schemaTemplates.filters.allFormats') },
                       { value: 'xlsx', label: 'XLSX' },
                       { value: 'json', label: 'JSON' },
                     ]}
@@ -522,7 +548,7 @@ export function PoolSchemaTemplatesPage() {
                         setIncludePrivate(value)
                       }}
                     />
-                    <Text>Include private</Text>
+                    <Text>{t('schemaTemplates.filters.includePrivate')}</Text>
                   </Space>
                   <Space size={6}>
                     <Switch
@@ -532,10 +558,10 @@ export function PoolSchemaTemplatesPage() {
                         setIncludeInactive(value)
                       }}
                     />
-                    <Text>Include inactive</Text>
+                    <Text>{t('schemaTemplates.filters.includeInactive')}</Text>
                   </Space>
                   <Button onClick={() => void loadTemplates()} loading={loading}>
-                    Refresh
+                    {t('schemaTemplates.page.refresh')}
                   </Button>
                 </Space>
               </Space>
@@ -553,7 +579,7 @@ export function PoolSchemaTemplatesPage() {
                     setSelectedTemplateId(template.id)
                     setIsDetailDrawerOpen(true)
                   }}
-                  aria-label={`Open schema template ${template.name}`}
+                  aria-label={t('schemaTemplates.list.openTemplate', { name: template.name })}
                   aria-pressed={selected}
                   style={buildListButtonStyle(selected)}
                 >
@@ -563,10 +589,14 @@ export function PoolSchemaTemplatesPage() {
                       <Text type="secondary" code>{template.code}</Text>
                     </Space>
                     <Text type="secondary">
-                      {`${template.format.toUpperCase()} · ${template.is_public ? 'public' : 'private'} · ${template.is_active ? 'active' : 'inactive'}`}
+                      {t('schemaTemplates.list.summary', {
+                        format: template.format.toUpperCase(),
+                        visibility: formatVisibility(template.is_public),
+                        status: formatStatus(template.is_active),
+                      })}
                     </Text>
                     {workflowBindingHint ? (
-                      <Text type="secondary">{`workflow_binding: ${workflowBindingHint}`}</Text>
+                      <Text type="secondary">{t('schemaTemplates.list.workflowBindingHint', { value: workflowBindingHint })}</Text>
                     ) : null}
                   </Space>
                 </button>
@@ -576,9 +606,9 @@ export function PoolSchemaTemplatesPage() {
         )}
         detail={(
           <EntityDetails
-            title={selectedTemplate ? selectedTemplate.name : 'Schema template'}
+            title={selectedTemplate ? selectedTemplate.name : t('schemaTemplates.detail.title')}
             empty={!selectedTemplate}
-            emptyDescription="Select a schema template to inspect its compiler hints, metadata, and authoring actions."
+            emptyDescription={t('schemaTemplates.detail.emptyDescription')}
             extra={selectedTemplate ? (
               <Button
                 onClick={() => {
@@ -587,45 +617,45 @@ export function PoolSchemaTemplatesPage() {
                   setIsDetailDrawerOpen(true)
                 }}
               >
-                Edit
+                {t('schemaTemplates.detail.edit')}
               </Button>
             ) : null}
           >
             {selectedTemplate ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Code">
+                  <Descriptions.Item label={t('common.code')}>
                     <Text strong>{selectedTemplate.code}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Format">
+                  <Descriptions.Item label={t('common.format')}>
                     {selectedTemplate.format.toUpperCase()}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Visibility">
-                    {selectedTemplate.is_public ? 'public' : 'private'}
+                  <Descriptions.Item label={t('common.visibility')}>
+                    {formatVisibility(selectedTemplate.is_public)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Status">
-                    {selectedTemplate.is_active ? 'active' : 'inactive'}
+                  <Descriptions.Item label={t('common.status')}>
+                    {formatStatus(selectedTemplate.is_active)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Workflow template">
-                    {selectedTemplate.workflow_template_id || 'not linked'}
+                  <Descriptions.Item label={t('schemaTemplates.detail.workflowTemplate')}>
+                    {selectedTemplate.workflow_template_id || t('common.notLinked')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="workflow_binding hint">
+                  <Descriptions.Item label={t('schemaTemplates.detail.workflowBindingHint')}>
                     {selectedWorkflowBindingHint ? (
                       <Space size={8} data-testid="pool-template-workflow-binding-hint">
-                        <Text strong>compat</Text>
+                        <Text strong>{t('common.compat')}</Text>
                         <Text code>{selectedWorkflowBindingHint}</Text>
                       </Space>
                     ) : (
-                      'absent'
+                      t('common.absent')
                     )}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Updated">
+                  <Descriptions.Item label={t('schemaTemplates.detail.updated')}>
                     {formatDateTime(selectedTemplate.updated_at)}
                   </Descriptions.Item>
                 </Descriptions>
 
-                <JsonBlock title="Schema JSON" value={selectedTemplate.schema} dataTestId="pool-schema-template-schema-json" />
-                <JsonBlock title="Metadata JSON" value={selectedTemplate.metadata} dataTestId="pool-schema-template-metadata-json" />
+                <JsonBlock title={t('schemaTemplates.detail.schemaJson')} value={selectedTemplate.schema} dataTestId="pool-schema-template-schema-json" />
+                <JsonBlock title={t('schemaTemplates.detail.metadataJson')} value={selectedTemplate.metadata} dataTestId="pool-schema-template-metadata-json" />
               </Space>
             ) : null}
           </EntityDetails>
@@ -643,8 +673,8 @@ export function PoolSchemaTemplatesPage() {
           setSubmitError(null)
         }}
         onSubmit={() => { void handleSubmitTemplate() }}
-        title={composeMode === 'edit' ? 'Edit Pool Schema Template' : 'Create Pool Schema Template'}
-        submitText={composeMode === 'edit' ? 'Save' : 'Create'}
+        title={composeMode === 'edit' ? t('schemaTemplates.form.editTitle') : t('schemaTemplates.form.createTitle')}
+        submitText={composeMode === 'edit' ? t('schemaTemplates.form.editSubmit') : t('schemaTemplates.form.createSubmit')}
         confirmLoading={isSubmitting}
         width={760}
       >
@@ -653,22 +683,22 @@ export function PoolSchemaTemplatesPage() {
           <Form form={form} layout="vertical" requiredMark={false}>
             <Form.Item
               name="code"
-              label="Code"
-              rules={[{ required: true, message: 'Code is required' }]}
+              label={t('common.code')}
+              rules={[{ required: true, message: t('schemaTemplates.form.validation.codeRequired') }]}
             >
-              <Input placeholder="xlsx-sales-v1" />
+              <Input placeholder={t('schemaTemplates.form.codePlaceholder')} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Name"
-              rules={[{ required: true, message: 'Name is required' }]}
+              label={t('common.name')}
+              rules={[{ required: true, message: t('schemaTemplates.form.validation.nameRequired') }]}
             >
-              <Input placeholder="XLSX Sales V1" />
+              <Input placeholder={t('schemaTemplates.form.namePlaceholder')} />
             </Form.Item>
             <Form.Item
               name="format"
-              label="Format"
-              rules={[{ required: true, message: 'Format is required' }]}
+              label={t('common.format')}
+              rules={[{ required: true, message: t('schemaTemplates.form.validation.formatRequired') }]}
             >
               <Select
                 options={[
@@ -677,26 +707,26 @@ export function PoolSchemaTemplatesPage() {
                 ]}
               />
             </Form.Item>
-            <Form.Item name="workflow_template_id" label="Workflow Template ID (optional)">
-              <Input placeholder="11111111-1111-1111-1111-111111111111" />
+            <Form.Item name="workflow_template_id" label={t('schemaTemplates.form.workflowTemplateId')}>
+              <Input placeholder={t('schemaTemplates.form.workflowTemplateIdPlaceholder')} />
             </Form.Item>
-            <Form.Item name="is_public" label="Public" valuePropName="checked">
+            <Form.Item name="is_public" label={t('schemaTemplates.form.public')} valuePropName="checked">
               <Switch />
             </Form.Item>
-            <Form.Item name="is_active" label="Active" valuePropName="checked">
+            <Form.Item name="is_active" label={t('schemaTemplates.form.active')} valuePropName="checked">
               <Switch />
             </Form.Item>
             <Form.Item
               name="schema_json"
-              label="Schema JSON"
-              rules={[{ required: true, message: 'Schema JSON is required' }]}
+              label={t('schemaTemplates.form.schemaJson')}
+              rules={[{ required: true, message: t('schemaTemplates.form.validation.schemaRequired') }]}
             >
               <TextArea rows={8} />
             </Form.Item>
             <Form.Item
               name="metadata_json"
-              label="Metadata JSON"
-              rules={[{ required: true, message: 'Metadata JSON is required' }]}
+              label={t('schemaTemplates.form.metadataJson')}
+              rules={[{ required: true, message: t('schemaTemplates.form.validation.metadataRequired') }]}
             >
               <TextArea rows={6} />
             </Form.Item>

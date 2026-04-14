@@ -16,9 +16,11 @@ export {
   useClustersTranslation,
   useOperationsTranslation,
   usePlatformTranslation,
+  usePoolsTranslation,
   useRbacTranslation,
   useServiceMeshTranslation,
   useShellTranslation,
   useSystemStatusTranslation,
   useTemplatesTranslation,
+  useWorkflowTranslation,
 } from './useAppTranslation'

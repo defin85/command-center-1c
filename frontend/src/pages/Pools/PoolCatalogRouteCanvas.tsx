@@ -70,6 +70,7 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
+import { createLocaleFormatters, getCurrentAppLocale, usePoolsTranslation } from '../../i18n'
 import { withQueryPolicy } from '../../lib/queryRuntime'
 import {
   DrawerFormShell,
@@ -351,7 +352,11 @@ type SyncPreflightResult = {
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return '-'
-  return new Date(value).toLocaleString()
+  const timestamp = Date.parse(value)
+  if (Number.isNaN(timestamp)) {
+    return value
+  }
+  return createLocaleFormatters(getCurrentAppLocale()).dateTime(new Date(timestamp), { fallback: '-' })
 }
 
 const isValidBindingProfileDetailResponse = (
@@ -868,12 +873,26 @@ const buildTopologySlotOptions = (
     .sort((left, right) => left.label.localeCompare(right.label))
 }
 
+type CatalogRemediationMessages = {
+  legacyTopologyTitle: string
+  poolMetadataStillContainsLegacyPolicy: string
+  legacyEdgeSuffix: string
+  formatLegacyEdgePayload: (params: { count: number; edges: string; suffix: string }) => string
+  movePolicyAuthoring: string
+  firstIssue: (params: { edgeLabel: string; slotKey: string; coverageLabel: string }) => string
+  fallbackEdge: string
+  fallbackSlotNotSet: string
+  fallbackUnresolved: string
+}
+
 const buildLegacyTopologyBlockingRemediation = ({
   graph,
   pool,
+  messages,
 }: {
   graph: PoolGraph | null
   pool: OrganizationPool | null | undefined
+  messages: CatalogRemediationMessages
 }): PoolWorkflowBindingBlockingRemediation | null => {
   const poolHasLegacyPolicy = hasLegacyDocumentPolicyPayload(pool?.metadata?.document_policy)
   const legacyEdgeLabels: string[] = []
@@ -898,18 +917,22 @@ const buildLegacyTopologyBlockingRemediation = ({
   }
   const detailParts: string[] = []
   if (poolHasLegacyPolicy) {
-    detailParts.push('pool.metadata still contains legacy document_policy payload.')
+    detailParts.push(messages.poolMetadataStillContainsLegacyPolicy)
   }
   if (legacyEdgeLabels.length > 0) {
-    const suffix = legacyEdgeLabels.length > 2 ? ', …' : ''
+    const suffix = legacyEdgeLabels.length > 2 ? messages.legacyEdgeSuffix : ''
     detailParts.push(
-      `Legacy document_policy payload is still attached to ${legacyEdgeLabels.length} topology edge(s): ${legacyEdgeLabels.slice(0, 2).join(', ')}${suffix}.`
+      messages.formatLegacyEdgePayload({
+        count: legacyEdgeLabels.length,
+        edges: legacyEdgeLabels.slice(0, 2).join(', '),
+        suffix,
+      })
     )
   }
-  detailParts.push('Move concrete policy authoring to /decisions, pin named slots in Bindings, then keep only document_policy_key on topology edges.')
+  detailParts.push(messages.movePolicyAuthoring)
   return {
     code: 'LEGACY_TOPOLOGY_DOCUMENT_POLICY_PRESENT',
-    title: 'Legacy topology remediation required',
+    title: messages.legacyTopologyTitle,
     detail: detailParts.join(' '),
   }
 }
@@ -919,11 +942,13 @@ const buildCoverageBlockingRemediation = ({
   title,
   summary,
   unresolvedDetail,
+  messages,
 }: {
   code: string
   title: string
   summary: ReturnType<typeof summarizeTopologySlotCoverage>
   unresolvedDetail: string
+  messages: CatalogRemediationMessages
 }): PoolWorkflowBindingBlockingRemediation | null => {
   const unresolvedItems = summary.items.filter((item) => item.coverage.status !== 'resolved')
   if (unresolvedItems.length === 0) {
@@ -933,7 +958,11 @@ const buildCoverageBlockingRemediation = ({
   return {
     code,
     title,
-    detail: `${unresolvedDetail} First issue: ${firstItem?.edgeLabel || 'edge'} · ${firstItem?.slotKey || 'slot not set'} · ${firstItem?.coverage.label || 'Unresolved'}.`,
+    detail: `${unresolvedDetail} ${messages.firstIssue({
+      edgeLabel: firstItem?.edgeLabel || messages.fallbackEdge,
+      slotKey: firstItem?.slotKey || messages.fallbackSlotNotSet,
+      coverageLabel: firstItem?.coverage.label || messages.fallbackUnresolved,
+    })}`,
   }
 }
 
@@ -1671,7 +1700,14 @@ const buildEdgeMetadataFromBuilder = (
 const buildTopologyPreflight = (
   values: TopologyFormValues,
   selectedTemplateRevision?: PoolTopologyTemplateRevision | null,
-  registryEntries: PoolMasterDataRegistryEntry[] = []
+  registryEntries: PoolMasterDataRegistryEntry[] = [],
+  messages?: {
+    effectiveFromRequired: string
+    effectiveToBeforeEffectiveFrom: string
+    selectTopologyTemplateRevision: string
+    failedToLoadSelectedTopologyTemplateRevision: string
+    assignOrganizationForSlot: (slotKey: string) => string
+  }
 ): {
   payload: {
     effective_from: string
@@ -1691,19 +1727,22 @@ const buildTopologyPreflight = (
     ? 'template'
     : 'manual'
   if (!effectiveFrom) {
-    errors.push('effective_from обязателен.')
+    errors.push(messages?.effectiveFromRequired ?? 'effective_from обязателен.')
   }
   if (effectiveToRaw && effectiveFrom && effectiveToRaw < effectiveFrom) {
-    errors.push('effective_to не может быть раньше effective_from.')
+    errors.push(messages?.effectiveToBeforeEffectiveFrom ?? 'effective_to не может быть раньше effective_from.')
   }
 
   if (authoringMode === 'template') {
     const topologyTemplateRevisionId = String(values.topology_template_revision_id || '').trim()
     if (!topologyTemplateRevisionId) {
-      errors.push('Выберите topology template revision.')
+      errors.push(messages?.selectTopologyTemplateRevision ?? 'Выберите topology template revision.')
     }
     if (!selectedTemplateRevision) {
-      errors.push('Не удалось загрузить выбранную topology template revision.')
+      errors.push(
+        messages?.failedToLoadSelectedTopologyTemplateRevision
+        ?? 'Не удалось загрузить выбранную topology template revision.'
+      )
     }
     const slotAssignmentsSource = Array.isArray(values.slot_assignments) ? values.slot_assignments : []
     const slotAssignments = slotAssignmentsSource
@@ -1717,7 +1756,10 @@ const buildTopologyPreflight = (
         const slotKey = String(node.slot_key || '').trim()
         const assignment = slotAssignments.find((item) => item.slot_key === slotKey)
         if (!assignment?.organization_id) {
-          errors.push(`Назначьте организацию для slot ${slotKey || `#${index + 1}`}.`)
+          errors.push(
+            messages?.assignOrganizationForSlot(slotKey || `#${index + 1}`)
+            ?? `Назначьте организацию для slot ${slotKey || `#${index + 1}`}.`
+          )
         }
       })
     }
@@ -1873,6 +1915,7 @@ const buildTopologyPreflight = (
 
 export function PoolCatalogPage() {
   const { message } = AntApp.useApp()
+  const { t, locale, ready } = usePoolsTranslation()
   const { isStaff } = useAuthz()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -1889,6 +1932,28 @@ export function PoolCatalogPage() {
     [searchParams],
   )
   const graphDateFromUrl = useMemo(() => normalizeGraphDateParam(searchParams.get('date')), [searchParams])
+  const catalogRemediationMessages = useMemo(() => ({
+    legacyTopologyTitle: t('catalog.remediation.legacyTopologyTitle'),
+    poolMetadataStillContainsLegacyPolicy: t('catalog.remediation.poolMetadataStillContainsLegacyPolicy'),
+    legacyEdgeSuffix: t('catalog.remediation.legacyEdgeSuffix'),
+    formatLegacyEdgePayload: ({ count, edges, suffix }: { count: number; edges: string; suffix: string }) => (
+      t('catalog.remediation.legacyEdgePayload', { count, edges, suffix })
+    ),
+    movePolicyAuthoring: t('catalog.remediation.movePolicyAuthoring'),
+    firstIssue: ({ edgeLabel, slotKey, coverageLabel }: { edgeLabel: string; slotKey: string; coverageLabel: string }) => (
+      t('catalog.remediation.firstIssue', { edgeLabel, slotKey, coverageLabel })
+    ),
+    fallbackEdge: t('catalog.remediation.fallbackEdge'),
+    fallbackSlotNotSet: t('catalog.remediation.fallbackSlotNotSet'),
+    fallbackUnresolved: t('catalog.remediation.fallbackUnresolved'),
+  }), [locale, ready, t])
+  const topologyPreflightMessages = useMemo(() => ({
+    effectiveFromRequired: t('catalog.preflight.effectiveFromRequired'),
+    effectiveToBeforeEffectiveFrom: t('catalog.preflight.effectiveToBeforeEffectiveFrom'),
+    selectTopologyTemplateRevision: t('catalog.preflight.selectTopologyTemplateRevision'),
+    failedToLoadSelectedTopologyTemplateRevision: t('catalog.preflight.failedToLoadSelectedTopologyTemplateRevision'),
+    assignOrganizationForSlot: (slotKey: string) => t('catalog.preflight.assignOrganizationForSlot', { slotKey }),
+  }), [locale, ready, t])
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -2292,8 +2357,8 @@ export function PoolCatalogPage() {
     [draftTopologyEdgeSelectors, topologyCoverageContext]
   )
   const legacyTopologyBlockingRemediation = useMemo(
-    () => buildLegacyTopologyBlockingRemediation({ graph, pool: selectedPool }),
-    [graph, selectedPool]
+    () => buildLegacyTopologyBlockingRemediation({ graph, pool: selectedPool, messages: catalogRemediationMessages }),
+    [catalogRemediationMessages, graph, selectedPool]
   )
   const topologyCoverageBlockingRemediation = useMemo(() => {
     if (draftTopologyEdgeSelectors.length === 0) {
@@ -2302,18 +2367,22 @@ export function PoolCatalogPage() {
     if (topologyCoverageContext.status !== 'resolved') {
       return buildCoverageBlockingRemediation({
         code: 'TOPOLOGY_SLOT_COVERAGE_INCOMPLETE',
-        title: 'Topology remediation required',
+        title: t('catalog.remediation.topologyTitle'),
         summary: topologyCoverageSummary,
-        unresolvedDetail: `${topologyCoverageContext.detail} Resolve coverage before saving topology.`,
+        unresolvedDetail: t('catalog.remediation.resolveCoverageWithContext', {
+          detail: topologyCoverageContext.detail,
+        }),
+        messages: catalogRemediationMessages,
       })
     }
     return buildCoverageBlockingRemediation({
       code: 'TOPOLOGY_SLOT_COVERAGE_INCOMPLETE',
-      title: 'Topology remediation required',
+      title: t('catalog.remediation.topologyTitle'),
       summary: topologyCoverageSummary,
-      unresolvedDetail: 'Resolve publication slot coverage for all topology edges before saving this snapshot.',
+      unresolvedDetail: t('catalog.remediation.resolveCoverageDefault'),
+      messages: catalogRemediationMessages,
     })
-  }, [draftTopologyEdgeSelectors.length, topologyCoverageContext, topologyCoverageSummary])
+  }, [catalogRemediationMessages, draftTopologyEdgeSelectors.length, t, topologyCoverageContext, topologyCoverageSummary])
   const topologyBlockingRemediations = useMemo(
     () => [
       legacyTopologyBlockingRemediation,
@@ -2344,16 +2413,17 @@ export function PoolCatalogPage() {
       )
       const remediation = buildCoverageBlockingRemediation({
         code: 'POOL_BINDING_SLOT_COVERAGE_INCOMPLETE',
-        title: 'Binding remediation required',
+        title: t('catalog.remediation.bindingTitle'),
         summary: coverageSummary,
-        unresolvedDetail: `${bindingLabel} leaves topology slot coverage incomplete. Add or fix named slots before saving bindings.`,
+        unresolvedDetail: t('catalog.remediation.bindingCoverageIncomplete', { bindingLabel }),
+        messages: catalogRemediationMessages,
       })
       if (remediation) {
         return remediation
       }
     }
     return null
-  }, [topologyEdgeSelectors, watchedWorkflowBindings])
+  }, [catalogRemediationMessages, t, topologyEdgeSelectors, watchedWorkflowBindings])
   const poolBindingsBlockingRemediations = useMemo(
     () => [
       poolBindingsBackendBlockingRemediation,
@@ -3248,7 +3318,7 @@ export function PoolCatalogPage() {
     if (mutatingDisabled || isPoolBindingsLoading || isPoolBindingsSaving || !selectedPool) return
     if (isPoolBindingsSaveBlocked) {
       setPoolBindingsSubmitError(
-        poolBindingsBlockingRemediations[0]?.detail || 'Bindings remediation is required before save.'
+        poolBindingsBlockingRemediations[0]?.detail || t('catalog.messages.bindingsRequiredBeforeSave')
       )
       return
     }
@@ -3257,7 +3327,7 @@ export function PoolCatalogPage() {
       const values = await poolBindingsForm.validateFields()
       const preparedBindings = buildWorkflowBindingsFromForm(values.workflow_bindings)
       if (preparedBindings.errors.length > 0) {
-        setPoolBindingsSubmitError(preparedBindings.errors[0] ?? 'Workflow bindings form is invalid.')
+        setPoolBindingsSubmitError(preparedBindings.errors[0] ?? t('catalog.messages.workflowBindingsFormInvalid'))
         return
       }
       setIsPoolBindingsSaving(true)
@@ -3267,7 +3337,7 @@ export function PoolCatalogPage() {
         nextBindings: preparedBindings.bindings,
       })
       await reloadBindingsWorkspace(selectedPool)
-      message.success('Workflow bindings updated.')
+      message.success(t('catalog.messages.workflowBindingsUpdated'))
       await loadPools({ force: true })
       await loadOrganizationDetail({ force: true })
     } catch (err) {
@@ -3296,6 +3366,7 @@ export function PoolCatalogPage() {
     poolBindingsBlockingRemediations,
     reloadBindingsWorkspace,
     selectedPool,
+    t,
   ])
 
   const toggleSelectedPoolActive = useCallback(async () => {
@@ -3326,7 +3397,7 @@ export function PoolCatalogPage() {
     if (mutatingDisabled || !selectedPoolId) return
     if (isTopologySaveBlocked) {
       setTopologySubmitError(
-        topologyBlockingRemediations[0]?.detail || 'Topology remediation is required before save.'
+        topologyBlockingRemediations[0]?.detail || t('catalog.remediation.topologyRequiredBeforeSave')
       )
       return
     }
@@ -3334,7 +3405,12 @@ export function PoolCatalogPage() {
     setTopologyPreflightErrors([])
     try {
       const values = await topologyForm.validateFields()
-      const preflight = buildTopologyPreflight(values, selectedTopologyTemplateRevision, masterDataRegistryEntries)
+      const preflight = buildTopologyPreflight(
+        values,
+        selectedTopologyTemplateRevision,
+        masterDataRegistryEntries,
+        topologyPreflightMessages
+      )
       if (!preflight.payload) {
         setTopologyPreflightErrors(preflight.errors)
         return
@@ -3350,11 +3426,11 @@ export function PoolCatalogPage() {
         }
       }
       if (!versionToken) {
-        setTopologySubmitError('Не удалось определить актуальную версию topology snapshot. Обновите граф и повторите.')
+        setTopologySubmitError(t('catalog.messages.topologyVersionUnavailable'))
         return
       }
       await upsertPoolTopologySnapshot(selectedPoolId, { ...preflight.payload, version: versionToken })
-      message.success('Topology snapshot сохранён.')
+      message.success(t('catalog.messages.topologySnapshotSaved'))
       await Promise.all([
         loadGraph({ force: true }),
         loadTopologySnapshots({ force: true }),
@@ -3370,7 +3446,7 @@ export function PoolCatalogPage() {
       }
       const resolved = resolveApiError(
         err,
-        'Не удалось сохранить topology snapshot.',
+        t('catalog.messages.failedToSaveTopologySnapshot'),
         { includeProblemItems: true }
       )
       const errorCode = getApiErrorCode(err)
@@ -3394,6 +3470,8 @@ export function PoolCatalogPage() {
     mutatingDisabled,
     selectedPoolId,
     selectedTopologyTemplateRevision,
+    t,
+    topologyPreflightMessages,
     topologyBlockingRemediations,
     topologyForm,
   ])
@@ -3427,56 +3505,74 @@ export function PoolCatalogPage() {
     try {
       const response = await syncOrganizationsCatalog({ rows: parsed.rows })
       setSyncResult(response)
-      message.success('Синхронизация каталога завершена.')
+      message.success(t('catalog.messages.catalogSyncCompleted'))
       await loadOrganizations({ force: true })
     } catch (err) {
-      const resolved = resolveApiError(err, 'Не удалось выполнить синхронизацию каталога.')
+      const resolved = resolveApiError(err, t('catalog.messages.failedToSyncCatalog'))
       const fieldErrors = buildFieldErrorLines(resolved.fieldErrors)
       setSyncErrors(fieldErrors.length > 0 ? [resolved.message, ...fieldErrors] : [resolved.message])
     } finally {
       setIsSyncSubmitting(false)
     }
-  }, [loadOrganizations, message, mutatingDisabled, syncInput])
+  }, [loadOrganizations, message, mutatingDisabled, syncInput, t])
+
+  const organizationStatusOptions = useMemo(
+    () => [
+      { value: 'active', label: t('catalog.filters.active') },
+      { value: 'inactive', label: t('catalog.filters.inactive') },
+      { value: 'archived', label: t('catalog.filters.archived') },
+    ],
+    [t]
+  )
+
+  const getOrganizationStatusLabel = useCallback((value: OrganizationStatus) => {
+    if (value === 'active') return t('catalog.filters.active')
+    if (value === 'inactive') return t('catalog.filters.inactive')
+    if (value === 'archived') return t('catalog.filters.archived')
+    return value
+  }, [t])
 
   const organizationColumns: ColumnsType<Organization> = useMemo(
     () => [
       {
-        title: 'Name',
+        title: t('catalog.columns.name'),
         dataIndex: 'name',
         key: 'name',
         render: (value: string, record) => (
           <Space direction="vertical" size={0}>
             <Text strong>{value}</Text>
-            <Text type="secondary">INN: {record.inn}</Text>
+            <Text type="secondary">{t('catalog.columns.innValue', { value: record.inn })}</Text>
           </Space>
         ),
       },
       {
-        title: 'Status',
+        title: t('catalog.columns.status'),
         dataIndex: 'status',
         key: 'status',
         width: 120,
-        render: (value: OrganizationStatus) => <Tag color={statusColor[value]}>{value}</Tag>,
+        render: (value: OrganizationStatus) => (
+          <Tag color={statusColor[value]}>{getOrganizationStatusLabel(value)}</Tag>
+        ),
       },
       {
-        title: 'Database',
+        title: t('catalog.columns.database'),
         key: 'database_id',
         width: 220,
         render: (_value, record) => (
           record.database_id
             ? <Text code>{record.database_id.slice(0, 8)}</Text>
-            : <Text type="secondary">not linked</Text>
+            : <Text type="secondary">{t('catalog.columns.notLinked')}</Text>
         ),
       },
       {
-        title: 'Updated',
+        title: t('catalog.columns.updated'),
         dataIndex: 'updated_at',
         key: 'updated_at',
         width: 180,
         render: (value: string) => formatDate(value),
       },
       {
-        title: 'Actions',
+        title: t('catalog.columns.actions'),
         key: 'actions',
         width: 100,
         render: (_value, record) => (
@@ -3485,49 +3581,53 @@ export function PoolCatalogPage() {
             onClick={() => openEditOrganizationDrawer(record)}
             disabled={mutatingDisabled}
           >
-            Edit
+            {t('common.edit')}
           </Button>
         ),
       },
     ],
-    [mutatingDisabled, openEditOrganizationDrawer]
+    [formatDate, getOrganizationStatusLabel, mutatingDisabled, openEditOrganizationDrawer, t]
   )
 
   const bindingColumns: ColumnsType<OrganizationPoolBinding> = useMemo(
     () => [
       {
-        title: 'Pool',
+        title: t('catalog.columns.pool'),
         key: 'pool',
         render: (_value, record) => `${record.pool_code} - ${record.pool_name}`,
       },
       {
-        title: 'Root',
+        title: t('catalog.columns.root'),
         dataIndex: 'is_root',
         key: 'is_root',
         width: 90,
-        render: (value: boolean) => (value ? <Tag color="blue">yes</Tag> : <Tag>no</Tag>),
+        render: (value: boolean) => (
+          value
+            ? <Tag color="blue">{t('catalog.columns.yes')}</Tag>
+            : <Tag>{t('catalog.columns.no')}</Tag>
+        ),
       },
       {
-        title: 'From',
+        title: t('catalog.columns.from'),
         dataIndex: 'effective_from',
         key: 'effective_from',
         width: 120,
       },
       {
-        title: 'To',
+        title: t('catalog.columns.to'),
         dataIndex: 'effective_to',
         key: 'effective_to',
         width: 120,
-        render: (value: string | null) => value || 'open',
+        render: (value: string | null) => value || t('catalog.columns.openInterval'),
       },
     ],
-    []
+    [t]
   )
 
   const poolColumns: ColumnsType<OrganizationPool> = useMemo(
     () => [
       {
-        title: 'Code',
+        title: t('catalog.columns.code'),
         dataIndex: 'code',
         key: 'code',
         width: 180,
@@ -3539,22 +3639,24 @@ export function PoolCatalogPage() {
         ),
       },
       {
-        title: 'Description',
+        title: t('catalog.columns.description'),
         dataIndex: 'description',
         key: 'description',
-        render: (value: string) => value || <Text type="secondary">-</Text>,
+        render: (value: string) => value || <Text type="secondary">{t('common.noValue')}</Text>,
       },
       {
-        title: 'Status',
+        title: t('catalog.columns.status'),
         dataIndex: 'is_active',
         key: 'is_active',
         width: 120,
         render: (value: boolean) => (
-          value ? <Tag color="success">active</Tag> : <Tag color="default">inactive</Tag>
+          value
+            ? <Tag color="success">{t('common.active')}</Tag>
+            : <Tag color="default">{t('common.inactive')}</Tag>
         ),
       },
       {
-        title: 'Workflow bindings',
+        title: t('catalog.columns.workflowBindings'),
         key: 'workflow_bindings',
         width: 220,
         render: (_value, record) => {
@@ -3568,14 +3670,14 @@ export function PoolCatalogPage() {
         },
       },
       {
-        title: 'Updated',
+        title: t('catalog.columns.updated'),
         dataIndex: 'updated_at',
         key: 'updated_at',
         width: 180,
         render: (value: string) => formatDate(value),
       },
     ],
-    []
+    [formatDate, t]
   )
 
   return (
@@ -3583,25 +3685,25 @@ export function PoolCatalogPage() {
       <WorkspacePage
         header={(
           <PageHeader
-            title="Pool Catalog"
+            title={t('catalog.page.title')}
             subtitle={(
               <>
-                Task-first operator workspace on
+                {t('catalog.page.subtitlePrefix')}
                 {' '}
                 <Text code>{POOL_CATALOG_ROUTE}</Text>
                 {' '}
-                for pool basics, workflow attachments, topology authoring, and graph inspection.
+                {t('catalog.page.subtitleSuffix')}
               </>
             )}
             actions={(
               <Space wrap size={16} align="start">
                 <Space direction="vertical" size={4}>
-                  <Text strong>Pool</Text>
+                  <Text strong>{t('catalog.page.contextPool')}</Text>
                   <Select
-                    aria-label="Catalog pool"
+                    aria-label={t('catalog.page.catalogPoolAriaLabel')}
                     data-testid="pool-catalog-context-pool"
                     style={{ width: 320 }}
-                    placeholder="Select pool"
+                    placeholder={t('catalog.fields.selectPool')}
                     value={selectedPoolId ?? undefined}
                     options={pools.map((pool) => ({
                       value: pool.id,
@@ -3611,9 +3713,9 @@ export function PoolCatalogPage() {
                   />
                 </Space>
                 <Space direction="vertical" size={4}>
-                  <Text strong>Graph date</Text>
+                  <Text strong>{t('catalog.page.graphDate')}</Text>
                   <Input
-                    aria-label="Pool graph date"
+                    aria-label={t('catalog.page.graphDateAriaLabel')}
                     type="date"
                     value={graphDate}
                     onChange={(event) => handleGraphDateChange(event.target.value)}
@@ -3635,7 +3737,7 @@ export function PoolCatalogPage() {
                   loading={loadingPools || loadingGraph || isPoolBindingsLoading}
                   style={{ marginTop: 28 }}
                 >
-                  Refresh data
+                  {t('catalog.actions.refreshData')}
                 </Button>
               </Space>
             )}
@@ -3645,23 +3747,20 @@ export function PoolCatalogPage() {
         <Alert
           type="info"
           showIcon
-          message="Task-first pool workspace"
+          message={t('catalog.alerts.taskFirstWorkspaceTitle')}
           description={(
             <Space direction="vertical" size={8}>
-              <Text>
-                Keep pool fields, reusable attachment logic, and topology remediation on separate task surfaces. Open
-                reusable logic in the execution-pack catalog and concrete policy authoring in /decisions.
-              </Text>
+              <Text>{t('catalog.alerts.taskFirstWorkspaceDescription')}</Text>
               {selectedOrganization ? (
                 <Space size={4} wrap>
-                  <Text type="secondary">Organization catalog ready:</Text>
+                  <Text type="secondary">{t('catalog.alerts.organizationCatalogReady')}</Text>
                   <Text>{selectedOrganization.name}</Text>
                 </Space>
               ) : null}
               <Space wrap>
-                <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>Open execution packs</RouteButton>
-                <RouteButton to={topologyTemplateCatalogRoute}>Open topology templates</RouteButton>
-                <RouteButton to="/decisions">Open /decisions</RouteButton>
+                <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>{t('catalog.actions.openExecutionPacks')}</RouteButton>
+                <RouteButton to={topologyTemplateCatalogRoute}>{t('catalog.actions.openTopologyTemplates')}</RouteButton>
+                <RouteButton to="/decisions">{t('common.openDecisions')}</RouteButton>
               </Space>
             </Space>
           )}
@@ -3676,23 +3775,23 @@ export function PoolCatalogPage() {
           items={[
             {
               key: 'organizations',
-              label: 'Organizations',
+              label: t('catalog.tabs.organizations'),
               children: (
-                <Card title="Organizations" loading={loadingOrganizations}>
+                <Card title={t('catalog.cards.organizationsTitle')} loading={loadingOrganizations}>
                   {mutatingDisabled && (
                     <Alert
                       type="warning"
                       showIcon
                       style={{ marginBottom: 12 }}
-                      message="Mutating actions are disabled"
-                      description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                      message={t('catalog.alerts.mutatingActionsDisabledTitle')}
+                      description={t('catalog.alerts.mutatingActionsDisabledDescription')}
                     />
                   )}
 
                   <Space size="small" wrap style={{ marginBottom: 12 }}>
                     <Input
                       value={query}
-                      placeholder="Search by INN/name"
+                      placeholder={t('catalog.fields.searchByInnOrName')}
                       style={{ width: 280 }}
                       onChange={(event) => setQuery(event.target.value)}
                       onPressEnter={() => { void loadOrganizations({ force: true }) }}
@@ -3702,10 +3801,8 @@ export function PoolCatalogPage() {
                       value={statusFilter}
                       style={{ width: 160 }}
                       options={[
-                        { value: 'all', label: 'All statuses' },
-                        { value: 'active', label: 'Active' },
-                        { value: 'inactive', label: 'Inactive' },
-                        { value: 'archived', label: 'Archived' },
+                        { value: 'all', label: t('catalog.fields.allStatuses') },
+                        ...organizationStatusOptions,
                       ]}
                       onChange={setStatusFilter}
                     />
@@ -3713,14 +3810,14 @@ export function PoolCatalogPage() {
                       value={databaseLinkFilter}
                       style={{ width: 180 }}
                       options={[
-                        { value: 'all', label: 'All databases' },
-                        { value: 'linked', label: 'Linked only' },
-                        { value: 'unlinked', label: 'Unlinked only' },
+                        { value: 'all', label: t('catalog.fields.allDatabases') },
+                        { value: 'linked', label: t('catalog.fields.linkedOnly') },
+                        { value: 'unlinked', label: t('catalog.fields.unlinkedOnly') },
                       ]}
                       onChange={setDatabaseLinkFilter}
                     />
                     <Button onClick={() => { void loadOrganizations({ force: true }) }} loading={loadingOrganizations}>
-                      Refresh
+                      {t('catalog.actions.refresh')}
                     </Button>
                     <Button
                       type="primary"
@@ -3728,21 +3825,21 @@ export function PoolCatalogPage() {
                       disabled={mutatingDisabled}
                       data-testid="pool-catalog-add-org"
                     >
-                      Add organization
+                      {t('catalog.actions.addOrganization')}
                     </Button>
                     <Button
                       onClick={() => openEditOrganizationDrawer(selectedOrganization)}
                       disabled={mutatingDisabled || !selectedOrganization}
                       data-testid="pool-catalog-edit-org"
                     >
-                      Edit
+                      {t('common.edit')}
                     </Button>
                     <Button
                       onClick={openSyncModal}
                       disabled={mutatingDisabled}
                       data-testid="pool-catalog-sync-orgs"
                     >
-                      Sync catalog
+                      {t('catalog.actions.syncCatalog')}
                     </Button>
                   </Space>
 
@@ -3766,35 +3863,41 @@ export function PoolCatalogPage() {
                       />
                     </Col>
                     <Col span={10}>
-                      <Card title="Organization details" loading={loadingOrganizationDetail}>
+                      <Card title={t('catalog.cards.organizationDetailsTitle')} loading={loadingOrganizationDetail}>
                         {!organizationDetail && (
-                          <Text type="secondary">Выберите организацию из каталога.</Text>
+                          <Text type="secondary">{t('catalog.fields.noOrganizationSelected')}</Text>
                         )}
                         {organizationDetail && (
                           <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0, overflowX: 'hidden' }}>
                             <Descriptions size="small" column={1}>
-                              <Descriptions.Item label="Name">{organizationDetail.organization.name}</Descriptions.Item>
-                              <Descriptions.Item label="INN">{organizationDetail.organization.inn}</Descriptions.Item>
-                              <Descriptions.Item label="KPP">{organizationDetail.organization.kpp || '-'}</Descriptions.Item>
-                              <Descriptions.Item label="Status">
+                              <Descriptions.Item label={t('catalog.details.name')}>
+                                {organizationDetail.organization.name}
+                              </Descriptions.Item>
+                              <Descriptions.Item label={t('catalog.details.inn')}>
+                                {organizationDetail.organization.inn}
+                              </Descriptions.Item>
+                              <Descriptions.Item label={t('catalog.details.kpp')}>
+                                {organizationDetail.organization.kpp || t('common.noValue')}
+                              </Descriptions.Item>
+                              <Descriptions.Item label={t('catalog.columns.status')}>
                                 <Tag color={statusColor[organizationDetail.organization.status]}>
-                                  {organizationDetail.organization.status}
+                                  {getOrganizationStatusLabel(organizationDetail.organization.status)}
                                 </Tag>
                               </Descriptions.Item>
-                              <Descriptions.Item label="Database ID">
+                              <Descriptions.Item label={t('catalog.fields.databaseId')}>
                                 {organizationDetail.organization.database_id
                                   ? <Text code>{organizationDetail.organization.database_id}</Text>
-                                  : <Text type="secondary">not linked</Text>}
+                                  : <Text type="secondary">{t('catalog.columns.notLinked')}</Text>}
                               </Descriptions.Item>
                             </Descriptions>
-                            <Text strong>Pool bindings</Text>
+                            <Text strong>{t('catalog.fields.poolBindings')}</Text>
                             <Table
                               rowKey={(record) => `${record.pool_id}:${record.effective_from}`}
                               size="small"
                               columns={bindingColumns}
                               dataSource={organizationDetail.pool_bindings}
                               pagination={false}
-                              locale={{ emptyText: 'No bindings' }}
+                              locale={{ emptyText: t('catalog.fields.noBindings') }}
                             />
                           </Space>
                         )}
@@ -3806,16 +3909,16 @@ export function PoolCatalogPage() {
             },
             {
               key: 'pools',
-              label: 'Pools',
+              label: t('catalog.tabs.pools'),
               children: (
-                <Card title="Pools management" loading={loadingPools}>
+                <Card title={t('catalog.cards.poolsManagementTitle')} loading={loadingPools}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     {mutatingDisabled && (
                       <Alert
                         type="warning"
                         showIcon
-                        message="Mutating actions are disabled"
-                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                        message={t('catalog.alerts.mutatingActionsDisabledTitle')}
+                        description={t('catalog.alerts.mutatingActionsDisabledDescription')}
                       />
                     )}
                     {poolSubmitError && <Alert type="error" message={poolSubmitError} showIcon />}
@@ -3823,7 +3926,7 @@ export function PoolCatalogPage() {
                       <Select
                         value={selectedPoolId ?? undefined}
                         style={{ width: 320 }}
-                        placeholder="Select pool"
+                        placeholder={t('catalog.fields.selectPool')}
                         options={pools.map((pool) => ({
                           value: pool.id,
                           label: `${pool.code} - ${pool.name}`,
@@ -3836,14 +3939,14 @@ export function PoolCatalogPage() {
                         disabled={mutatingDisabled}
                         data-testid="pool-catalog-add-pool"
                       >
-                        Add pool
+                        {t('catalog.actions.addPool')}
                       </Button>
                       <Button
                         onClick={openEditPoolDrawer}
                         disabled={mutatingDisabled || !selectedPool}
                         data-testid="pool-catalog-edit-pool"
                       >
-                        Edit pool
+                        {t('catalog.actions.editPool')}
                       </Button>
                       <Button
                         onClick={() => { void toggleSelectedPoolActive() }}
@@ -3851,7 +3954,7 @@ export function PoolCatalogPage() {
                         loading={isPoolSaving}
                         data-testid="pool-catalog-toggle-pool-active"
                       >
-                        {selectedPool?.is_active ? 'Deactivate' : 'Activate'}
+                        {selectedPool?.is_active ? t('catalog.actions.deactivate') : t('catalog.actions.activate')}
                       </Button>
                     </Space>
 
@@ -3877,30 +3980,30 @@ export function PoolCatalogPage() {
             },
             {
               key: 'bindings',
-              label: 'Bindings',
+              label: t('catalog.tabs.bindings'),
               forceRender: true,
               children: (
-                <Card title="Workflow attachment workspace" loading={loadingPools}>
+                <Card title={t('catalog.cards.workflowAttachmentWorkspaceTitle')} loading={loadingPools}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     {mutatingDisabled && (
                       <Alert
                         type="warning"
                         showIcon
-                        message="Mutating actions are disabled"
-                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                        message={t('catalog.alerts.mutatingActionsDisabledTitle')}
+                        description={t('catalog.alerts.mutatingActionsDisabledDescription')}
                       />
                     )}
                     <Alert
                       type="info"
                       showIcon
-                      message="Workflow attachments are managed separately from pool fields"
-                      description="Use the Pools tab to create or edit pool code/name/status. Save attachments here through the canonical collection-level CRUD only."
+                      message={t('catalog.alerts.workflowAttachmentsTitle')}
+                      description={t('catalog.alerts.workflowAttachmentsDescription')}
                     />
                     <Space size="small" wrap>
                       <Select
                         value={selectedPoolId ?? undefined}
                         style={{ width: 320 }}
-                        placeholder="Select pool"
+                        placeholder={t('catalog.fields.selectPool')}
                         options={pools.map((pool) => ({
                           value: pool.id,
                           label: `${pool.code} - ${pool.name}`,
@@ -3916,7 +4019,7 @@ export function PoolCatalogPage() {
                         }}
                         disabled={mutatingDisabled || !selectedPool}
                       >
-                        Edit pool fields
+                        {t('catalog.actions.editPoolFields')}
                       </Button>
                       <Button
                         onClick={() => {
@@ -3928,7 +4031,7 @@ export function PoolCatalogPage() {
                         disabled={!selectedPool || isPoolBindingsSaving}
                         loading={loadingPools}
                       >
-                        Refresh pools
+                        {t('catalog.actions.refreshPools')}
                       </Button>
                       <Button
                         onClick={() => {
@@ -3939,7 +4042,7 @@ export function PoolCatalogPage() {
                         disabled={!selectedPool || isPoolBindingsSaving}
                         loading={isPoolBindingsLoading}
                       >
-                        Refresh bindings
+                        {t('catalog.actions.refreshBindings')}
                       </Button>
                       <Button
                         type="primary"
@@ -3947,9 +4050,9 @@ export function PoolCatalogPage() {
                         disabled={!selectedPool}
                         data-testid="pool-catalog-open-bindings-workspace"
                       >
-                        Open attachment workspace
+                        {t('common.openAttachmentWorkspace')}
                       </Button>
-                      <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>Open execution packs</RouteButton>
+                      <RouteButton to={POOL_EXECUTION_PACKS_ROUTE}>{t('catalog.actions.openExecutionPacks')}</RouteButton>
                     </Space>
 
                     {poolBindingsSubmitError && <Alert type="error" message={poolBindingsSubmitError} showIcon />}
@@ -3965,26 +4068,26 @@ export function PoolCatalogPage() {
                           <Space size={8}>
                             {remediation.code === 'EXECUTION_PACK_TEMPLATE_INCOMPATIBLE' ? (
                               <Button size="small" onClick={() => { navigate(POOL_EXECUTION_PACKS_ROUTE) }}>
-                                Open execution packs
+                                {t('catalog.actions.openExecutionPacks')}
                               </Button>
                             ) : (
                               <Button size="small" onClick={() => { handleSelectWorkspaceTab('topology') }}>
-                                Open Topology Editor
+                                {t('catalog.actions.openTopologyEditor')}
                               </Button>
                             )}
                             <Button size="small" onClick={() => { navigate('/decisions') }}>
-                              Open /decisions
+                              {t('common.openDecisions')}
                             </Button>
                           </Space>
                         )}
                       />
                     ))}
                     {isPoolBindingsLoading && (
-                      <Alert type="info" message="Loading workflow attachments..." showIcon />
+                      <Alert type="info" message={t('catalog.alerts.loadingWorkflowAttachments')} showIcon />
                     )}
 
                     {!selectedPool ? (
-                      <Text type="secondary">Выберите пул, чтобы управлять workflow attachments.</Text>
+                      <Text type="secondary">{t('catalog.fields.selectPoolToManageAttachments')}</Text>
                     ) : (
                       <>
                         <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
@@ -4090,8 +4193,8 @@ export function PoolCatalogPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="Mutating actions are disabled"
-                        description="Staff users must select a tenant (X-CC1C-Tenant-ID) to run mutating actions."
+                        message={t('catalog.alerts.mutatingActionsDisabledTitle')}
+                        description={t('catalog.alerts.mutatingActionsDisabledDescription')}
                       />
                     )}
                     {!selectedPool && (
@@ -4101,17 +4204,17 @@ export function PoolCatalogPage() {
                       <Form form={topologyForm} layout="vertical">
                         <Row gutter={12}>
                           <Col span={8}>
-                            <Form.Item name="effective_from" label="effective_from" rules={[{ required: true }]}>
+                            <Form.Item name="effective_from" label={t('catalog.topologyEditor.fields.effectiveFrom')} rules={[{ required: true }]}>
                               <Input type="date" />
                             </Form.Item>
                           </Col>
                           <Col span={8}>
-                            <Form.Item name="effective_to" label="effective_to">
+                            <Form.Item name="effective_to" label={t('catalog.topologyEditor.fields.effectiveTo')}>
                               <Input type="date" />
                             </Form.Item>
                           </Col>
                           <Col span={8}>
-                            <Form.Item label="Pool">
+                            <Form.Item label={t('catalog.topologyEditor.fields.pool')}>
                               <Input value={`${selectedPool.code} - ${selectedPool.name}`} disabled />
                             </Form.Item>
                           </Col>
@@ -4121,8 +4224,8 @@ export function PoolCatalogPage() {
                           type="info"
                           showIcon
                           style={{ marginBottom: 12 }}
-                          message="Workflow-centric authoring is the default path"
-                          description="Topology editor remains for structural metadata and publication slot assignment. Author concrete document policies in /decisions and pin them in workflow bindings."
+                          message={t('catalog.topologyEditor.alerts.defaultPathTitle')}
+                          description={t('catalog.topologyEditor.alerts.defaultPathDescription')}
                         />
                         {topologyBlockingRemediations.map((remediation) => (
                           <Alert
@@ -4135,10 +4238,10 @@ export function PoolCatalogPage() {
                             action={(
                               <Space size={8}>
                                 <Button size="small" onClick={() => { navigate('/decisions') }}>
-                                  Open /decisions
+                                  {t('common.openDecisions')}
                                 </Button>
                                 <Button size="small" onClick={() => { handleOpenBindingsWorkspace() }}>
-                                  Open Bindings
+                                  {t('catalog.actions.openBindings')}
                                 </Button>
                               </Space>
                             )}
@@ -4146,12 +4249,12 @@ export function PoolCatalogPage() {
                         ))}
                         <Row gutter={12} style={{ marginBottom: 12 }}>
                           <Col span={12}>
-                            <Form.Item label="Coverage binding context" style={{ marginBottom: 0 }}>
+                            <Form.Item label={t('catalog.topologyEditor.fields.coverageBindingContext')} style={{ marginBottom: 0 }}>
                               <Select
                                 allowClear
                                 showSearch
                                 optionFilterProp="label"
-                                placeholder="Select active binding for slot coverage"
+                                placeholder={t('catalog.topologyEditor.placeholders.selectActiveBindingForCoverage')}
                                 options={topologyCoverageBindingOptions}
                                 value={topologyCoverageBindingId}
                                 onChange={(value) => {
@@ -4162,8 +4265,8 @@ export function PoolCatalogPage() {
                                 disabled={!selectedPool || isPoolBindingsLoading || topologyCoverageBindingOptions.length === 0}
                                 notFoundContent={(
                                   isPoolBindingsLoading
-                                    ? 'Loading bindings...'
-                                    : 'No active bindings'
+                                    ? t('catalog.topologyEditor.placeholders.loadingBindings')
+                                    : t('catalog.topologyEditor.placeholders.noActiveBindings')
                                 )}
                                 data-testid="pool-catalog-topology-coverage-binding"
                               />
@@ -4171,7 +4274,7 @@ export function PoolCatalogPage() {
                           </Col>
                           <Col span={12}>
                             <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                              <Text strong>Coverage status</Text>
+                              <Text strong>{t('catalog.topologyEditor.fields.coverageStatus')}</Text>
                               <Space wrap>
                                 <Tag
                                   color={(
@@ -4186,11 +4289,11 @@ export function PoolCatalogPage() {
                                   {(
                                     topologyCoverageContext.status === 'resolved'
                                       ? topologyCoverageContext.source === 'auto'
-                                        ? 'Auto-resolved binding'
-                                        : 'Selected binding'
+                                        ? t('catalog.topologyEditor.status.autoResolvedBinding')
+                                        : t('catalog.topologyEditor.status.selectedBinding')
                                       : topologyCoverageContext.status === 'ambiguous'
-                                        ? 'Ambiguous context'
-                                        : 'Coverage unavailable'
+                                        ? t('catalog.topologyEditor.status.ambiguousContext')
+                                        : t('catalog.topologyEditor.status.coverageUnavailable')
                                   )}
                                 </Tag>
                                 <Text type="secondary">{topologyCoverageContext.detail}</Text>
@@ -4203,18 +4306,18 @@ export function PoolCatalogPage() {
                             type="warning"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="Coverage bindings could not be loaded"
+                            message={t('catalog.topologyEditor.alerts.coverageBindingsLoadFailed')}
                             description={poolBindingsLoadError}
                           />
                         )}
 
                         <Row gutter={12} style={{ marginBottom: 12 }}>
                           <Col span={12}>
-                            <Form.Item label="Authoring path" name="authoring_mode" style={{ marginBottom: 0 }}>
+                            <Form.Item label={t('catalog.topologyEditor.fields.authoringPath')} name="authoring_mode" style={{ marginBottom: 0 }}>
                               <Select
                                 options={[
-                                  { value: 'template', label: 'Template-based instantiation' },
-                                  { value: 'manual', label: 'Manual snapshot editor' },
+                                  { value: 'template', label: t('catalog.topologyEditor.modes.templateBasedInstantiation') },
+                                  { value: 'manual', label: t('catalog.topologyEditor.modes.manualSnapshotEditor') },
                                 ]}
                                 data-testid="pool-catalog-topology-authoring-mode"
                               />
@@ -4222,11 +4325,11 @@ export function PoolCatalogPage() {
                           </Col>
                           <Col span={12}>
                             <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                              <Text strong>Current mode</Text>
+                              <Text strong>{t('catalog.topologyEditor.fields.currentMode')}</Text>
                               <Text type="secondary">
                                 {isTemplateTopologyAuthoring
-                                  ? 'Topology template revision + slot assignment'
-                                  : 'Concrete nodes/edges authoring'}
+                                  ? t('catalog.topologyEditor.modes.templateCurrentMode')
+                                  : t('catalog.topologyEditor.modes.manualCurrentMode')}
                               </Text>
                             </Space>
                           </Col>
@@ -4234,17 +4337,17 @@ export function PoolCatalogPage() {
 
                         <Space wrap style={{ marginBottom: 12 }}>
                           <RouteButton
-                            to={topologyTemplateWorkspaceRoute}
+                            to={topologyTemplateCatalogRoute}
                             data-testid="pool-catalog-open-topology-template-workspace"
                           >
-                            Open topology template catalog
+                            {t('catalog.topologyEditor.actions.openTopologyTemplateCatalog')}
                           </RouteButton>
                           {selectedTopologyTemplate ? (
                             <RouteButton
                               to={topologyTemplateReviseRoute}
                               data-testid="pool-catalog-revise-topology-template"
                             >
-                              Publish new template revision
+                              {t('catalog.topologyEditor.actions.publishNewTemplateRevision')}
                             </RouteButton>
                           ) : null}
                         </Space>
@@ -4254,8 +4357,8 @@ export function PoolCatalogPage() {
                             <Alert
                               type="info"
                               showIcon
-                              message="Template-based path is the preferred reuse flow"
-                              description="Выберите published topology template revision, назначьте организации в slot-ы и при необходимости задайте explicit selector override для edge. Concrete graph materialize'ится в текущий pool snapshot при сохранении."
+                              message={t('catalog.topologyEditor.alerts.templatePreferredTitle')}
+                              description={t('catalog.topologyEditor.alerts.templatePreferredDescription')}
                             />
                             {topologyTemplatesLoadError && (
                               <Alert
@@ -4268,7 +4371,7 @@ export function PoolCatalogPage() {
                                     onClick={() => { void loadTopologyTemplates({ force: true }) }}
                                     loading={loadingTopologyTemplates}
                                   >
-                                    Retry templates
+                                    {t('catalog.topologyEditor.actions.retryTemplates')}
                                   </Button>
                                 )}
                               />
@@ -4277,21 +4380,21 @@ export function PoolCatalogPage() {
                               <Alert
                                 type="warning"
                                 showIcon
-                                message="Topology template catalog is empty."
-                                description="Откройте dedicated reusable topology workspace, чтобы создать первый template и вернуться сюда без повторного выбора pool."
+                                message={t('catalog.topologyEditor.alerts.templateCatalogEmptyTitle')}
+                                description={t('catalog.topologyEditor.alerts.templateCatalogEmptyDescription')}
                               />
                             ) : null}
                             <Row gutter={12}>
                               <Col span={12}>
                                 <Form.Item
-                                  label="Topology template revision"
+                                  label={t('catalog.topologyEditor.fields.topologyTemplateRevision')}
                                   name="topology_template_revision_id"
                                   style={{ marginBottom: 0 }}
                                 >
                                   <Select
                                     showSearch
                                     optionFilterProp="label"
-                                    placeholder="Select topology template revision"
+                                    placeholder={t('catalog.topologyEditor.placeholders.selectTopologyTemplateRevision')}
                                     options={topologyTemplateRevisionOptions}
                                     loading={loadingTopologyTemplates}
                                     data-testid="pool-catalog-topology-template-revision"
@@ -4300,33 +4403,33 @@ export function PoolCatalogPage() {
                               </Col>
                               <Col span={12}>
                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                  <Text strong>Template summary</Text>
+                                  <Text strong>{t('catalog.topologyEditor.fields.templateSummary')}</Text>
                                   {selectedTopologyTemplate && selectedTopologyTemplateRevision ? (
                                     <Descriptions size="small" column={1} bordered>
-                                      <Descriptions.Item label="Template">
+                                      <Descriptions.Item label={t('catalog.topologyEditor.fields.template')}>
                                         {selectedTopologyTemplate.name}
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="Revision">
+                                      <Descriptions.Item label={t('catalog.topologyEditor.fields.revision')}>
                                         {`r${selectedTopologyTemplateRevision.revision_number}`}
                                       </Descriptions.Item>
-                                      <Descriptions.Item label="Edges">
+                                      <Descriptions.Item label={t('catalog.topologyEditor.fields.edges')}>
                                         {selectedTopologyTemplateRevision.edges.length}
                                       </Descriptions.Item>
                                     </Descriptions>
                                   ) : (
-                                    <Text type="secondary">Выберите revision из topology template catalog.</Text>
+                                    <Text type="secondary">{t('catalog.topologyEditor.placeholders.selectRevisionFromCatalog')}</Text>
                                   )}
                                 </Space>
                               </Col>
                             </Row>
 
-                            <Text strong>Slot assignments</Text>
+                            <Text strong>{t('catalog.topologyEditor.fields.slotAssignments')}</Text>
                             <Form.List name="slot_assignments">
                               {(fields) => (
                                 <Space direction="vertical" size="small" style={{ width: '100%' }}>
                                   {fields.length === 0 && (
                                     <Text type="secondary">
-                                      Сначала выберите topology template revision.
+                                      {t('catalog.topologyEditor.placeholders.selectTemplateRevisionFirst')}
                                     </Text>
                                   )}
                                   {fields.map((field) => (
@@ -4334,7 +4437,7 @@ export function PoolCatalogPage() {
                                       <Col span={8}>
                                         <Form.Item
                                           name={[field.name, 'slot_key']}
-                                          label={field.name === 0 ? 'Slot key' : ''}
+                                          label={field.name === 0 ? t('catalog.topologyEditor.fields.slotKey') : ''}
                                           style={{ marginBottom: 0 }}
                                         >
                                           <Input
@@ -4345,7 +4448,7 @@ export function PoolCatalogPage() {
                                       </Col>
                                       <Col span={16}>
                                         <Form.Item
-                                          label={field.name === 0 ? 'Organization' : ''}
+                                          label={field.name === 0 ? t('catalog.topologyEditor.fields.organization') : ''}
                                           style={{ marginBottom: 0 }}
                                         >
                                           <Form.Item noStyle shouldUpdate>
@@ -4376,7 +4479,7 @@ export function PoolCatalogPage() {
                                                   showSearch
                                                   labelInValue
                                                   optionFilterProp="label"
-                                                  placeholder="Assign organization to slot"
+                                                  placeholder={t('catalog.topologyEditor.placeholders.assignOrganizationToSlot')}
                                                   options={currentOrganizationOptions}
                                                   value={
                                                     currentOrganizationId
@@ -4405,13 +4508,13 @@ export function PoolCatalogPage() {
                               )}
                             </Form.List>
 
-                            <Text strong>Template edge selector overrides</Text>
+                            <Text strong>{t('catalog.topologyEditor.fields.templateEdgeSelectorOverrides')}</Text>
                             <Form.List name="edge_selector_overrides">
                               {(fields) => (
                                 <Space direction="vertical" size="small" style={{ width: '100%' }}>
                                   {fields.length === 0 && (
                                     <Text type="secondary">
-                                      После выбора revision здесь появятся materialized template edge selectors.
+                                      {t('catalog.topologyEditor.placeholders.materializedSelectorsAfterRevision')}
                                     </Text>
                                   )}
                                   {fields.map((field) => {
@@ -4431,7 +4534,7 @@ export function PoolCatalogPage() {
                                           <Col span={8}>
                                             <Form.Item
                                               name={[field.name, 'parent_slot_key']}
-                                              label={field.name === 0 ? 'Parent slot' : ''}
+                                              label={field.name === 0 ? t('catalog.topologyEditor.fields.parentSlot') : ''}
                                               style={{ marginBottom: 0 }}
                                             >
                                               <Input
@@ -4443,7 +4546,7 @@ export function PoolCatalogPage() {
                                           <Col span={8}>
                                             <Form.Item
                                               name={[field.name, 'child_slot_key']}
-                                              label={field.name === 0 ? 'Child slot' : ''}
+                                              label={field.name === 0 ? t('catalog.topologyEditor.fields.childSlot') : ''}
                                               style={{ marginBottom: 0 }}
                                             >
                                               <Input
@@ -4470,7 +4573,7 @@ export function PoolCatalogPage() {
                                                   ? [
                                                       {
                                                         value: currentSlotKey,
-                                                        label: `${currentSlotKey} · current override`,
+                                                        label: t('catalog.topologyEditor.tags.currentOverride', { value: currentSlotKey }),
                                                       },
                                                       ...topologySlotOptions,
                                                     ]
@@ -4480,7 +4583,7 @@ export function PoolCatalogPage() {
                                                   <Space direction="vertical" size={6} style={{ width: '100%' }}>
                                                     <Form.Item
                                                       name={[field.name, 'document_policy_key']}
-                                                      label={field.name === 0 ? 'Override selector' : ''}
+                                                      label={field.name === 0 ? t('catalog.topologyEditor.fields.overrideSelector') : ''}
                                                       style={{ marginBottom: 0 }}
                                                     >
                                                       {currentSlotOptions.length > 0 ? (
@@ -4488,7 +4591,7 @@ export function PoolCatalogPage() {
                                                           allowClear
                                                           showSearch
                                                           optionFilterProp="label"
-                                                          placeholder={defaultSelector || 'Override template selector'}
+                                                          placeholder={defaultSelector || t('catalog.topologyEditor.placeholders.overrideTemplateSelector')}
                                                           options={currentSlotOptions}
                                                           data-testid={`pool-catalog-topology-template-edge-slot-${field.name}`}
                                                         />
@@ -4502,8 +4605,8 @@ export function PoolCatalogPage() {
                                                     <Space wrap size={8}>
                                                       <Tag color={defaultSelector ? 'blue' : 'default'}>
                                                         {defaultSelector
-                                                          ? `Template default: ${defaultSelector}`
-                                                          : 'Template default missing'}
+                                                          ? t('catalog.topologyEditor.tags.templateDefaultValue', { value: defaultSelector })
+                                                          : t('catalog.topologyEditor.tags.templateDefaultMissing')}
                                                       </Tag>
                                                       <Tag
                                                         color={(
@@ -4542,20 +4645,20 @@ export function PoolCatalogPage() {
                             type="info"
                             showIcon
                             style={{ marginBottom: 12 }}
-                            message="Manual topology editor remains a fallback path"
-                            description="Используйте его для нестандартных схем или remediation cases, когда reusable topology template ещё не опубликован. Для reusable authoring переходите в dedicated topology template catalog."
+                            message={t('catalog.topologyEditor.alerts.manualFallbackTitle')}
+                            description={t('catalog.topologyEditor.alerts.manualFallbackDescription')}
                           />
                         )}
 
                         <Space direction="vertical" size={8} style={{ width: '100%', marginBottom: 12 }}>
                           <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
-                            <Text strong>Topology snapshots by date</Text>
+                            <Text strong>{t('catalog.topologyEditor.fields.topologySnapshotsByDate')}</Text>
                             <Button
                               size="small"
                               onClick={() => { void loadTopologySnapshots({ force: true }) }}
                               loading={loadingTopologySnapshots}
                             >
-                              Refresh snapshots
+                              {t('catalog.topologyEditor.actions.refreshSnapshots')}
                             </Button>
                           </Space>
                           <Table<PoolTopologySnapshotPeriod>
@@ -4566,25 +4669,25 @@ export function PoolCatalogPage() {
                             dataSource={topologySnapshots}
                             columns={[
                               {
-                                title: 'From',
+                                title: t('catalog.topologyEditor.fields.from'),
                                 dataIndex: 'effective_from',
                                 key: 'effective_from',
                                 width: 140,
                               },
                               {
-                                title: 'To',
+                                title: t('catalog.topologyEditor.fields.to'),
                                 key: 'effective_to',
                                 width: 140,
-                                render: (_value: unknown, record) => record.effective_to || 'open',
+                                render: (_value: unknown, record) => record.effective_to || t('catalog.topologyEditor.values.openInterval'),
                               },
                               {
-                                title: 'Nodes',
+                                title: t('catalog.topologyEditor.fields.nodes'),
                                 dataIndex: 'nodes_count',
                                 key: 'nodes_count',
                                 width: 80,
                               },
                               {
-                                title: 'Edges',
+                                title: t('catalog.topologyEditor.fields.edges'),
                                 dataIndex: 'edges_count',
                                 key: 'edges_count',
                                 width: 80,
@@ -4600,7 +4703,7 @@ export function PoolCatalogPage() {
                                     onClick={() => handleGraphDateChange(record.effective_from)}
                                     data-testid={`pool-catalog-topology-snapshot-open-${record.effective_from}`}
                                   >
-                                    Open
+                                    {t('catalog.topologyEditor.actions.open')}
                                   </Button>
                                 ),
                               },
@@ -4610,7 +4713,7 @@ export function PoolCatalogPage() {
 
                         {!isTemplateTopologyAuthoring && (
                           <>
-                            <Text strong>Nodes</Text>
+                            <Text strong>{t('catalog.topologyEditor.manual.nodes')}</Text>
                             <Form.List name="nodes">
                           {(fields, { add, remove, move }) => (
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -4620,13 +4723,13 @@ export function PoolCatalogPage() {
                                     <Col span={16}>
                                       <Form.Item
                                         name={[field.name, 'organization_id']}
-                                        label={field.name === 0 ? 'Organization' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.organization') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
                                         <Select
                                           showSearch
                                           optionFilterProp="label"
-                                          placeholder="Select organization"
+                                          placeholder={t('catalog.topologyEditor.placeholders.selectOrganization')}
                                           options={organizationOptions}
                                         />
                                       </Form.Item>
@@ -4635,7 +4738,7 @@ export function PoolCatalogPage() {
                                       <Form.Item
                                         name={[field.name, 'is_root']}
                                         valuePropName="checked"
-                                        label={field.name === 0 ? 'Root' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.root') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
                                         <Switch />
@@ -4644,22 +4747,20 @@ export function PoolCatalogPage() {
                                     <Col span={4}>
                                       <Space size={4}>
                                         <Button
-                                          aria-label="Move node up"
+                                          aria-label={t('catalog.topologyEditor.manual.moveNodeUp')}
                                           icon={<ArrowUpOutlined />}
                                           onClick={() => move(field.name, field.name - 1)}
                                           disabled={field.name === 0}
                                           data-testid={`pool-catalog-topology-node-move-up-${field.name}`}
                                         />
                                         <Button
-                                          aria-label="Move node down"
+                                          aria-label={t('catalog.topologyEditor.manual.moveNodeDown')}
                                           icon={<ArrowDownOutlined />}
                                           onClick={() => move(field.name, field.name + 1)}
                                           disabled={field.name === fields.length - 1}
                                           data-testid={`pool-catalog-topology-node-move-down-${field.name}`}
                                         />
-                                        <Button danger onClick={() => remove(field.name)}>
-                                          Remove
-                                        </Button>
+                                        <Button danger onClick={() => remove(field.name)}>{t('common.remove')}</Button>
                                       </Space>
                                     </Col>
                                   </Row>
@@ -4668,11 +4769,11 @@ export function PoolCatalogPage() {
                                     items={[
                                       {
                                         key: `node-advanced-${field.key}`,
-                                        label: 'Advanced node JSON',
+                                        label: t('catalog.topologyEditor.manual.advancedNodeJson'),
                                         children: (
                                           <Form.Item
                                             name={[field.name, 'metadata_json']}
-                                            label="Node metadata (JSON)"
+                                            label={t('catalog.topologyEditor.manual.nodeMetadataJson')}
                                             style={{ marginBottom: 0 }}
                                           >
                                             <TextArea
@@ -4691,13 +4792,13 @@ export function PoolCatalogPage() {
                                 onClick={() => add({ organization_id: undefined, is_root: false, metadata_json: '' })}
                                 data-testid="pool-catalog-topology-add-node"
                               >
-                                Add node
+                                {t('catalog.topologyEditor.manual.addNode')}
                               </Button>
                             </Space>
                           )}
                             </Form.List>
 
-                            <Text strong style={{ marginTop: 12 }}>Edges</Text>
+                            <Text strong style={{ marginTop: 12 }}>{t('catalog.topologyEditor.manual.edges')}</Text>
                             <Form.List name="edges">
                           {(fields, { add, remove, move }) => (
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
@@ -4712,19 +4813,25 @@ export function PoolCatalogPage() {
                                     <Col span={7}>
                                       <Form.Item
                                         name={[field.name, 'parent_organization_id']}
-                                        label={field.name === 0 ? 'Parent' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.parent') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
-                                        <Select options={organizationOptions} placeholder="Parent" />
+                                        <Select
+                                          options={organizationOptions}
+                                          placeholder={t('catalog.topologyEditor.manual.parent')}
+                                        />
                                       </Form.Item>
                                     </Col>
                                     <Col span={7}>
                                       <Form.Item
                                         name={[field.name, 'child_organization_id']}
-                                        label={field.name === 0 ? 'Child' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.child') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
-                                        <Select options={organizationOptions} placeholder="Child" />
+                                        <Select
+                                          options={organizationOptions}
+                                          placeholder={t('catalog.topologyEditor.manual.child')}
+                                        />
                                       </Form.Item>
                                     </Col>
                                     <Col span={8}>
@@ -4740,7 +4847,7 @@ export function PoolCatalogPage() {
                                             ? [
                                                 {
                                                   value: currentSlotKey,
-                                                  label: `${currentSlotKey} · current edge value`,
+                                                  label: t('catalog.topologyEditor.manual.currentEdgeValue', { value: currentSlotKey }),
                                                 },
                                                 ...topologySlotOptions,
                                               ]
@@ -4749,14 +4856,14 @@ export function PoolCatalogPage() {
                                           return (
                                             <Form.Item
                                               name={[field.name, 'document_policy_key']}
-                                              label={field.name === 0 ? 'Publication slot' : ''}
+                                              label={field.name === 0 ? t('catalog.topologyEditor.manual.publicationSlot') : ''}
                                               style={{ marginBottom: 0 }}
                                             >
                                               {currentSlotOptions.length > 0 ? (
                                                 <Select
                                                   showSearch
                                                   optionFilterProp="label"
-                                                  placeholder="Select publication slot from bindings"
+                                                  placeholder={t('catalog.topologyEditor.manual.selectPublicationSlotFromBindings')}
                                                   options={currentSlotOptions}
                                                   data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
                                                 />
@@ -4774,14 +4881,14 @@ export function PoolCatalogPage() {
                                     <Col span={2}>
                                       <Space size={4}>
                                         <Button
-                                          aria-label="Move edge up"
+                                          aria-label={t('catalog.topologyEditor.manual.moveEdgeUp')}
                                           icon={<ArrowUpOutlined />}
                                           onClick={() => move(field.name, field.name - 1)}
                                           disabled={field.name === 0}
                                           data-testid={`pool-catalog-topology-edge-move-up-${field.name}`}
                                         />
                                         <Button
-                                          aria-label="Move edge down"
+                                          aria-label={t('catalog.topologyEditor.manual.moveEdgeDown')}
                                           icon={<ArrowDownOutlined />}
                                           onClick={() => move(field.name, field.name + 1)}
                                           disabled={field.name === fields.length - 1}
@@ -4795,7 +4902,7 @@ export function PoolCatalogPage() {
                                     <Col span={4}>
                                       <Form.Item
                                         name={[field.name, 'weight']}
-                                        label={field.name === 0 ? 'Weight' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.weight') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
                                         <InputNumber min={0.000001} step={0.1} style={{ width: '100%' }} />
@@ -4804,7 +4911,7 @@ export function PoolCatalogPage() {
                                     <Col span={4}>
                                       <Form.Item
                                         name={[field.name, 'min_amount']}
-                                        label={field.name === 0 ? 'Min' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.min') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
                                         <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
@@ -4813,7 +4920,7 @@ export function PoolCatalogPage() {
                                     <Col span={4}>
                                       <Form.Item
                                         name={[field.name, 'max_amount']}
-                                        label={field.name === 0 ? 'Max' : ''}
+                                        label={field.name === 0 ? t('catalog.topologyEditor.manual.max') : ''}
                                         style={{ marginBottom: 0 }}
                                       >
                                         <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
@@ -4853,7 +4960,7 @@ export function PoolCatalogPage() {
                                     items={[
                                       {
                                         key: `edge-advanced-${field.key}`,
-                                        label: 'Advanced edge metadata',
+                                        label: t('catalog.topologyEditor.manual.advancedEdgeMetadata'),
                                         children: (
                                           <Space direction="vertical" size={8} style={{ width: '100%' }}>
                                             <Form.Item noStyle shouldUpdate>
@@ -5967,7 +6074,7 @@ export function PoolCatalogPage() {
                                 })}
                                 data-testid="pool-catalog-topology-add-edge"
                               >
-                                Add edge
+                                {t('catalog.topologyEditor.manual.addEdge')}
                               </Button>
                             </Space>
                           )}
@@ -5979,7 +6086,7 @@ export function PoolCatalogPage() {
                           <Alert
                             type="error"
                             showIcon
-                            message="Preflight validation failed"
+                            message={t('catalog.topologyEditor.manual.preflightValidationFailed')}
                             description={(
                               <ul style={{ margin: 0, paddingInlineStart: 18 }}>
                                 {topologyPreflightErrors.map((item, index) => (
@@ -5998,7 +6105,7 @@ export function PoolCatalogPage() {
                           disabled={mutatingDisabled || isTopologySaveBlocked}
                           data-testid="pool-catalog-topology-save"
                         >
-                          Save topology snapshot
+                          {t('catalog.topologyEditor.manual.saveTopologySnapshot')}
                         </Button>
                       </Form>
                     )}
@@ -6008,14 +6115,14 @@ export function PoolCatalogPage() {
             },
             {
               key: 'graph',
-              label: 'Graph Preview',
+              label: t('catalog.graph.tabLabel'),
               children: (
-                <Card title="Pools graph (read-only)" loading={loadingPools || loadingGraph}>
+                <Card title={t('catalog.graph.cardTitle')} loading={loadingPools || loadingGraph}>
                   <Space size="small" wrap style={{ marginBottom: 12 }}>
                     <Select
                       value={selectedPoolId ?? undefined}
                       style={{ width: 320 }}
-                      placeholder="Select pool"
+                      placeholder={t('catalog.fields.selectPool')}
                       options={pools.map((pool) => ({
                         value: pool.id,
                         label: `${pool.code} - ${pool.name}`,
@@ -6029,7 +6136,7 @@ export function PoolCatalogPage() {
                       onChange={(event) => handleGraphDateChange(event.target.value)}
                     />
                     <Button onClick={() => { void loadGraph({ force: true }) }} loading={loadingGraph}>
-                      Refresh graph
+                      {t('catalog.actions.refreshGraph')}
                     </Button>
                   </Space>
                   <div style={{ height: 520 }}>
@@ -6057,7 +6164,9 @@ export function PoolCatalogPage() {
 
       <Drawer
         data-testid="pool-catalog-organization-drawer"
-        title={organizationDrawerMode === 'create' ? 'Add organization' : 'Edit organization'}
+        title={organizationDrawerMode === 'create'
+          ? t('catalog.organizationForm.addTitle')
+          : t('catalog.organizationForm.editTitle')}
         width={520}
         open={isOrganizationDrawerOpen}
         onClose={closeOrganizationDrawer}
@@ -6066,10 +6175,10 @@ export function PoolCatalogPage() {
         extra={(
           <Space>
             <Button onClick={closeOrganizationDrawer} disabled={isOrganizationSaving}>
-              Cancel
+              {t('catalog.actions.cancel')}
             </Button>
             <Button type="primary" onClick={() => { void submitOrganization() }} loading={isOrganizationSaving}>
-              Save
+              {t('common.save')}
             </Button>
           </Space>
         )}
@@ -6079,51 +6188,51 @@ export function PoolCatalogPage() {
           <Form form={organizationForm} layout="vertical">
             <Form.Item
               name="inn"
-              label="INN"
+              label={t('catalog.organizationForm.fields.inn')}
               rules={[
-                { required: true, message: 'INN обязателен' },
-                { max: 12, message: 'INN должен быть не длиннее 12 символов' },
+                { required: true, message: t('catalog.organizationForm.validation.innRequired') },
+                { max: 12, message: t('catalog.organizationForm.validation.innTooLong') },
               ]}
             >
-              <Input placeholder="730000000001" maxLength={12} />
+              <Input placeholder={t('catalog.organizationForm.placeholders.inn')} maxLength={12} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Name"
+              label={t('catalog.organizationForm.fields.name')}
               rules={[
-                { required: true, message: 'Name обязателен' },
-                { max: 255, message: 'Name должен быть не длиннее 255 символов' },
+                { required: true, message: t('catalog.organizationForm.validation.nameRequired') },
+                { max: 255, message: t('catalog.organizationForm.validation.nameTooLong') },
               ]}
             >
-              <Input placeholder="Organization name" />
+              <Input placeholder={t('catalog.organizationForm.placeholders.name')} />
             </Form.Item>
-            <Form.Item name="status" label="Status" rules={[{ required: true, message: 'Status обязателен' }]}>
+            <Form.Item
+              name="status"
+              label={t('catalog.organizationForm.fields.status')}
+              rules={[{ required: true, message: t('catalog.organizationForm.validation.statusRequired') }]}
+            >
               <Select
-                options={[
-                  { value: 'active', label: 'active' },
-                  { value: 'inactive', label: 'inactive' },
-                  { value: 'archived', label: 'archived' },
-                ]}
+                options={organizationStatusOptions}
               />
             </Form.Item>
-            <Form.Item name="database_id" label="Database">
+            <Form.Item name="database_id" label={t('catalog.organizationForm.fields.database')}>
               <Select
                 allowClear
                 showSearch
                 optionFilterProp="label"
-                placeholder="Select database"
+                placeholder={t('catalog.organizationForm.placeholders.selectDatabase')}
                 options={databaseOptions}
                 loading={databasesQuery.isLoading}
               />
             </Form.Item>
-            <Form.Item name="full_name" label="Full name">
-              <Input placeholder="Optional" />
+            <Form.Item name="full_name" label={t('catalog.organizationForm.fields.fullName')}>
+              <Input placeholder={t('catalog.organizationForm.placeholders.optional')} />
             </Form.Item>
-            <Form.Item name="kpp" label="KPP">
-              <Input placeholder="Optional" />
+            <Form.Item name="kpp" label={t('catalog.organizationForm.fields.kpp')}>
+              <Input placeholder={t('catalog.organizationForm.placeholders.optional')} />
             </Form.Item>
-            <Form.Item name="external_ref" label="External ref">
-              <Input placeholder="Optional" />
+            <Form.Item name="external_ref" label={t('catalog.organizationForm.fields.externalRef')}>
+              <Input placeholder={t('catalog.organizationForm.placeholders.optional')} />
             </Form.Item>
           </Form>
         </Space>
@@ -6131,7 +6240,7 @@ export function PoolCatalogPage() {
 
       <Drawer
         data-testid="pool-catalog-pool-drawer"
-        title={poolDrawerMode === 'create' ? 'Add pool' : 'Edit pool'}
+        title={poolDrawerMode === 'create' ? t('catalog.poolForm.addTitle') : t('catalog.poolForm.editTitle')}
         width={520}
         open={isPoolDrawerOpen}
         onClose={closePoolDrawer}
@@ -6140,7 +6249,7 @@ export function PoolCatalogPage() {
         extra={(
           <Space>
             <Button onClick={closePoolDrawer} disabled={isPoolSaving}>
-              Cancel
+              {t('catalog.actions.cancel')}
             </Button>
             <Button
               type="primary"
@@ -6148,7 +6257,7 @@ export function PoolCatalogPage() {
               loading={isPoolSaving}
               data-testid="pool-catalog-save-pool"
             >
-              Save
+              {t('common.save')}
             </Button>
           </Space>
         )}
@@ -6158,34 +6267,37 @@ export function PoolCatalogPage() {
           <Alert
             type="info"
             showIcon
-            message="Pool fields only"
-            description="Workflow bindings moved to the Bindings workspace and are saved there through first-class binding CRUD."
+            message={t('catalog.alerts.poolFieldsOnlyTitle')}
+            description={t('catalog.alerts.poolFieldsOnlyDescription')}
           />
           <Form form={poolForm} layout="vertical">
             <Form.Item
               name="code"
-              label="Code"
+              label={t('catalog.poolForm.fields.code')}
               rules={[
-                { required: true, message: 'Code обязателен' },
-                { max: 64, message: 'Code должен быть не длиннее 64 символов' },
+                { required: true, message: t('catalog.poolForm.validation.codeRequired') },
+                { max: 64, message: t('catalog.poolForm.validation.codeTooLong') },
               ]}
             >
-              <Input placeholder="pool-main" />
+              <Input placeholder={t('catalog.poolForm.placeholders.code')} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Name"
+              label={t('catalog.poolForm.fields.name')}
               rules={[
-                { required: true, message: 'Name обязателен' },
-                { max: 255, message: 'Name должен быть не длиннее 255 символов' },
+                { required: true, message: t('catalog.poolForm.validation.nameRequired') },
+                { max: 255, message: t('catalog.poolForm.validation.nameTooLong') },
               ]}
             >
-              <Input placeholder="Main intercompany pool" />
+              <Input placeholder={t('catalog.poolForm.placeholders.name')} />
             </Form.Item>
-            <Form.Item name="description" label="Description">
-              <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} placeholder="Optional" />
+            <Form.Item name="description" label={t('catalog.poolForm.fields.description')}>
+              <Input.TextArea
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                placeholder={t('catalog.poolForm.placeholders.optional')}
+              />
             </Form.Item>
-            <Form.Item name="is_active" label="Active" valuePropName="checked">
+            <Form.Item name="is_active" label={t('catalog.poolForm.fields.active')} valuePropName="checked">
               <Switch />
             </Form.Item>
           </Form>
@@ -6193,18 +6305,21 @@ export function PoolCatalogPage() {
       </Drawer>
 
       <Modal
-        title="Sync organizations catalog (JSON)"
+        title={t('catalog.syncModal.title')}
         open={isSyncModalOpen}
         onCancel={closeSyncModal}
         onOk={() => { void submitSync() }}
-        okText="Run sync"
+        okText={t('catalog.syncModal.runSync')}
         confirmLoading={isSyncSubmitting}
         width={760}
         destroyOnHidden
       >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Text type="secondary">
-            Input JSON payload in format <Text code>{'{"rows":[{"inn":"...","name":"..."}]}'}</Text>. Limit: {SYNC_MAX_ROWS} rows.
+            {t('catalog.syncModal.inputHintPrefix')}
+            {' '}
+            <Text code>{'{"rows":[{"inn":"...","name":"..."}]}'}</Text>
+            . {t('catalog.syncModal.inputHintLimit', { count: SYNC_MAX_ROWS })}
           </Text>
           <TextArea
             data-testid="pool-catalog-sync-input"
@@ -6217,7 +6332,7 @@ export function PoolCatalogPage() {
             <Alert
               type="error"
               showIcon
-              message="Sync blocked"
+              message={t('catalog.syncModal.blocked')}
               description={(
                 <ul style={{ paddingInlineStart: 18, margin: 0 }}>
                   {syncErrors.map((item, index) => (
@@ -6231,13 +6346,13 @@ export function PoolCatalogPage() {
             <Alert
               type="success"
               showIcon
-              message="Sync completed"
+              message={t('catalog.syncModal.completed')}
               description={(
                 <Space size="large">
-                  <Text>created: <Text code>{syncResult.stats.created}</Text></Text>
-                  <Text>updated: <Text code>{syncResult.stats.updated}</Text></Text>
-                  <Text>skipped: <Text code>{syncResult.stats.skipped}</Text></Text>
-                  <Text>total_rows: <Text code>{syncResult.total_rows}</Text></Text>
+                  <Text>{t('catalog.syncModal.stats.created')}: <Text code>{syncResult.stats.created}</Text></Text>
+                  <Text>{t('catalog.syncModal.stats.updated')}: <Text code>{syncResult.stats.updated}</Text></Text>
+                  <Text>{t('catalog.syncModal.stats.skipped')}: <Text code>{syncResult.stats.skipped}</Text></Text>
+                  <Text>{t('catalog.syncModal.stats.totalRows')}: <Text code>{syncResult.total_rows}</Text></Text>
                 </Space>
               )}
             />

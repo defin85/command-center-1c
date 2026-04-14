@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 const mockGetWorkflowsGetWorkflow = vi.fn()
 const mockGetWorkflowsListWorkflows = vi.fn()
@@ -83,7 +84,9 @@ function renderPage(initialEntry = '/workflows/runtime-1?surface=runtime_diagnos
 }
 
 describe('WorkflowDesigner', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'workflows')
     mockGetWorkflowsGetWorkflow.mockReset()
     mockGetWorkflowsListWorkflows.mockReset()
     mockGetDecisionsCollection.mockReset()
@@ -285,6 +288,11 @@ describe('WorkflowDesigner', () => {
       count: 1,
       total: 1,
     })
+  })
+
+  afterEach(async () => {
+    await ensureNamespaces('ru', 'workflows')
+    await changeLanguage('ru')
   })
 
   it('renders runtime projections as read-only diagnostics surface', async () => {

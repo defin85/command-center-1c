@@ -44,6 +44,7 @@ import {
   type TimelineItem,
   type ServiceSummary
 } from '../../types/tracing'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../i18n'
 import './TraceViewerModal.css'
 
 const { Text, Title } = Typography
@@ -77,6 +78,8 @@ export const TraceViewerModal = ({
 }: TraceViewerModalProps) => {
   // _nodeId can be used in future to filter/highlight spans by workflow node
   void _nodeId  // Suppress unused variable warning
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
   const { trace, isLoading, error, refresh } = useJaegerTraces(visible ? traceId : null)
   const [selectedSpan, setSelectedSpan] = useState<TraceSpan | null>(null)
   const [activeTab, setActiveTab] = useState<string>('timeline')
@@ -116,7 +119,7 @@ export const TraceViewerModal = ({
   // Render timeline tab
   const renderTimeline = () => {
     if (!trace || timelineItems.length === 0) {
-      return <Empty description="No spans in trace" />
+      return <Empty description={t('traceViewer.emptySpans')} />
     }
 
     const maxDuration = Math.max(...timelineItems.map(i => i.startOffset + i.duration))
@@ -125,10 +128,13 @@ export const TraceViewerModal = ({
       <div className="trace-timeline">
         <div className="timeline-header">
           <Text type="secondary">
-            {trace.spanCount} spans across {trace.services.length} services
+            {t('traceViewer.header.spansAcross', {
+              spans: trace.spanCount,
+              services: trace.services.length,
+            })}
           </Text>
           <Text type="secondary">
-            Total duration: {formatTraceDuration(trace.duration)}
+            {t('traceViewer.header.totalDuration', { value: formatTraceDuration(trace.duration) })}
           </Text>
         </div>
 
@@ -186,7 +192,7 @@ export const TraceViewerModal = ({
   // Render service flow tab
   const renderServiceFlow = () => {
     if (!trace || serviceSummaries.length === 0) {
-      return <Empty description="No services found" />
+      return <Empty description={t('traceViewer.emptyServices')} />
     }
 
     return (
@@ -203,7 +209,7 @@ export const TraceViewerModal = ({
     if (!selectedSpan) {
       return (
         <Empty
-          description="Select a span from the timeline to view details"
+          description={t('traceViewer.emptySpanDetails')}
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         />
       )
@@ -214,27 +220,27 @@ export const TraceViewerModal = ({
     return (
       <div className="span-details">
         <Descriptions bordered size="small" column={1}>
-          <Descriptions.Item label="Operation">
+          <Descriptions.Item label={t('traceViewer.details.operation')}>
             {selectedSpan.operationName}
           </Descriptions.Item>
-          <Descriptions.Item label="Service">
+          <Descriptions.Item label={t('traceViewer.details.service')}>
             {selectedSpan.serviceName}
           </Descriptions.Item>
-          <Descriptions.Item label="Span ID">
+          <Descriptions.Item label={t('traceViewer.details.spanId')}>
             <Text copyable className="mono-text">{selectedSpan.spanId}</Text>
           </Descriptions.Item>
           {selectedSpan.parentSpanId && (
-            <Descriptions.Item label="Parent Span ID">
+            <Descriptions.Item label={t('traceViewer.details.parentSpanId')}>
               <Text copyable className="mono-text">{selectedSpan.parentSpanId}</Text>
             </Descriptions.Item>
           )}
-          <Descriptions.Item label="Start Time">
-            {selectedSpan.startTime.toLocaleString()}
+          <Descriptions.Item label={t('traceViewer.details.startTime')}>
+            {formatters.dateTime(selectedSpan.startTime, { fallback: t('common.notAvailable') })}
           </Descriptions.Item>
-          <Descriptions.Item label="Duration">
+          <Descriptions.Item label={t('traceViewer.details.duration')}>
             {formatTraceDuration(selectedSpan.duration)}
           </Descriptions.Item>
-          <Descriptions.Item label="Status">
+          <Descriptions.Item label={t('traceViewer.details.status')}>
             <Space>
               {statusIcons[selectedSpan.status]}
               <Text>{selectedSpan.status}</Text>
@@ -243,7 +249,7 @@ export const TraceViewerModal = ({
         </Descriptions>
 
         {tagEntries.length > 0 && (
-          <Card title="Tags" size="small" className="detail-card">
+          <Card title={t('traceViewer.details.tags')} size="small" className="detail-card">
             <div className="tags-list">
               {tagEntries.map(([key, value]) => (
                 <div key={key} className="tag-item">
@@ -256,13 +262,13 @@ export const TraceViewerModal = ({
         )}
 
         {selectedSpan.logs.length > 0 && (
-          <Card title="Logs" size="small" className="detail-card">
+          <Card title={t('traceViewer.details.logs')} size="small" className="detail-card">
             <List
               dataSource={selectedSpan.logs}
               renderItem={(log) => (
                 <List.Item className="log-item">
                   <div>
-                    <Text type="secondary">{log.timestamp.toLocaleTimeString()}</Text>
+                    <Text type="secondary">{formatters.time(log.timestamp, { fallback: t('common.notAvailable') })}</Text>
                     <Text strong style={{ marginLeft: 8 }}>{log.name}</Text>
                   </div>
                   <pre className="log-attributes">
@@ -282,7 +288,7 @@ export const TraceViewerModal = ({
             target="_blank"
             className="view-in-jaeger"
           >
-            View in Jaeger
+            {t('traceViewer.details.viewInJaeger')}
           </Button>
         )}
       </div>
@@ -294,7 +300,7 @@ export const TraceViewerModal = ({
       title={
         <Space>
           <ApiOutlined />
-          <span>Trace Viewer</span>
+          <span>{t('traceViewer.title')}</span>
           {trace && (
             <Text type="secondary" className="trace-id-header">
               {trace.traceId.slice(0, 16)}{'\u2026'}
@@ -310,7 +316,7 @@ export const TraceViewerModal = ({
     >
       {isLoading && (
         <div className="trace-loading">
-          <Spin size="large" tip="Loading trace\u2026">
+          <Spin size="large" tip={t('traceViewer.header.loadTrace')}>
             <div style={{ minHeight: 200 }} />
           </Spin>
         </div>
@@ -319,12 +325,12 @@ export const TraceViewerModal = ({
       {error && (
         <Alert
           type="error"
-          message="Failed to load trace"
+          message={t('traceViewer.header.failedToLoad')}
           description={error}
           showIcon
           action={
             <Button size="small" onClick={refresh}>
-              Retry
+              {t('traceViewer.header.retry')}
             </Button>
           }
         />
@@ -336,20 +342,20 @@ export const TraceViewerModal = ({
             <div className="trace-stats">
               <Space size="large">
                 <div className="stat">
-                  <Text type="secondary">Duration</Text>
+                  <Text type="secondary">{t('traceViewer.header.duration')}</Text>
                   <Title level={5}>{formatTraceDuration(trace.duration)}</Title>
                 </div>
                 <div className="stat">
-                  <Text type="secondary">Spans</Text>
+                  <Text type="secondary">{t('traceViewer.header.spans')}</Text>
                   <Title level={5}>{trace.spanCount}</Title>
                 </div>
                 <div className="stat">
-                  <Text type="secondary">Services</Text>
+                  <Text type="secondary">{t('traceViewer.header.services')}</Text>
                   <Title level={5}>{trace.services.length}</Title>
                 </div>
                 {trace.errorCount > 0 && (
                   <div className="stat error">
-                    <Text type="secondary">Errors</Text>
+                    <Text type="secondary">{t('traceViewer.header.errors')}</Text>
                     <Title level={5} style={{ color: '#ff4d4f' }}>
                       {trace.errorCount}
                     </Title>
@@ -360,7 +366,7 @@ export const TraceViewerModal = ({
 
             <Space>
               <Button icon={<ReloadOutlined />} onClick={refresh}>
-                Refresh
+                {t('traceViewer.header.refresh')}
               </Button>
               <Button
                 icon={<ExportOutlined />}
@@ -372,7 +378,7 @@ export const TraceViewerModal = ({
                   )
                 }}
               >
-                Open in Jaeger
+                {t('traceViewer.header.openInJaeger')}
               </Button>
             </Space>
           </div>
@@ -386,7 +392,7 @@ export const TraceViewerModal = ({
                 label: (
                   <span>
                     <ClockCircleOutlined />
-                    Timeline
+                    {t('traceViewer.tabs.timeline')}
                   </span>
                 ),
                 children: renderTimeline()
@@ -396,7 +402,7 @@ export const TraceViewerModal = ({
                 label: (
                   <span>
                     <ApiOutlined />
-                    Service Flow
+                    {t('traceViewer.tabs.services')}
                   </span>
                 ),
                 children: renderServiceFlow()
@@ -406,7 +412,7 @@ export const TraceViewerModal = ({
                 label: (
                   <span>
                     <InfoCircleOutlined />
-                    Span Details
+                    {t('traceViewer.tabs.details')}
                   </span>
                 ),
                 children: renderSpanDetails()
@@ -426,6 +432,7 @@ interface ServiceCardProps {
 }
 
 const ServiceCard = ({ service, trace }: ServiceCardProps) => {
+  const { t } = useWorkflowTranslation()
   const percentOfTrace = Math.round((service.totalDuration / trace.duration) * 100)
 
   return (
@@ -433,17 +440,17 @@ const ServiceCard = ({ service, trace }: ServiceCardProps) => {
       <div className="service-header">
         <Title level={5} className="service-name">{service.serviceName}</Title>
         {service.errorCount > 0 && (
-          <Tag color="error">{service.errorCount} errors</Tag>
+          <Tag color="error">{t('traceViewer.serviceCard.errors', { count: service.errorCount })}</Tag>
         )}
       </div>
 
       <div className="service-stats">
         <div className="service-stat">
-          <Text type="secondary">Spans</Text>
+          <Text type="secondary">{t('traceViewer.serviceCard.spans')}</Text>
           <Text strong>{service.spanCount}</Text>
         </div>
         <div className="service-stat">
-          <Text type="secondary">Time</Text>
+          <Text type="secondary">{t('traceViewer.serviceCard.time')}</Text>
           <Text strong>{formatTraceDuration(service.totalDuration)}</Text>
         </div>
       </div>
@@ -458,7 +465,7 @@ const ServiceCard = ({ service, trace }: ServiceCardProps) => {
       </div>
 
       <div className="service-operations">
-        <Text type="secondary">Operations:</Text>
+        <Text type="secondary">{t('traceViewer.serviceCard.operations')}</Text>
         <div className="operations-list">
           {service.operations.map(op => (
             <Tag key={op} className="operation-tag">{op}</Tag>

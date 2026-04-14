@@ -9,6 +9,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import { WorkflowEvent } from '../../hooks/useOperationStream'
 import { Alert } from 'antd'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../i18n'
 import './styles.css'
 
 interface WorkflowTrackerProps {
@@ -50,6 +51,9 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
   error,
   isConnected,
 }) => {
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
+
   // Создать nodes для State Machine
   const nodes: Node[] = useMemo(() => {
     return Object.entries(STATE_POSITIONS).map(([state, position]) => {
@@ -124,7 +128,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
       {/* Connection status */}
       {!isConnected && (
         <Alert
-          message="Подключение к real-time обновлениям\u2026"
+          message={t('tracker.connectionPending')}
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -134,7 +138,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
       {/* Error display */}
       {error && (
         <Alert
-          message="Ошибка подключения"
+          message={t('tracker.connectionError')}
           description={error}
           type="error"
           showIcon
@@ -153,11 +157,11 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
 
       {/* Timeline view */}
       <div className="timeline-container" style={{ marginTop: 24 }}>
-        <h3>Хронология событий</h3>
+        <h3>{t('tracker.timelineTitle')}</h3>
         <div className="timeline">
           {events.length === 0 ? (
             <div style={{ color: '#999', fontStyle: 'italic' }}>
-              События еще не поступили…
+              {t('tracker.emptyEvents')}
             </div>
           ) : (
             events.map((event, i) => (
@@ -174,7 +178,7 @@ export const WorkflowTracker: React.FC<WorkflowTrackerProps> = ({
               >
                 <div style={{ display: 'flex', gap: '12px', fontSize: '12px' }}>
                   <span style={{ color: '#999' }}>
-                    {new Date(event.timestamp).toLocaleTimeString()}
+                    {formatters.time(event.timestamp, { fallback: t('common.notAvailable') })}
                   </span>
                   <span
                     style={{

@@ -27,6 +27,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../i18n'
 import { formatDuration } from '../../utils/timelineTransforms'
 import { buildRelativeHref } from './routeState'
 
@@ -38,24 +39,8 @@ type StatusFilter = ExecutionStatus | 'all'
 
 const EMPTY_EXECUTIONS: WorkflowExecutionList[] = []
 
-const statusMeta: Record<ExecutionStatus, { label: string }> = {
-  pending: { label: 'Pending' },
-  running: { label: 'Running' },
-  completed: { label: 'Completed' },
-  failed: { label: 'Failed' },
-  cancelled: { label: 'Cancelled' },
-}
-
-const statusOptions: Array<{ label: string; value: StatusFilter }> = [
-  { label: 'All', value: 'all' },
-  { label: 'Running', value: 'running' },
-  { label: 'Pending', value: 'pending' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Failed', value: 'failed' },
-  { label: 'Cancelled', value: 'cancelled' },
-]
-
-const statusValues = new Set(statusOptions.map((option) => option.value))
+const statusKeys: ExecutionStatus[] = ['pending', 'running', 'completed', 'failed', 'cancelled']
+const statusValues = new Set<StatusFilter>(['all', ...statusKeys])
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const normalizeRouteParam = (value: string | null): string | null => {
@@ -70,22 +55,13 @@ const parsePercent = (value: string | null | undefined) => {
   return Math.min(100, Math.max(0, parsed))
 }
 
-const formatDateTime = (value: string | null | undefined) => {
-  if (!value) return '—'
-  return new Date(value).toLocaleString()
-}
-
-const formatCompactDateTime = (value: string | null | undefined) => (
-  value ? new Date(value).toLocaleDateString() : '—'
-)
-
 const formatDurationSeconds = (value: number | null | undefined) => {
-  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  if (value === null || value === undefined || Number.isNaN(value)) return null
   return formatDuration(value * 1000)
 }
 
 const formatShortId = (value: string | null | undefined) => (
-  value ? `${value.slice(0, 8)}...` : '—'
+  value ? `${value.slice(0, 8)}...` : null
 )
 
 const truncateText = (value: string | null | undefined, maxLength = 96) => {
@@ -99,11 +75,14 @@ const truncateText = (value: string | null | undefined, maxLength = 96) => {
   return `${normalized.slice(0, maxLength - 1)}…`
 }
 
-const buildExecutionStatusBadges = (execution: Pick<WorkflowExecutionList, 'status' | 'progress_percent'>) => (
+const buildExecutionStatusBadges = (
+  execution: Pick<WorkflowExecutionList, 'status' | 'progress_percent'>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => (
   <Space wrap size={8}>
     <StatusBadge
       status={execution.status === 'failed' ? 'error' : execution.status === 'completed' ? 'active' : execution.status === 'cancelled' ? 'warning' : 'unknown'}
-      label={statusMeta[execution.status]?.label || execution.status}
+      label={t(`statuses.${execution.status}`)}
     />
     <StatusBadge
       status={parsePercent(execution.progress_percent) >= 100 ? 'active' : execution.status === 'failed' ? 'error' : 'unknown'}
@@ -125,36 +104,54 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
   boxShadow: selected ? '0 1px 2px rgba(22, 119, 255, 0.12)' : 'none',
 })
 
-const buildExecutionCatalogMeta = (execution: WorkflowExecutionList) => (
+const buildExecutionCatalogMeta = (
+  execution: WorkflowExecutionList,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) => (
   [
-    `Workflow ${formatShortId(execution.workflow_template)}`,
-    `Execution ${formatShortId(execution.id)}`,
+    t('executions.catalog.workflowSummary', { value: formatShortId(execution.workflow_template) ?? t('common.noValue') }),
+    t('executions.catalog.executionSummary', { value: formatShortId(execution.id) ?? t('common.noValue') }),
   ].join(' · ')
 )
 
-const buildExecutionCatalogTiming = (execution: WorkflowExecutionList) => {
+const buildExecutionCatalogTiming = (
+  execution: WorkflowExecutionList,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  formatDate: (value: string | null | undefined) => string,
+) => {
   const nodeSummary = execution.current_node_id
-    ? `Node ${execution.current_node_id}`
-    : 'No active node'
+    ? t('executions.catalog.nodeSummary', { value: execution.current_node_id })
+    : t('executions.catalog.noActiveNode')
   const startedSummary = execution.started_at
-    ? `Started ${formatCompactDateTime(execution.started_at)}`
-    : 'Not started yet'
+    ? t('executions.catalog.startedSummary', { value: formatDate(execution.started_at) })
+    : t('executions.catalog.notStartedYet')
   return `${nodeSummary} · ${startedSummary}`
 }
 
-const buildExecutionCatalogOutcome = (execution: WorkflowExecutionList) => {
+const buildExecutionCatalogOutcome = (
+  execution: WorkflowExecutionList,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  formatDate: (value: string | null | undefined) => string,
+) => {
   if (execution.error_message) {
-    return `Error: ${truncateText(execution.error_message)}`
+    return t('executions.catalog.errorSummary', { value: truncateText(execution.error_message) })
   }
   if (execution.completed_at) {
-    return `Completed ${formatCompactDateTime(execution.completed_at)} · Duration ${formatDurationSeconds(execution.duration)}`
+    return t('executions.catalog.completedSummary', {
+      date: formatDate(execution.completed_at),
+      duration: formatDurationSeconds(execution.duration) ?? t('common.noValue'),
+    })
   }
-  return `Duration ${formatDurationSeconds(execution.duration)}`
+  return t('executions.catalog.durationSummary', {
+    value: formatDurationSeconds(execution.duration) ?? t('common.noValue'),
+  })
 }
 
 const WorkflowExecutions = () => {
   const navigate = useNavigate()
   const { message } = App.useApp()
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const rawStatus = searchParams.get('status') ?? 'all'
@@ -171,6 +168,18 @@ const WorkflowExecutions = () => {
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(detailOpenFromUrl)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const statusOptions: Array<{ label: string; value: StatusFilter }> = useMemo(() => [
+    { label: t('executions.filters.all'), value: 'all' },
+    ...statusKeys.map((status) => ({ label: t(`statuses.${status}`), value: status })),
+  ], [t])
+  const formatDateTime = useCallback(
+    (value: string | null | undefined) => formatters.dateTime(value, { fallback: t('common.noValue') }),
+    [formatters, t]
+  )
+  const formatCompactDateTime = useCallback(
+    (value: string | null | undefined) => formatters.date(value, { fallback: t('common.noValue') }),
+    [formatters, t]
+  )
 
   const buildExecutionsWorkspaceHref = useCallback(({
     detailOpen,
@@ -254,11 +263,11 @@ const WorkflowExecutions = () => {
   const applyWorkflowFilter = useCallback((value: string) => {
     const trimmed = value.trim()
     if (trimmed && !uuidRegex.test(trimmed)) {
-      message.error('Workflow ID must be a valid UUID')
+      message.error(t('executions.filters.invalidWorkflowId'))
       return
     }
     updateParams({ workflow_id: trimmed || null })
-  }, [message, updateParams])
+  }, [message, t, updateParams])
 
   const handleWorkflowInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value
@@ -380,21 +389,21 @@ const WorkflowExecutions = () => {
   const handleCancel = useCallback(async (executionId: string) => {
     try {
       await api.postWorkflowsCancelExecution({ execution_id: executionId })
-      message.success('Execution cancelled')
+      message.success(t('executions.messages.executionCancelled'))
       await executionsQuery.refetch()
       await selectedExecutionDetailQuery.refetch()
     } catch (_error) {
-      message.error('Failed to cancel execution')
+      message.error(t('executions.messages.failedToCancel'))
     }
-  }, [executionsQuery, message, selectedExecutionDetailQuery])
+  }, [executionsQuery, message, selectedExecutionDetailQuery, t])
 
   const detailLoading = Boolean(selectedExecutionId) && !selectedExecution && (executionsQuery.isLoading || selectedExecutionDetailQuery.isLoading)
   const detailError = selectedExecutionId && !selectedExecution && selectedExecutionDetailQuery.isError
-    ? 'Failed to load the selected execution.'
+    ? t('executions.detail.failedToLoadSelected')
     : null
   const errorMessage = executionsQuery.error instanceof Error
     ? executionsQuery.error.message
-    : 'Failed to load executions'
+    : t('executions.catalog.failedToLoad')
   const selectedExecutionCanCancel = selectedExecution
     ? selectedExecution.status === 'pending' || selectedExecution.status === 'running'
     : false
@@ -403,15 +412,15 @@ const WorkflowExecutions = () => {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Workflow Executions"
-          subtitle={`Total: ${totalExecutions}`}
+          title={t('executions.page.title')}
+          subtitle={t('executions.page.subtitle', { count: totalExecutions })}
           actions={(
             <Space wrap>
               <Button icon={<ApartmentOutlined />} onClick={() => navigate('/workflows')}>
-                Workflows
+                {t('executions.page.workflows')}
               </Button>
               <Button icon={<ReloadOutlined />} onClick={() => executionsQuery.refetch()}>
-                Refresh
+                {t('executions.page.refresh')}
               </Button>
             </Space>
           )}
@@ -428,16 +437,16 @@ const WorkflowExecutions = () => {
         list={(
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <EntityList
-              title="Execution Catalog"
+              title={t('executions.catalog.title')}
               error={executionsQuery.isError ? errorMessage : null}
               loading={executionsQuery.isLoading}
-              emptyDescription="No workflow executions found."
+              emptyDescription={t('executions.catalog.emptyDescription')}
               dataSource={executions}
               toolbar={(
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   <Space wrap size={[16, 12]} style={{ width: '100%' }}>
                     <Space direction="vertical" size={4}>
-                      <Text type="secondary">Status</Text>
+                      <Text type="secondary">{t('executions.filters.status')}</Text>
                       <Select
                         size="small"
                         options={statusOptions}
@@ -447,29 +456,29 @@ const WorkflowExecutions = () => {
                       />
                     </Space>
                     <Space direction="vertical" size={4} style={{ minWidth: 320 }}>
-                      <Text type="secondary">Workflow ID</Text>
+                      <Text type="secondary">{t('executions.filters.workflowId')}</Text>
                       <Space.Compact block>
                         <Input
                           allowClear
-                          placeholder="Workflow template UUID"
+                          placeholder={t('executions.filters.workflowIdPlaceholder')}
                           value={workflowIdInput}
                           onChange={handleWorkflowInputChange}
                           onPressEnter={() => applyWorkflowFilter(workflowIdInput)}
-                          aria-label="Workflow ID filter"
+                          aria-label={t('executions.filters.workflowIdAriaLabel')}
                         />
                         <Button type="primary" onClick={() => applyWorkflowFilter(workflowIdInput)}>
-                          Apply
+                          {t('executions.filters.apply')}
                         </Button>
                       </Space.Compact>
                     </Space>
-                    <Button onClick={handleReset}>Reset filters</Button>
+                    <Button onClick={handleReset}>{t('executions.filters.reset')}</Button>
                   </Space>
                   <Space wrap size={[8, 8]}>
-                    <StatusBadge status="unknown" label={`Running ${statusCounts.running}`} />
-                    <StatusBadge status="unknown" label={`Pending ${statusCounts.pending}`} />
-                    <StatusBadge status="active" label={`Completed ${statusCounts.completed}`} />
-                    <StatusBadge status="error" label={`Failed ${statusCounts.failed}`} />
-                    <StatusBadge status="warning" label={`Cancelled ${statusCounts.cancelled}`} />
+                    <StatusBadge status="unknown" label={`${t('statuses.running')} ${statusCounts.running}`} />
+                    <StatusBadge status="unknown" label={`${t('statuses.pending')} ${statusCounts.pending}`} />
+                    <StatusBadge status="active" label={`${t('statuses.completed')} ${statusCounts.completed}`} />
+                    <StatusBadge status="error" label={`${t('statuses.failed')} ${statusCounts.failed}`} />
+                    <StatusBadge status="warning" label={`${t('statuses.cancelled')} ${statusCounts.cancelled}`} />
                   </Space>
                 </Space>
               )}
@@ -481,7 +490,7 @@ const WorkflowExecutions = () => {
                     type="text"
                     block
                     data-testid={`workflow-executions-catalog-item-${execution.id}`}
-                    aria-label={`Open execution ${execution.template_name || execution.id}`}
+                    aria-label={t('executions.catalog.openExecution', { name: execution.template_name || execution.id })}
                     aria-pressed={selected}
                     onClick={() => {
                       routeUpdateModeRef.current = 'push'
@@ -492,16 +501,16 @@ const WorkflowExecutions = () => {
                   >
                     <Space direction="vertical" size={6} style={{ width: '100%' }}>
                       <Space wrap size={[8, 8]}>
-                        <Text strong>{execution.template_name || 'Untitled workflow'}</Text>
+                        <Text strong>{execution.template_name || t('executions.catalog.untitledWorkflow')}</Text>
                         <StatusBadge status="unknown" label={`v${execution.template_version}`} />
                       </Space>
                       <Space wrap size={[8, 8]}>
-                        {buildExecutionStatusBadges(execution)}
+                        {buildExecutionStatusBadges(execution, t)}
                       </Space>
-                      <Text type="secondary">{buildExecutionCatalogMeta(execution)}</Text>
-                      <Text type="secondary">{buildExecutionCatalogTiming(execution)}</Text>
+                      <Text type="secondary">{buildExecutionCatalogMeta(execution, t)}</Text>
+                      <Text type="secondary">{buildExecutionCatalogTiming(execution, t, formatCompactDateTime)}</Text>
                       <Text type={execution.error_message ? 'danger' : 'secondary'}>
-                        {buildExecutionCatalogOutcome(execution)}
+                        {buildExecutionCatalogOutcome(execution, t, formatCompactDateTime)}
                       </Text>
                     </Space>
                   </Button>
@@ -528,24 +537,24 @@ const WorkflowExecutions = () => {
         )}
         detail={(
           <EntityDetails
-            title="Execution detail"
+            title={t('executions.detail.title')}
             loading={detailLoading}
             error={detailError}
             empty={!selectedExecutionId || (!selectedExecution && !detailLoading)}
-            emptyDescription="Select a workflow execution from the diagnostics catalog."
+            emptyDescription={t('executions.detail.emptyDescription')}
             extra={selectedExecution ? (
               <Space wrap>
                 <Button
                   data-testid="workflow-executions-detail-open"
                   onClick={() => openExecutionMonitor(selectedExecution.id)}
                 >
-                  Open execution
+                  {t('executions.detail.openExecution')}
                 </Button>
                 <Button
                   data-testid="workflow-executions-detail-open-workflow"
                   onClick={() => openWorkflowFromExecution(selectedExecution.workflow_template, selectedExecution.id)}
                 >
-                  Open workflow
+                  {t('executions.detail.openWorkflow')}
                 </Button>
                 <Button
                   danger
@@ -553,7 +562,7 @@ const WorkflowExecutions = () => {
                   disabled={!selectedExecutionCanCancel}
                   onClick={() => void handleCancel(selectedExecution.id)}
                 >
-                  Cancel execution
+                  {t('executions.detail.cancelExecution')}
                 </Button>
               </Space>
             ) : undefined}
@@ -561,62 +570,62 @@ const WorkflowExecutions = () => {
             {selectedExecution ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Execution ID">
+                  <Descriptions.Item label={t('executions.detail.fields.executionId')}>
                     <Text code data-testid="workflow-executions-selected-id">{selectedExecution.id}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Workflow template">
+                  <Descriptions.Item label={t('executions.detail.fields.workflowTemplate')}>
                     <Text code>{selectedExecution.workflow_template}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Template name">
-                    <Text strong>{selectedExecution.template_name || 'Untitled workflow'}</Text>
+                  <Descriptions.Item label={t('executions.detail.fields.templateName')}>
+                    <Text strong>{selectedExecution.template_name || t('executions.catalog.untitledWorkflow')}</Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Version">{selectedExecution.template_version}</Descriptions.Item>
-                  <Descriptions.Item label="Status">
-                    {buildExecutionStatusBadges(selectedExecution)}
+                  <Descriptions.Item label={t('executions.detail.fields.version')}>{selectedExecution.template_version}</Descriptions.Item>
+                  <Descriptions.Item label={t('executions.detail.fields.status')}>
+                    {buildExecutionStatusBadges(selectedExecution, t)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Current node">
-                    {selectedExecution.current_node_id || '—'}
+                  <Descriptions.Item label={t('executions.detail.fields.currentNode')}>
+                    {selectedExecution.current_node_id || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Error message">
-                    {selectedExecution.error_message || '—'}
+                  <Descriptions.Item label={t('executions.detail.fields.errorMessage')}>
+                    {selectedExecution.error_message || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Error node">
-                    {selectedExecution.error_node_id || '—'}
+                  <Descriptions.Item label={t('executions.detail.fields.errorNode')}>
+                    {selectedExecution.error_node_id || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Trace ID">
-                    {selectedExecution.trace_id ? <Text code>{selectedExecution.trace_id}</Text> : '—'}
+                  <Descriptions.Item label={t('executions.detail.fields.traceId')}>
+                    {selectedExecution.trace_id ? <Text code>{selectedExecution.trace_id}</Text> : t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Started at">
+                  <Descriptions.Item label={t('executions.detail.fields.startedAt')}>
                     {formatDateTime(selectedExecution.started_at)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Completed at">
+                  <Descriptions.Item label={t('executions.detail.fields.completedAt')}>
                     {formatDateTime(selectedExecution.completed_at)}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Duration">
-                    {formatDurationSeconds(selectedExecution.duration)}
+                  <Descriptions.Item label={t('executions.detail.fields.duration')}>
+                    {formatDurationSeconds(selectedExecution.duration) ?? t('common.noValue')}
                   </Descriptions.Item>
                 </Descriptions>
 
                 <JsonBlock
-                  title="Input context"
+                  title={t('executions.detail.inputContext')}
                   value={selectedExecutionDetail?.input_context ?? {}}
                   dataTestId="workflow-executions-selected-input-context"
                   height={220}
                 />
                 <JsonBlock
-                  title="Final result"
+                  title={t('executions.detail.finalResult')}
                   value={selectedExecutionDetail?.final_result ?? {}}
                   dataTestId="workflow-executions-selected-final-result"
                   height={220}
                 />
                 <JsonBlock
-                  title="Node statuses"
+                  title={t('executions.detail.nodeStatuses')}
                   value={selectedExecutionDetail?.node_statuses ?? {}}
                   dataTestId="workflow-executions-selected-node-statuses"
                   height={220}
                 />
                 <JsonBlock
-                  title="Step results"
+                  title={t('executions.detail.stepResults')}
                   value={selectedExecutionDetail?.step_results ?? []}
                   dataTestId="workflow-executions-selected-step-results"
                   height={220}

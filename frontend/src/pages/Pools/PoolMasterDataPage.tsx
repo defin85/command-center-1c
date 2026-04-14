@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Alert, App as AntApp, Space, Typography } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 
+import { usePoolsTranslation } from '../../i18n'
 import { getPoolMasterDataRegistry, type PoolMasterDataRegistryEntry } from '../../api/intercompanyPools'
 import {
   EntityDetails,
@@ -46,70 +47,70 @@ type MasterDataZoneDefinition = {
   render: (registryEntries: PoolMasterDataRegistryEntry[]) => ReactNode
 }
 
-const MASTER_DATA_ZONES: MasterDataZoneDefinition[] = [
+const buildMasterDataZones = (
+  t: (key: string, options?: Record<string, unknown>) => string
+): MasterDataZoneDefinition[] => [
   {
     key: 'party',
-    label: 'Party',
-    description: 'Canonical party records and role-aware authoring.',
+    label: t('masterData.zones.party.label'),
+    description: t('masterData.zones.party.description'),
     render: () => <PartiesTab />,
   },
   {
     key: 'item',
-    label: 'Item',
-    description: 'Reusable item catalog and mapping coverage.',
+    label: t('masterData.zones.item.label'),
+    description: t('masterData.zones.item.description'),
     render: () => <ItemsTab />,
   },
   {
     key: 'contract',
-    label: 'Contract',
-    description: 'Contract records and ownership-aware bindings.',
+    label: t('masterData.zones.contract.label'),
+    description: t('masterData.zones.contract.description'),
     render: () => <ContractsTab />,
   },
   {
     key: 'tax-profile',
-    label: 'Tax Profile',
-    description: 'Tax profile references for reusable pool execution.',
+    label: t('masterData.zones.taxProfile.label'),
+    description: t('masterData.zones.taxProfile.description'),
     render: () => <TaxProfilesTab />,
   },
   {
     key: 'gl-account',
-    label: 'GL Account',
-    description: 'Chart-scoped reusable accounts with explicit compatibility class.',
+    label: t('masterData.zones.glAccount.label'),
+    description: t('masterData.zones.glAccount.description'),
     render: (registryEntries) => <GLAccountsTab registryEntries={registryEntries} />,
   },
   {
     key: 'gl-account-set',
-    label: 'GL Account Set',
-    description: 'Draft, publish and immutable revision lifecycle for reusable account profiles.',
+    label: t('masterData.zones.glAccountSet.label'),
+    description: t('masterData.zones.glAccountSet.description'),
     render: (registryEntries) => <GLAccountSetsTab registryEntries={registryEntries} />,
   },
   {
     key: 'bindings',
-    label: 'Bindings',
-    description: 'Registry-aware canonical bindings across target databases.',
+    label: t('masterData.zones.bindings.label'),
+    description: t('masterData.zones.bindings.description'),
     render: (registryEntries) => <BindingsTab registryEntries={registryEntries} />,
   },
   {
     key: 'sync',
-    label: 'Sync',
-    description: 'Operator-facing sync diagnostics and conflict actions.',
+    label: t('masterData.zones.sync.label'),
+    description: t('masterData.zones.sync.description'),
     render: (registryEntries) => <SyncStatusTab registryEntries={registryEntries} />,
   },
   {
     key: 'bootstrap-import',
-    label: 'Bootstrap Import',
-    description: 'Bootstrap-capable import flows for supported reusable entities.',
+    label: t('masterData.zones.bootstrapImport.label'),
+    description: t('masterData.zones.bootstrapImport.description'),
     render: (registryEntries) => <BootstrapImportTab registryEntries={registryEntries} />,
   },
   {
     key: 'dedupe-review',
-    label: 'Dedupe Review',
-    description: 'Cross-infobase dedupe queue, provenance detail, and manual survivor actions.',
+    label: t('masterData.zones.dedupeReview.label'),
+    description: t('masterData.zones.dedupeReview.description'),
     render: (registryEntries) => <DedupeReviewTab registryEntries={registryEntries} />,
   },
 ]
-
-const DEFAULT_MASTER_DATA_ZONE = MASTER_DATA_ZONES[0]
 
 const normalizeMasterDataTab = (rawValue: string | null): MasterDataTabKey => {
   const candidate = typeof rawValue === 'string' ? rawValue.trim() : ''
@@ -132,6 +133,7 @@ const buildZoneButtonStyle = (selected: boolean) => ({
 
 export function PoolMasterDataPage() {
   const { message } = AntApp.useApp()
+  const { t, locale, ready } = usePoolsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const activeTabFromUrl = normalizeMasterDataTab(searchParams.get('tab'))
@@ -139,6 +141,7 @@ export function PoolMasterDataPage() {
   const [activeTab, setActiveTab] = useState<MasterDataTabKey>(activeTabFromUrl)
   const [isDetailOpen, setIsDetailOpen] = useState(detailOpenFromUrl)
   const [registryEntries, setRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
+  const masterDataZones = useMemo(() => buildMasterDataZones(t), [locale, ready, t])
 
   useEffect(() => {
     setActiveTab((current) => (current === activeTabFromUrl ? current : activeTabFromUrl))
@@ -204,7 +207,7 @@ export function PoolMasterDataPage() {
       })
       .catch((error) => {
         if (!cancelled) {
-          const resolved = resolveApiError(error, 'Не удалось загрузить reusable-data registry.')
+          const resolved = resolveApiError(error, t('masterData.messages.failedToLoadRegistry'))
           message.error(resolved.message)
         }
       })
@@ -212,34 +215,31 @@ export function PoolMasterDataPage() {
     return () => {
       cancelled = true
     }
-  }, [message])
+  }, [message, t])
 
   const selectedZone = useMemo(
-    () => MASTER_DATA_ZONES.find((zone) => zone.key === activeTab) ?? DEFAULT_MASTER_DATA_ZONE,
-    [activeTab]
+    () => masterDataZones.find((zone) => zone.key === activeTab) ?? masterDataZones[0],
+    [activeTab, masterDataZones]
   )
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Pool Master Data"
-          subtitle="Canonical multi-zone workspace for reusable master-data authoring, bindings, diagnostics, and bootstrap flows."
+          title={t('masterData.page.title')}
+          subtitle={t('masterData.page.subtitle')}
         />
       )}
     >
       <Alert
         type="info"
         showIcon
-        message="Route-owned workspace shell"
+        message={t('masterData.alerts.routeOwnedShellTitle')}
         description={(
           <Space direction="vertical" size={4}>
-            <Text>
-              Select a workspace zone from the catalog and keep the active zone addressable through the route.
-              Reusable account zones now live inside the same canonical platform shell.
-            </Text>
+            <Text>{t('masterData.alerts.routeOwnedShellDescription')}</Text>
             <Text type="secondary">
-              Current zone: {selectedZone.label}
+              {t('masterData.alerts.currentZone', { zone: selectedZone.label })}
             </Text>
           </Space>
         )}
@@ -249,10 +249,10 @@ export function PoolMasterDataPage() {
         <Alert
           type="info"
           showIcon
-          message="Remediation Context"
+          message={t('masterData.alerts.remediationContextTitle')}
           description={(
             <Space direction="vertical" size={0} data-testid="pool-master-data-remediation-context">
-              <Text>Opened from pool run remediation transition.</Text>
+              <Text>{t('masterData.alerts.remediationContextOpenedFromRun')}</Text>
               {remediationContextLines.map((line) => (
                 <Text key={line} code>{line}</Text>
               ))}
@@ -267,12 +267,12 @@ export function PoolMasterDataPage() {
           routeUpdateModeRef.current = 'push'
           setIsDetailOpen(false)
         }}
-        detailDrawerTitle={`${selectedZone.label} · pool master data`}
+        detailDrawerTitle={t('masterData.page.detailDrawerTitle', { zone: selectedZone.label })}
         list={(
           <EntityList
-            title="Workspace Zones"
-            emptyDescription="Master-data zones are not available."
-            dataSource={MASTER_DATA_ZONES}
+            title={t('masterData.list.title')}
+            emptyDescription={t('masterData.list.emptyDescription')}
+            dataSource={masterDataZones}
             renderItem={(zone) => {
               const selected = zone.key === activeTab
               return (
@@ -284,7 +284,7 @@ export function PoolMasterDataPage() {
                     setActiveTab(zone.key)
                     setIsDetailOpen(true)
                   }}
-                  aria-label={`Open ${zone.label} zone`}
+                  aria-label={t('masterData.list.openZone', { zone: zone.label })}
                   aria-pressed={selected}
                   style={buildZoneButtonStyle(selected)}
                 >

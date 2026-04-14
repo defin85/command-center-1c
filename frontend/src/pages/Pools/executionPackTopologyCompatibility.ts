@@ -14,6 +14,15 @@ export type ExecutionPackTopologyCompatibilitySummaryLike = {
   diagnostics?: ExecutionPackTopologyCompatibilityDiagnosticLike[] | null
 }
 
+export type ExecutionPackTopologyCompatibilityMessages = {
+  notAvailableStatus: string
+  notAvailableMessage: string
+  compatibleStatus: string
+  compatibleMessage: string
+  incompatibleStatus: string
+  incompatibleMessage: string
+}
+
 const joinNonEmpty = (values: Array<string | null | undefined>, separator: string) => (
   values
     .map((value) => String(value ?? '').trim())
@@ -39,6 +48,7 @@ export const formatExecutionPackTopologyDiagnostic = (
 
 export const describeExecutionPackTopologyCompatibility = (
   summary: ExecutionPackTopologyCompatibilitySummaryLike | null | undefined,
+  messages: ExecutionPackTopologyCompatibilityMessages,
 ): {
   statusText: string
   alertType: 'success' | 'warning' | 'info'
@@ -53,9 +63,9 @@ export const describeExecutionPackTopologyCompatibility = (
 
   if (!summary) {
     return {
-      statusText: 'not available',
+      statusText: messages.notAvailableStatus,
       alertType: 'info',
-      message: 'Template topology compatibility is not available for this execution pack.',
+      message: messages.notAvailableMessage,
       coveredSlotsText: '-',
       diagnostics: [],
     }
@@ -63,18 +73,18 @@ export const describeExecutionPackTopologyCompatibility = (
 
   if (String(summary.status).trim() === 'compatible' && summary.topology_aware_ready) {
     return {
-      statusText: 'compatible',
+      statusText: messages.compatibleStatus,
       alertType: 'success',
-      message: 'Template topology compatibility is ready.',
+      message: messages.compatibleMessage,
       coveredSlotsText: coveredSlots.length > 0 ? coveredSlots.join(', ') : '-',
       diagnostics: [],
     }
   }
 
   return {
-    statusText: 'incompatible',
+    statusText: messages.incompatibleStatus,
     alertType: 'warning',
-    message: 'Template topology compatibility is blocked until reusable decisions use topology-aware aliases.',
+    message: messages.incompatibleMessage,
     coveredSlotsText: coveredSlots.length > 0 ? coveredSlots.join(', ') : '-',
     diagnostics,
   }

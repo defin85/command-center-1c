@@ -13,6 +13,7 @@ type RouteInventoryEntry = {
   routePath: string
   modulePath: string | null
   tier: GovernanceTier
+  ownedLocaleBoundaryFiles?: string[]
   redirectTarget?: string
   workspaceKind?: string
   stateTransport?: RouteStateTransport
@@ -48,6 +49,7 @@ const {
   compactMasterPaneModes,
   detailMobileFallbackKinds,
   governanceTiers,
+  platformGovernedRouteLocaleBoundaryFileSet,
   platformGovernedRouteModuleFileSet,
   platformGovernedShellSurfaceFileSet,
   routeGovernanceInventory,
@@ -58,6 +60,7 @@ const {
   compactMasterPaneModes: CompactMasterPaneMode[]
   detailMobileFallbackKinds: DetailMobileFallbackKind[]
   governanceTiers: GovernanceTier[]
+  platformGovernedRouteLocaleBoundaryFileSet: Set<string>
   platformGovernedRouteModuleFileSet: Set<string>
   platformGovernedShellSurfaceFileSet: Set<string>
   routeGovernanceInventory: RouteInventoryEntry[]
@@ -354,6 +357,9 @@ describe('ui governance inventory', () => {
       }
 
       expect(existsSync(path.join(frontendRoot, entry.modulePath))).toBe(true)
+      for (const filePath of entry.ownedLocaleBoundaryFiles ?? []) {
+        expect(existsSync(path.join(frontendRoot, filePath))).toBe(true)
+      }
     }
   })
 
@@ -411,15 +417,24 @@ describe('ui governance inventory', () => {
         .filter((entry) => entry.tier === 'platform-governed' && entry.modulePath)
         .map((entry) => entry.modulePath as string)
     )].sort()
+    const governedRouteLocaleBoundaryFiles = [...new Set(
+      routeGovernanceInventory
+        .filter((entry) => entry.tier === 'platform-governed')
+        .flatMap((entry) => [
+          ...(entry.modulePath ? [entry.modulePath] : []),
+          ...(entry.ownedLocaleBoundaryFiles ?? []),
+        ])
+    )].sort()
     const governedShellModules = shellSurfaceGovernanceInventory
       .filter((entry) => entry.tier === 'platform-governed')
       .map((entry) => entry.filePath)
       .sort()
 
     expect([...platformGovernedRouteModuleFileSet].sort()).toEqual(governedRouteModules)
+    expect([...platformGovernedRouteLocaleBoundaryFileSet].sort()).toEqual(governedRouteLocaleBoundaryFiles)
     expect([...platformGovernedShellSurfaceFileSet].sort()).toEqual(governedShellModules)
 
-    for (const filePath of governedRouteModules) {
+    for (const filePath of governedRouteLocaleBoundaryFiles) {
       expect(localeBoundaryGovernedFileSet.has(filePath)).toBe(true)
     }
 

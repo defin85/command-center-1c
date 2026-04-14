@@ -9,6 +9,7 @@ import type {
 import { useAuthoringReferences } from '../../api/queries/authoringReferences'
 import { EntityDetails, ModalFormShell, RouteButton } from '../../components/platform'
 import { WorkflowRevisionSelect } from '../../components/workflow/WorkflowRevisionSelect'
+import { usePoolsTranslation } from '../../i18n'
 import { resolveApiError } from './masterData/errorUtils'
 import { BindingProfileDecisionRefsEditor } from './BindingProfileDecisionRefsEditor'
 import {
@@ -68,6 +69,7 @@ export function PoolBindingProfilesEditorModal({
   onCancel,
   onSubmit,
 }: PoolBindingProfilesEditorModalProps) {
+  const { t } = usePoolsTranslation()
   const [form] = Form.useForm<BindingProfileEditorFormValues>()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -89,25 +91,25 @@ export function PoolBindingProfilesEditorModal({
   const workflowLineageItems = useMemo(() => ([
     {
       key: 'workflow-name',
-      label: 'Workflow',
-      value: currentWorkflowSelection.workflowName || '—',
+      label: t('executionPacks.editor.workflowLabel'),
+      value: currentWorkflowSelection.workflowName || t('common.noValue'),
     },
     {
       key: 'workflow-definition-key',
-      label: 'Definition key',
-      value: currentWorkflowSelection.workflowDefinitionKey || '—',
+      label: t('executionPacks.editor.definitionKey'),
+      value: currentWorkflowSelection.workflowDefinitionKey || t('common.noValue'),
     },
     {
       key: 'workflow-revision-id',
-      label: 'Revision ID',
-      value: currentWorkflowSelection.workflowRevisionId || '—',
+      label: t('executionPacks.editor.revisionId'),
+      value: currentWorkflowSelection.workflowRevisionId || t('common.noValue'),
     },
     {
       key: 'workflow-revision',
-      label: 'Revision',
-      value: currentWorkflowSelection.workflowRevision || '—',
+      label: t('executionPacks.editor.revisionLabel'),
+      value: currentWorkflowSelection.workflowRevision || t('common.noValue'),
     },
-  ]), [currentWorkflowSelection])
+  ]), [currentWorkflowSelection, t])
 
   useEffect(() => {
     if (!open) return
@@ -151,7 +153,7 @@ export function PoolBindingProfilesEditorModal({
       onCancel()
       form.resetFields()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to save execution pack.')
+      const resolved = resolveApiError(error, t('executionPacks.messages.failedToSave'))
       setSubmitError(resolved.message)
       form.setFields(toFormFieldErrors(resolved.fieldErrors))
     } finally {
@@ -162,10 +164,14 @@ export function PoolBindingProfilesEditorModal({
   return (
     <ModalFormShell
       open={open}
-      title={mode === 'create' ? 'Create reusable execution pack' : 'Publish immutable revision'}
+      title={mode === 'create'
+        ? t('executionPacks.editor.createTitle')
+        : t('executionPacks.editor.reviseTitle')}
       onClose={onCancel}
       onSubmit={() => { void handleSubmit() }}
-      submitText={mode === 'create' ? 'Create execution pack' : 'Publish revision'}
+      submitText={mode === 'create'
+        ? t('executionPacks.editor.createSubmit')
+        : t('executionPacks.editor.reviseSubmit')}
       confirmLoading={submitting}
       submitButtonTestId={buildFieldTestId(mode, 'submit')}
       width={880}
@@ -181,14 +187,14 @@ export function PoolBindingProfilesEditorModal({
       <Alert
         type="info"
         showIcon
-        message="Canonical reference catalogs"
+        message={t('executionPacks.editor.referencesTitle')}
         description={(
           <Space wrap size={[8, 8]}>
             <Text>
-              Author workflow revisions in `/workflows` and decision revisions in `/decisions`, then pin them here without copying opaque ids manually.
+              {t('executionPacks.editor.referencesDescription')}
             </Text>
-            <RouteButton to="/workflows">Open /workflows</RouteButton>
-            <RouteButton to="/decisions">Open /decisions</RouteButton>
+            <RouteButton to="/workflows">{t('common.openWorkflows')}</RouteButton>
+            <RouteButton to="/decisions">{t('common.openDecisions')}</RouteButton>
           </Space>
         )}
         style={{ marginBottom: 16 }}
@@ -198,35 +204,35 @@ export function PoolBindingProfilesEditorModal({
           <>
             <Form.Item
               name="code"
-              label="Execution Pack code"
-              rules={[{ required: true, message: 'Execution Pack code is required.' }]}
+              label={t('executionPacks.editor.code')}
+              rules={[{ required: true, message: t('executionPacks.editor.validation.codeRequired') }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'code')} />
             </Form.Item>
             <Form.Item
               name="name"
-              label="Execution Pack name"
-              rules={[{ required: true, message: 'Execution Pack name is required.' }]}
+              label={t('executionPacks.editor.name')}
+              rules={[{ required: true, message: t('executionPacks.editor.validation.nameRequired') }]}
             >
               <Input data-testid={buildFieldTestId(mode, 'name')} />
             </Form.Item>
-            <Form.Item name="description" label="Description">
+            <Form.Item name="description" label={t('common.description')}>
               <Input data-testid={buildFieldTestId(mode, 'description')} />
             </Form.Item>
           </>
         ) : null}
 
         <Form.Item
-          label="Workflow revision"
+          label={t('executionPacks.editor.workflowRevision')}
           required
-          help="Select pinned workflow revision from /workflows. Reusable workflow fields are derived from the selected revision."
+          help={t('executionPacks.editor.workflowRevisionHelp')}
         >
           <WorkflowRevisionSelect
             workflows={availableWorkflows}
             currentWorkflow={currentWorkflowSelection}
             loading={authoringReferencesQuery.isLoading}
             disabled={submitting}
-            placeholder="Select workflow revision from /workflows"
+            placeholder={t('executionPacks.editor.workflowRevisionPlaceholder')}
             testId={`pool-binding-profiles-${mode}-workflow-revision-select`}
             onChange={(workflow) => {
               form.setFieldsValue({
@@ -238,13 +244,13 @@ export function PoolBindingProfilesEditorModal({
             }}
           />
         </Form.Item>
-        <Form.Item name="workflow_definition_key" hidden rules={[{ required: true, message: 'Workflow definition key is required.' }]}>
+        <Form.Item name="workflow_definition_key" hidden rules={[{ required: true, message: t('executionPacks.editor.validation.workflowDefinitionKeyRequired') }]}>
           <Input />
         </Form.Item>
-        <Form.Item name="workflow_revision_id" hidden rules={[{ required: true, message: 'Workflow revision is required.' }]}>
+        <Form.Item name="workflow_revision_id" hidden rules={[{ required: true, message: t('executionPacks.editor.validation.workflowRevisionRequired') }]}>
           <Input />
         </Form.Item>
-        <Form.Item name="workflow_revision" hidden rules={[{ required: true, message: 'Workflow revision number is required.' }]}>
+        <Form.Item name="workflow_revision" hidden rules={[{ required: true, message: t('executionPacks.editor.validation.workflowRevisionNumberRequired') }]}>
           <Input />
         </Form.Item>
         <Form.Item name="workflow_name" hidden>
@@ -253,7 +259,7 @@ export function PoolBindingProfilesEditorModal({
 
         {currentWorkflowSelection.workflowRevisionId ? (
           <div style={{ marginBottom: 16 }}>
-            <EntityDetails title="Pinned workflow lineage">
+            <EntityDetails title={t('executionPacks.editor.pinnedWorkflowLineage')}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {workflowLineageItems.map((item) => (
                   <div
@@ -270,8 +276,8 @@ export function PoolBindingProfilesEditorModal({
           </div>
         ) : null}
 
-        <Form.Item name="contract_version" label="Contract version">
-          <Input placeholder="binding_profile.v1" data-testid={buildFieldTestId(mode, 'contract_version')} />
+        <Form.Item name="contract_version" label={t('executionPacks.editor.contractVersion')}>
+          <Input placeholder={t('executionPacks.editor.contractVersionPlaceholder')} data-testid={buildFieldTestId(mode, 'contract_version')} />
         </Form.Item>
 
         <BindingProfileDecisionRefsEditor
@@ -289,22 +295,24 @@ export function PoolBindingProfilesEditorModal({
             style={{ paddingInline: 0 }}
             data-testid={`pool-binding-profiles-${mode}-advanced-toggle`}
           >
-            {advancedMode ? 'Hide advanced JSON fields' : 'Show advanced JSON fields'}
+            {advancedMode
+              ? t('executionPacks.editor.advancedToggleHide')
+              : t('executionPacks.editor.advancedToggleShow')}
           </Button>
           <Text type="secondary">
-            Advanced mode keeps compatibility/debugging access to raw parameters, role mapping and metadata payloads.
+            {t('executionPacks.editor.advancedHint')}
           </Text>
         </Space>
 
         {advancedMode ? (
           <Space direction="vertical" size="middle" style={{ display: 'flex', marginTop: 12 }}>
-            <Form.Item name="parameters_json" label="Default parameters JSON">
+            <Form.Item name="parameters_json" label={t('executionPacks.editor.defaultParametersJson')}>
               <TextArea rows={6} data-testid={buildFieldTestId(mode, 'parameters_json')} />
             </Form.Item>
-            <Form.Item name="role_mapping_json" label="Role mapping JSON">
+            <Form.Item name="role_mapping_json" label={t('executionPacks.editor.roleMappingJson')}>
               <TextArea rows={6} data-testid={buildFieldTestId(mode, 'role_mapping_json')} />
             </Form.Item>
-            <Form.Item name="metadata_json" label="Revision metadata JSON">
+            <Form.Item name="metadata_json" label={t('executionPacks.editor.revisionMetadataJson')}>
               <TextArea rows={6} data-testid={buildFieldTestId(mode, 'metadata_json')} />
             </Form.Item>
           </Space>

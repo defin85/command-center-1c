@@ -17,6 +17,7 @@ import {
   MinusCircleOutlined,
   LinkOutlined
 } from '@ant-design/icons'
+import { useWorkflowTranslation } from '../../../i18n'
 import type { WorkflowNodeData, StepStatus } from '../../../types/workflow'
 import './nodeStyles.css'
 
@@ -35,6 +36,7 @@ const statusConfig: Record<StepStatus, { color: string; icon: React.ReactNode }>
 }
 
 const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
+  const { t } = useWorkflowTranslation()
   const status = data.status || 'pending'
   const { color, icon } = statusConfig[status]
 
@@ -55,7 +57,7 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
       : error
     return (
       <div className="node-error-tooltip">
-        <strong>Error:</strong>
+        <strong>{t('nodeViews.operation.errorLabel')}</strong>
         <br />
         {truncated}
       </div>
@@ -87,9 +89,9 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
       >
         <div className="node-content">
           {data.templateId && (
-            <Tooltip title="Operation Template">
+            <Tooltip title={t('nodeViews.operation.tooltips.template')}>
               <div className="node-field">
-                <span className="field-label">Template:</span>
+                <span className="field-label">{t('nodeViews.operation.fields.template')}</span>
                 <span className="field-value">{data.templateId}</span>
               </div>
             </Tooltip>
@@ -97,27 +99,27 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
 
           {data.config?.timeout && (
             <div className="node-field">
-              <span className="field-label">Timeout:</span>
+              <span className="field-label">{t('nodeViews.operation.fields.timeout')}</span>
               <span className="field-value">{data.config.timeout}s</span>
             </div>
           )}
 
           {data.io?.mode === 'explicit_strict' && (
             <div className="node-field">
-              <span className="field-label">Data flow:</span>
-              <span className="field-value">explicit_strict</span>
+              <span className="field-label">{t('nodeViews.operation.fields.dataFlow')}</span>
+              <span className="field-value">{t('nodeViews.operation.values.explicitStrict')}</span>
             </div>
           )}
 
           {status === 'running' && (
             <div className="node-running">
-              <Spin size="small" /> Executing…
+              <Spin size="small" /> {t('nodeViews.operation.values.executing')}
             </div>
           )}
 
           {data.durationMs !== undefined && status !== 'pending' && status !== 'running' && (
             <div className="node-field">
-              <span className="field-label">Duration:</span>
+              <span className="field-label">{t('nodeViews.operation.fields.duration')}</span>
               <span className="field-value">{(data.durationMs / 1000).toFixed(2)}s</span>
             </div>
           )}
@@ -129,16 +131,16 @@ const OperationNode = ({ data, selected }: NodeProps<OperationNodeData>) => {
               placement="bottom"
             >
               <div className="node-error">
-                <CloseCircleOutlined /> Error
+                <CloseCircleOutlined /> {t('nodeViews.operation.values.error')}
               </div>
             </Tooltip>
           )}
 
           {data.spanId && (
-            <Tooltip title="Trace available">
+            <Tooltip title={t('nodeViews.operation.tooltips.trace')}>
               <div className="trace-link-indicator">
                 <LinkOutlined />
-                <span>Trace</span>
+                <span>{t('nodeViews.operation.values.trace')}</span>
               </div>
             </Tooltip>
           )}

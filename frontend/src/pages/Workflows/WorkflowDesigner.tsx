@@ -43,6 +43,7 @@ import {
   PageHeader,
   WorkspacePage,
 } from '../../components/platform'
+import { useWorkflowTranslation } from '../../i18n'
 
 import type {
   DAGStructure,
@@ -269,6 +270,7 @@ const WorkflowDesigner = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
+  const { t } = useWorkflowTranslation()
   const [form] = Form.useForm()
   const api = useMemo(() => getV2(), [])
   const screens = useBreakpoint()
@@ -321,7 +323,7 @@ const WorkflowDesigner = () => {
     returnToFromUrl ? resolveInternalNavigationTarget(returnToFromUrl) : backTarget
   ), [backTarget, returnToFromUrl])
   const runtimeProjectionReadOnlyReason = state.template?.read_only_reason
-    || 'System-managed runtime workflow projections are available for diagnostics only.'
+    || t('designer.messages.runtimeReadOnly')
   const designerReturnTarget = useMemo(() => {
     const basePath = state.template?.id
       ? `/workflows/${state.template.id}`
@@ -411,13 +413,13 @@ const WorkflowDesigner = () => {
           description: template.description,
         })
       } catch (_error) {
-        message.error('Failed to load workflow template')
+        message.error(t('designer.messages.failedToLoadTemplate'))
         setState((prev) => ({ ...prev, isLoading: false }))
       }
     }
 
     void loadTemplate()
-  }, [api, form, message, templateId])
+  }, [api, form, message, t, templateId])
 
   useEffect(() => {
     if (authoringReferencesQuery.isError) {
@@ -575,11 +577,11 @@ const WorkflowDesigner = () => {
       return
     }
     if (!state.template?.id) {
-      message.warning('Save the workflow first to validate')
+      message.warning(t('designer.messages.saveFirstToValidate'))
       return
     }
     if (state.isModified) {
-      message.warning('Save the workflow first to validate')
+      message.warning(t('designer.messages.saveFirstToValidate'))
       return
     }
 
@@ -595,12 +597,12 @@ const WorkflowDesigner = () => {
       }))
 
       if (result.is_valid) {
-        message.success('Workflow is valid!')
+        message.success(t('designer.messages.workflowValid'))
       } else {
-        message.error(`Validation failed: ${result.errors.length} error(s)`)
+        message.error(t('designer.messages.validationFailedWithCount', { count: result.errors.length }))
       }
     } catch (_error) {
-      message.error('Validation failed')
+      message.error(t('designer.messages.validationFailed'))
       setState((prev) => ({ ...prev, isValidating: false }))
     }
   }
@@ -628,7 +630,7 @@ const WorkflowDesigner = () => {
           workflow_type: 'complex',
         })
         savedTemplate = convertTemplateToLegacy(response.workflow)
-        message.success('Workflow saved successfully')
+        message.success(t('designer.messages.workflowSaved'))
       } else {
         const response = await api.postWorkflowsCreateWorkflow({
           name: values.name,
@@ -637,7 +639,7 @@ const WorkflowDesigner = () => {
           workflow_type: 'complex',
         })
         savedTemplate = convertTemplateToLegacy(response.workflow)
-        message.success('Workflow created successfully')
+        message.success(t('designer.messages.workflowCreated'))
         navigate(
           buildRouteWithWorkflowContext({
             basePath: `/workflows/${savedTemplate.id}`,
@@ -659,7 +661,7 @@ const WorkflowDesigner = () => {
 
       setSaveModalVisible(false)
     } catch (error: unknown) {
-      message.error(resolveApiErrorMessage(error, 'Failed to save workflow'))
+      message.error(resolveApiErrorMessage(error, t('designer.messages.failedToSave')))
       setState((prev) => ({ ...prev, isSaving: false }))
     }
   }
@@ -670,12 +672,12 @@ const WorkflowDesigner = () => {
       return
     }
     if (!state.template?.id) {
-      message.warning('Save the workflow first')
+      message.warning(t('designer.messages.saveFirst'))
       return
     }
 
     if (!state.template.is_valid) {
-      message.warning('Validate the workflow first')
+      message.warning(t('designer.messages.validateFirst'))
       return
     }
 
@@ -687,16 +689,16 @@ const WorkflowDesigner = () => {
         mode: 'async',
       })
 
-      message.success('Workflow execution started')
+      message.success(t('designer.messages.executionStarted'))
       setExecuteModalVisible(false)
       const params = new URLSearchParams()
       params.set('returnTo', designerReturnTarget)
       navigate(buildRelativeHref(`/workflows/executions/${response.execution_id}`, params))
     } catch (error: unknown) {
       if (error instanceof SyntaxError) {
-        message.error('Invalid JSON input')
+        message.error(t('designer.messages.invalidJsonInput'))
       } else {
-        message.error(resolveApiErrorMessage(error, 'Failed to execute workflow'))
+        message.error(resolveApiErrorMessage(error, t('designer.messages.failedToExecute')))
       }
     }
   }
@@ -716,7 +718,7 @@ const WorkflowDesigner = () => {
   if (state.isLoading) {
     return (
       <div className="workflow-designer-loading">
-        <Spin size="large" tip="Loading workflow…">
+        <Spin size="large" tip={t('designer.loading')}>
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>
@@ -730,37 +732,37 @@ const WorkflowDesigner = () => {
           <PageHeader
             title={(
               <span className="workflow-designer-title">
-                {state.template ? state.template.name : 'New Workflow Scheme'}
+                {state.template ? state.template.name : t('designer.page.title')}
                 {state.isModified ? <span className="modified-indicator">*</span> : null}
               </span>
             )}
             subtitle={isRuntimeDiagnosticsSurface
-              ? 'Inspect system-managed runtime projections without mutating the analyst authoring surface.'
-              : 'Compose analyst-facing workflow definitions with reusable templates and versioned decisions.'}
+              ? t('designer.page.runtimeSubtitle')
+              : t('designer.page.subtitle')}
             actions={(
               <Space className="designer-header" wrap size={[8, 8]}>
                 <Button
                   icon={<ArrowLeftOutlined />}
                   onClick={() => navigate(resolvedBackTarget)}
                 >
-                  Back
+                  {t('designer.page.back')}
                 </Button>
                 {isNarrow ? (
                   <Button
                     icon={<AppstoreOutlined />}
                     onClick={() => setPaletteDrawerOpen(true)}
                   >
-                    Node palette
+                    {t('designer.page.nodePalette')}
                   </Button>
                 ) : null}
-                <Tooltip title="Validate DAG structure">
+                <Tooltip title={t('designer.messages.validateDagTooltip')}>
                   <Button
                     icon={<CheckCircleOutlined />}
                     onClick={() => void handleValidate()}
                     loading={state.isValidating}
                     disabled={isSystemManagedProjection || !state.template?.id || state.isModified}
                   >
-                    Validate
+                    {t('designer.page.validate')}
                   </Button>
                 </Tooltip>
                 <Button
@@ -770,7 +772,7 @@ const WorkflowDesigner = () => {
                   loading={state.isSaving}
                   disabled={isSystemManagedProjection}
                 >
-                  Save
+                  {t('designer.page.save')}
                 </Button>
                 <Button
                   icon={<PlayCircleOutlined />}
@@ -780,7 +782,7 @@ const WorkflowDesigner = () => {
                   }}
                   disabled={isSystemManagedProjection || !state.template?.is_valid}
                 >
-                  Execute
+                  {t('designer.page.execute')}
                 </Button>
               </Space>
             )}
@@ -791,28 +793,28 @@ const WorkflowDesigner = () => {
           <Alert
             showIcon
             type="warning"
-            message="Runtime diagnostics surface"
+            message={t('designer.alerts.runtimeSurfaceTitle')}
             description={runtimeProjectionReadOnlyReason}
           />
         ) : (
           <Alert
             showIcon
             type="info"
-            message="Workflow scheme library"
-            description="Author analyst-facing workflow composition in /workflows. Use /templates for atomic operations, /decisions for versioned decision resources, and treat runtime projections as diagnostics-only artifacts."
+            message={t('designer.alerts.libraryTitle')}
+            description={t('designer.alerts.libraryDescription')}
           />
         )}
 
         <div className="workflow-designer-shell">
           {!isNarrow ? (
             <aside className="designer-panel designer-panel--palette">
-              <Text strong className="designer-panel-title">Node palette</Text>
+              <Text strong className="designer-panel-title">{t('designer.page.nodePalette')}</Text>
               {isSystemManagedProjection ? (
                 <Alert
                   showIcon
                   type="info"
-                  message="Read-only runtime projection"
-                  description="Generated runtime projections can be inspected, but not changed from the analyst workflow surface."
+                  message={t('designer.alerts.readOnlyProjectionTitle')}
+                  description={t('designer.alerts.readOnlyProjectionDescription')}
                 />
               ) : (
                 <NodePalette />
@@ -827,14 +829,14 @@ const WorkflowDesigner = () => {
                 type="secondary"
                 className="workflow-designer-selected-node"
               >
-                {`Selected node: ${selectedNodeLabel}`}
+                {t('designer.page.selectedNode', { name: selectedNodeLabel })}
               </Text>
             ) : null}
 
             {state.validationResult && !state.validationResult.is_valid ? (
               <Alert
                 type="error"
-                message="Validation Errors"
+                message={t('designer.alerts.validationErrors')}
                 description={(
                   <ul>
                     {state.validationResult.errors.map((error, index) => (
@@ -859,7 +861,9 @@ const WorkflowDesigner = () => {
           {!isNarrow ? (
             <aside className="designer-panel designer-panel--inspector">
               <Text strong className="designer-panel-title">
-                {selectedNodeLabel ? `Node details: ${selectedNodeLabel}` : 'Node details'}
+                {selectedNodeLabel
+                  ? t('designer.page.nodeDetailsNamed', { name: selectedNodeLabel })
+                  : t('designer.page.nodeDetails')}
               </Text>
               <PropertyEditor
                 nodeId={state.selectedNodeId}
@@ -879,16 +883,16 @@ const WorkflowDesigner = () => {
           <DrawerFormShell
             open={paletteDrawerOpen}
             onClose={() => setPaletteDrawerOpen(false)}
-            title="Node palette"
-            subtitle="Add workflow nodes without leaving the current authoring context."
+            title={t('designer.page.nodePalette')}
+            subtitle={t('designer.alerts.paletteDrawerSubtitle')}
             drawerTestId="workflow-designer-palette-drawer"
           >
             {isSystemManagedProjection ? (
               <Alert
                 showIcon
                 type="info"
-                message="Read-only runtime projection"
-                description="Generated runtime projections can be inspected, but not changed from the analyst workflow surface."
+                message={t('designer.alerts.readOnlyProjectionTitle')}
+                description={t('designer.alerts.readOnlyProjectionDescription')}
               />
             ) : (
               <NodePalette />
@@ -900,8 +904,8 @@ const WorkflowDesigner = () => {
           <DrawerFormShell
             open={Boolean(state.selectedNodeId && selectedNodeData)}
             onClose={() => handleNodeSelect(null)}
-            title="Node details"
-            subtitle={selectedNodeLabel ?? 'Select a workflow node to inspect or edit it.'}
+            title={t('designer.page.nodeDetails')}
+            subtitle={selectedNodeLabel ?? t('designer.alerts.nodeDrawerSubtitle')}
             drawerTestId="workflow-designer-node-drawer"
           >
             {selectedNodeData ? (
@@ -927,25 +931,25 @@ const WorkflowDesigner = () => {
           onSubmit={() => {
             void handleSave()
           }}
-          title="Save Workflow Scheme"
-          subtitle="Capture the current workflow definition as a reusable analyst-facing scheme."
+          title={t('designer.modals.saveTitle')}
+          subtitle={t('designer.modals.saveSubtitle')}
           confirmLoading={state.isSaving}
           forceRender
         >
           <Form form={form} layout="vertical">
             <Form.Item
               name="name"
-              label="Scheme Name"
-              rules={[{ required: true, message: 'Please enter a name' }]}
+              label={t('designer.modals.schemeName')}
+              rules={[{ required: true, message: t('designer.modals.nameRequired') }]}
               htmlFor="workflow-name"
             >
-              <Input id="workflow-name" placeholder="Services Publication" />
+              <Input id="workflow-name" placeholder={t('designer.modals.schemeNamePlaceholder')} />
             </Form.Item>
-            <Form.Item name="description" label="Description" htmlFor="workflow-description">
+            <Form.Item name="description" label={t('designer.modals.description')} htmlFor="workflow-description">
               <Input.TextArea
                 id="workflow-description"
                 rows={3}
-                placeholder="Reusable analyst-facing distribution or publication scheme"
+                placeholder={t('designer.modals.descriptionPlaceholder')}
               />
             </Form.Item>
           </Form>
@@ -960,15 +964,15 @@ const WorkflowDesigner = () => {
           onSubmit={() => {
             void handleExecute()
           }}
-          title="Execute Workflow"
-          subtitle="Provide input context and hand off to runtime diagnostics without leaving the authoring route."
-          submitText="Execute"
+          title={t('designer.modals.executeTitle')}
+          subtitle={t('designer.modals.executeSubtitle')}
+          submitText={t('designer.modals.executeSubmit')}
           width={960}
         >
           {executeModalVisible ? (
             <LazyJsonCodeEditor
               id="workflow-execute-input"
-              title="Input Context (JSON)"
+              title={t('designer.modals.inputContext')}
               value={executeInput}
               onChange={setExecuteInput}
               height={220}
@@ -976,7 +980,7 @@ const WorkflowDesigner = () => {
             />
           ) : null}
           <div className="workflow-designer-execute-help">
-            Provide input variables for the workflow
+            {t('designer.modals.inputHelp')}
           </div>
         </ModalFormShell>
       </WorkspacePage>

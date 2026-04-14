@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
@@ -22,6 +22,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, usePoolsTranslation } from '../../i18n'
 import {
   useCreatePoolTopologyTemplate,
   usePoolTopologyTemplates,
@@ -44,11 +45,6 @@ const { useBreakpoint } = Grid
 const DESKTOP_BREAKPOINT_PX = 992
 
 type TopologyTemplatesComposeMode = 'create' | 'revise' | null
-
-const formatDateTime = (value?: string | null) => {
-  if (!value) return '-'
-  return new Date(value).toLocaleString()
-}
 
 const normalizeRouteParam = (value: string | null) => {
   const normalized = value?.trim() ?? ''
@@ -81,30 +77,39 @@ const filterTopologyTemplates = (templates: PoolTopologyTemplate[], searchTerm: 
   ))
 }
 
-const renderNodeSummary = (nodes: PoolTopologyTemplateNode[]) => (
+const renderNodeSummary = (
+  nodes: PoolTopologyTemplateNode[],
+  options: {
+    fallback: string
+    rootSuffix: string
+  },
+) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
     {nodes.map((node) => (
       <div key={node.slot_key}>
         <Text strong>{node.slot_key}</Text>
         <Text type="secondary">
           {' '}
-          {node.label || '—'}
+          {node.label || options.fallback}
           {' '}
-          {node.is_root ? '· root' : ''}
+          {node.is_root ? options.rootSuffix : ''}
         </Text>
       </div>
     ))}
   </div>
 )
 
-const renderEdgeSummary = (edges: PoolTopologyTemplateEdge[]) => (
+const renderEdgeSummary = (
+  edges: PoolTopologyTemplateEdge[],
+  weightLabel: (value: string) => string,
+) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
     {edges.map((edge) => (
       <div key={`${edge.parent_slot_key}:${edge.child_slot_key}`}>
         <Text strong>{`${edge.parent_slot_key} -> ${edge.child_slot_key}`}</Text>
         <Text type="secondary">
           {' '}
-          {`weight ${edge.weight}`}
+          {weightLabel(edge.weight)}
           {edge.document_policy_key ? ` · ${edge.document_policy_key}` : ''}
         </Text>
       </div>
@@ -126,6 +131,8 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
 
 export function PoolTopologyTemplatesPage() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
+  const formatters = useLocaleFormatters()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
   const isNarrow = hasMatchedBreakpoint
@@ -154,6 +161,14 @@ export function PoolTopologyTemplatesPage() {
   const [composeMode, setComposeMode] = useState<TopologyTemplatesComposeMode>(composeModeFromUrl)
   const [actionError, setActionError] = useState<string | null>(null)
   const deferredSearch = useDeferredValue(search)
+  const formatDateTime = useCallback(
+    (value?: string | null) => formatters.dateTime(value, { fallback: t('common.noValue') }),
+    [formatters, t]
+  )
+  const formatEdgeWeight = useCallback(
+    (value: string) => t('topologyTemplates.detail.edgeWeight', { value }),
+    [t]
+  )
 
   const topologyTemplatesQuery = usePoolTopologyTemplates()
   const createTopologyTemplateMutation = useCreatePoolTopologyTemplate()
@@ -274,23 +289,23 @@ export function PoolTopologyTemplatesPage() {
 
   const revisionColumns: ColumnsType<PoolTopologyTemplateRevision> = [
     {
-      title: 'Revision',
+      title: t('common.revision'),
       dataIndex: 'revision_number',
       key: 'revision_number',
       render: (value: number) => `r${value}`,
     },
     {
-      title: 'Nodes',
+      title: t('topologyTemplates.revisions.nodes'),
       key: 'nodes',
       render: (_value, record) => record.nodes.length,
     },
     {
-      title: 'Edges',
+      title: t('topologyTemplates.revisions.edges'),
       key: 'edges',
       render: (_value, record) => record.edges.length,
     },
     {
-      title: 'Created at',
+      title: t('topologyTemplates.revisions.createdAt'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (value: string) => formatDateTime(value),
@@ -311,7 +326,7 @@ export function PoolTopologyTemplatesPage() {
     setSelectedTemplateId(created.topology_template_id)
     setIsDetailDrawerOpen(true)
     setComposeMode(null)
-    message.success('Topology template created')
+    message.success(t('topologyTemplates.messages.created'))
   }
 
   const handleReviseSubmit = async (
@@ -325,32 +340,24 @@ export function PoolTopologyTemplatesPage() {
     setActionError(null)
     routeUpdateModeRef.current = 'replace'
     setComposeMode(null)
-    message.success('Topology template revision published')
+    message.success(t('topologyTemplates.messages.revisionPublished'))
   }
 
   const listError = topologyTemplatesQuery.isError
-    ? resolveApiError(topologyTemplatesQuery.error, 'Failed to load topology templates.').message
+    ? resolveApiError(topologyTemplatesQuery.error, t('topologyTemplates.messages.failedToLoad')).message
     : null
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Topology Templates"
-          subtitle={(
-            <>
-              Reusable producer workspace for authoring topology templates and publishing immutable revisions.
-              Consumer materialization stays in
-              {' '}
-              <Text code>/pools/catalog</Text>
-              .
-            </>
-          )}
+          title={t('topologyTemplates.page.title')}
+          subtitle={t('topologyTemplates.page.subtitle')}
           actions={(
             <Space wrap>
               {returnPoolId ? (
                 <Button onClick={handleReturnToPoolTopology}>
-                  Return to pool topology
+                  {t('topologyTemplates.page.returnToPool')}
                 </Button>
               ) : null}
               <Button
@@ -360,7 +367,7 @@ export function PoolTopologyTemplatesPage() {
                   setComposeMode('create')
                 }}
               >
-                Create template
+                {t('topologyTemplates.page.create')}
               </Button>
             </Space>
           )}
@@ -377,17 +384,17 @@ export function PoolTopologyTemplatesPage() {
           routeUpdateModeRef.current = 'push'
           setIsDetailDrawerOpen(false)
         }}
-        detailDrawerTitle={selectedTemplate?.name || 'Topology template detail'}
+        detailDrawerTitle={selectedTemplate?.name || t('topologyTemplates.detail.drawerTitle')}
         list={(
           <EntityList
-            title="Catalog"
+            title={t('topologyTemplates.list.title')}
             extra={(
               <Input
-                aria-label="Search topology templates"
+                aria-label={t('topologyTemplates.list.searchAriaLabel')}
                 allowClear
                 autoComplete="off"
                 name="topology-template-search"
-                placeholder="Search code, name, description"
+                placeholder={t('topologyTemplates.list.searchPlaceholder')}
                 value={search}
                 onChange={(event) => {
                   routeUpdateModeRef.current = 'push'
@@ -398,7 +405,7 @@ export function PoolTopologyTemplatesPage() {
             )}
             error={listError}
             loading={topologyTemplatesQuery.isLoading}
-            emptyDescription="No topology templates found."
+            emptyDescription={t('topologyTemplates.list.emptyDescription')}
             dataSource={filteredTemplates}
             renderItem={(template) => {
               const selected = template.topology_template_id === selectedTemplateId
@@ -408,7 +415,7 @@ export function PoolTopologyTemplatesPage() {
                   key={template.topology_template_id}
                   type="text"
                   block
-                  aria-label={`Open topology template ${template.code}`}
+                  aria-label={t('topologyTemplates.list.openTemplate', { code: template.code })}
                   aria-pressed={selected}
                   onClick={() => {
                     routeUpdateModeRef.current = 'push'
@@ -424,10 +431,10 @@ export function PoolTopologyTemplatesPage() {
                       <Text code>{template.code}</Text>
                     </Space>
                     <Text type="secondary">
-                      {`Latest revision r${template.latest_revision_number}`}
+                      {t('topologyTemplates.list.latestRevision', { value: template.latest_revision_number })}
                     </Text>
                     <Text type="secondary">
-                      {template.description || 'Reusable topology template without description'}
+                      {template.description || t('topologyTemplates.list.noDescription')}
                     </Text>
                   </Space>
                 </Button>
@@ -437,11 +444,11 @@ export function PoolTopologyTemplatesPage() {
         )}
         detail={(
           <EntityDetails
-            title="Template detail"
+            title={t('topologyTemplates.detail.title')}
             loading={topologyTemplatesQuery.isLoading}
             error={listError}
             empty={!selectedTemplateId || (!selectedTemplate && !topologyTemplatesQuery.isLoading)}
-            emptyDescription="Select a reusable topology template from the catalog."
+            emptyDescription={t('topologyTemplates.detail.emptyDescription')}
           >
             {selectedTemplate ? (
               <Space direction="vertical" size={16} style={{ width: '100%' }} data-testid="pool-topology-templates-detail-surface">
@@ -460,30 +467,30 @@ export function PoolTopologyTemplatesPage() {
                       setComposeMode('revise')
                     }}
                     style={{ width: isNarrow ? '100%' : 'auto', whiteSpace: 'normal', height: 'auto' }}
-                    >
-                      Publish new revision
+                  >
+                      {t('topologyTemplates.page.publishRevision')}
                     </Button>
                 </div>
 
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Code">
+                  <Descriptions.Item label={t('common.code')}>
                     <Text strong data-testid="pool-topology-templates-selected-code">
                       {selectedTemplate.code}
                     </Text>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Name">{selectedTemplate.name}</Descriptions.Item>
-                  <Descriptions.Item label="Status">
+                  <Descriptions.Item label={t('common.name')}>{selectedTemplate.name}</Descriptions.Item>
+                  <Descriptions.Item label={t('common.status')}>
                     <span data-testid="pool-topology-templates-status">
                       <StatusBadge status={selectedTemplate.status} />
                     </span>
                   </Descriptions.Item>
-                  <Descriptions.Item label="Latest revision number">
+                  <Descriptions.Item label={t('common.latestRevisionNumber')}>
                     {`r${selectedTemplate.latest_revision_number}`}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Description">
-                    {selectedTemplate.description || '-'}
+                  <Descriptions.Item label={t('common.description')}>
+                    {selectedTemplate.description || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Updated at">
+                  <Descriptions.Item label={t('common.updatedAt')}>
                     {formatDateTime(selectedTemplate.updated_at)}
                   </Descriptions.Item>
                 </Descriptions>
@@ -511,9 +518,9 @@ export function PoolTopologyTemplatesPage() {
                       >
                         <Space direction="vertical" size={2} style={{ width: '100%' }}>
                           <Text strong>{`r${revision.revision_number}`}</Text>
-                          <Text type="secondary">{`Nodes: ${revision.nodes.length}`}</Text>
-                          <Text type="secondary">{`Edges: ${revision.edges.length}`}</Text>
-                          <Text type="secondary">{`Created at: ${formatDateTime(revision.created_at)}`}</Text>
+                          <Text type="secondary">{t('topologyTemplates.revisions.compactNodes', { count: revision.nodes.length })}</Text>
+                          <Text type="secondary">{t('topologyTemplates.revisions.compactEdges', { count: revision.edges.length })}</Text>
+                          <Text type="secondary">{t('topologyTemplates.revisions.compactCreatedAt', { value: formatDateTime(revision.created_at) })}</Text>
                         </Space>
                       </div>
                     ))}
@@ -521,18 +528,21 @@ export function PoolTopologyTemplatesPage() {
                 )}
 
                 <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Latest revision nodes">
-                    {renderNodeSummary(selectedTemplate.latest_revision.nodes)}
+                  <Descriptions.Item label={t('topologyTemplates.detail.latestRevisionNodes')}>
+                    {renderNodeSummary(selectedTemplate.latest_revision.nodes, {
+                      fallback: t('topologyTemplates.detail.nodeSummaryFallback'),
+                      rootSuffix: t('topologyTemplates.detail.rootSuffix'),
+                    })}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Latest revision edges">
+                  <Descriptions.Item label={t('topologyTemplates.detail.latestRevisionEdges')}>
                     {selectedTemplate.latest_revision.edges.length > 0
-                      ? renderEdgeSummary(selectedTemplate.latest_revision.edges)
-                      : <Text type="secondary">No abstract edges.</Text>}
+                      ? renderEdgeSummary(selectedTemplate.latest_revision.edges, formatEdgeWeight)
+                      : <Text type="secondary">{t('topologyTemplates.detail.noAbstractEdges')}</Text>}
                   </Descriptions.Item>
                 </Descriptions>
 
-                <JsonBlock title="Template metadata" value={selectedTemplate.metadata} />
-                <JsonBlock title="Latest revision metadata" value={selectedTemplate.latest_revision.metadata} />
+                <JsonBlock title={t('topologyTemplates.detail.templateMetadata')} value={selectedTemplate.metadata} />
+                <JsonBlock title={t('topologyTemplates.detail.latestRevisionMetadata')} value={selectedTemplate.latest_revision.metadata} />
               </Space>
             ) : null}
           </EntityDetails>

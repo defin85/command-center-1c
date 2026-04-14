@@ -53,6 +53,7 @@ import {
   StatusBadge,
   WorkspacePage,
 } from '../../components/platform'
+import { useLocaleFormatters, useWorkflowTranslation } from '../../i18n'
 import { normalizeInternalReturnTo } from './routeState'
 import './WorkflowMonitor.css'
 
@@ -138,13 +139,9 @@ const normalizeNodeStatuses = (value: unknown): Record<string, NodeStatus> => {
   return normalized
 }
 
-const formatDateTime = (value: string | null | undefined) => (
-  value ? new Date(value).toLocaleString() : 'Not available'
-)
-
 const formatDuration = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return '—'
+    return null
   }
   return `${value.toFixed(1)}s`
 }
@@ -154,6 +151,8 @@ const WorkflowMonitor = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { message } = App.useApp()
+  const { t } = useWorkflowTranslation()
+  const formatters = useLocaleFormatters()
   const authz = useAuthz()
   const isStaff = authz.isStaff
   const selectedNodeId = normalizeRouteParam(searchParams.get('node'))
@@ -170,6 +169,10 @@ const WorkflowMonitor = () => {
   const [isCancelling, setIsCancelling] = useState(false)
   const [traceModalVisible, setTraceModalVisible] = useState(false)
   const [traceNodeId, setTraceNodeId] = useState<string | undefined>()
+  const formatDateTime = useCallback(
+    (value: string | null | undefined) => formatters.dateTime(value, { fallback: t('common.notAvailable') }),
+    [formatters, t]
+  )
 
   const {
     status: liveStatus,
@@ -209,7 +212,7 @@ const WorkflowMonitor = () => {
 
   const loadData = useCallback(async () => {
     if (!executionId) {
-      setError('Execution ID not provided')
+      setError(t('monitor.errors.missingExecutionId'))
       setIsLoading(false)
       return
     }
@@ -229,11 +232,11 @@ const WorkflowMonitor = () => {
       setError(null)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } } | null)?.response?.data?.detail
-      setError(detail || 'Failed to load execution data')
+      setError(detail || t('monitor.errors.failedToLoad'))
     } finally {
       setIsLoading(false)
     }
-  }, [executionId])
+  }, [executionId, t])
 
   useEffect(() => {
     void loadData()
@@ -299,11 +302,11 @@ const WorkflowMonitor = () => {
     try {
       setIsCancelling(true)
       await api.postWorkflowsCancelExecution({ execution_id: executionId })
-      message.success('Execution cancellation requested')
+      message.success(t('monitor.messages.cancellationRequested'))
       await loadData()
     } catch (err) {
       console.error('Failed to cancel execution:', err)
-      message.error('Failed to cancel execution')
+      message.error(t('monitor.errors.failedToCancel'))
     } finally {
       setIsCancelling(false)
     }
@@ -312,7 +315,7 @@ const WorkflowMonitor = () => {
   const handleRefresh = async () => {
     try {
       await loadData()
-      message.success('Execution refreshed')
+      message.success(t('monitor.messages.executionRefreshed'))
     } catch (err) {
       console.error('Failed to refresh execution:', err)
     }
@@ -378,7 +381,7 @@ const WorkflowMonitor = () => {
           >
             <Text strong>{nodeName}</Text>
             <Text type="secondary" style={{ marginLeft: 8 }}>
-              {status.status}
+              {t(`statuses.${status.status}`)}
             </Text>
             {status.durationMs !== undefined ? (
               <Text type="secondary" style={{ marginLeft: 8 }}>
@@ -393,7 +396,7 @@ const WorkflowMonitor = () => {
   if (isLoading) {
     return (
       <div className="workflow-monitor-loading">
-        <Spin size="large" tip="Loading execution…">
+        <Spin size="large" tip={t('monitor.loading')}>
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>
@@ -404,11 +407,11 @@ const WorkflowMonitor = () => {
     return (
       <Result
         status="error"
-        title="Failed to Load Execution"
+        title={t('monitor.errors.failedToLoadTitle')}
         subTitle={error}
         extra={(
           <Button type="primary" onClick={() => navigate(backTarget)}>
-            Back to Executions
+            {t('monitor.page.back')}
           </Button>
         )}
       />
@@ -425,31 +428,31 @@ const WorkflowMonitor = () => {
       <WorkspacePage
         header={(
           <PageHeader
-            title="Workflow Execution"
+            title={t('monitor.page.title')}
             subtitle={execution?.workflow_template_name
               ? `${execution.workflow_template_name} · ${executionId}`
-              : executionId || 'Execution diagnostics'}
+              : executionId || t('monitor.page.diagnosticsSubtitle')}
             actions={(
               <Space className="monitor-header" wrap size={[8, 8]}>
                 <Button
                   icon={<ArrowLeftOutlined />}
                   onClick={() => navigate(backTarget)}
                 >
-                  Back
+                  {t('monitor.page.back')}
                 </Button>
                 <Badge
                   status={isConnected ? 'success' : 'error'}
-                  text={isConnected ? 'Connected' : 'Disconnected'}
+                  text={isConnected ? t('statuses.connected') : t('statuses.disconnected')}
                 />
                 {connectionError ? (
                   <Tooltip title={connectionError}>
                     <Text type="danger">
-                      {`Retry: ${reconnectAttempts}`}
+                      {t('monitor.page.retry', { count: reconnectAttempts })}
                     </Text>
                   </Tooltip>
                 ) : null}
                 <Button icon={<ReloadOutlined />} onClick={() => void handleRefresh()}>
-                  Refresh
+                  {t('monitor.page.refresh')}
                 </Button>
                 {!isTerminal ? (
                   <Button
@@ -458,7 +461,7 @@ const WorkflowMonitor = () => {
                     onClick={() => void handleCancel()}
                     loading={isCancelling}
                   >
-                    Cancel
+                    {t('monitor.page.cancel')}
                   </Button>
                 ) : null}
                 {traceId ? (
@@ -466,7 +469,7 @@ const WorkflowMonitor = () => {
                     icon={<ExportOutlined />}
                     onClick={() => window.open(`${JAEGER_UI_URL}/trace/${traceId}`, '_blank', 'noopener,noreferrer')}
                   >
-                    View Trace
+                    {t('monitor.page.viewTrace')}
                   </Button>
                 ) : null}
               </Space>
@@ -488,13 +491,13 @@ const WorkflowMonitor = () => {
             label={(
               <Space size={6}>
                 {statusIcons[displayStatus]}
-                <span>{displayStatus.toUpperCase()}</span>
+                <span>{t(`statuses.${displayStatus}`)}</span>
               </Space>
             )}
           />
           {selectedNode ? (
             <Text data-testid="workflow-monitor-selected-node" type="secondary">
-              {`Selected node: ${selectedNode.nodeName}`}
+              {t('monitor.page.selectedNode', { name: selectedNode.nodeName })}
             </Text>
           ) : null}
         </div>
@@ -521,7 +524,7 @@ const WorkflowMonitor = () => {
             {displayError ? (
               <Alert
                 type="error"
-                message="Execution Error"
+                message={t('monitor.errors.executionError')}
                 description={displayError}
                 showIcon
                 className="error-alert"
@@ -539,12 +542,12 @@ const WorkflowMonitor = () => {
                     label: (
                       <Space size={8}>
                         <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                        Execution Completed
+                        {t('monitor.messages.executionCompleted')}
                       </Space>
                     ),
                     children: (
                       <JsonBlock
-                        title="Final result"
+                        title={t('monitor.messages.finalResult')}
                         value={displayResult}
                         height={260}
                         dataTestId="workflow-monitor-final-result"
@@ -567,32 +570,32 @@ const WorkflowMonitor = () => {
           </section>
 
           <aside className="monitor-sidebar">
-            <EntityDetails title="Execution Info">
+            <EntityDetails title={t('monitor.messages.executionInfo')}>
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="ID">
+                <Descriptions.Item label={t('monitor.labels.id')}>
                   <Text
                     copyable={executionId ? { text: executionId } : false}
                     className="mono-text"
                   >
-                    {executionId || '—'}
+                    {executionId || t('common.noValue')}
                   </Text>
                 </Descriptions.Item>
-                <Descriptions.Item label="Workflow">
+                <Descriptions.Item label={t('monitor.labels.workflow')}>
                   <Link to={`/workflows/${execution?.workflow_template}`}>
-                    {execution?.workflow_template_name || 'Unknown'}
+                    {execution?.workflow_template_name || t('common.unknown')}
                   </Link>
                 </Descriptions.Item>
-                <Descriptions.Item label="Started">
+                <Descriptions.Item label={t('monitor.labels.started')}>
                   {formatDateTime(execution?.started_at)}
                 </Descriptions.Item>
-                <Descriptions.Item label="Completed">
+                <Descriptions.Item label={t('monitor.labels.completed')}>
                   {formatDateTime(execution?.completed_at)}
                 </Descriptions.Item>
-                <Descriptions.Item label="Duration">
-                  {formatDuration(execution?.duration_seconds)}
+                <Descriptions.Item label={t('monitor.labels.duration')}>
+                  {formatDuration(execution?.duration_seconds) ?? t('common.noValue')}
                 </Descriptions.Item>
                 {traceId ? (
-                  <Descriptions.Item label="Trace ID">
+                  <Descriptions.Item label={t('monitor.labels.traceId')}>
                     <Text copyable={{ text: traceId }} className="mono-text">
                       {traceId}
                     </Text>
@@ -602,31 +605,31 @@ const WorkflowMonitor = () => {
             </EntityDetails>
 
             {isStaff ? (
-              <EntityDetails title="Execution Plan (staff)">
+              <EntityDetails title={t('monitor.messages.executionPlan')}>
                 {executionPlan ? (
                   <JsonBlock
-                    title="Execution plan"
+                    title={t('monitor.messages.executionPlanJson')}
                     value={executionPlan}
                     height={220}
                     dataTestId="workflow-monitor-execution-plan"
                   />
                 ) : (
-                  <Text type="secondary">Not available</Text>
+                  <Text type="secondary">{t('common.notAvailable')}</Text>
                 )}
                 <div className="workflow-monitor-bindings-header">
-                  Binding Provenance (staff):
+                  {t('monitor.messages.bindingsHeader')}
                 </div>
                 {bindings.length > 0 ? (
                   <div className="workflow-monitor-bindings-scroll">
                     <table className="workflow-monitor-bindings-table">
                       <thead>
                         <tr>
-                          <th scope="col">Target</th>
-                          <th scope="col">Source</th>
-                          <th scope="col">Resolve</th>
-                          <th scope="col">Sensitive</th>
-                          <th scope="col">Status</th>
-                          <th scope="col">Reason</th>
+                          <th scope="col">{t('monitor.bindings.columns.target')}</th>
+                          <th scope="col">{t('monitor.bindings.columns.source')}</th>
+                          <th scope="col">{t('monitor.bindings.columns.resolve')}</th>
+                          <th scope="col">{t('monitor.bindings.columns.sensitive')}</th>
+                          <th scope="col">{t('monitor.bindings.columns.status')}</th>
+                          <th scope="col">{t('monitor.bindings.columns.reason')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -635,7 +638,7 @@ const WorkflowMonitor = () => {
                             <td>{String(binding.target_ref ?? '')}</td>
                             <td>{String(binding.source_ref ?? '')}</td>
                             <td>{String(binding.resolve_at ?? '')}</td>
-                            <td>{binding.sensitive ? 'yes' : 'no'}</td>
+                            <td>{binding.sensitive ? t('monitor.bindings.values.yes') : t('monitor.bindings.values.no')}</td>
                             <td>{String(binding.status ?? '')}</td>
                             <td>{String(binding.reason ?? '')}</td>
                           </tr>
@@ -644,37 +647,37 @@ const WorkflowMonitor = () => {
                     </table>
                   </div>
                 ) : (
-                  <Text type="secondary">No bindings</Text>
+                  <Text type="secondary">{t('common.notAvailable')}</Text>
                 )}
               </EntityDetails>
             ) : null}
 
-            <EntityDetails title="Statistics">
+            <EntityDetails title={t('monitor.statistics.title')}>
               <div className="workflow-monitor-stats-grid">
                 <div className="workflow-monitor-stat">
-                  <Text type="secondary">Completed</Text>
+                  <Text type="secondary">{t('statuses.completed')}</Text>
                   <strong>{completedCount}</strong>
                 </div>
                 <div className="workflow-monitor-stat">
-                  <Text type="secondary">Failed</Text>
+                  <Text type="secondary">{t('statuses.failed')}</Text>
                   <strong>{failedCount}</strong>
                 </div>
                 <div className="workflow-monitor-stat">
-                  <Text type="secondary">Running</Text>
+                  <Text type="secondary">{t('statuses.running')}</Text>
                   <strong>{runningCount}</strong>
                 </div>
                 <div className="workflow-monitor-stat">
-                  <Text type="secondary">Total nodes</Text>
+                  <Text type="secondary">{t('monitor.statistics.totalNodes')}</Text>
                   <strong>{dagStructure?.nodes.length || 0}</strong>
                 </div>
               </div>
             </EntityDetails>
 
-            <EntityDetails title="Timeline">
+            <EntityDetails title={t('monitor.timeline.title')}>
               {timelineItems.length > 0 ? (
                 <Timeline items={timelineItems} />
               ) : (
-                <Text type="secondary">No activity yet</Text>
+                <Text type="secondary">{t('monitor.timeline.empty')}</Text>
               )}
             </EntityDetails>
           </aside>

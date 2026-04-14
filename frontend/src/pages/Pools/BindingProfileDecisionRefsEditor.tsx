@@ -4,6 +4,7 @@ import type { FormInstance } from 'antd'
 import { EntityDetails } from '../../components/platform'
 import type { AvailableDecisionRevision } from '../../types/workflow'
 import { DecisionRevisionSelect } from '../../components/workflow/DecisionRevisionSelect'
+import { usePoolsTranslation } from '../../i18n'
 import type { BindingProfileEditorFormValues } from './poolBindingProfilesForm'
 
 const { Text } = Typography
@@ -23,16 +24,17 @@ export function BindingProfileDecisionRefsEditor({
   disabled,
   mode,
 }: BindingProfileDecisionRefsEditorProps) {
+  const { t } = usePoolsTranslation()
   const decisionValues = Form.useWatch('decisions', form) ?? []
 
   return (
-    <EntityDetails title="Publication slots">
+    <EntityDetails title={t('executionPacks.decisionRefs.title')}>
       <Form.List name="decisions">
         {(decisionFields, decisionActions) => (
           <Space direction="vertical" size="small" style={{ width: '100%' }}>
             {decisionFields.length === 0 ? (
               <Text type="secondary">
-                No publication slots pinned yet. Add a slot and pick a decision revision from `/decisions`.
+                {t('executionPacks.decisionRefs.emptyDescription')}
               </Text>
             ) : null}
             {decisionFields.map((decisionField) => {
@@ -61,13 +63,13 @@ export function BindingProfileDecisionRefsEditor({
                     <div style={{ flex: '1 1 180px', minWidth: 180 }}>
                       <Form.Item
                         name={[decisionField.name, 'slot_key']}
-                        label={decisionField.name === 0 ? 'Slot key' : undefined}
-                        rules={[{ required: true, message: 'Slot key is required.' }]}
+                        label={decisionField.name === 0 ? t('executionPacks.decisionRefs.slotKey') : undefined}
+                        rules={[{ required: true, message: t('executionPacks.decisionRefs.validation.slotKeyRequired') }]}
                         style={{ marginBottom: 0 }}
                       >
                         <Input
                           disabled={disabled}
-                          placeholder="sale, purchase, return"
+                          placeholder={t('executionPacks.decisionRefs.slotKeyPlaceholder')}
                           data-testid={`pool-binding-profiles-${mode}-slot-key-${decisionField.name}`}
                         />
                       </Form.Item>
@@ -75,9 +77,9 @@ export function BindingProfileDecisionRefsEditor({
 
                     <div style={{ flex: '2 1 320px', minWidth: 240 }}>
                       <Form.Item
-                        label={decisionField.name === 0 ? 'Pinned decision revision' : undefined}
+                        label={decisionField.name === 0 ? t('executionPacks.decisionRefs.pinnedDecisionRevision') : undefined}
                         style={{ marginBottom: 0 }}
-                        help={decisionField.name === 0 ? 'Select decision revision from /decisions. Slot key remains binding-profile-local.' : undefined}
+                        help={decisionField.name === 0 ? t('executionPacks.decisionRefs.pinnedDecisionRevisionHelp') : undefined}
                       >
                         <DecisionRevisionSelect
                           allowClear
@@ -93,7 +95,7 @@ export function BindingProfileDecisionRefsEditor({
                                 }
                               : undefined
                           )}
-                          placeholder="Select decision revision from /decisions"
+                          placeholder={t('executionPacks.decisionRefs.decisionRevisionPlaceholder')}
                           testId={`pool-binding-profiles-${mode}-decision-select-${decisionField.name}`}
                           onChange={(selected) => {
                             form.setFieldValue(['decisions', decisionField.name, 'decision_table_id'], selected?.decision_table_id ?? '')
@@ -103,7 +105,7 @@ export function BindingProfileDecisionRefsEditor({
                         />
                         <Form.Item
                           name={[decisionField.name, 'decision_revision']}
-                          rules={[{ required: true, message: 'Decision revision is required.' }]}
+                          rules={[{ required: true, message: t('executionPacks.decisionRefs.validation.decisionRevisionRequired') }]}
                           hidden
                         >
                           <Input />
@@ -125,7 +127,7 @@ export function BindingProfileDecisionRefsEditor({
                           disabled={disabled}
                           data-testid={`pool-binding-profiles-${mode}-remove-slot-${decisionField.name}`}
                         >
-                          Remove
+                          {t('common.remove')}
                         </Button>
                       </div>
                     </div>
@@ -133,8 +135,14 @@ export function BindingProfileDecisionRefsEditor({
 
                   {decisionTableId ? (
                     <Text type="secondary" data-testid={`pool-binding-profiles-${mode}-slot-ref-${decisionField.name}`}>
-                      {decisionTableId} ({decisionKey}) · r{decisionRevisionRaw || '—'}
-                      {slotKey ? ` · slot ${slotKey}` : ''}
+                      {t('executionPacks.decisionRefs.slotSummary', {
+                        tableId: decisionTableId,
+                        decisionKey,
+                        revision: decisionRevisionRaw || '—',
+                        slotSuffix: slotKey
+                          ? t('executionPacks.decisionRefs.slotSuffix', { value: slotKey })
+                          : '',
+                      })}
                     </Text>
                   ) : null}
                 </div>
@@ -151,7 +159,7 @@ export function BindingProfileDecisionRefsEditor({
               disabled={disabled}
               data-testid={`pool-binding-profiles-${mode}-add-slot`}
             >
-              Add slot
+              {t('executionPacks.decisionRefs.addSlot')}
             </Button>
           </Space>
         )}
