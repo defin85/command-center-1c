@@ -26,12 +26,21 @@ TBD - created by archiving change add-07-pool-master-data-bidirectional-sync. Up
 
 Система НЕ ДОЛЖНА (SHALL NOT) выполнять долгие sync-операции синхронно в API request/response цикле.
 
-#### Scenario: Запуск sync возвращает execution identifiers, а выполнение идёт асинхронно
+Это требование распространяется как на per-scope child sync jobs, так и на operator-initiated manual launch requests, которые fan-out'ят множество child scope.
+
+#### Scenario: Запуск per-scope sync возвращает execution identifiers, а выполнение идёт асинхронно
 - **GIVEN** оператор или системный процесс запускает sync job для tenant/database/entity scope
 - **WHEN** запрос принят API
-- **THEN** создаётся sync job и запускается workflow execution
+- **THEN** создаётся child sync job и запускается workflow execution
 - **AND** sync job связывается с `workflow_execution_id` и `operation_id`
 - **AND** фактические OData/exchange-plan side effects выполняются worker-процессом
+
+#### Scenario: Cluster-wide manual launch не fan-out'ит child scope синхронно в API
+- **GIVEN** оператор запускает manual sync для всех ИБ выбранного кластера
+- **WHEN** API принимает launch request
+- **THEN** система сохраняет parent launch request и возвращает `launch_id` без ожидания завершения всех child scope
+- **AND** дальнейший fan-out выполняется асинхронно через workflow/operations path
+- **AND** child `(tenant, database, entity)` sync jobs создаются или коалесцируются через существующий runtime path
 
 ### Requirement: Outbound sync (`CC -> ИБ`) MUST использовать transactional outbox и идемпотентный dispatcher
 Система ДОЛЖНА (SHALL) формировать outbox intents в той же транзакции, где фиксируется mutating изменение canonical master-data в CC.
@@ -112,11 +121,17 @@ Dispatcher ДОЛЖЕН (SHALL):
 
 Система ДОЛЖНА (SHALL) предоставлять mutating действия для operator remediation: `retry`, `reconcile`, `resolve conflict`.
 
-#### Scenario: Оператор видит деградацию lag и запускает manual retry
-- **GIVEN** lag для outbound sync превышает порог SLA
-- **WHEN** оператор открывает sync status UI и запускает retry
-- **THEN** система фиксирует операторское действие в audit trail
-- **AND** статус очереди обновляется в read-model
+Система ДОЛЖНА (SHALL) дополнительно публиковать read-model history/detail для operator-initiated manual launch requests:
+- `launch_id`, `mode`, `target_mode`, `cluster_id` (если применимо);
+- immutable snapshot `database_ids` и `entity_scope`;
+- aggregate counters `scheduled/coalesced/skipped/failed/completed`;
+- per-scope item outcomes с machine-readable причиной и ссылкой на child `sync_job_id`, если он существует.
+
+#### Scenario: Оператор видит mixed outcome ручного запуска в launch history
+- **GIVEN** manual launch был создан для нескольких ИБ и entity scopes
+- **WHEN** часть child scope уже имела активные sync jobs, а часть завершилась ошибкой policy/affinity
+- **THEN** launch detail показывает aggregate counters и per-scope item outcomes
+- **AND** оператор различает `scheduled`, `coalesced` и `failed` scope без чтения raw JSON
 
 ### Requirement: Sync diagnostics MUST быть безопасными и audit-friendly
 Система ДОЛЖНА (SHALL) сохранять machine-readable диагностику синхронизации без утечки секретов.
@@ -265,7 +280,7 @@ Dispatcher ДОЛЖЕН (SHALL):
 - **AND** deadline miss/partial risk виден в machine-readable виде
 
 ### Requirement: Bootstrap import from IB MUST использовать staged asynchronous job lifecycle
-Система ДОЛЖНА (SHALL) выполнять первичный импорт canonical master-data из ИБ через асинхронный job lifecycle:
+Система ДОЛЖНА (SHALL) выполнять первичный импорт canonical master-data из ИБ через staged asynchronous lifecycle:
 - `preflight`;
 - `dry_run`;
 - `execute`;
@@ -275,18 +290,22 @@ Dispatcher ДОЛЖЕН (SHALL):
 
 Система ДОЛЖНА (SHALL) публиковать machine-readable job status/read-model с прогрессом и итоговыми counters.
 
-#### Scenario: Execute запускает асинхронный bootstrap job
+Это требование распространяется как на single-database bootstrap import, так и на parent batch collection request, который оркестрирует несколько per-database bootstrap jobs.
+
+#### Scenario: Execute single-database bootstrap запускает асинхронный child job
 - **GIVEN** оператор выбрал tenant-scoped базу и сущности для bootstrap import
 - **AND** `preflight` и `dry_run` завершились успешно
 - **WHEN** оператор запускает `execute`
 - **THEN** API возвращает идентификатор bootstrap job и начальный статус
 - **AND** фактическое чтение/применение данных выполняется асинхронно вне request/response
 
-#### Scenario: Провал preflight блокирует execute
-- **GIVEN** для выбранной базы не пройден preflight (например, недоступен source или не настроен auth mapping)
-- **WHEN** оператор пытается запустить `execute`
-- **THEN** система отклоняет запуск fail-closed с machine-readable кодом
-- **AND** bootstrap job в состоянии исполнения не создаётся
+#### Scenario: Batch collection execute не импортирует все базы синхронно в API
+- **GIVEN** оператор выбрал `cluster_all` или `database_set` для batch collection
+- **AND** aggregate `preflight` и `dry_run` завершились успешно
+- **WHEN** оператор запускает `execute`
+- **THEN** API возвращает parent collection identifier и начальный статус
+- **AND** fan-out per-database bootstrap jobs выполняется асинхронно вне request/response
+- **AND** parent read-model публикует aggregate progress и per-database outcomes
 
 ### Requirement: Bootstrap import MUST быть dependency-aware, chunked и идемпотентным
 Система ДОЛЖНА (SHALL) обрабатывать bootstrap import chunk-ами с детерминированным порядком сущностей:
@@ -296,17 +315,13 @@ Dispatcher ДОЛЖЕН (SHALL):
 
 Система НЕ ДОЛЖНА (SHALL NOT) silently игнорировать ошибки зависимостей; конфликтные/неконсистентные строки должны попадать в diagnostics/failed counters.
 
-#### Scenario: Повторный запуск failed chunk не создаёт дубликаты
-- **GIVEN** bootstrap job ранее завершился частично и содержит failed chunk
-- **WHEN** оператор запускает retry только для failed chunk
-- **THEN** успешно импортированные ранее записи не дублируются
-- **AND** итоговое состояние canonical/binding остаётся идемпотентным
+Batch collection ДОЛЖЕН (SHALL) переиспользовать этот child path для каждой выбранной ИБ, а не вводить отдельный bulk executor с другой dependency semantics.
 
-#### Scenario: Contract без валидного owner counterparty не применяется silently
-- **GIVEN** во входных данных контракта отсутствует валидная зависимость owner counterparty
-- **WHEN** bootstrap executor обрабатывает chunk контрактов
-- **THEN** проблемная строка фиксируется как failed/deferred с machine-readable diagnostic
-- **AND** остальные валидные строки chunk продолжают обрабатываться
+#### Scenario: Batch collection переиспользует child chunk order для каждой базы
+- **GIVEN** parent batch collection request включает несколько ИБ
+- **WHEN** система запускает child bootstrap jobs для каждой базы
+- **THEN** каждая база исполняет existing dependency order `party -> item -> tax_profile -> contract -> binding`
+- **AND** batch orchestration не вводит второй порядок применения для тех же сущностей
 
 ### Requirement: Bootstrap import MUST сохранять sync safety инварианты
 Система ДОЛЖНА (SHALL) маркировать изменения, применённые bootstrap import, как inbound-origin (`origin_system=ib` + стабильный `origin_event_id`), чтобы исключить ping-pong репликацию.
@@ -366,4 +381,153 @@ Operator-facing sync affordances ДОЛЖНЫ (SHALL) читать то же cap
 - **WHEN** система создаёт bootstrap job
 - **THEN** job использует existing lifecycle `preflight -> dry_run -> execute -> finalize`
 - **AND** не появляется отдельный account-only async pipeline
+
+### Requirement: Batch bootstrap collection MUST поддерживать target mode `cluster_all` и `database_set`
+Система ДОЛЖНА (SHALL) поддерживать parent batch collection request для bootstrap import с target mode:
+- `cluster_all` — все ИБ выбранного кластера;
+- `database_set` — явный список выбранных ИБ.
+
+Система ДОЛЖНА (SHALL) фиксировать immutable snapshot реально выбранных `database_ids` в момент принятия batch request.
+
+Система НЕ ДОЛЖНА (SHALL NOT) изменять snapshot уже созданного batch request после изменения cluster membership или списка доступных ИБ.
+
+#### Scenario: Cluster-wide collection фиксирует snapshot целей
+- **GIVEN** оператор создаёт batch collection request с `target_mode=cluster_all`
+- **WHEN** API принимает запрос
+- **THEN** система сохраняет immutable snapshot всех попавших в него `database_ids`
+- **AND** дальнейшие изменения состава кластера не переписывают уже созданный batch request
+
+### Requirement: Batch collection MUST публиковать parent read-model и per-database item outcomes
+Система ДОЛЖНА (SHALL) публиковать parent read-model batch collection request минимум с полями:
+- `collection_id`;
+- `target_mode`;
+- `cluster_id`, если применимо;
+- immutable snapshot `database_ids`;
+- `entity_scope`;
+- aggregate counters `scheduled/coalesced/skipped/failed/completed`.
+
+Система ДОЛЖНА (SHALL) публиковать per-database items с:
+- `database_id`;
+- outcome status;
+- machine-readable reason;
+- ссылкой на child bootstrap job, если он был создан или переиспользован.
+
+#### Scenario: Оператор видит mixed outcome batch collection по базам
+- **GIVEN** batch collection request выполнился по нескольким ИБ
+- **WHEN** часть child jobs была запущена успешно, часть коалесцировалась, а часть завершилась fail-closed ошибкой
+- **THEN** parent detail показывает aggregate counters
+- **AND** per-database items позволяют различить `scheduled`, `coalesced`, `failed` и `completed`
+
+### Requirement: Batch collection MUST коалесцировать уже активные child bootstrap jobs
+Если для выбранной ИБ уже существует активный совместимый child bootstrap import job, система НЕ ДОЛЖНА (SHALL NOT) создавать duplicate child job только из-за повторного batch request.
+
+Вместо этого система ДОЛЖНА (SHALL) помечать соответствующий item как `coalesced` и сохранять ссылку на уже существующий child bootstrap job.
+
+#### Scenario: Повторный batch collection переиспользует активный child bootstrap job
+- **GIVEN** для `db-1` уже идёт active bootstrap import job с тем же `entity_scope`
+- **WHEN** оператор запускает новый batch collection, содержащий `db-1`
+- **THEN** система не создаёт duplicate child bootstrap job
+- **AND** item для `db-1` получает status `coalesced`
+- **AND** parent detail показывает ссылку на уже существующий child job
+
+### Requirement: Outbound source-of-truth consumption MUST gate on dedupe resolution state
+Система ДОЛЖНА (SHALL) перед automatic outbound fan-out, operator-initiated manual rollout и другими outbound source-of-truth side effects проверять resolution state dedupe-enabled canonical entities.
+
+Если affected canonical scope связан с dedupe cluster в unresolved состоянии, система НЕ ДОЛЖНА (SHALL NOT):
+- публиковать outbound side effect в target ИБ;
+- считать launch item успешно запущенным;
+- silently пропускать ambiguity как будто canonical source-of-truth уже стабилен.
+
+Вместо этого система ДОЛЖНА (SHALL):
+- сохранять machine-readable failed/skipped/blocking outcome;
+- возвращать code `MASTER_DATA_DEDUPE_REVIEW_REQUIRED` или эквивалентный canonical code этого семейства;
+- направлять оператора к remediation surface dedupe review.
+
+Это требование распространяется как на automatic outbox-driven rollout, так и на operator manual launch surfaces.
+
+#### Scenario: Manual outbound launch item блокируется unresolved dedupe cluster
+- **GIVEN** оператор создаёт outbound/manual sync launch для canonical `Party`
+- **AND** связанный dedupe cluster находится в `pending_review`
+- **WHEN** runtime оценивает child scope перед фактическим outbound side effect
+- **THEN** launch item получает machine-readable blocked outcome
+- **AND** child outbound side effect в target ИБ не выполняется
+- **AND** оператор получает ссылку на dedupe remediation
+
+#### Scenario: Automatic outbox fan-out не публикует unresolved canonical ambiguity
+- **GIVEN** canonical `Item` был изменён в CC, но его source-of-truth dedupe cluster ещё не разрешён
+- **WHEN** outbound outbox pipeline пытается создать или доставить target side effect
+- **THEN** система не публикует ambiguous canonical состояние в ИБ
+- **AND** read-model фиксирует blocker reason вместо silent success
+
+### Requirement: Manual sync launch MUST поддерживать target mode `cluster_all` и `database_set`
+Система ДОЛЖНА (SHALL) принимать operator-initiated manual sync launch request в одном из режимов:
+- `inbound`;
+- `outbound`;
+- `reconcile`.
+
+Launch request ДОЛЖЕН (SHALL) поддерживать target mode:
+- `cluster_all` — все базы выбранного кластера, для которых explicit `cluster_all` eligibility state равен `eligible`;
+- `database_set` — явный список выбранных ИБ.
+
+Для `cluster_all` система ДОЛЖНА (SHALL) оценивать каждую базу выбранного кластера по machine-readable eligibility state:
+- `eligible` — база включается в immutable target snapshot;
+- `excluded` — база не включается в target snapshot и публикуется в resolution diagnostics как intentional exclusion;
+- `unconfigured` — create request отклоняется fail-closed, parent launch request не создаётся.
+
+Система ДОЛЖНА (SHALL) фиксировать immutable snapshot реально включённых target databases в момент принятия запроса и сохранять resolution summary по `excluded` базам для operator-facing history/detail.
+
+Система НЕ ДОЛЖНА (SHALL NOT) переписывать target snapshot уже созданного launch request, если после этого изменился состав кластера, eligibility state или список доступных ИБ.
+
+Система НЕ ДОЛЖНА (SHALL NOT) выводить eligibility для `cluster_all` только из runtime readiness, OData health, metadata snapshot или других эвристик без явного operator-managed state.
+
+#### Scenario: Cluster-wide launch включает только `eligible` базы и сохраняет exclusions
+- **GIVEN** оператор создаёт launch request с `target_mode=cluster_all`
+- **AND** в выбранном кластере есть `db-1` и `db-2` со state `eligible`, а `db-3` со state `excluded`
+- **WHEN** API принимает запрос
+- **THEN** immutable target snapshot содержит только `db-1` и `db-2`
+- **AND** launch detail сохраняет machine-readable resolution summary, что `db-3` был исключён из `cluster_all`
+- **AND** parent launch request создаётся успешно
+
+#### Scenario: `cluster_all` блокируется, пока по базе не принято явное решение
+- **GIVEN** оператор создаёт launch request с `target_mode=cluster_all`
+- **AND** в выбранном кластере есть хотя бы одна база `db-4` со state `unconfigured`
+- **WHEN** API валидирует request
+- **THEN** запрос отклоняется fail-closed с machine-readable diagnostic
+- **AND** parent launch request не создаётся
+
+#### Scenario: `database_set` не ломается из-за `cluster_all` eligibility state
+- **GIVEN** оператор отправляет manual launch с `target_mode=database_set`
+- **AND** одна из выбранных баз имеет `cluster_all` eligibility state `excluded`
+- **WHEN** запрос проходит обычные tenant/access/policy проверки
+- **THEN** eligibility state для `cluster_all` сам по себе не отклоняет `database_set` request
+- **AND** explicit database selection остаётся допустимым operator override path
+
+### Requirement: Manual launch fan-out MUST переиспользовать существующие child scope jobs и коалесцировать активные scope
+Система ДОЛЖНА (SHALL) для каждого `(database, entity)` из launch snapshot запускать fan-out только через существующие child sync trigger entrypoint-ы.
+
+Если в совместимом direction уже существует активный child sync job для того же `(tenant, database, entity)`, система НЕ ДОЛЖНА (SHALL NOT) создавать duplicate child job.
+
+Вместо этого система ДОЛЖНА (SHALL) помечать launch item как `coalesced` и сохранять ссылку на существующий child `sync_job_id`.
+
+#### Scenario: Повторный ручной запуск переиспользует активный child scope
+- **GIVEN** для `(tenant=t-1, database=db-1, entity=item)` уже существует активный `outbound` child sync job
+- **WHEN** оператор создаёт новый manual launch, включающий тот же scope
+- **THEN** система не создаёт duplicate child job
+- **AND** launch item получает status `coalesced`
+- **AND** operator detail показывает ссылку на уже существующий child sync job
+
+### Requirement: Manual launch MUST сохранять per-scope fail-closed outcome без silent partial success
+Система ДОЛЖНА (SHALL) оценивать capability, effective policy, affinity и runtime enablement на child scope уровне при fan-out manual launch.
+
+Если отдельный scope не может быть запущен из-за policy violation, affinity resolution failure или runtime-disabled path, система ДОЛЖНА (SHALL) сохранить для него machine-readable `failed` или `skipped` outcome с причиной.
+
+Система НЕ ДОЛЖНА (SHALL NOT) трактовать такой scope как успешно запущенный.
+
+#### Scenario: Один scope блокируется policy gate, остальные продолжают fan-out
+- **GIVEN** operator launch snapshot содержит несколько ИБ
+- **AND** для `db-2/item` effective policy запрещает выбранный `mode`
+- **WHEN** fan-out запускает child scope
+- **THEN** launch item для `db-2/item` получает `failed` outcome с machine-readable причиной
+- **AND** остальные scope продолжают fan-out по обычному path
+- **AND** aggregate launch history отражает смешанный результат без silent overwrite
 

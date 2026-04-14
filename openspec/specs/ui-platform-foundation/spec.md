@@ -29,15 +29,23 @@ TBD - created by archiving change refactor-ui-platform-on-ant. Update Purpose af
 - **AND** implementation не зависит от неподтверждённой major-версии `antd`
 
 ### Requirement: Thin design layer MUST задавать canonical page patterns и shared UI semantics
+
 Система ДОЛЖНА (SHALL) централизовать в thin design layer минимум canonical patterns для `List`, `Detail`, `MasterDetail`, `DrawerForm`/`ModalForm`, `Workspace` и `Dashboard`, а также shared semantics для status, empty, error и JSON-like payload views.
 
-Feature-level code НЕ ДОЛЖЕН (SHALL NOT) изобретать собственные несовместимые page shells и interaction patterns как primary path для новых surfaces.
+Thin design layer ДОЛЖЕН (SHALL) также быть canonical owner для:
+- shared locale provider bridge внутри frontend shell;
+- vendor locale wiring для approved UI stack, включая `antd`;
+- shared locale-aware formatters для date/time/number/list/relative time;
+- translation access path для platform primitives и их common operator-facing copy.
 
-#### Scenario: Две новые страницы используют один набор page patterns
-- **GIVEN** команда реализует две разные admin-страницы
-- **WHEN** обе страницы используют list/detail или form-heavy workflows
-- **THEN** они опираются на один и тот же canonical набор page patterns из thin design layer
-- **AND** пользователь не сталкивается с разными самодельными layout conventions для одинаковых задач
+Feature-level code НЕ ДОЛЖЕН (SHALL NOT) изобретать собственные несовместимые page shells, interaction patterns или route-local locale/provider layers как primary path для новых surfaces.
+
+#### Scenario: Новый workspace получает page chrome и locale semantics из одного platform layer
+
+- **GIVEN** команда реализует новый или materially rewritten admin workspace
+- **WHEN** страница использует page header, empty state, timestamp formatting и secondary surfaces
+- **THEN** она получает эти semantics из thin design layer
+- **AND** не создаёт собственный route-local locale owner поверх canonical shell/provider path
 
 ### Requirement: Thin design layer MUST включать минимальный обязательный набор reusable primitives
 Система ДОЛЖНА (SHALL) предоставить в project-owned thin design layer минимальный обязательный набор reusable primitives для новых или materially rewritten admin/backoffice surfaces.

@@ -1,6 +1,6 @@
 ## MODIFIED Requirements
 
-### Requirement: Thin design layer MUST задавать canonical page patterns, shared UI semantics и locale-aware primitives
+### Requirement: Thin design layer MUST задавать canonical page patterns и shared UI semantics
 
 Система ДОЛЖНА (SHALL) централизовать в thin design layer минимум canonical patterns для `List`, `Detail`, `MasterDetail`, `DrawerForm`/`ModalForm`, `Workspace` и `Dashboard`, а также shared semantics для status, empty, error и JSON-like payload views.
 
