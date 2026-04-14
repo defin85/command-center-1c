@@ -3,9 +3,10 @@ import { Alert, Collapse, Descriptions, Space, Typography } from 'antd'
 import type { DecisionTable } from '../../api/generated/model'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 import { EntityDetails } from '../../components/platform'
+import { useDecisionsTranslation } from '../../i18n'
 import type { DocumentPolicyOutput } from './documentPolicyBuilder'
 import { DocumentPolicyViewer } from './DocumentPolicyViewer'
-import { normalizeMetadataItems, renderCompatibilityTag, formatJson, LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE, type MetadataContextLike } from './decisionPageUtils'
+import { normalizeMetadataItems, renderCompatibilityTag, formatJson, type MetadataContextLike } from './decisionPageUtils'
 
 const { Text: AntText } = Typography
 
@@ -30,13 +31,31 @@ export function DecisionDetailPanel({
   selectedDecisionPinnedInBinding,
   selectedDecisionRequiresRollover,
 }: DecisionDetailPanelProps) {
+  const { t } = useDecisionsTranslation()
+  const metadataItems = normalizeMetadataItems(selectedDecision?.metadata_context ?? detailContext, {
+    unavailableLabel: t(($) => $.metadata.unavailable),
+    driftYesLabel: t(($) => $.metadata.driftYes),
+    driftNoLabel: t(($) => $.metadata.driftNo),
+  })
+  const metadataLabels = {
+    config: t(($) => $.metadata.config),
+    version: t(($) => $.metadata.version),
+    generation: t(($) => $.metadata.generation),
+    snapshot: t(($) => $.metadata.snapshot),
+    mode: t(($) => $.metadata.mode),
+    hash: t(($) => $.metadata.hash),
+    observed_hash: t(($) => $.metadata.observedHash),
+    drift: t(($) => $.metadata.drift),
+    provenance: t(($) => $.metadata.provenance),
+  } as const
+
   return (
     <EntityDetails
-      title={selectedDecision?.name || 'Decision detail'}
+      title={selectedDecision?.name || t(($) => $.detail.defaultTitle)}
       error={detailError}
       loading={detailLoading}
       empty={!selectedDecision}
-      emptyDescription="Select a decision revision to inspect metadata and output"
+      emptyDescription={t(($) => $.detail.empty)}
     >
       {selectedDecision ? (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
@@ -46,27 +65,27 @@ export function DecisionDetailPanel({
             items={[
               {
                 key: 'decision-table-id',
-                label: 'Decision table ID',
+                label: t(($) => $.detail.decisionTableId),
                 children: selectedDecision.decision_table_id,
               },
               {
                 key: 'decision-key',
-                label: 'Canonical key',
+                label: t(($) => $.detail.canonicalKey),
                 children: selectedDecision.decision_key,
               },
               {
                 key: 'revision',
-                label: 'Revision',
+                label: t(($) => $.detail.revision),
                 children: selectedDecision.decision_revision,
               },
               {
                 key: 'parent-version',
-                label: 'Parent version',
-                children: selectedDecision.parent_version || '—',
+                label: t(($) => $.detail.parentVersion),
+                children: selectedDecision.parent_version || t(($) => $.metadata.unavailable),
               },
               {
                 key: 'status',
-                label: 'Compatibility',
+                label: t(($) => $.detail.compatibility),
                 children: renderCompatibilityTag(selectedDecision.metadata_compatibility),
               },
             ]}
@@ -86,8 +105,8 @@ export function DecisionDetailPanel({
               showIcon
               message={
                 selectedDecisionPinnedInBinding
-                  ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
-                  : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions editing supports only document_policy.`
+                  ? t(($) => $.messages.legacyBoundReadOnly)
+                  : t(($) => $.messages.unsupportedEdit, { decisionKey: selectedDecision.decision_key })
               }
             />
           ) : null}
@@ -96,17 +115,16 @@ export function DecisionDetailPanel({
             <Alert
               type="info"
               showIcon
-              message="This revision is outside the default compatible set for the selected database. Use Rollover selected revision to create a new revision for the current target metadata context."
+              message={t(($) => $.detail.requiresRollover)}
             />
           ) : null}
 
           {selectedDecisionSupportsDocumentPolicyAuthoring ? (
             <div>
               <Space direction="vertical" size="small" style={{ width: '100%' }}>
-                <AntText strong>Structured policy view</AntText>
+                <AntText strong>{t(($) => $.detail.structuredTitle)}</AntText>
                 <AntText type="secondary">
-                  Browse the selected decision as chains, documents, field mappings, and table-part mappings.
-                  Use Edit selected decision to save any changes as a new revision.
+                  {t(($) => $.detail.structuredDescription)}
                 </AntText>
               </Space>
               <div style={{ marginTop: 12 }}>
@@ -120,14 +138,14 @@ export function DecisionDetailPanel({
             items={[
               {
                 key: 'metadata',
-                label: 'Metadata and provenance',
+                label: t(($) => $.detail.metadataSection),
                 children: (
                   <Descriptions
                     size="small"
                     column={{ xs: 1, md: 2 }}
-                    items={normalizeMetadataItems(selectedDecision.metadata_context ?? detailContext).map((item) => ({
+                    items={metadataItems.map((item) => ({
                       key: `detail-${item.key}`,
-                      label: item.label,
+                      label: metadataLabels[item.key as keyof typeof metadataLabels],
                       children: item.value,
                     }))}
                   />
@@ -136,8 +154,8 @@ export function DecisionDetailPanel({
               {
                 key: 'json',
                 label: selectedDecisionSupportsDocumentPolicyAuthoring
-                  ? 'Compiled document_policy JSON'
-                  : 'Decision rules JSON',
+                  ? t(($) => $.detail.compiledDocumentPolicyJson)
+                  : t(($) => $.detail.decisionRulesJson),
                 children: (
                   <LazyJsonCodeEditor
                     value={selectedDecisionSupportsDocumentPolicyAuthoring
@@ -146,7 +164,9 @@ export function DecisionDetailPanel({
                     onChange={() => {}}
                     readOnly
                     height={320}
-                    title={selectedDecisionSupportsDocumentPolicyAuthoring ? 'Document policy output' : 'Decision rules output'}
+                    title={selectedDecisionSupportsDocumentPolicyAuthoring
+                      ? t(($) => $.detail.documentPolicyOutput)
+                      : t(($) => $.detail.decisionRulesOutput)}
                     enableCopy
                   />
                 ),

@@ -23,6 +23,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons'
 import type { WaterfallItem, EventStatus } from '../../types/operationTimeline'
+import { useServiceMeshTranslation } from '../../i18n'
 import { SERVICE_DISPLAY_CONFIG } from '../../types/serviceMesh'
 import {
   getEventStatus,
@@ -85,13 +86,13 @@ interface WaterfallTimelineProps {
   className?: string
 }
 
-/**
- * Format metadata for display
- */
-function formatMetadata(metadata: Record<string, unknown>): React.ReactNode {
+function renderMetadata(
+  metadata: Record<string, unknown>,
+  emptyLabel: string,
+): React.ReactNode {
   const entries = Object.entries(metadata)
   if (entries.length === 0) {
-    return <span className="waterfall-metadata-empty">No metadata</span>
+    return <span className="waterfall-metadata-empty">{emptyLabel}</span>
   }
 
   return (
@@ -113,6 +114,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
   highlightThresholdMs,
   className,
 }) => {
+  const { t } = useServiceMeshTranslation()
   const [expandedItems, setExpandedItems] = useState<string[]>([])
 
   // Calculate total duration for scale
@@ -139,7 +141,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
   if (items.length === 0) {
     return (
       <div className={`waterfall-container waterfall-empty ${className || ''}`}>
-        No timeline events
+        {t(($) => $.waterfall.noEvents)}
       </div>
     )
   }
@@ -148,7 +150,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
     <div className={`waterfall-container ${className || ''}`}>
       {/* Timeline header with time markers */}
       <div className="waterfall-header">
-        <div className="waterfall-header-label">Event</div>
+        <div className="waterfall-header-label">{t(($) => $.waterfall.headerEvent)}</div>
         <div className="waterfall-header-timeline">
           <span className="waterfall-time-marker waterfall-time-start">0ms</span>
           <span className="waterfall-time-marker waterfall-time-middle">
@@ -159,7 +161,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
           </span>
           {highlightThresholdMs !== undefined && (
             <span className="waterfall-time-marker waterfall-time-threshold">
-              slow ≥ {formatDuration(highlightThresholdMs)}
+              {t(($) => $.waterfall.slowThreshold, { value: formatDuration(highlightThresholdMs) })}
             </span>
           )}
         </div>
@@ -185,7 +187,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
                 disabled={!hasMetadata}
                 style={{ cursor: hasMetadata ? 'pointer' : 'default' }}
                 aria-expanded={hasMetadata ? isExpanded : undefined}
-                aria-label={hasMetadata ? `Toggle details for ${item.eventLabel}` : undefined}
+                aria-label={hasMetadata ? t(($) => $.waterfall.toggleDetails, { event: item.eventLabel }) : undefined}
               >
                 {/* Event label with service icon */}
                 <div className="waterfall-label">
@@ -211,12 +213,12 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
                         <div>
                           <strong>{item.eventLabel}</strong>
                         </div>
-                        <div>Service: {getServiceDisplayName(item.service)}</div>
-                        <div>Time: {formatTimestamp(item.timestamp)}</div>
-                        <div>Duration: {formatDuration(item.duration)}</div>
-                        <div>Offset: +{formatDuration(item.startOffset)}</div>
+                        <div>{t(($) => $.waterfall.tooltip.service, { value: getServiceDisplayName(item.service) })}</div>
+                        <div>{t(($) => $.waterfall.tooltip.time, { value: formatTimestamp(item.timestamp) })}</div>
+                        <div>{t(($) => $.waterfall.tooltip.duration, { value: formatDuration(item.duration) })}</div>
+                        <div>{t(($) => $.waterfall.tooltip.offset, { value: formatDuration(item.startOffset) })}</div>
                         {isSlow && highlightThresholdMs !== undefined && (
-                          <div>Slow threshold: {formatDuration(highlightThresholdMs)}</div>
+                          <div>{t(($) => $.waterfall.tooltip.slowThreshold, { value: formatDuration(highlightThresholdMs) })}</div>
                         )}
                       </div>
                     }
@@ -238,7 +240,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
                 </div>
                 {isSlow && (
                   <Tag color="orange" className="waterfall-slow-tag">
-                    slow
+                    {t(($) => $.waterfall.slowTag)}
                   </Tag>
                 )}
               </button>
@@ -253,7 +255,7 @@ const WaterfallTimeline: React.FC<WaterfallTimelineProps> = ({
                     {
                       key: 'metadata',
                       label: null,
-                      children: formatMetadata(item.metadata),
+                      children: renderMetadata(item.metadata, t(($) => $.waterfall.noMetadata)),
                       showArrow: false,
                     },
                   ]}

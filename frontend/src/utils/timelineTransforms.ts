@@ -153,12 +153,12 @@ export function formatDuration(ms: number): string {
  * Format timestamp to time string (HH:MM:SS.mmm)
  */
 export function formatTimestamp(date: Date): string {
-  return date.toLocaleTimeString('ru-RU', {
+  return new Intl.DateTimeFormat(undefined, {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     fractionalSecondDigits: 3,
-  } as Intl.DateTimeFormatOptions)
+  } as Intl.DateTimeFormatOptions).format(date)
 }
 
 /**

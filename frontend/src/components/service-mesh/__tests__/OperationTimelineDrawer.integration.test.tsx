@@ -4,6 +4,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import OperationTimelineDrawer from '../OperationTimelineDrawer'
 import { apiClient } from '../../../api/client'
 import type { OperationTimelineResponse } from '../../../types/operationTimeline'
+import { changeLanguage } from '@/i18n/runtime'
 
 vi.mock('../../../api/client', () => ({
   apiClient: {
@@ -56,12 +57,14 @@ describe('OperationTimelineDrawer (integration)', () => {
     duration_ms: 1600,
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     vi.clearAllMocks()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks()
+    await changeLanguage('ru')
   })
 
   it('complete flow: open → load → display → close', async () => {
@@ -90,7 +93,7 @@ describe('OperationTimelineDrawer (integration)', () => {
     expect(spinElement).toBeInTheDocument()
 
     await waitFor(() => {
-      expect(screen.getByText('Total Duration')).toBeInTheDocument()
+      expect(screen.getByText('Total duration')).toBeInTheDocument()
       expect(screen.getByText('1.6s')).toBeInTheDocument()
     })
 
@@ -108,7 +111,7 @@ describe('OperationTimelineDrawer (integration)', () => {
       />
     )
 
-    expect(screen.queryByText('Total Duration')).not.toBeInTheDocument()
+    expect(screen.queryByText('Total duration')).not.toBeInTheDocument()
   })
 
   it('handles rapid open/close without race conditions', async () => {
@@ -136,7 +139,7 @@ describe('OperationTimelineDrawer (integration)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.queryByText('Total Duration')).not.toBeInTheDocument()
+      expect(screen.queryByText('Total duration')).not.toBeInTheDocument()
     })
   })
 })

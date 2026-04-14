@@ -6,6 +6,7 @@ import type { Artifact, ArtifactPurgeBlocker, ArtifactPurgeJob, ArtifactPurgePla
 import { purgeArtifact as purgeArtifactApi } from '../../api/artifacts'
 import { useArtifactPurgeJob, usePurgeArtifact } from '../../api/queries'
 import { ModalSurfaceShell } from '../../components/platform'
+import { useArtifactsTranslation } from '../../i18n'
 import { queryKeys } from '../../api/queries'
 import { formatBytes } from './artifactsUtils'
 
@@ -22,6 +23,7 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const purgeArtifactMutation = usePurgeArtifact()
+  const { t } = useArtifactsTranslation()
 
   const [purgePlan, setPurgePlan] = useState<ArtifactPurgePlan | null>(null)
   const [purgeBlockers, setPurgeBlockers] = useState<ArtifactPurgeBlocker[]>([])
@@ -73,7 +75,7 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
         const backendMessage = typeof err?.response?.data?.error === 'string'
           ? err.response?.data?.error
           : err?.response?.data?.error?.message
-        setPurgePreflightError(backendMessage || 'Failed to build purge plan')
+        setPurgePreflightError(backendMessage || t(($) => $.purge.buildPlanFailed))
       })
       .finally(() => {
         if (cancelled) return
@@ -90,7 +92,7 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
     if (!job) return
 
     if (job.status === 'success') {
-      message.success('Artifact permanently deleted')
+      message.success(t(($) => $.purge.deleteSuccess))
       const id = target?.id
       onClose()
       reset()
@@ -102,9 +104,9 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
     }
 
     if (job.status === 'failed') {
-      setPurgeJobError(job.error_message || job.error_code || 'Purge failed')
+      setPurgeJobError(job.error_message || job.error_code || t(($) => $.purge.deleteFailed))
     }
-  }, [message, onClose, onDeleted, purgeJobId, purgeJobQuery.data, queryClient, reset, target?.id])
+  }, [message, onClose, onDeleted, purgeJobId, purgeJobQuery.data, queryClient, reset, t, target?.id])
 
   const handleStartPurge = useCallback(async () => {
     if (!target) return
@@ -115,20 +117,20 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
         payload: { reason: purgeReason, dry_run: false },
       })
       if (!response.job_id) {
-        throw new Error('Missing job_id')
+        throw new Error(t(($) => $.purge.missingJobId))
       }
       setPurgeJobId(response.job_id)
       setPurgePlan(response.plan)
       setPurgeBlockers(response.blockers)
-      message.success('Purge started')
+      message.success(t(($) => $.purge.started))
     } catch (error) {
       const err = error as { response?: { data?: { error?: { message?: string } | string } } } | null
       const backendMessage = typeof err?.response?.data?.error === 'string'
         ? err.response?.data?.error
         : err?.response?.data?.error?.message
-      message.error(backendMessage || 'Failed to start purge')
+      message.error(backendMessage || t(($) => $.purge.startFailed))
     }
-  }, [message, purgeArtifactMutation, purgeReason, target])
+  }, [message, purgeArtifactMutation, purgeReason, t, target])
 
   const okDisabled = useMemo(() => (
     Boolean(purgeJobId)
@@ -145,9 +147,11 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
       open={open}
       onClose={onClose}
       onSubmit={() => { void handleStartPurge() }}
-      title={purgeJobId ? 'Deleting permanently…' : `Delete permanently "${target?.name ?? ''}"?`}
-      submitText={purgeJobId ? 'In progress' : 'Delete permanently'}
-      cancelText={purgeJobId ? 'Close' : 'Cancel'}
+      title={purgeJobId
+        ? t(($) => $.purge.titleInProgress)
+        : t(($) => $.purge.titleConfirm, { name: target?.name ?? '' })}
+      submitText={purgeJobId ? t(($) => $.purge.submitInProgress) : t(($) => $.purge.submitDelete)}
+      cancelText={purgeJobId ? t(($) => $.purge.cancelInProgress) : t(($) => $.purge.cancel)}
       okButtonProps={{
         danger: true,
         disabled: okDisabled,
@@ -157,9 +161,9 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
       forceRender
     >
       {!target ? (
-        <Text type="secondary">Select an artifact.</Text>
+        <Text type="secondary">{t(($) => $.purge.empty)}</Text>
       ) : (
-        <Spin spinning={purgePreflightLoading} tip="Building purge plan…">
+        <Spin spinning={purgePreflightLoading} tip={t(($) => $.purge.buildingPlan)}>
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             {purgePreflightError && (
               <Alert type="error" message={purgePreflightError} showIcon />
@@ -167,10 +171,10 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
 
             {purgePlan && (
               <Descriptions size="small" column={2} bordered>
-                <Descriptions.Item label="Versions">{purgePlan.versions_count}</Descriptions.Item>
-                <Descriptions.Item label="Aliases">{purgePlan.aliases_count}</Descriptions.Item>
-                <Descriptions.Item label="Objects">{purgePlan.storage_keys_total}</Descriptions.Item>
-                <Descriptions.Item label="Total size">{formatBytes(purgePlan.total_bytes)}</Descriptions.Item>
+                <Descriptions.Item label={t(($) => $.purge.plan.versions)}>{purgePlan.versions_count}</Descriptions.Item>
+                <Descriptions.Item label={t(($) => $.purge.plan.aliases)}>{purgePlan.aliases_count}</Descriptions.Item>
+                <Descriptions.Item label={t(($) => $.purge.plan.objects)}>{purgePlan.storage_keys_total}</Descriptions.Item>
+                <Descriptions.Item label={t(($) => $.purge.plan.totalSize)}>{formatBytes(purgePlan.total_bytes)}</Descriptions.Item>
               </Descriptions>
             )}
 
@@ -178,13 +182,13 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
               <Alert
                 type="warning"
                 showIcon
-                message="Purge is blocked"
+                message={t(($) => $.purge.blockedTitle)}
                 description={
                   <Collapse
                     items={[
                       {
                         key: 'blockers',
-                        label: `Active usage (${purgeBlockers.length})`,
+                        label: t(($) => $.purge.blockedUsage, { count: purgeBlockers.length }),
                         children: (
                           <Space direction="vertical" size="small" style={{ width: '100%' }}>
                             {purgeBlockers.map((blocker) => (
@@ -214,7 +218,11 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
                   status={purgeJobQuery.data.status === 'failed' ? 'exception' : undefined}
                 />
                 <Text type="secondary">
-                  {purgeJobQuery.data.status}: {purgeJobQuery.data.deleted_objects}/{purgeJobQuery.data.total_objects} objects
+                  {t(($) => $.purge.progress, {
+                    status: purgeJobQuery.data.status,
+                    deleted: String(purgeJobQuery.data.deleted_objects),
+                    total: String(purgeJobQuery.data.total_objects),
+                  })}
                 </Text>
               </>
             )}
@@ -222,15 +230,15 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
             {!purgeJobId && (
               <>
                 <Form layout="vertical">
-                  <Form.Item label="Reason" required>
+                  <Form.Item label={t(($) => $.purge.reason)} required>
                     <Input.TextArea
                       value={purgeReason}
                       onChange={(event) => setPurgeReason(event.target.value)}
                       rows={3}
-                      placeholder="Why are you deleting this artifact permanently?"
+                      placeholder={t(($) => $.purge.reasonPlaceholder)}
                     />
                   </Form.Item>
-                  <Form.Item label={`Type "${target.name}" to confirm`} required>
+                  <Form.Item label={t(($) => $.purge.confirmName, { name: target.name })} required>
                     <Input
                       value={purgeConfirmName}
                       onChange={(event) => setPurgeConfirmName(event.target.value)}
@@ -242,8 +250,8 @@ export function ArtifactsPurgeModal({ open, target, onClose, onDeleted }: Artifa
                 <Alert
                   type="warning"
                   showIcon
-                  message="This action cannot be undone"
-                  description="All versions, aliases, and files in MinIO will be removed."
+                  message={t(($) => $.purge.irreversibleTitle)}
+                  description={t(($) => $.purge.irreversibleDescription)}
                 />
               </>
             )}

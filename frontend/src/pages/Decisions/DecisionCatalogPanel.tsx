@@ -2,6 +2,7 @@ import { Alert, Button, Space, Typography } from 'antd'
 
 import type { DecisionTable } from '../../api/generated/model'
 import { EntityList, StatusBadge } from '../../components/platform'
+import { useDecisionsTranslation } from '../../i18n'
 import { isDecisionPinnedInBinding, type DecisionSnapshotFilterMode, type PinnedDecisionRefs } from './decisionSnapshotFilter'
 import { renderCompatibilityTag } from './decisionPageUtils'
 
@@ -36,13 +37,15 @@ export function DecisionCatalogPanel({
   onToggleSnapshotMode,
   onSelectDecision,
 }: DecisionCatalogPanelProps) {
+  const { t } = useDecisionsTranslation()
+
   return (
     <EntityList
       title={title}
       loading={loading}
       emptyDescription={canFilterBySnapshot
-        ? 'No decision revisions match the selected configuration'
-        : 'No decision revisions yet'}
+        ? t(($) => $.catalog.emptyMatching)
+        : t(($) => $.catalog.emptyDefault)}
       dataSource={decisions}
       toolbar={snapshotFilterMessage ? (
         <Alert
@@ -51,11 +54,13 @@ export function DecisionCatalogPanel({
           message={snapshotFilterMessage}
           description={(
             <Space wrap size={[8, 8]}>
-              <Text type="secondary">Selected configuration</Text>
-              <Text code>{selectedConfigurationLabel || '—'}</Text>
+              <Text type="secondary">{t(($) => $.catalog.selectedConfiguration)}</Text>
+              <Text code>{selectedConfigurationLabel || t(($) => $.metadata.unavailable)}</Text>
               {(hiddenDecisionCount > 0 || snapshotFilterMode === 'all') ? (
                 <Button type="link" onClick={onToggleSnapshotMode}>
-                  {snapshotFilterMode === 'all' ? 'Show matching configuration only' : 'Show all revisions'}
+                  {snapshotFilterMode === 'all'
+                    ? t(($) => $.catalog.showMatchingOnly)
+                    : t(($) => $.catalog.showAll)}
                 </Button>
               ) : null}
             </Space>
@@ -67,7 +72,7 @@ export function DecisionCatalogPanel({
         <Button
           type="text"
           block
-          aria-label={`Open decision ${decision.name}`}
+          aria-label={t(($) => $.catalog.openDecision, { name: decision.name })}
           aria-pressed={selectedDecisionId === decision.id}
           style={{
             justifyContent: 'flex-start',
@@ -87,12 +92,14 @@ export function DecisionCatalogPanel({
               <Text strong>{decision.name}</Text>
               <StatusBadge status={decision.is_active ? 'active' : 'inactive'} />
               {isDecisionPinnedInBinding(decision, pinnedDecisionRefs) ? (
-                <StatusBadge status="pinned" label="Pinned in binding" />
+                <StatusBadge status="pinned" label={t(($) => $.catalog.pinnedInBinding)} />
               ) : null}
               {renderCompatibilityTag(decision.metadata_compatibility)}
             </Space>
             <Text type="secondary">{decision.decision_table_id}</Text>
-            <Text type="secondary">Revision {decision.decision_revision}</Text>
+            <Text type="secondary">
+              {t(($) => $.catalog.revision, { revision: String(decision.decision_revision) })}
+            </Text>
           </Space>
         </Button>
       )}

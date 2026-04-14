@@ -2,6 +2,7 @@ import { Alert, Button, Descriptions, Input, Space, Typography } from 'antd'
 import type { DescriptionsProps } from 'antd'
 
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
+import { useDecisionsTranslation } from '../../i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
 import type { DocumentPolicyBuilderChainFormValue } from './documentPolicyBuilder'
@@ -53,29 +54,6 @@ type DecisionEditorPanelProps = {
   onTabChange: (tab: DecisionEditorTab) => void
 }
 
-const PANEL_COPY: Record<DecisionEditorMode, { title: string; subtitle: string }> = {
-  create: {
-    title: 'New document policy',
-    subtitle: 'Create a new versioned decision resource for document_policy authoring.',
-  },
-  import: {
-    title: 'Import raw policy JSON',
-    subtitle: 'Compatibility path for pasting an already validated document_policy payload.',
-  },
-  revise: {
-    title: 'Edit selected decision',
-    subtitle: 'Review the existing decision in builder or raw JSON mode and save it as a new revision.',
-  },
-  rollover: {
-    title: 'Rollover selected revision',
-    subtitle: 'Use the selected revision as a source seed and publish a new revision for the target database metadata context.',
-  },
-  clone: {
-    title: 'Clone selected revision',
-    subtitle: 'Use the selected revision as a source seed and publish a new independent decision resource for the current target database context.',
-  },
-}
-
 export function DecisionEditorPanel({
   error,
   saving,
@@ -86,19 +64,43 @@ export function DecisionEditorPanel({
   onSave,
   onTabChange,
 }: DecisionEditorPanelProps) {
-  const copy = PANEL_COPY[value.mode]
+  const { t } = useDecisionsTranslation()
+  const copy = value.mode === 'create'
+    ? {
+      title: t(($) => $.editor.modes.create.title),
+      subtitle: t(($) => $.editor.modes.create.subtitle),
+    }
+    : value.mode === 'import'
+      ? {
+        title: t(($) => $.editor.modes.import.title),
+        subtitle: t(($) => $.editor.modes.import.subtitle),
+      }
+      : value.mode === 'revise'
+        ? {
+          title: t(($) => $.editor.modes.revise.title),
+          subtitle: t(($) => $.editor.modes.revise.subtitle),
+        }
+        : value.mode === 'rollover'
+          ? {
+            title: t(($) => $.editor.modes.rollover.title),
+            subtitle: t(($) => $.editor.modes.rollover.subtitle),
+          }
+          : {
+            title: t(($) => $.editor.modes.clone.title),
+            subtitle: t(($) => $.editor.modes.clone.subtitle),
+          }
   const saveButtonLabel = value.mode === 'rollover'
-    ? 'Publish rollover revision'
+    ? t(($) => $.editor.saveButtons.rollover)
     : value.mode === 'clone'
-      ? 'Publish cloned decision'
-      : 'Save decision'
+      ? t(($) => $.editor.saveButtons.clone)
+      : t(($) => $.editor.saveButtons.default)
   type SummaryItem = NonNullable<DescriptionsProps['items']>[number]
   const summaryItems: SummaryItem[] = []
 
   if (value.sourceSummary) {
     summaryItems.push({
       key: 'source-revision',
-      label: 'Source revision',
+      label: t(($) => $.editor.summary.sourceRevision),
       children: `${value.sourceSummary.name} (${value.sourceSummary.decisionTableId} r${value.sourceSummary.decisionRevision})`,
     })
   }
@@ -106,7 +108,7 @@ export function DecisionEditorPanel({
   if (value.sourceSummary?.compatibilityStatus) {
     summaryItems.push({
       key: 'source-compatibility',
-      label: 'Source compatibility',
+      label: t(($) => $.editor.summary.sourceCompatibility),
       children: value.sourceSummary.compatibilityReason
         ? `${value.sourceSummary.compatibilityStatus} · ${value.sourceSummary.compatibilityReason}`
         : value.sourceSummary.compatibilityStatus,
@@ -117,12 +119,12 @@ export function DecisionEditorPanel({
     summaryItems.push(
       {
         key: 'target-database',
-        label: 'Target database',
+        label: t(($) => $.editor.summary.targetDatabase),
         children: value.targetSummary.databaseLabel,
       },
       {
         key: 'target-configuration',
-        label: 'Target metadata snapshot',
+        label: t(($) => $.editor.summary.targetMetadataSnapshot),
         children: value.targetSummary.configurationLabel,
       }
     )
@@ -131,7 +133,7 @@ export function DecisionEditorPanel({
   if (value.targetSummary?.snapshotId) {
     summaryItems.push({
       key: 'target-snapshot-id',
-      label: 'Target snapshot ID',
+      label: t(($) => $.editor.summary.targetSnapshotId),
       children: value.targetSummary.snapshotId,
     })
   }
@@ -139,7 +141,7 @@ export function DecisionEditorPanel({
   if (value.targetSummary?.resolutionMode) {
     summaryItems.push({
       key: 'target-resolution-mode',
-      label: 'Target resolution mode',
+      label: t(($) => $.editor.summary.targetResolutionMode),
       children: value.targetSummary.resolutionMode,
     })
   }
@@ -171,7 +173,7 @@ export function DecisionEditorPanel({
         <Alert
           type="info"
           showIcon
-          message="Publishing a rollover creates a new revision only. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
+          message={t(($) => $.editor.alerts.rollover)}
         />
       ) : null}
 
@@ -179,14 +181,14 @@ export function DecisionEditorPanel({
         <Alert
           type="info"
           showIcon
-          message="Publishing a clone creates a new independent decision resource. Existing workflows, bindings, and runtime projections stay pinned until you update them explicitly."
+          message={t(($) => $.editor.alerts.clone)}
         />
       ) : null}
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Typography.Text strong>Decision table ID</Typography.Text>
+        <Typography.Text strong>{t(($) => $.editor.fields.decisionTableId)}</Typography.Text>
         <Input
-          aria-label="Decision table ID"
+          aria-label={t(($) => $.editor.fields.decisionTableId)}
           disabled={saving || Boolean(value.parentVersionId)}
           value={value.decisionTableId}
           onChange={(event) => onChange({
@@ -197,9 +199,9 @@ export function DecisionEditorPanel({
       </Space>
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Typography.Text strong>Decision name</Typography.Text>
+        <Typography.Text strong>{t(($) => $.editor.fields.decisionName)}</Typography.Text>
         <Input
-          aria-label="Decision name"
+          aria-label={t(($) => $.editor.fields.decisionName)}
           disabled={saving}
           value={value.name}
           onChange={(event) => onChange({
@@ -210,9 +212,9 @@ export function DecisionEditorPanel({
       </Space>
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Typography.Text strong>Description</Typography.Text>
+        <Typography.Text strong>{t(($) => $.editor.fields.description)}</Typography.Text>
         <Input.TextArea
-          aria-label="Decision description"
+          aria-label={t(($) => $.editor.fields.description)}
           autoSize={{ minRows: 2, maxRows: 4 }}
           disabled={saving}
           value={value.description}
@@ -223,7 +225,7 @@ export function DecisionEditorPanel({
         />
       </Space>
 
-      <div role="tablist" aria-label="Decision editor mode">
+      <div role="tablist" aria-label={t(($) => $.editor.tabsAriaLabel)}>
         <Space wrap>
           <Button
             role="tab"
@@ -232,7 +234,7 @@ export function DecisionEditorPanel({
             onClick={() => onTabChange('builder')}
             disabled={saving}
           >
-            Builder
+            {t(($) => $.editor.tabs.builder)}
           </Button>
           <Button
             role="tab"
@@ -241,7 +243,7 @@ export function DecisionEditorPanel({
             onClick={() => onTabChange('raw')}
             disabled={saving}
           >
-            Raw JSON
+            {t(($) => $.editor.tabs.rawJson)}
           </Button>
         </Space>
       </div>
@@ -256,11 +258,7 @@ export function DecisionEditorPanel({
       ) : (
         <Space direction="vertical" size="middle" style={{ display: 'flex' }}>
           <Typography.Text type="secondary">
-            Use raw JSON only for compatibility imports or to paste an already validated
-            {' '}
-            <code>document_policy.v1</code>
-            {' '}
-            payload.
+            {t(($) => $.editor.rawJsonDescription)}
           </Typography.Text>
           <LazyJsonCodeEditorFormField
             value={value.rawJson}
@@ -269,7 +267,7 @@ export function DecisionEditorPanel({
               rawJson: nextValue,
             })}
             height={320}
-            title="Document policy JSON"
+            title={t(($) => $.editor.rawJsonTitle)}
             enableFormat
             enableCopy
             readOnly={saving}
@@ -291,7 +289,7 @@ export function DecisionEditorPanel({
           {saveButtonLabel}
         </Button>
         <Button disabled={saving} onClick={onCancel}>
-          Cancel
+          {t(($) => $.editor.cancel)}
         </Button>
       </Space>
     </Space>

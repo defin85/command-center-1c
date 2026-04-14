@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   App,
   Button,
@@ -21,7 +21,8 @@ import { createArtifact, uploadArtifactVersion, upsertArtifactAlias } from '../.
 import { LazyJsonCodeEditorFormField } from '../../components/code/LazyJsonCodeEditor'
 import { ModalSurfaceShell } from '../../components/platform'
 import { queryKeys } from '../../api/queries'
-import { buildMetadataTemplate, buildVersion, formatDuration, formatSpeed, KIND_LABELS } from './artifactsUtils'
+import { useArtifactsTranslation } from '../../i18n'
+import { buildMetadataTemplate, buildVersion, formatDuration, formatSpeed, type ArtifactKindLabels } from './artifactsUtils'
 
 const { Text } = Typography
 
@@ -35,6 +36,7 @@ export type ArtifactsCreateModalProps = {
 export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: ArtifactsCreateModalProps) {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
+  const { t } = useArtifactsTranslation()
 
   const [createLoading, setCreateLoading] = useState(false)
   const [uploadStats, setUploadStats] = useState<{ percent: number; speed: number; eta: number | null } | null>(null)
@@ -43,6 +45,17 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
   const [customAliasValue, setCustomAliasValue] = useState('')
   const [form] = Form.useForm()
   const uploadStartRef = useRef<number | null>(null)
+  const kindLabels = useMemo<ArtifactKindLabels>(() => ({
+    extension: t(($) => $.kinds.extension),
+    config_cf: t(($) => $.kinds.configCf),
+    config_xml: t(($) => $.kinds.configXml),
+    dt_backup: t(($) => $.kinds.dtBackup),
+    epf: t(($) => $.kinds.epf),
+    erf: t(($) => $.kinds.erf),
+    ibcmd_package: t(($) => $.kinds.ibcmdPackage),
+    ras_script: t(($) => $.kinds.rasScript),
+    other: t(($) => $.kinds.other),
+  }), [t])
 
   const resetForm = useCallback(() => {
     form.resetFields()
@@ -129,18 +142,18 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
       const values = await form.validateFields()
       const file = fileList[0]?.originFileObj as File | undefined
       if (!file) {
-        message.error('Please select a file')
+        message.error(t(($) => $.create.fileRequired))
         return
       }
       let metadata = values.metadata.trim()
       if (!metadata) {
-        message.error('Metadata is required')
+        message.error(t(($) => $.create.metadataRequired))
         return
       }
       try {
         metadata = JSON.stringify(JSON.parse(metadata))
       } catch {
-        message.error('Metadata must be valid JSON')
+        message.error(t(($) => $.create.metadataInvalid))
         return
       }
 
@@ -178,7 +191,7 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
       }
 
       await queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
-      message.success('Artifact created')
+      message.success(t(($) => $.create.success))
       onClose()
       resetForm()
       onCreated(artifact)
@@ -190,7 +203,7 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
       if (error && typeof error === 'object' && 'errorFields' in error) {
         return
       }
-      message.error(backendMessage || 'Failed to create artifact')
+      message.error(backendMessage || t(($) => $.create.failed))
     } finally {
       setCreateLoading(false)
     }
@@ -214,9 +227,9 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
         onClose()
         resetForm()
       }}
-      title="Add artifact"
+      title={t(($) => $.create.title)}
       width={720}
-      submitText="Create"
+      submitText={t(($) => $.create.submit)}
       onSubmit={() => { void handleCreateArtifact() }}
       confirmLoading={createLoading}
       okButtonProps={{ disabled: !isStaff }}
@@ -231,58 +244,58 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
         }}
       >
         <Form.Item
-          label="Name"
+          label={t(($) => $.create.name)}
           name="name"
           htmlFor="artifact-create-name"
-          rules={[{ required: true, message: 'Name is required' }]}
+          rules={[{ required: true, message: t(($) => $.create.nameRequired) }]}
         >
           <Input
             id="artifact-create-name"
-            placeholder="Artifact name"
+            placeholder={t(($) => $.create.namePlaceholder)}
             autoComplete="off"
           />
         </Form.Item>
         <Form.Item
-          label="Kind"
+          label={t(($) => $.create.kind)}
           name="kind"
           htmlFor="artifact-create-kind"
-          rules={[{ required: true, message: 'Kind is required' }]}
+          rules={[{ required: true, message: t(($) => $.create.kindRequired) }]}
         >
           <Select
             id="artifact-create-kind"
-            options={Object.entries(KIND_LABELS).map(([value, label]) => ({
+            options={Object.entries(kindLabels).map(([value, label]) => ({
               value,
               label,
             }))}
           />
         </Form.Item>
         <Form.Item
-          label="Tags"
+          label={t(($) => $.create.tags)}
           name="tags"
           htmlFor="artifact-create-tags"
-          rules={[{ required: true, type: 'array', min: 1, message: 'At least one tag is required' }]}
+          rules={[{ required: true, type: 'array', min: 1, message: t(($) => $.create.tagsRequired) }]}
         >
-          <Select id="artifact-create-tags" mode="tags" placeholder="Add tags" />
+          <Select id="artifact-create-tags" mode="tags" placeholder={t(($) => $.create.tagsPlaceholder)} />
         </Form.Item>
-        <Form.Item label="Version" htmlFor="artifact-create-version" required>
+        <Form.Item label={t(($) => $.create.version)} htmlFor="artifact-create-version" required>
           <Space.Compact style={{ width: '100%' }}>
             <Form.Item
               name="version"
               noStyle
-              rules={[{ required: true, message: 'Version is required' }]}
+              rules={[{ required: true, message: t(($) => $.create.versionRequired) }]}
             >
               <Input
                 id="artifact-create-version"
-                placeholder="e.g. 1.0.0"
+                placeholder={t(($) => $.create.versionPlaceholder)}
                 autoComplete="off"
               />
             </Form.Item>
             <Button icon={<ReloadOutlined />} onClick={handleGenerateDefaults}>
-              Generate
+              {t(($) => $.create.generate)}
             </Button>
           </Space.Compact>
         </Form.Item>
-        <Form.Item label="File" htmlFor="artifact-create-file" required>
+        <Form.Item label={t(($) => $.create.file)} htmlFor="artifact-create-file" required>
           <Upload.Dragger
             id="artifact-create-file"
             name="file"
@@ -299,39 +312,43 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
             <p className="ant-upload-drag-icon">
               <InboxOutlined />
             </p>
-            <p className="ant-upload-text">Drag & drop file here</p>
-            <p className="ant-upload-hint">Or click to select a file</p>
+            <p className="ant-upload-text">{t(($) => $.create.fileDropText)}</p>
+            <p className="ant-upload-hint">{t(($) => $.create.fileDropHint)}</p>
           </Upload.Dragger>
         </Form.Item>
         {uploadStats && (
-          <Form.Item label="Upload progress">
+          <Form.Item label={t(($) => $.create.uploadProgress)}>
             <Space direction="vertical" style={{ width: '100%' }}>
               <Progress percent={uploadStats.percent} />
               <Space size="large">
-                <Text type="secondary">Speed: {formatSpeed(uploadStats.speed)}</Text>
-                <Text type="secondary">ETA: {formatDuration(uploadStats.eta)}</Text>
+                <Text type="secondary">
+                  {t(($) => $.create.speed, { value: formatSpeed(uploadStats.speed) })}
+                </Text>
+                <Text type="secondary">
+                  {t(($) => $.create.eta, { value: formatDuration(uploadStats.eta) })}
+                </Text>
               </Space>
             </Space>
           </Form.Item>
         )}
-        <Form.Item label="Set alias (optional)" htmlFor="artifact-create-alias-mode">
+        <Form.Item label={t(($) => $.create.alias)} htmlFor="artifact-create-alias-mode">
           <Space direction="vertical" style={{ width: '100%' }}>
             <Select
               id="artifact-create-alias-mode"
               value={aliasMode}
               onChange={(value) => setAliasMode(value)}
               options={[
-                { value: 'none', label: 'No alias' },
-                { value: 'latest', label: 'latest' },
-                { value: 'approved', label: 'approved' },
-                { value: 'stable', label: 'stable' },
-                { value: 'custom', label: 'custom' },
+                { value: 'none', label: t(($) => $.create.aliasOptions.none) },
+                { value: 'latest', label: t(($) => $.create.aliasOptions.latest) },
+                { value: 'approved', label: t(($) => $.create.aliasOptions.approved) },
+                { value: 'stable', label: t(($) => $.create.aliasOptions.stable) },
+                { value: 'custom', label: t(($) => $.create.aliasOptions.custom) },
               ]}
             />
             {aliasMode === 'custom' && (
               <Input
                 id="artifact-create-alias-custom"
-                placeholder="Custom alias"
+                placeholder={t(($) => $.create.aliasPlaceholder)}
                 value={customAliasValue}
                 onChange={(event) => setCustomAliasValue(event.target.value)}
                 autoComplete="off"
@@ -343,26 +360,26 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
           items={[
             {
               key: 'advanced',
-              label: 'Advanced',
+              label: t(($) => $.create.advanced),
               children: (
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                   <Form.Item
-                    label="Filename (optional)"
+                    label={t(($) => $.create.filename)}
                     name="filename"
                     htmlFor="artifact-create-filename"
                   >
                     <Input
                       id="artifact-create-filename"
-                      placeholder="Override filename for storage"
+                      placeholder={t(($) => $.create.filenamePlaceholder)}
                       autoComplete="off"
                     />
                   </Form.Item>
                   <Form.Item
-                    label="Metadata (JSON)"
+                    label={t(($) => $.create.metadata)}
                     name="metadata"
                     htmlFor="artifact-create-metadata"
-                    rules={[{ required: true, message: 'Metadata is required' }]}
-                    extra="Use JSON for build notes, labels, and future metadata."
+                    rules={[{ required: true, message: t(($) => $.create.metadataRequired) }]}
+                    extra={t(($) => $.create.metadataExtra)}
                   >
                     <LazyJsonCodeEditorFormField
                       id="artifact-create-metadata"
@@ -371,7 +388,7 @@ export function ArtifactsCreateModal({ open, isStaff, onClose, onCreated }: Arti
                     />
                   </Form.Item>
                   <Form.Item
-                    label="Versioned"
+                    label={t(($) => $.create.versioned)}
                     name="is_versioned"
                     htmlFor="artifact-create-versioned"
                     valuePropName="checked"

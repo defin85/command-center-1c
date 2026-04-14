@@ -2,6 +2,7 @@ import { Alert, Button, Input, Select, Space, Spin, Typography } from 'antd'
 
 import type { OrganizationPool, PoolGraph } from '../../api/intercompanyPools'
 import { EmptyState, EntityDetails } from '../../components/platform'
+import { useDecisionsTranslation } from '../../i18n'
 import { trackUiAction } from '../../observability/uiActionJournal'
 
 const { Text, Title } = Typography
@@ -68,6 +69,7 @@ export function DecisionLegacyImportPanel({
   onChange,
   onImport,
 }: DecisionLegacyImportPanelProps) {
+  const { t } = useDecisionsTranslation()
   const edgeOptions = buildLegacyEdgeOptions(graph)
   const selectedEdgeLabel = edgeOptions.find((option) => option.value === value.edgeVersionId)?.label ?? null
 
@@ -75,18 +77,10 @@ export function DecisionLegacyImportPanel({
     <Space direction="vertical" size="large" style={{ display: 'flex' }}>
       <div>
         <Title level={4} style={{ marginBottom: 4 }}>
-          Import legacy edge policy
+          {t(($) => $.legacyImport.title)}
         </Title>
         <Text type="secondary">
-          Canonical migration flow: select a pool topology edge with legacy
-          {' '}
-          <code>document_policy</code>
-          {' '}
-          metadata and materialize it into the versioned
-          {' '}
-          <code>/decisions</code>
-          {' '}
-          lifecycle.
+          {t(($) => $.legacyImport.subtitle)}
         </Text>
       </div>
 
@@ -95,13 +89,13 @@ export function DecisionLegacyImportPanel({
       ) : null}
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Text strong>Pool</Text>
+        <Text strong>{t(($) => $.legacyImport.pool)}</Text>
         <Select
-          aria-label="Legacy import pool"
+          aria-label={t(($) => $.legacyImport.pool)}
           data-testid="decision-legacy-import-pool-select"
           disabled={saving || poolsLoading}
           loading={poolsLoading}
-          placeholder="Select a pool"
+          placeholder={t(($) => $.legacyImport.poolPlaceholder)}
           value={value.poolId || undefined}
           options={pools.map((pool) => ({
             value: pool.id,
@@ -116,13 +110,13 @@ export function DecisionLegacyImportPanel({
       </Space>
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Text strong>Legacy edge</Text>
+        <Text strong>{t(($) => $.legacyImport.edge)}</Text>
         <Select
-          aria-label="Legacy import edge"
+          aria-label={t(($) => $.legacyImport.edge)}
           data-testid="decision-legacy-import-edge-select"
           disabled={saving || !value.poolId || graphLoading || poolsLoading || edgeOptions.length === 0}
           loading={graphLoading}
-          placeholder="Select a topology edge"
+          placeholder={t(($) => $.legacyImport.edgePlaceholder)}
           value={value.edgeVersionId || undefined}
           options={edgeOptions}
           onChange={(edgeVersionId) => onChange({
@@ -133,27 +127,27 @@ export function DecisionLegacyImportPanel({
         {graphLoading ? (
           <Space size="small">
             <Spin size="small" />
-            <Text type="secondary">Loading topology snapshot…</Text>
+            <Text type="secondary">{t(($) => $.legacyImport.topologyLoading)}</Text>
           </Space>
         ) : null}
         {!graphLoading && value.poolId && edgeOptions.length === 0 ? (
-          <EmptyState description="No legacy document_policy edges found for the selected pool." />
+          <EmptyState description={t(($) => $.legacyImport.noLegacyEdges)} />
         ) : null}
       </Space>
 
       {selectedEdgeLabel ? (
-        <EntityDetails title="Selected legacy source">
+        <EntityDetails title={t(($) => $.legacyImport.selectedSource)}>
           <Space direction="vertical" size="small" style={{ display: 'flex' }}>
             <Text>{selectedEdgeLabel}</Text>
-            <Text type="secondary">Source path: edge.metadata.document_policy</Text>
+            <Text type="secondary">{t(($) => $.legacyImport.sourcePath)}</Text>
           </Space>
         </EntityDetails>
       ) : null}
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Text strong>Decision table ID</Text>
+        <Text strong>{t(($) => $.legacyImport.decisionTableId)}</Text>
         <Input
-          aria-label="Decision table ID"
+          aria-label={t(($) => $.legacyImport.decisionTableId)}
           disabled={saving}
           value={value.decisionTableId}
           onChange={(event) => onChange({
@@ -164,9 +158,9 @@ export function DecisionLegacyImportPanel({
       </Space>
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Text strong>Decision name</Text>
+        <Text strong>{t(($) => $.legacyImport.decisionName)}</Text>
         <Input
-          aria-label="Decision name"
+          aria-label={t(($) => $.legacyImport.decisionName)}
           disabled={saving}
           value={value.name}
           onChange={(event) => onChange({
@@ -177,9 +171,9 @@ export function DecisionLegacyImportPanel({
       </Space>
 
       <Space direction="vertical" size="small" style={{ display: 'flex' }}>
-        <Text strong>Decision description</Text>
+        <Text strong>{t(($) => $.legacyImport.decisionDescription)}</Text>
         <Input.TextArea
-          aria-label="Decision description"
+          aria-label={t(($) => $.legacyImport.decisionDescription)}
           autoSize={{ minRows: 2, maxRows: 4 }}
           disabled={saving}
           value={value.description}
@@ -193,12 +187,12 @@ export function DecisionLegacyImportPanel({
       <Alert
         type="info"
         showIcon
-        message="Raw JSON remains compatibility-only"
+        message={t(($) => $.legacyImport.rawJsonCompatibilityTitle)}
         description={(
           <Space direction="vertical" size={4}>
-            <span>Use this flow for legacy topology edges. Raw JSON stays available only as an explicit compatibility path.</span>
+            <span>{t(($) => $.legacyImport.rawJsonCompatibilityDescription)}</span>
             <Button type="link" style={{ paddingInline: 0 }} disabled={saving} onClick={onOpenRawImport}>
-              Open raw JSON compatibility import
+              {t(($) => $.legacyImport.openRawJsonCompatibilityImport)}
             </Button>
           </Space>
         )}
@@ -212,14 +206,14 @@ export function DecisionLegacyImportPanel({
           onClick={() => {
             void trackUiAction({
               actionKind: 'drawer.submit',
-              actionName: 'Import to /decisions',
+              actionName: t(($) => $.legacyImport.importAction),
             }, onImport)
           }}
         >
-          Import to /decisions
+          {t(($) => $.legacyImport.importAction)}
         </Button>
         <Button disabled={saving} onClick={onCancel}>
-          Cancel
+          {t(($) => $.legacyImport.cancel)}
         </Button>
       </Space>
     </Space>

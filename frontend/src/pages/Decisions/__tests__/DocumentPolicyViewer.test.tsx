@@ -1,10 +1,19 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { changeLanguage } from '@/i18n/runtime'
 
 import { DocumentPolicyViewer } from '../DocumentPolicyViewer'
 import type { DocumentPolicyOutput } from '../documentPolicyBuilder'
 
 describe('DocumentPolicyViewer', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+  })
+
+  afterEach(async () => {
+    await changeLanguage('ru')
+  })
+
   it('renders row mappings from table_parts_mapping arrays', () => {
     const policy: DocumentPolicyOutput = {
       version: 'document_policy.v1',

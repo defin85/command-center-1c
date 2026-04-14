@@ -32,10 +32,9 @@ import type {
 } from '../../types/serviceMesh'
 import {
   STATUS_COLORS,
-  STATUS_TEXT,
-  SERVICE_DISPLAY_CONFIG,
 } from '../../types/serviceMesh'
 import { getV2 } from '../../api/generated'
+import { useLocaleFormatters, useServiceMeshTranslation } from '../../i18n'
 import { transformServiceHistoryResponse } from '../../utils/serviceMeshTransforms'
 import { DrawerSurfaceShell, RouteButton } from '../platform'
 import './ServiceDetailDrawer.css'
@@ -48,26 +47,13 @@ interface ServiceDetailDrawerProps {
   onClose: () => void
 }
 
-/**
- * Format timestamp for chart X axis
- */
-function formatChartTime(timestamp: string): string {
-  try {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return ''
-  }
-}
-
 const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
   service,
   visible,
   onClose,
 }) => {
+  const { t } = useServiceMeshTranslation()
+  const formatters = useLocaleFormatters()
   const [historicalData, setHistoricalData] = useState<HistoricalDataPoint[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedMinutes, setSelectedMinutes] = useState(30)
@@ -102,12 +88,29 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
     return null
   }
 
-  const displayConfig = SERVICE_DISPLAY_CONFIG[service.name]
-  const description = displayConfig?.description || 'Service'
+  const serviceDescriptions = {
+    frontend: t(($) => $.services.frontend.description),
+    'api-gateway': t(($) => $.services.apiGateway.description),
+    orchestrator: t(($) => $.services.orchestrator.description),
+    worker: t(($) => $.services.worker.description),
+    'worker-workflows': t(($) => $.services.workerWorkflows.description),
+    'ras-server': t(($) => $.services.rasServer.description),
+    postgresql: t(($) => $.services.postgresql.description),
+    redis: t(($) => $.services.redis.description),
+    minio: t(($) => $.services.minio.description),
+    'event-subscriber': t(($) => $.services.eventSubscriber.description),
+    'pool-outbox-dispatcher': t(($) => $.services.poolOutboxDispatcher.description),
+  } as const
+  const description = serviceDescriptions[service.name as keyof typeof serviceDescriptions]
+    ?? t(($) => $.serviceDetail.fallbackDescription)
 
   // Prepare chart data
   const chartData = historicalData.map((point) => ({
-    time: formatChartTime(point.timestamp),
+    time: formatters.time(point.timestamp, {
+      hour: '2-digit',
+      minute: '2-digit',
+      fallback: '',
+    }),
     opsPerMinute: point.opsPerMinute,
     p95LatencyMs: point.p95LatencyMs,
     errorRate: point.errorRate * 100, // Convert to percentage
@@ -129,7 +132,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
             {service.displayName}
           </span>
           <span className="service-detail-drawer__status-text">
-            {STATUS_TEXT[service.status]}
+            {t(($) => $.status[service.status])}
           </span>
         </div>
       }
@@ -143,7 +146,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
         <Row gutter={16}>
           <Col span={6}>
             <Statistic
-              title="Ops/min"
+              title={t(($) => $.serviceDetail.opsPerMinute)}
               value={service.opsPerMinute}
               precision={1}
               prefix={<ThunderboltOutlined />}
@@ -152,7 +155,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
           </Col>
           <Col span={6}>
             <Statistic
-              title="P95 Latency"
+              title={t(($) => $.serviceDetail.p95Latency)}
               value={service.p95LatencyMs}
               suffix="ms"
               precision={0}
@@ -162,7 +165,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
           </Col>
           <Col span={6}>
             <Statistic
-              title="Error Rate"
+              title={t(($) => $.serviceDetail.errorRate)}
               value={service.errorRate * 100}
               suffix="%"
               precision={2}
@@ -175,7 +178,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
           </Col>
           <Col span={6}>
             <Statistic
-              title="Active"
+              title={t(($) => $.serviceDetail.active)}
               value={service.activeOperations}
               prefix={<HistoryOutlined />}
               valueStyle={{ fontSize: 18 }}
@@ -190,7 +193,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
         className="service-detail-drawer__chart-card"
         title={
           <div className="service-detail-drawer__chart-header">
-            <LineChartOutlined /> Historical Metrics
+            <LineChartOutlined /> {t(($) => $.serviceDetail.historicalMetrics)}
           </div>
         }
         extra={
@@ -202,7 +205,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
                 type={selectedMinutes === minutes ? 'primary' : 'default'}
                 onClick={() => setSelectedMinutes(minutes)}
               >
-                {minutes}m
+                {t(($) => $.serviceDetail.minutesShort, { count: minutes })}
               </Button>
             ))}
           </div>
@@ -215,7 +218,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
         ) : chartData.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No historical data available"
+            description={t(($) => $.serviceDetail.noHistoricalData)}
           />
         ) : (
           <div className="service-detail-drawer__chart">
@@ -232,7 +235,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
                   tick={{ fontSize: 10 }}
                   stroke="#1890ff"
                   label={{
-                    value: 'Ops/min',
+                    value: t(($) => $.serviceDetail.opsPerMinute),
                     angle: -90,
                     position: 'insideLeft',
                     style: { fontSize: 10, fill: '#1890ff' },
@@ -244,7 +247,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
                   tick={{ fontSize: 10 }}
                   stroke="#52c41a"
                   label={{
-                    value: 'Latency (ms)',
+                    value: `${t(($) => $.serviceDetail.p95Latency)} (ms)`,
                     angle: 90,
                     position: 'insideRight',
                     style: { fontSize: 10, fill: '#52c41a' },
@@ -264,7 +267,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
                   yAxisId="left"
                   type="monotone"
                   dataKey="opsPerMinute"
-                  name="Ops/min"
+                  name={t(($) => $.serviceDetail.opsPerMinute)}
                   stroke="#1890ff"
                   dot={false}
                   strokeWidth={2}
@@ -273,7 +276,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
                   yAxisId="right"
                   type="monotone"
                   dataKey="p95LatencyMs"
-                  name="P95 Latency"
+                  name={t(($) => $.serviceDetail.p95Latency)}
                   stroke="#52c41a"
                   dot={false}
                   strokeWidth={2}
@@ -284,7 +287,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
             {/* Error rate chart (separate, smaller) */}
             <div className="service-detail-drawer__error-chart">
               <div className="service-detail-drawer__error-chart-title">
-                Error Rate (%)
+                {t(($) => $.serviceDetail.errorRateChartTitle)}
               </div>
               <ResponsiveContainer width="100%" height={80}>
                 <LineChart data={chartData}>
@@ -315,7 +318,7 @@ const ServiceDetailDrawer: React.FC<ServiceDetailDrawerProps> = ({
         className="service-detail-drawer__view-all"
         to={`/operations?service=${service.name}`}
       >
-        View All Operations for {service.displayName}
+        {t(($) => $.serviceDetail.viewAllOperations, { service: service.displayName })}
       </RouteButton>
       </div>
     </DrawerSurfaceShell>

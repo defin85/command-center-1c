@@ -12,6 +12,7 @@ import React, { useState, useCallback, useMemo, useRef } from 'react'
 import { Alert, Spin } from 'antd'
 import useServiceMesh from '../../hooks/useServiceMesh'
 import { useResponsiveDirection } from '../../hooks/useResponsiveDirection'
+import { useServiceMeshTranslation } from '../../i18n'
 import SystemHealthCard from './SystemHealthCard'
 import ServiceFlowDiagram from './ServiceFlowDiagram'
 import ServiceDetailDrawer from './ServiceDetailDrawer'
@@ -33,6 +34,7 @@ const ServiceMeshTab: React.FC<ServiceMeshTabProps> = ({
   selectedOperationId: controlledSelectedOperationId,
   onSelectedOperationIdChange,
 }) => {
+  const { t } = useServiceMeshTranslation()
   // Ref for diagram container (used by useResponsiveDirection)
   const diagramContainerRef = useRef<HTMLDivElement>(null)
 
@@ -107,7 +109,7 @@ const ServiceMeshTab: React.FC<ServiceMeshTabProps> = ({
   if (services.length === 0 && !connectionError) {
     return (
       <div className="service-mesh-tab__loading">
-        <Spin size="large" tip="Loading service mesh\u2026">
+        <Spin size="large" tip={t(($) => $.tab.loading)}>
           <div style={{ minHeight: 200 }} />
         </Spin>
       </div>
@@ -119,7 +121,7 @@ const ServiceMeshTab: React.FC<ServiceMeshTabProps> = ({
       {/* Connection error alert */}
       {connectionError && !isConnected && (
         <Alert
-          message="Connection Issue"
+          message={t(($) => $.tab.connectionIssue)}
           description={connectionError}
           type="warning"
           showIcon
@@ -129,8 +131,8 @@ const ServiceMeshTab: React.FC<ServiceMeshTabProps> = ({
 
       {rasServerMetrics && rasServerMetrics.status !== 'healthy' && (
         <Alert
-          message="RAS connectivity"
-          description="RAS Server"
+          message={t(($) => $.tab.rasConnectivity)}
+          description={t(($) => $.tab.rasServer)}
           type={rasServerMetrics.status === 'degraded' ? 'warning' : 'error'}
           showIcon
           className="service-mesh-tab__alert"

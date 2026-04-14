@@ -38,12 +38,6 @@ export type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisi
 
 export const DECISIONS_API_OPTIONS = { errorPolicy: 'page' } as const
 
-export const METADATA_CONTEXT_FALLBACK_MESSAGE = 'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
-export const METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE = 'Metadata context недоступен для выбранной базы. Чтобы восстановить configuration profile и metadata snapshot, откройте /databases.'
-export const METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед guided rollover.'
-export const METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE = 'Resolved target metadata context недоступен. Откройте /databases и обновите metadata snapshot перед clone flow.'
-export const LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE = 'This revision is still pinned in workflow bindings, but /decisions editing supports only document_policy. Update the binding to a document_policy revision before editing here.'
-
 const METADATA_CONTEXT_FALLBACK_CODES = new Set([
   'ODATA_MAPPING_AMBIGUOUS',
   'ODATA_MAPPING_NOT_CONFIGURED',
@@ -247,21 +241,34 @@ export const buildDraftFromDecision = (
   }
 }
 
-export const normalizeMetadataItems = (metadata: MetadataContextLike) => (
+export const normalizeMetadataItems = (
+  metadata: MetadataContextLike,
+  options?: {
+    unavailableLabel?: string
+    driftYesLabel?: string
+    driftNoLabel?: string
+  },
+) => {
+  const unavailableLabel = options?.unavailableLabel ?? '—'
+  const driftYesLabel = options?.driftYesLabel ?? 'warning'
+  const driftNoLabel = options?.driftNoLabel ?? 'no'
+
+  return (
   metadata
     ? [
-      { key: 'config', label: 'Configuration profile', value: metadata.config_name || '—' },
-      { key: 'version', label: 'Config version', value: metadata.config_version || '—' },
-      { key: 'generation', label: 'Config generation ID', value: readMetadataString(metadata, 'config_generation_id') || '—' },
-      { key: 'snapshot', label: 'Snapshot ID', value: metadata.snapshot_id || '—' },
-      { key: 'mode', label: 'Resolution mode', value: metadata.resolution_mode || '—' },
-      { key: 'hash', label: 'Metadata hash', value: metadata.metadata_hash || '—' },
-      { key: 'observed_hash', label: 'Observed hash', value: readMetadataString(metadata, 'observed_metadata_hash') || '—' },
-      { key: 'drift', label: 'Publication drift', value: readMetadataBoolean(metadata, 'publication_drift') ? 'warning' : 'no' },
-      { key: 'provenance', label: 'Provenance database', value: metadata.provenance_database_id || '—' },
+      { key: 'config', value: metadata.config_name || unavailableLabel },
+      { key: 'version', value: metadata.config_version || unavailableLabel },
+      { key: 'generation', value: readMetadataString(metadata, 'config_generation_id') || unavailableLabel },
+      { key: 'snapshot', value: metadata.snapshot_id || unavailableLabel },
+      { key: 'mode', value: metadata.resolution_mode || unavailableLabel },
+      { key: 'hash', value: metadata.metadata_hash || unavailableLabel },
+      { key: 'observed_hash', value: readMetadataString(metadata, 'observed_metadata_hash') || unavailableLabel },
+      { key: 'drift', value: readMetadataBoolean(metadata, 'publication_drift') ? driftYesLabel : driftNoLabel },
+      { key: 'provenance', value: metadata.provenance_database_id || unavailableLabel },
     ]
     : []
 )
+}
 
 export const renderCompatibilityTag = (compatibility?: DecisionMetadataCompatibility | null) => {
   if (!compatibility) return <StatusBadge status="unknown" />

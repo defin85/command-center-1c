@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event'
 import OperationTimelineDrawer from '../OperationTimelineDrawer'
 import { apiClient } from '../../../api/client'
 import type { OperationTimelineResponse } from '../../../types/operationTimeline'
+import { changeLanguage } from '@/i18n/runtime'
 
 // Mock API client
 vi.mock('../../../api/client', () => ({
@@ -70,12 +71,14 @@ describe('OperationTimelineDrawer', () => {
     duration_ms: 1600,
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     vi.clearAllMocks()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks()
+    await changeLanguage('ru')
   })
 
   describe('Drawer State', () => {
@@ -103,7 +106,7 @@ describe('OperationTimelineDrawer', () => {
         />
       )
 
-      expect(screen.getByText('Operation Timeline')).toBeInTheDocument()
+      expect(screen.getByText('Operation timeline')).toBeInTheDocument()
       await waitFor(() => expect(vi.mocked(apiClient.post)).toHaveBeenCalled())
     })
 
@@ -352,7 +355,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Error Loading Timeline')).toBeInTheDocument()
+        expect(screen.getByText('Error loading timeline')).toBeInTheDocument()
         expect(screen.getByText('Network error')).toBeInTheDocument()
       })
     })
@@ -421,7 +424,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Failed to load timeline data')).toBeInTheDocument()
+        expect(screen.getAllByText('Error loading timeline')).not.toHaveLength(0)
       })
     })
 
@@ -469,7 +472,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Total Duration')).toBeInTheDocument()
+        expect(screen.getByText('Total duration')).toBeInTheDocument()
         expect(screen.getByText('1.6s')).toBeInTheDocument() // 1600ms formatted
 
         expect(screen.getByText('Events')).toBeInTheDocument()
@@ -480,7 +483,7 @@ describe('OperationTimelineDrawer', () => {
       })
     })
 
-    it('shows "In Progress" when duration_ms is null', async () => {
+    it('shows "In progress" when duration_ms is null', async () => {
       const inProgressResponse: OperationTimelineResponse = {
         ...mockTimelineResponse,
         duration_ms: null,
@@ -496,7 +499,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('In Progress')).toBeInTheDocument()
+        expect(screen.getByText('In progress')).toBeInTheDocument()
       })
     })
 
@@ -554,7 +557,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getByText('Total Duration')).toBeInTheDocument()
+        expect(screen.getByText('Total duration')).toBeInTheDocument()
       })
 
       // Close drawer
@@ -567,7 +570,7 @@ describe('OperationTimelineDrawer', () => {
       )
 
       // Data should be cleared (drawer is closed, so content not visible)
-      expect(screen.queryByText('Total Duration')).not.toBeInTheDocument()
+      expect(screen.queryByText('Total duration')).not.toBeInTheDocument()
     })
   })
 

@@ -21,6 +21,7 @@ import {
   type SuggestionOption,
 } from './documentPolicyBuilderSuggestions'
 import type { PoolODataMetadataCatalogDocument } from '../../api/generated/model'
+import { useDecisionsTranslation } from '../../i18n'
 
 const { Text } = Typography
 
@@ -186,6 +187,7 @@ export function DocumentPolicyBuilderEditor({
   disabled = false,
   metadataDocuments = [],
 }: DocumentPolicyBuilderEditorProps) {
+  const { t } = useDecisionsTranslation()
   const chains = Array.isArray(value) ? value : []
   const chainIdOptions = buildChainIdOptions(chains)
   const documentRoleOptions = buildDocumentRoleOptions(chains)
@@ -204,18 +206,18 @@ export function DocumentPolicyBuilderEditor({
         onClick={() => updateChains((draft) => { draft.push(createEmptyChain()) })}
         disabled={disabled}
       >
-        Add chain
+        {t(($) => $.builder.addChain)}
       </Button>
 
       {chains.length === 0 ? (
-        <Text type="secondary">Add at least one chain to publish a document policy.</Text>
+        <Text type="secondary">{t(($) => $.builder.empty)}</Text>
       ) : null}
 
       {chains.map((chain, chainIndex) => (
         <Card
           key={`chain-${chainIndex + 1}`}
           size="small"
-          title={`Chain ${chainIndex + 1}`}
+          title={t(($) => $.builder.chainTitle, { index: String(chainIndex + 1) })}
           extra={(
             <Button
               danger
@@ -223,13 +225,13 @@ export function DocumentPolicyBuilderEditor({
               onClick={() => updateChains((draft) => { draft.splice(chainIndex, 1) })}
               disabled={disabled}
             >
-              Remove chain
+              {t(($) => $.builder.removeChain)}
             </Button>
           )}
         >
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <SuggestionInput
-              ariaLabel={`Chain ${chainIndex + 1} ID`}
+              ariaLabel={t(($) => $.builder.aria.chainId, { chain: String(chainIndex + 1) })}
               placeholder="sale_chain"
               value={chain.chain_id ?? ''}
               options={chainIdOptions}
@@ -247,7 +249,7 @@ export function DocumentPolicyBuilderEditor({
               })}
               disabled={disabled}
             >
-              {`Add document to chain ${chainIndex + 1}`}
+              {t(($) => $.builder.addDocument, { chain: String(chainIndex + 1) })}
             </Button>
 
             {(chain.documents ?? []).map((document, documentIndex) => (
@@ -277,7 +279,7 @@ export function DocumentPolicyBuilderEditor({
                 key={`chain-${chainIndex + 1}-document-${documentIndex + 1}`}
                 size="small"
                 type="inner"
-                title={`Document ${documentIndex + 1}`}
+                title={t(($) => $.builder.documentTitle, { index: String(documentIndex + 1) })}
                 extra={(
                   <Button
                     danger
@@ -287,13 +289,16 @@ export function DocumentPolicyBuilderEditor({
                     })}
                     disabled={disabled}
                   >
-                    Remove document
+                    {t(($) => $.builder.removeDocument)}
                   </Button>
                 )}
               >
                 <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                   <SuggestionInput
-                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} ID`}
+                    ariaLabel={t(($) => $.builder.aria.documentId, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                     placeholder="sale"
                     value={document.document_id ?? ''}
                     options={documentIdOptions}
@@ -304,7 +309,10 @@ export function DocumentPolicyBuilderEditor({
                     style={{ width: '100%' }}
                   />
                   <SuggestionInput
-                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} entity`}
+                    ariaLabel={t(($) => $.builder.aria.documentEntity, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                     placeholder="Document_Sales"
                     value={document.entity_name ?? ''}
                     options={entityOptions}
@@ -315,7 +323,10 @@ export function DocumentPolicyBuilderEditor({
                     style={{ width: '100%' }}
                   />
                   <SuggestionInput
-                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} role`}
+                    ariaLabel={t(($) => $.builder.aria.documentRole, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                     placeholder="base"
                     value={document.document_role ?? ''}
                     options={documentRoleOptions}
@@ -326,11 +337,14 @@ export function DocumentPolicyBuilderEditor({
                     style={{ width: '100%' }}
                   />
                   <Select
-                    aria-label={`Chain ${chainIndex + 1} document ${documentIndex + 1} invoice mode`}
+                    aria-label={t(($) => $.builder.aria.invoiceMode, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                     value={document.invoice_mode ?? 'optional'}
                     options={[
-                      { value: 'optional', label: 'optional' },
-                      { value: 'required', label: 'required' },
+                      { value: 'optional', label: t(($) => $.builder.invoiceModes.optional) },
+                      { value: 'required', label: t(($) => $.builder.invoiceModes.required) },
                     ]}
                     onChange={(nextValue) => updateChains((draft) => {
                       getDraftDocument(draft, chainIndex, documentIndex).invoice_mode = nextValue
@@ -338,7 +352,10 @@ export function DocumentPolicyBuilderEditor({
                     disabled={disabled}
                   />
                   <SuggestionInput
-                    ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link to`}
+                    ariaLabel={t(($) => $.builder.aria.linkTo, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                     placeholder="parent_document"
                     value={document.link_to ?? ''}
                     options={linkToOptions}
@@ -349,7 +366,7 @@ export function DocumentPolicyBuilderEditor({
                     style={{ width: '100%' }}
                   />
 
-                  <Divider orientation="left" plain>Field mapping</Divider>
+                  <Divider orientation="left" plain>{t(($) => $.builder.sections.fieldMapping)}</Divider>
                   <Button
                     type="dashed"
                     onClick={() => updateChains((draft) => {
@@ -357,12 +374,19 @@ export function DocumentPolicyBuilderEditor({
                     })}
                     disabled={disabled}
                   >
-                    {`Add field mapping to chain ${chainIndex + 1} document ${documentIndex + 1}`}
+                    {t(($) => $.builder.addFieldMapping, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                   </Button>
                   {(document.field_mappings ?? []).map((mapping, mappingIndex) => (
                     <Space key={`field-${mappingIndex + 1}`} align="start" wrap>
                       <SuggestionInput
-                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} target`}
+                        ariaLabel={t(($) => $.builder.aria.fieldTarget, {
+                          chain: String(chainIndex + 1),
+                          document: String(documentIndex + 1),
+                          mapping: String(mappingIndex + 1),
+                        })}
                         placeholder="Amount"
                         value={mapping.target ?? ''}
                         options={fieldTargetOptions}
@@ -373,7 +397,11 @@ export function DocumentPolicyBuilderEditor({
                         style={INLINE_FIELD_STYLE}
                       />
                       <SuggestionInput
-                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} field mapping ${mappingIndex + 1} source`}
+                        ariaLabel={t(($) => $.builder.aria.fieldSource, {
+                          chain: String(chainIndex + 1),
+                          document: String(documentIndex + 1),
+                          mapping: String(mappingIndex + 1),
+                        })}
                         placeholder="allocation.amount"
                         value={mapping.source ?? ''}
                         options={sourceExpressionOptions}
@@ -390,12 +418,12 @@ export function DocumentPolicyBuilderEditor({
                         })}
                         disabled={disabled}
                       >
-                        Remove
+                        {t(($) => $.builder.remove)}
                       </Button>
                     </Space>
                   ))}
 
-                  <Divider orientation="left" plain>Table-part mapping</Divider>
+                  <Divider orientation="left" plain>{t(($) => $.builder.sections.tablePartMapping)}</Divider>
                   <Button
                     type="dashed"
                     onClick={() => updateChains((draft) => {
@@ -403,7 +431,10 @@ export function DocumentPolicyBuilderEditor({
                     })}
                     disabled={disabled}
                   >
-                    {`Add table part mapping to chain ${chainIndex + 1} document ${documentIndex + 1}`}
+                    {t(($) => $.builder.addTablePartMapping, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                   </Button>
                   {(document.table_part_mappings ?? []).map((tablePartMapping, tablePartIndex) => (
                     (() => {
@@ -421,7 +452,7 @@ export function DocumentPolicyBuilderEditor({
                       key={`table-part-${tablePartIndex + 1}`}
                       size="small"
                       type="inner"
-                      title={`Table part ${tablePartIndex + 1}`}
+                      title={t(($) => $.builder.tablePartTitle, { index: String(tablePartIndex + 1) })}
                       extra={(
                         <Button
                           danger
@@ -431,13 +462,17 @@ export function DocumentPolicyBuilderEditor({
                           })}
                           disabled={disabled}
                         >
-                          Remove table part
+                          {t(($) => $.builder.removeTablePart)}
                         </Button>
                       )}
                     >
                       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                         <SuggestionInput
-                          ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part mapping ${tablePartIndex + 1} name`}
+                          ariaLabel={t(($) => $.builder.aria.tablePartName, {
+                            chain: String(chainIndex + 1),
+                            document: String(documentIndex + 1),
+                            tablePart: String(tablePartIndex + 1),
+                          })}
                           placeholder="Items"
                           value={tablePartMapping.table_part ?? ''}
                           options={tablePartOptions}
@@ -454,12 +489,21 @@ export function DocumentPolicyBuilderEditor({
                           })}
                           disabled={disabled}
                         >
-                          {`Add row mapping to chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1}`}
+                          {t(($) => $.builder.addRowMapping, {
+                            chain: String(chainIndex + 1),
+                            document: String(documentIndex + 1),
+                            tablePart: String(tablePartIndex + 1),
+                          })}
                         </Button>
                         {(tablePartMapping.row_mappings ?? []).map((rowMapping, rowMappingIndex) => (
                           <Space key={`row-${rowMappingIndex + 1}`} align="start" wrap>
                             <SuggestionInput
-                              ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} target`}
+                              ariaLabel={t(($) => $.builder.aria.rowTarget, {
+                                chain: String(chainIndex + 1),
+                                document: String(documentIndex + 1),
+                                tablePart: String(tablePartIndex + 1),
+                                mapping: String(rowMappingIndex + 1),
+                              })}
                               placeholder="Quantity"
                               value={rowMapping.target ?? ''}
                               options={rowTargetOptions}
@@ -470,7 +514,12 @@ export function DocumentPolicyBuilderEditor({
                               style={INLINE_FIELD_STYLE}
                             />
                             <SuggestionInput
-                              ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} table part ${tablePartIndex + 1} row mapping ${rowMappingIndex + 1} source`}
+                              ariaLabel={t(($) => $.builder.aria.rowSource, {
+                                chain: String(chainIndex + 1),
+                                document: String(documentIndex + 1),
+                                tablePart: String(tablePartIndex + 1),
+                                mapping: String(rowMappingIndex + 1),
+                              })}
                               placeholder="allocation.lines.quantity"
                               value={rowMapping.source ?? ''}
                               options={sourceExpressionOptions}
@@ -487,7 +536,7 @@ export function DocumentPolicyBuilderEditor({
                               })}
                               disabled={disabled}
                             >
-                              Remove
+                              {t(($) => $.builder.remove)}
                             </Button>
                           </Space>
                         ))}
@@ -497,7 +546,7 @@ export function DocumentPolicyBuilderEditor({
                     })()
                   ))}
 
-                  <Divider orientation="left" plain>Link rules</Divider>
+                  <Divider orientation="left" plain>{t(($) => $.builder.sections.linkRules)}</Divider>
                   <Button
                     type="dashed"
                     onClick={() => updateChains((draft) => {
@@ -505,12 +554,19 @@ export function DocumentPolicyBuilderEditor({
                     })}
                     disabled={disabled}
                   >
-                    {`Add link rule to chain ${chainIndex + 1} document ${documentIndex + 1}`}
+                    {t(($) => $.builder.addLinkRule, {
+                      chain: String(chainIndex + 1),
+                      document: String(documentIndex + 1),
+                    })}
                   </Button>
                   {(document.link_rules ?? []).map((linkRule, linkRuleIndex) => (
                     <Space key={`link-rule-${linkRuleIndex + 1}`} align="start" wrap>
                       <SuggestionInput
-                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} target`}
+                        ariaLabel={t(($) => $.builder.aria.linkRuleTarget, {
+                          chain: String(chainIndex + 1),
+                          document: String(documentIndex + 1),
+                          mapping: String(linkRuleIndex + 1),
+                        })}
                         placeholder="child_document"
                         value={linkRule.target ?? ''}
                         options={buildLinkRuleTargetOptions(
@@ -526,7 +582,11 @@ export function DocumentPolicyBuilderEditor({
                         style={INLINE_FIELD_STYLE}
                       />
                       <SuggestionInput
-                        ariaLabel={`Chain ${chainIndex + 1} document ${documentIndex + 1} link rule ${linkRuleIndex + 1} source`}
+                        ariaLabel={t(($) => $.builder.aria.linkRuleSource, {
+                          chain: String(chainIndex + 1),
+                          document: String(documentIndex + 1),
+                          mapping: String(linkRuleIndex + 1),
+                        })}
                         placeholder="parent.ref"
                         value={linkRule.source ?? ''}
                         options={sourceExpressionOptions}
@@ -543,7 +603,7 @@ export function DocumentPolicyBuilderEditor({
                         })}
                         disabled={disabled}
                       >
-                        Remove
+                        {t(($) => $.builder.remove)}
                       </Button>
                     </Space>
                   ))}

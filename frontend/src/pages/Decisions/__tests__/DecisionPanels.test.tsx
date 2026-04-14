@@ -1,7 +1,8 @@
 import { App as AntApp } from 'antd'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { changeLanguage } from '@/i18n/runtime'
 
 const { mockTrackUiAction } = vi.hoisted(() => ({
   mockTrackUiAction: vi.fn((_: unknown, handler?: () => unknown) => handler?.()),
@@ -23,8 +24,13 @@ import { DecisionEditorPanel, type DecisionEditorState } from '../DecisionEditor
 import { DecisionLegacyImportPanel } from '../DecisionLegacyImportPanel'
 
 describe('decision drawer panels', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     mockTrackUiAction.mockClear()
+  })
+
+  afterEach(async () => {
+    await changeLanguage('ru')
   })
 
   it('tracks semantic save action from the canonical decision editor drawer', async () => {

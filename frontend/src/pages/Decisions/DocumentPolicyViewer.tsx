@@ -1,6 +1,7 @@
 import { Descriptions, Space, Typography } from 'antd'
 
 import { EmptyState, EntityDetails } from '../../components/platform'
+import { useDecisionsTranslation } from '../../i18n'
 import type {
   DocumentPolicyChainOutput,
   DocumentPolicyDocumentOutput,
@@ -62,12 +63,13 @@ function DocumentViewer({
   document: DocumentPolicyDocumentOutput
   index: number
 }) {
+  const { t } = useDecisionsTranslation()
   const fieldMappings = Object.entries(document.field_mapping ?? {})
   const linkRules = Object.entries(document.link_rules ?? {})
   const tableParts = Object.entries(document.table_parts_mapping ?? {})
 
   return (
-    <EntityDetails title={`Document ${index + 1}: ${renderText(document.document_id)}`}>
+    <EntityDetails title={t(($) => $.viewer.documentTitle, { index: String(index + 1), id: renderText(document.document_id) })}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Descriptions
           size="small"
@@ -75,60 +77,62 @@ function DocumentViewer({
           items={[
             {
               key: 'entity',
-              label: 'Entity',
+              label: t(($) => $.viewer.entity),
               children: renderText(document.entity_name),
             },
             {
               key: 'role',
-              label: 'Role',
+              label: t(($) => $.viewer.role),
               children: renderText(document.document_role),
             },
             {
               key: 'invoice-mode',
-              label: 'Invoice mode',
+              label: t(($) => $.viewer.invoiceMode),
               children: renderText(document.invoice_mode),
             },
             {
               key: 'link-to',
-              label: 'Link to',
+              label: t(($) => $.viewer.linkTo),
               children: renderText(document.link_to),
             },
           ]}
         />
 
         <MappingViewer
-          title="Field mapping"
+          title={t(($) => $.viewer.fieldMapping)}
           entries={fieldMappings}
-          emptyLabel="No field mapping configured."
+          emptyLabel={t(($) => $.viewer.noFieldMapping)}
         />
 
         <Space direction="vertical" size="small" style={{ width: '100%' }}>
-          <Text strong>Table-part mapping</Text>
+          <Text strong>{t(($) => $.viewer.tablePartMapping)}</Text>
           {tableParts.length === 0 ? (
-            <Text type="secondary">No table-part mapping configured.</Text>
+            <Text type="secondary">{t(($) => $.viewer.noTablePartMapping)}</Text>
           ) : tableParts.map(([tablePart, rowMappings]) => (
             rowMappings.length === 0 ? (
               <EntityDetails
                 key={tablePart}
-                title={`Table part: ${tablePart}`}
+                title={t(($) => $.viewer.tablePartTitle, { name: tablePart })}
                 empty
-                emptyDescription="No row mappings configured."
+                emptyDescription={t(($) => $.viewer.noRowMappings)}
               />
             ) : rowMappings.map((rowMapping, rowIndex) => (
               <MappingViewer
                 key={`${tablePart}:${rowIndex}`}
-                title={rowMappings.length > 1 ? `Table part: ${tablePart} · Row ${rowIndex + 1}` : `Table part: ${tablePart}`}
+                title={rowMappings.length > 1
+                  ? t(($) => $.viewer.tablePartRowTitle, { name: tablePart, row: String(rowIndex + 1) })
+                  : t(($) => $.viewer.tablePartTitle, { name: tablePart })}
                 entries={Object.entries(rowMapping)}
-                emptyLabel="No row mappings configured."
+                emptyLabel={t(($) => $.viewer.noRowMappings)}
               />
             ))
           ))}
         </Space>
 
         <MappingViewer
-          title="Link rules"
+          title={t(($) => $.viewer.linkRules)}
           entries={linkRules}
-          emptyLabel="No link rules configured."
+          emptyLabel={t(($) => $.viewer.noLinkRules)}
         />
       </Space>
     </EntityDetails>
@@ -142,13 +146,14 @@ function ChainViewer({
   chain: DocumentPolicyChainOutput
   index: number
 }) {
+  const { t } = useDecisionsTranslation()
   const documents = Array.isArray(chain.documents) ? chain.documents : []
 
   return (
     <EntityDetails
-      title={`Chain ${index + 1}: ${renderText(chain.chain_id)}`}
+      title={t(($) => $.viewer.chainTitle, { index: String(index + 1), id: renderText(chain.chain_id) })}
       empty={documents.length === 0}
-      emptyDescription="No documents configured for this chain."
+      emptyDescription={t(($) => $.viewer.chainEmpty)}
     >
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         {documents.map((document, documentIndex) => (
@@ -168,6 +173,7 @@ export function DocumentPolicyViewer({
 }: {
   policy: DocumentPolicyOutput | null
 }) {
+  const { t } = useDecisionsTranslation()
   const chains = Array.isArray(policy?.chains) ? policy.chains : []
   const documentsCount = chains.reduce(
     (total, chain) => total + (Array.isArray(chain.documents) ? chain.documents.length : 0),
@@ -175,7 +181,7 @@ export function DocumentPolicyViewer({
   )
 
   if (!policy || chains.length === 0) {
-    return <EmptyState description="No structured document policy data available." />
+    return <EmptyState description={t(($) => $.viewer.noStructuredData)} />
   }
 
   return (
@@ -186,17 +192,17 @@ export function DocumentPolicyViewer({
         items={[
           {
             key: 'version',
-            label: 'Version',
+            label: t(($) => $.viewer.version),
             children: renderText(policy.version),
           },
           {
             key: 'chains',
-            label: 'Chains',
+            label: t(($) => $.viewer.chains),
             children: String(chains.length),
           },
           {
             key: 'documents',
-            label: 'Documents',
+            label: t(($) => $.viewer.documents),
             children: String(documentsCount),
           },
         ]}

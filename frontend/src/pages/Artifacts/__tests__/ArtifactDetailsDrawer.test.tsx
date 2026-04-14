@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import type { ReactNode } from 'react'
 import type { Artifact, ArtifactVersion } from '../../../api/artifacts'
+import { changeLanguage } from '@/i18n/runtime'
 
 const {
   mockUseArtifactVersions,
@@ -105,7 +106,8 @@ function renderDrawer() {
 }
 
 describe('ArtifactDetailsDrawer observability', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     mockConfirmWithTracking.mockClear()
     mockTrackUiAction.mockClear()
     mockAliasMutate.mockReset()
@@ -121,6 +123,10 @@ describe('ArtifactDetailsDrawer observability', () => {
       },
       isLoading: false,
     })
+  })
+
+  afterEach(async () => {
+    await changeLanguage('ru')
   })
 
   it('tracks stable/approved alias confirmation through confirmWithTracking', async () => {
@@ -177,5 +183,18 @@ describe('ArtifactDetailsDrawer observability', () => {
       { alias: 'release-candidate', version: '1.0.0' },
       expect.any(Object),
     )
+  })
+
+  it('renders localized drawer controls for the Russian locale', async () => {
+    const user = userEvent.setup()
+
+    await changeLanguage('ru')
+    renderDrawer()
+
+    expect(screen.getByRole('button', { name: /Установить алиас/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Алиасы (0)' }))
+    expect(screen.getByPlaceholderText('Произвольный алиас')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Применить алиас' })).toBeInTheDocument()
   })
 })

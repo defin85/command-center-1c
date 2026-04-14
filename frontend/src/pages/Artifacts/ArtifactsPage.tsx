@@ -11,6 +11,7 @@ import { TableToolkit } from '../../components/table/TableToolkit'
 import { useTableToolkit } from '../../components/table/hooks/useTableToolkit'
 import { PageHeader, WorkspacePage } from '../../components/platform'
 import { queryKeys } from '../../api/queries'
+import { useArtifactsTranslation } from '../../i18n'
 import { ArtifactsCreateModal } from './ArtifactsCreateModal'
 import { ArtifactDetailsDrawer } from './ArtifactDetailsDrawer'
 import { ArtifactsPurgeModal } from './ArtifactsPurgeModal'
@@ -35,6 +36,7 @@ export const ArtifactsPage = () => {
   const { message, modal } = App.useApp()
   const queryClient = useQueryClient()
   const { isStaff } = useAuthz()
+  const { t } = useArtifactsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const catalogTab = parseCatalogTab(searchParams.get('tab'))
@@ -68,33 +70,33 @@ export const ArtifactsPage = () => {
 
   const openPurgeModal = useCallback((artifact: Artifact) => {
     if (!isStaff) {
-      message.error('Permanent delete requires staff access')
+      message.error(t(($) => $.page.staffPurgeRequired))
       return
     }
     updateSearchParams({
       artifact: artifact.id,
       context: 'purge',
     })
-  }, [isStaff, message, updateSearchParams])
+  }, [isStaff, message, t, updateSearchParams])
 
   const handleDeleteArtifact = useCallback((artifact: Artifact) => {
     if (!isStaff) {
-      message.error('Delete requires staff access')
+      message.error(t(($) => $.page.staffDeleteRequired))
       return
     }
     confirmWithTracking(modal, {
-      title: `Delete artifact "${artifact.name}"?`,
-      content: 'Artifact will be hidden from the catalog. Versions and aliases remain stored.',
-      okText: 'Delete',
+      title: t(($) => $.confirm.deleteTitle, { name: artifact.name }),
+      content: t(($) => $.confirm.deleteDescription),
+      okText: t(($) => $.confirm.deleteOk),
       okButtonProps: { danger: true, loading: deleteArtifactMutation.isPending },
       onOk: async () => {
         try {
           await deleteArtifactMutation.mutateAsync(artifact.id)
-          message.success('Artifact deleted')
+          message.success(t(($) => $.confirm.deleteSuccess))
           updateSearchParams({ artifact: null, context: null, tab: 'deleted' })
           queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
         } catch {
-          message.error('Failed to delete artifact')
+          message.error(t(($) => $.confirm.deleteFailed))
         }
       },
     }, {
@@ -105,25 +107,25 @@ export const ArtifactsPage = () => {
         artifact_name: artifact.name,
       },
     })
-  }, [deleteArtifactMutation, isStaff, message, modal, queryClient, updateSearchParams])
+  }, [deleteArtifactMutation, isStaff, message, modal, queryClient, t, updateSearchParams])
 
   const handleRestoreArtifact = useCallback((artifact: Artifact) => {
     if (!isStaff) {
-      message.error('Restore requires staff access')
+      message.error(t(($) => $.page.staffRestoreRequired))
       return
     }
     confirmWithTracking(modal, {
-      title: `Restore artifact "${artifact.name}"?`,
-      content: 'Artifact will be returned to the active catalog.',
-      okText: 'Restore',
+      title: t(($) => $.confirm.restoreTitle, { name: artifact.name }),
+      content: t(($) => $.confirm.restoreDescription),
+      okText: t(($) => $.confirm.restoreOk),
       onOk: async () => {
         try {
           await restoreArtifactMutation.mutateAsync(artifact.id)
-          message.success('Artifact restored')
+          message.success(t(($) => $.confirm.restoreSuccess))
           updateSearchParams({ artifact: artifact.id, context: 'inspect', tab: 'active' })
           queryClient.invalidateQueries({ queryKey: queryKeys.artifacts.all })
         } catch {
-          message.error('Failed to restore artifact')
+          message.error(t(($) => $.confirm.restoreFailed))
         }
       },
     }, {
@@ -134,7 +136,7 @@ export const ArtifactsPage = () => {
         artifact_name: artifact.name,
       },
     })
-  }, [isStaff, message, modal, queryClient, restoreArtifactMutation, updateSearchParams])
+  }, [isStaff, message, modal, queryClient, restoreArtifactMutation, t, updateSearchParams])
 
   const columns = useArtifactsColumns({
     catalogTab,
@@ -146,13 +148,13 @@ export const ArtifactsPage = () => {
   })
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'name', label: 'Name', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'kind', label: 'Kind', sortable: true, groupKey: 'core', groupLabel: 'Core' },
-    { key: 'tags', label: 'Tags', groupKey: 'meta', groupLabel: 'Meta' },
-    { key: 'purge_after', label: 'Auto purge', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'created_at', label: 'Created', sortable: true, groupKey: 'time', groupLabel: 'Time' },
-    { key: 'actions', label: 'Actions', groupKey: 'actions', groupLabel: 'Actions' },
-  ], [])
+    { key: 'name', label: t(($) => $.table.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.groups.core) },
+    { key: 'kind', label: t(($) => $.table.kind), sortable: true, groupKey: 'core', groupLabel: t(($) => $.groups.core) },
+    { key: 'tags', label: t(($) => $.table.tags), groupKey: 'meta', groupLabel: t(($) => $.groups.meta) },
+    { key: 'purge_after', label: t(($) => $.table.autoPurge), sortable: true, groupKey: 'time', groupLabel: t(($) => $.groups.time) },
+    { key: 'created_at', label: t(($) => $.table.created), sortable: true, groupKey: 'time', groupLabel: t(($) => $.groups.time) },
+    { key: 'actions', label: t(($) => $.table.actions), groupKey: 'actions', groupLabel: t(($) => $.groups.actions) },
+  ], [t])
 
   const table = useTableToolkit({
     tableId: 'artifacts',
@@ -195,19 +197,22 @@ export const ArtifactsPage = () => {
   const selectedArtifactError = Boolean(selectedArtifactId)
     && selectedArtifact === null
     && !selectedArtifactLoading
-    ? 'Selected artifact could not be restored. Reload the workspace or choose another artifact from the catalog.'
+    ? t(($) => $.page.selectedArtifactMissing)
     : null
+  const currentTabLabel = catalogTab === 'active'
+    ? t(($) => $.page.active)
+    : t(($) => $.page.deleted)
 
   return (
     <WorkspacePage
       header={(
         <PageHeader
-          title="Artifacts"
-          subtitle="Catalog workspace с URL-backed tab/artifact context и canonical secondary surfaces."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Space wrap>
               <Button onClick={() => artifactsQuery.refetch()} loading={artifactsQuery.isFetching}>
-                Refresh
+                {t(($) => $.page.refresh)}
               </Button>
               <Button
                 type="primary"
@@ -215,7 +220,7 @@ export const ArtifactsPage = () => {
                 onClick={() => updateSearchParams({ artifact: null, context: 'create' })}
                 disabled={!isStaff}
               >
-                Add artifact
+                {t(($) => $.page.addArtifact)}
               </Button>
             </Space>
           )}
@@ -227,29 +232,31 @@ export const ArtifactsPage = () => {
           type={catalogTab === 'active' ? 'primary' : 'default'}
           onClick={() => updateSearchParams({ tab: 'active', artifact: null, context: null })}
         >
-          Active
+          {t(($) => $.page.active)}
         </Button>
         <Button
           type={catalogTab === 'deleted' ? 'primary' : 'default'}
           onClick={() => updateSearchParams({ tab: 'deleted', artifact: null, context: null })}
         >
-          Deleted
+          {t(($) => $.page.deleted)}
         </Button>
-        <Typography.Text type="secondary">tab={catalogTab}</Typography.Text>
+        <Typography.Text type="secondary">
+          {t(($) => $.page.currentTab, { value: currentTabLabel })}
+        </Typography.Text>
       </Space>
 
       {!isStaff && (
         <Alert
           type="warning"
-          message="Доступ ограничен"
-          description="Каталог артефактов доступен только сотрудникам."
+          message={t(($) => $.page.accessDeniedTitle)}
+          description={t(($) => $.page.accessDeniedDescription)}
         />
       )}
 
       {artifactsQuery.error && (
         <Alert
           type="error"
-          message="Не удалось загрузить артефакты"
+          message={t(($) => $.page.loadFailed)}
         />
       )}
 
@@ -262,7 +269,7 @@ export const ArtifactsPage = () => {
         columns={columns}
         tableLayout="fixed"
         scroll={{ x: table.totalColumnsWidth }}
-        searchPlaceholder="Search artifacts"
+        searchPlaceholder={t(($) => $.page.searchPlaceholder)}
         onRow={(record) => ({
           onClick: () => handleOpenDetails(record),
           style: { cursor: 'pointer' },

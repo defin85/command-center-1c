@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getPoolGraph, listOrganizationPools, migratePoolEdgeDocumentPolicy, type PoolDocumentPolicyMigrationResponse } from '../../api/intercompanyPools'
+import { useDecisionsTranslation } from '../../i18n'
 import type { DecisionLegacyImportState } from './DecisionLegacyImportPanel'
 import {
   buildEmptyLegacyImportDraft,
@@ -21,6 +22,7 @@ export function useDecisionLegacyImport({
   message,
   onImportComplete,
 }: UseDecisionLegacyImportArgs) {
+  const { t } = useDecisionsTranslation()
   const [legacyImportDraft, setLegacyImportDraft] = useState<DecisionLegacyImportState | null>(null)
   const [legacyImportGraph, setLegacyImportGraph] = useState<Awaited<ReturnType<typeof getPoolGraph>> | null>(null)
   const [legacyImportGraphLoading, setLegacyImportGraphLoading] = useState(false)
@@ -50,7 +52,7 @@ export function useDecisionLegacyImport({
         setPools(items)
       } catch (error) {
         if (cancelled) return
-        const errorMessage = toErrorMessage(error, 'Failed to load pools for legacy import.')
+        const errorMessage = toErrorMessage(error, t(($) => $.messages.loadPoolsFailed))
         setPools([])
         setPoolsError(errorMessage)
         setLegacyImportError(errorMessage)
@@ -93,7 +95,7 @@ export function useDecisionLegacyImport({
       } catch (error) {
         if (cancelled) return
         setLegacyImportGraph(null)
-        setLegacyImportError(toErrorMessage(error, 'Failed to load pool topology for legacy import.'))
+        setLegacyImportError(toErrorMessage(error, t(($) => $.messages.loadPoolTopologyFailed)))
       } finally {
         if (!cancelled) {
           setLegacyImportGraphLoading(false)
@@ -158,11 +160,11 @@ export function useDecisionLegacyImport({
     const edgeVersionId = legacyImportDraft.edgeVersionId.trim()
 
     if (!poolId) {
-      setLegacyImportError('Select a pool for legacy import.')
+      setLegacyImportError(t(($) => $.messages.selectPoolRequired))
       return
     }
     if (!edgeVersionId) {
-      setLegacyImportError('Select a topology edge with legacy document_policy metadata.')
+      setLegacyImportError(t(($) => $.messages.selectEdgeRequired))
       return
     }
 
@@ -187,12 +189,12 @@ export function useDecisionLegacyImport({
       setLegacyImportGraph(null)
       message.success(
         response.migration.binding_update_required
-          ? 'Legacy policy imported to /decisions. Pin the resulting decision ref where needed.'
-          : 'Legacy policy imported to /decisions.',
+          ? t(($) => $.messages.importLegacySuccessPin)
+          : t(($) => $.messages.importLegacySuccess),
       )
       onImportComplete(response.decision.id || null)
     } catch (error) {
-      setLegacyImportError(toErrorMessage(error, 'Failed to import legacy document policy.'))
+      setLegacyImportError(toErrorMessage(error, t(($) => $.messages.importLegacyFailed)))
     } finally {
       setSaving(false)
     }

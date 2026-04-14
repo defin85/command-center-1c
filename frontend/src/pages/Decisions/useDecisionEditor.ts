@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import type { DecisionTable } from '../../api/generated/model'
 import { getV2 } from '../../api/generated'
+import { useDecisionsTranslation } from '../../i18n'
 import {
   buildDocumentPolicyDecisionPayload,
   buildDocumentPolicyFromBuilder,
@@ -17,10 +18,6 @@ import {
   buildChainsFromDraft,
   buildDraftFromDecision,
   buildEditorTargetSummary,
-  LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE,
-  METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE,
-  METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE,
-  METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE,
   toErrorMessage,
   type MetadataContextLike,
   DECISIONS_API_OPTIONS,
@@ -61,6 +58,7 @@ export function useDecisionEditor({
   message,
   onDecisionSaved,
 }: UseDecisionEditorArgs) {
+  const { t } = useDecisionsTranslation()
   const [editorDraft, setEditorDraft] = useState<DecisionEditorState | null>(null)
   const [editorError, setEditorError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -101,19 +99,19 @@ export function useDecisionEditor({
       setEditorDraft(null)
       setEditorError(
         selectedDecisionPinnedInBinding
-          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
-          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions editing supports only document_policy.`
+          ? t(($) => $.messages.legacyBoundReadOnly)
+          : t(($) => $.messages.unsupportedEdit, { decisionKey: selectedDecision.decision_key })
       )
       return
     }
     if (metadataContextFallbackActive) {
       setEditorDraft(null)
-      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      setEditorError(t(($) => $.messages.metadataContextActionBlocked))
       return
     }
     if (selectedDecisionRequiresRollover) {
       setEditorDraft(null)
-      setEditorError('This revision is outside the selected target configuration. Use guided rollover to publish a new revision for the current database.')
+      setEditorError(t(($) => $.messages.selectedOutsideConfiguration))
       return
     }
 
@@ -121,7 +119,7 @@ export function useDecisionEditor({
       openEditor('revise', buildDraftFromDecision(selectedDecision))
     } catch (error) {
       setEditorDraft(null)
-      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened in the editor.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.openEditorFailed)))
     }
   }
 
@@ -131,14 +129,14 @@ export function useDecisionEditor({
       setEditorDraft(null)
       setEditorError(
         selectedDecisionPinnedInBinding
-          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
-          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions rollover supports only document_policy.`
+          ? t(($) => $.messages.legacyBoundReadOnly)
+          : t(($) => $.messages.unsupportedRollover, { decisionKey: selectedDecision.decision_key })
       )
       return
     }
     if (!effectiveSelectedDatabaseId || !selectedDatabaseLabel) {
       setEditorDraft(null)
-      setEditorError('Select a target database before starting guided rollover.')
+      setEditorError(t(($) => $.messages.selectDatabaseBeforeRollover))
       return
     }
 
@@ -148,7 +146,7 @@ export function useDecisionEditor({
     })
     if (!targetSummary) {
       setEditorDraft(null)
-      setEditorError(METADATA_CONTEXT_ROLLOVER_BLOCKED_MESSAGE)
+      setEditorError(t(($) => $.messages.metadataContextRolloverBlocked))
       return
     }
 
@@ -163,7 +161,7 @@ export function useDecisionEditor({
       )
     } catch (error) {
       setEditorDraft(null)
-      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened as a rollover source.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.openRolloverFailed)))
     }
   }
 
@@ -173,19 +171,19 @@ export function useDecisionEditor({
       setEditorDraft(null)
       setEditorError(
         selectedDecisionPinnedInBinding
-          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
-          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions clone supports only document_policy.`
+          ? t(($) => $.messages.legacyBoundReadOnly)
+          : t(($) => $.messages.unsupportedClone, { decisionKey: selectedDecision.decision_key })
       )
       return
     }
     if (metadataContextFallbackActive) {
       setEditorDraft(null)
-      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      setEditorError(t(($) => $.messages.metadataContextActionBlocked))
       return
     }
     if (!effectiveSelectedDatabaseId || !selectedDatabaseLabel) {
       setEditorDraft(null)
-      setEditorError('Select a target database before cloning the selected revision.')
+      setEditorError(t(($) => $.messages.selectDatabaseBeforeClone))
       return
     }
 
@@ -195,7 +193,7 @@ export function useDecisionEditor({
     })
     if (!targetSummary) {
       setEditorDraft(null)
-      setEditorError(METADATA_CONTEXT_CLONE_BLOCKED_MESSAGE)
+      setEditorError(t(($) => $.messages.metadataContextCloneBlocked))
       return
     }
 
@@ -210,7 +208,7 @@ export function useDecisionEditor({
       )
     } catch (error) {
       setEditorDraft(null)
-      setEditorError(toErrorMessage(error, 'Selected decision cannot be opened as a clone source.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.openCloneFailed)))
     }
   }
 
@@ -235,7 +233,7 @@ export function useDecisionEditor({
       setEditorDraft({ ...editorDraft, activeTab: 'builder', chains })
       setEditorError(null)
     } catch (error) {
-      setEditorError(toErrorMessage(error, 'Failed to parse raw document policy JSON.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.parseRawJsonFailed)))
     }
   }
 
@@ -260,17 +258,17 @@ export function useDecisionEditor({
       const nextDecisionId = response?.decision?.id ?? null
       message.success(
         editorDraft.mode === 'rollover'
-          ? 'Rollover revision created'
+          ? t(($) => $.messages.saveSuccessRollover)
           : editorDraft.mode === 'clone'
-            ? 'Cloned decision created'
+            ? t(($) => $.messages.saveSuccessClone)
           : editorDraft.mode === 'revise'
-            ? 'Decision revision created'
-            : 'Decision saved',
+            ? t(($) => $.messages.saveSuccessRevision)
+            : t(($) => $.messages.saveSuccess),
       )
       setEditorDraft(null)
       onDecisionSaved(nextDecisionId)
     } catch (error) {
-      setEditorError(toErrorMessage(error, 'Failed to save decision.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.saveFailed)))
     } finally {
       setSaving(false)
     }
@@ -281,13 +279,13 @@ export function useDecisionEditor({
     if (!selectedDecisionSupportsDocumentPolicyAuthoring) {
       setEditorError(
         selectedDecisionPinnedInBinding
-          ? LEGACY_BOUND_DECISION_READ_ONLY_MESSAGE
-          : `This revision uses decision_key "${selectedDecision.decision_key}". /decisions deactivation supports only document_policy.`
+          ? t(($) => $.messages.legacyBoundReadOnly)
+          : t(($) => $.messages.unsupportedDeactivate, { decisionKey: selectedDecision.decision_key })
       )
       return
     }
     if (metadataContextFallbackActive) {
-      setEditorError(METADATA_CONTEXT_ACTION_BLOCKED_MESSAGE)
+      setEditorError(t(($) => $.messages.metadataContextActionBlocked))
       return
     }
 
@@ -306,10 +304,10 @@ export function useDecisionEditor({
       })
 
       await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
-      message.warning('Decision deactivated')
+      message.warning(t(($) => $.messages.deactivated))
       onDecisionSaved(selectedDecision.id)
     } catch (error) {
-      setEditorError(toErrorMessage(error, 'Failed to deactivate decision.'))
+      setEditorError(toErrorMessage(error, t(($) => $.messages.deactivateFailed)))
     } finally {
       setSaving(false)
     }

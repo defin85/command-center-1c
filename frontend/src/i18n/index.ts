@@ -7,12 +7,15 @@ export { ensureNamespaces, i18n } from './runtime'
 export {
   useAdminSupportTranslation,
   useAppTranslation,
+  useArtifactsTranslation,
+  useDecisionsTranslation,
   useCommonTranslation,
   useDashboardTranslation,
   useErrorsTranslation,
   useClustersTranslation,
   usePlatformTranslation,
   useRbacTranslation,
+  useServiceMeshTranslation,
   useShellTranslation,
   useSystemStatusTranslation,
 } from './useAppTranslation'

@@ -7,7 +7,7 @@
 ## 2. Frontend migration waves
 
 - [x] 2.1 Мигрировать low-coupling admin/support routes: `/extensions`, `/users`, `/dlq`, `/settings/runtime`, `/settings/command-schemas`, `/settings/timeline`. (после 1.1-1.3)
-- [ ] 2.2 Мигрировать shared support/governance surfaces: `/artifacts`, `/service-mesh`, `/decisions`, включая их owned drawers/detail helpers. (после 2.1)
+- [x] 2.2 Мигрировать shared support/governance surfaces: `/artifacts`, `/service-mesh`, `/decisions`, включая их owned drawers/detail helpers. (после 2.1)
 - [ ] 2.3 Мигрировать operational catalog/detail routes: `/operations`, `/databases`, `/templates`. (после 2.2)
 - [ ] 2.4 Мигрировать workflow family: `/workflows`, `/workflows/executions`, `/workflows/new`, `/workflows/:id`, `/workflows/executions/:executionId`. (после 2.3)
 - [ ] 2.5 Мигрировать pool reusable authoring/catalog surfaces: `/pools/catalog`, `/pools/templates`, `/pools/topology-templates`, `/pools/execution-packs`. (после 2.4)

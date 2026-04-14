@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { Artifact } from '../../../api/artifacts'
+import { changeLanguage } from '@/i18n/runtime'
 
 import { ArtifactsPage } from '../ArtifactsPage'
 
@@ -78,17 +79,20 @@ vi.mock('../../../components/table/TableToolkit', () => ({
   TableToolkit: ({
     data,
     columns,
+    searchPlaceholder,
   }: {
     data: Array<Record<string, unknown>>
     columns: Array<{
       key?: string
       render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode
     }>
+    searchPlaceholder?: string
   }) => {
     const actionsColumn = columns.find((column) => column.key === 'actions')
 
     return (
       <div data-testid="artifacts-table">
+        {searchPlaceholder ? <div>{searchPlaceholder}</div> : null}
         {data.map((artifact, index) => (
           <div key={String(artifact.id)} data-testid={`artifact-row-actions-${String(artifact.id)}`}>
             {actionsColumn?.render?.(null, artifact, index) ?? null}
@@ -106,9 +110,10 @@ vi.mock('../../../components/platform', () => ({
       {children}
     </div>
   ),
-  PageHeader: ({ title, actions }: { title: ReactNode; actions?: ReactNode }) => (
+  PageHeader: ({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) => (
     <div>
       <h2>{title}</h2>
+      {subtitle ? <p>{subtitle}</p> : null}
       {actions}
     </div>
   ),
@@ -141,7 +146,8 @@ function renderArtifactsPage(initialEntry = '/artifacts') {
 }
 
 describe('ArtifactsPage observability', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     mockConfirmWithTracking.mockClear()
     mockDeleteArtifactMutateAsync.mockReset()
     mockRestoreArtifactMutateAsync.mockReset()
@@ -149,6 +155,20 @@ describe('ArtifactsPage observability', () => {
       data: null,
       isLoading: false,
     })
+    mockUseArtifacts.mockReturnValue({
+      data: {
+        artifacts: [],
+        count: 0,
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+  })
+
+  afterEach(async () => {
+    await changeLanguage('ru')
   })
 
   it('tracks delete artifact actions through confirmWithTracking', async () => {
@@ -231,5 +251,22 @@ describe('ArtifactsPage observability', () => {
       }),
     )
     expect(mockRestoreArtifactMutateAsync).toHaveBeenCalledWith('artifact-1')
+  })
+
+  it('renders localized page chrome for the Russian artifacts workspace', async () => {
+    await changeLanguage('ru')
+
+    renderArtifactsPage('/artifacts?tab=deleted')
+
+    expect(screen.getByRole('heading', { name: 'Артефакты' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Рабочее место каталога с URL-backed tab/artifact context и canonical secondary surfaces.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Обновить' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Добавить артефакт/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Активные' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалённые' })).toBeInTheDocument()
+    expect(screen.getByText('tab=Удалённые')).toBeInTheDocument()
+    expect(screen.getByText('Поиск артефактов')).toBeInTheDocument()
   })
 })

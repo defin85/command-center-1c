@@ -17,6 +17,7 @@ import {
 } from '@ant-design/icons'
 import axios from 'axios'
 import { apiClient } from '../../api/client'
+import { useServiceMeshTranslation } from '../../i18n'
 import { DrawerSurfaceShell } from '../platform'
 import type { OperationTimelineResponse } from '../../types/operationTimeline'
 import { formatDuration, formatTimestamp, getEventStatus, transformToWaterfallItems } from '../../utils/timelineTransforms'
@@ -43,6 +44,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
   visible,
   onClose,
 }) => {
+  const { t } = useServiceMeshTranslation()
   const screens = useBreakpoint()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,7 +77,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       console.error('Failed to fetch operation timeline:', err)
 
       // Extract error message
-      let errorMessage = 'Failed to load timeline data'
+      let errorMessage: string = t(($) => $.timeline.errorLoading)
       if (axios.isAxiosError(err)) {
         const data = err.response?.data
         // Support both formats: { error: "msg" } and { error: { code, message } }
@@ -97,7 +99,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   // Fetch data when drawer opens with an operation ID
   useEffect(() => {
@@ -194,7 +196,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
       title={
         <div className="operation-timeline-drawer__title">
           <NodeIndexOutlined />
-          <span>Operation Timeline</span>
+          <span>{t(($) => $.timeline.title)}</span>
           {operationId && (
             <code className="operation-timeline-drawer__id">
               {formatOperationId(operationId)}
@@ -207,7 +209,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
         {/* Loading state */}
         {loading && (
           <div className="operation-timeline-drawer__loading">
-            <Spin size="large" tip="Loading timeline\u2026">
+            <Spin size="large" tip={t(($) => $.timeline.loading)}>
               <div style={{ minHeight: 200 }} />
             </Spin>
           </div>
@@ -216,7 +218,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
         {/* Error state */}
         {error && !loading && (
           <Alert
-            message="Error Loading Timeline"
+            message={t(($) => $.timeline.errorLoading)}
             description={error}
             type="error"
             showIcon
@@ -229,7 +231,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
           <>
             <div style={{ marginBottom: 12 }}>
               <Space size="middle" wrap>
-                <Typography.Text type="secondary">Operation ID:</Typography.Text>
+                <Typography.Text type="secondary">{t(($) => $.timeline.operationId)}</Typography.Text>
                 {operationId && (
                   <Typography.Text
                     code
@@ -246,11 +248,11 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={8}>
                   <Statistic
-                    title="Total Duration"
+                    title={t(($) => $.timeline.totalDuration)}
                     value={
                       timelineData.duration_ms !== null
                         ? formatDuration(timelineData.duration_ms)
-                        : 'In Progress'
+                        : t(($) => $.timeline.inProgress)
                     }
                     prefix={<ClockCircleOutlined />}
                     valueStyle={{ fontSize: 18 }}
@@ -258,7 +260,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                 </Col>
                 <Col xs={24} sm={8}>
                   <Statistic
-                    title="Events"
+                    title={t(($) => $.timeline.events)}
                     value={timelineData.total_events}
                     prefix={<FieldTimeOutlined />}
                     valueStyle={{ fontSize: 18 }}
@@ -266,7 +268,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                 </Col>
                 <Col xs={24} sm={8}>
                   <Statistic
-                    title="Services"
+                    title={t(($) => $.timeline.services)}
                     value={uniqueServicesCount}
                     prefix={<NodeIndexOutlined />}
                     valueStyle={{ fontSize: 18 }}
@@ -282,18 +284,20 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                 timelineMeta.lane
               ) && (
                 <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {timelineMeta.traceId && <Tag>Trace: {timelineMeta.traceId.slice(0, 8)}{'\u2026'}</Tag>}
-                  {timelineMeta.workflowExecutionId && (
-                    <Tag>Workflow: {timelineMeta.workflowExecutionId.slice(0, 8)}{'\u2026'}</Tag>
+                  {timelineMeta.traceId && (
+                    <Tag>{t(($) => $.timeline.trace, { value: `${timelineMeta.traceId.slice(0, 8)}\u2026` })}</Tag>
                   )}
-                  {timelineMeta.nodeId && <Tag>Node: {timelineMeta.nodeId}</Tag>}
+                  {timelineMeta.workflowExecutionId && (
+                    <Tag>{t(($) => $.timeline.workflow, { value: `${timelineMeta.workflowExecutionId.slice(0, 8)}\u2026` })}</Tag>
+                  )}
+                  {timelineMeta.nodeId && <Tag>{t(($) => $.timeline.node, { value: timelineMeta.nodeId })}</Tag>}
                   {timelineMeta.rootOperationId && (
-                    <Tag>Root: {timelineMeta.rootOperationId.slice(0, 8)}{'\u2026'}</Tag>
+                    <Tag>{t(($) => $.timeline.root, { value: `${timelineMeta.rootOperationId.slice(0, 8)}\u2026` })}</Tag>
                   )}
                   {timelineMeta.executionConsumer && (
-                    <Tag>Consumer: {timelineMeta.executionConsumer}</Tag>
+                    <Tag>{t(($) => $.timeline.consumer, { value: timelineMeta.executionConsumer })}</Tag>
                   )}
-                  {timelineMeta.lane && <Tag>Lane: {timelineMeta.lane}</Tag>}
+                  {timelineMeta.lane && <Tag>{t(($) => $.timeline.lane, { value: timelineMeta.lane })}</Tag>}
                 </div>
               )}
             </div>
@@ -318,9 +322,13 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
                             </Space>
                             <Space wrap size={[8, 8]}>
                               <Typography.Text type="secondary">{formatTimestamp(item.timestamp)}</Typography.Text>
-                              <Typography.Text type="secondary">Offset +{formatDuration(item.startOffset)}</Typography.Text>
                               <Typography.Text type="secondary">
-                                Duration {item.duration > 0 ? formatDuration(item.duration) : '-'}
+                                {t(($) => $.timeline.offset, { value: formatDuration(item.startOffset) })}
+                              </Typography.Text>
+                              <Typography.Text type="secondary">
+                                {t(($) => $.timeline.duration, {
+                                  value: item.duration > 0 ? formatDuration(item.duration) : '-',
+                                })}
                               </Typography.Text>
                             </Space>
                             {Object.keys(item.metadata).length > 0 ? (
@@ -343,7 +351,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
             ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="No timeline events recorded"
+                description={t(($) => $.timeline.noTimelineEvents)}
                 className="operation-timeline-drawer__empty"
               />
             )}
@@ -354,7 +362,7 @@ const OperationTimelineDrawer: React.FC<OperationTimelineDrawerProps> = ({
         {!loading && !error && !timelineData && !operationId && (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="Select an operation to view its timeline"
+            description={t(($) => $.timeline.emptySelection)}
             className="operation-timeline-drawer__empty"
           />
         )}

@@ -18,7 +18,7 @@ import { transformOperationListResponse } from '../../utils/serviceMeshTransform
 import { getStatusColor } from '../../pages/Operations'
 import { TableToolkit } from '../table/TableToolkit'
 import { useTableToolkit } from '../table/hooks/useTableToolkit'
-import { useDashboardTranslation, useLocaleFormatters } from '../../i18n'
+import { useLocaleFormatters, useServiceMeshTranslation } from '../../i18n'
 import './RecentOperationsTable.css'
 
 const api = getV2()
@@ -65,7 +65,7 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   selectedService,
   onOperationClick,
 }) => {
-  const { t } = useDashboardTranslation()
+  const { t } = useServiceMeshTranslation()
   const formatters = useLocaleFormatters()
   const [operations, setOperations] = useState<ServiceOperation[]>([])
   const [loading, setLoading] = useState(true)
@@ -115,14 +115,14 @@ const RecentOperationsTable: React.FC<RecentOperationsTableProps> = ({
   }, [])
 
   const fallbackColumnConfigs = useMemo(() => [
-    { key: 'id', label: t(($) => $.recentOperations.columns.id), sortable: true, groupKey: 'core', groupLabel: t(($) => $.clusterOverview.groups.core) },
-    { key: 'name', label: t(($) => $.recentOperations.columns.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.clusterOverview.groups.core) },
-    { key: 'service', label: t(($) => $.recentOperations.columns.service), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.service) },
-    { key: 'status', label: t(($) => $.recentOperations.columns.status), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.status) },
-    { key: 'progress', label: t(($) => $.recentOperations.columns.progress), groupKey: 'meta', groupLabel: t(($) => $.recentOperations.columns.progress) },
-    { key: 'durationSeconds', label: t(($) => $.recentOperations.columns.duration), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.columns.duration) },
-    { key: 'createdAt', label: t(($) => $.recentOperations.columns.created), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.columns.created) },
-    { key: 'actions', label: t(($) => $.recentOperations.viewDetails), groupKey: 'actions', groupLabel: t(($) => $.recentOperations.viewDetails) },
+    { key: 'id', label: t(($) => $.recentOperations.columns.id), sortable: true, groupKey: 'core', groupLabel: t(($) => $.recentOperations.groups.core) },
+    { key: 'name', label: t(($) => $.recentOperations.columns.name), sortable: true, groupKey: 'core', groupLabel: t(($) => $.recentOperations.groups.core) },
+    { key: 'service', label: t(($) => $.recentOperations.columns.service), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.groups.meta) },
+    { key: 'status', label: t(($) => $.recentOperations.columns.status), sortable: true, groupKey: 'meta', groupLabel: t(($) => $.recentOperations.groups.meta) },
+    { key: 'progress', label: t(($) => $.recentOperations.columns.progress), groupKey: 'meta', groupLabel: t(($) => $.recentOperations.groups.meta) },
+    { key: 'durationSeconds', label: t(($) => $.recentOperations.columns.duration), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.groups.time) },
+    { key: 'createdAt', label: t(($) => $.recentOperations.columns.created), sortable: true, groupKey: 'time', groupLabel: t(($) => $.recentOperations.groups.time) },
+    { key: 'actions', label: t(($) => $.recentOperations.viewDetails), groupKey: 'actions', groupLabel: t(($) => $.recentOperations.groups.actions) },
   ], [t])
 
   const columns: ColumnsType<ServiceOperation> = useMemo(() => ([

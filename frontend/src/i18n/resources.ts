@@ -1,20 +1,35 @@
 import adminSupportEn from './locales/en/adminSupport'
+import artifactsEn from './locales/en/artifacts'
 import commonEn from './locales/en/common'
+import decisionsEn from './locales/en/decisions'
 import errorsEn from './locales/en/errors'
 import platformEn from './locales/en/platform'
+import serviceMeshEn from './locales/en/serviceMesh'
 import shellEn from './locales/en/shell'
 import adminSupportRu from './locales/ru/adminSupport'
+import artifactsRu from './locales/ru/artifacts'
 import commonRu from './locales/ru/common'
 import dashboardRu from './locales/ru/dashboard'
+import decisionsRu from './locales/ru/decisions'
 import errorsRu from './locales/ru/errors'
 import clustersRu from './locales/ru/clusters'
 import platformRu from './locales/ru/platform'
 import rbacRu from './locales/ru/rbac'
+import serviceMeshRu from './locales/ru/serviceMesh'
 import shellRu from './locales/ru/shell'
 import type systemStatusSchema from './locales/ru/systemStatus'
 import type { AppLocale } from './constants'
 
-export const eagerNamespaces = ['common', 'shell', 'platform', 'errors', 'adminSupport'] as const
+export const eagerNamespaces = [
+  'common',
+  'shell',
+  'platform',
+  'errors',
+  'adminSupport',
+  'artifacts',
+  'serviceMesh',
+  'decisions',
+] as const
 export const lazyNamespaces = ['systemStatus', 'dashboard', 'clusters', 'rbac'] as const
 export const allNamespaces = [...eagerNamespaces, ...lazyNamespaces] as const
 
@@ -27,6 +42,9 @@ export type AppCatalogSchema = {
   shell: typeof shellRu
   platform: typeof platformRu
   errors: typeof errorsRu
+  artifacts: typeof artifactsRu
+  decisions: typeof decisionsRu
+  serviceMesh: typeof serviceMeshRu
   systemStatus: typeof systemStatusSchema
   dashboard: typeof dashboardRu
   clusters: typeof clustersRu
@@ -43,13 +61,19 @@ export const eagerResources = {
     platform: platformRu,
     errors: errorsRu,
     adminSupport: adminSupportRu,
+    artifacts: artifactsRu,
+    serviceMesh: serviceMeshRu,
+    decisions: decisionsRu,
   },
   en: {
     adminSupport: adminSupportEn,
+    artifacts: artifactsEn,
     common: commonEn,
+    decisions: decisionsEn,
     shell: shellEn,
     platform: platformEn,
     errors: errorsEn,
+    serviceMesh: serviceMeshEn,
   },
 } as const satisfies Record<AppLocale, Record<EagerTranslationNamespace, TranslationCatalog>>
 

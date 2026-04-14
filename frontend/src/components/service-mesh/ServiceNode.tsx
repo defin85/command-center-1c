@@ -20,7 +20,8 @@ import {
   NotificationOutlined,
 } from '@ant-design/icons'
 import type { ServiceStatus, ServiceNodeData, OperationFlowStatus } from '../../types/serviceMesh'
-import { STATUS_COLORS, STATUS_TEXT } from '../../types/serviceMesh'
+import { STATUS_COLORS } from '../../types/serviceMesh'
+import { useServiceMeshTranslation } from '../../i18n'
 import './ServiceNode.css'
 
 // Re-export for backward compatibility with existing imports
@@ -96,6 +97,7 @@ function getOperationClassName(status: OperationFlowStatus | null | undefined): 
 }
 
 const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
+  const { t } = useServiceMeshTranslation()
   const { metrics, onSelect, isSelected, operationStatus, onMouseEnter, onMouseLeave, direction } = data
   const icon = SERVICE_ICONS[metrics.name] || <ApiOutlined />
   const operationClass = getOperationClassName(operationStatus)
@@ -124,7 +126,7 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
       onMouseLeave={onMouseLeave}
       role="button"
       tabIndex={0}
-      aria-label={`Open service details for ${metrics.displayName || metrics.name}`}
+      aria-label={t(($) => $.serviceNode.openDetails, { service: metrics.displayName || metrics.name })}
       style={{
         borderColor: isSelected ? STATUS_COLORS[metrics.status] : undefined,
       }}
@@ -140,7 +142,7 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
       <div className="service-node__header">
         <span className="service-node__icon">{icon}</span>
         <span className="service-node__name">{metrics.displayName}</span>
-        <Tooltip title={STATUS_TEXT[metrics.status]}>
+        <Tooltip title={t(($) => $.status[metrics.status])}>
           <span>
             <Badge
               status={getStatusBadge(metrics.status)}
@@ -156,13 +158,13 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
           <span className="service-node__metric-value">
             {formatNumber(metrics.opsPerMinute)}
           </span>
-          <span className="service-node__metric-label">ops/min</span>
+          <span className="service-node__metric-label">{t(($) => $.serviceNode.opsPerMinuteShort)}</span>
         </div>
         <div className="service-node__metric">
           <span className="service-node__metric-value">
             {formatLatency(metrics.p95LatencyMs)}
           </span>
-          <span className="service-node__metric-label">p95</span>
+          <span className="service-node__metric-label">{t(($) => $.serviceNode.p95Short)}</span>
         </div>
       </div>
 
@@ -174,7 +176,7 @@ const ServiceNode: React.FC<NodeProps<ServiceNodeData>> = ({ data }) => {
             color: metrics.errorRate > 0.01 ? STATUS_COLORS.critical : STATUS_COLORS.degraded,
           }}
         >
-          {(metrics.errorRate * 100).toFixed(2)}% errors
+          {t(($) => $.serviceNode.errors, { value: `${(metrics.errorRate * 100).toFixed(2)}%` })}
         </div>
       )}
 

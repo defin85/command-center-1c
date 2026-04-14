@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons'
 import type { ServiceMetrics, ServiceStatus } from '../../types/serviceMesh'
 import { STATUS_COLORS } from '../../types/serviceMesh'
-import { useDashboardTranslation, useLocaleFormatters } from '../../i18n'
+import { useLocaleFormatters, useServiceMeshTranslation } from '../../i18n'
 import './SystemHealthCard.css'
 
 interface SystemHealthCardProps {
@@ -75,7 +75,7 @@ const SystemHealthCard: React.FC<SystemHealthCardProps> = ({
   isConnected,
   connectionError,
 }) => {
-  const { t } = useDashboardTranslation()
+  const { t } = useServiceMeshTranslation()
   const formatters = useLocaleFormatters()
 
   // Calculate totals

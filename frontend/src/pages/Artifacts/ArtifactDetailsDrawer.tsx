@@ -21,9 +21,19 @@ import type { Artifact, ArtifactAlias, ArtifactVersion } from '../../api/artifac
 import { downloadArtifactVersion } from '../../api/artifacts'
 import { useArtifactAliases, useArtifactVersions, useUpsertArtifactAlias } from '../../api/queries'
 import { DrawerSurfaceShell } from '../../components/platform'
+import { useArtifactsTranslation, useCommonTranslation, useLocaleFormatters } from '../../i18n'
 import { confirmWithTracking } from '../../observability/confirmWithTracking'
 import { trackUiAction } from '../../observability/uiActionJournal'
-import { aliasMenuItems, diffLines, formatBytes, KIND_LABELS, MAX_PREVIEW_BYTES, renderAutoPurge, renderPurgeBlockers } from './artifactsUtils'
+import {
+  createAliasMenuItems,
+  diffLines,
+  formatBytes,
+  getArtifactKindLabel,
+  MAX_PREVIEW_BYTES,
+  renderAutoPurge,
+  renderPurgeBlockers,
+  type ArtifactKindLabels,
+} from './artifactsUtils'
 
 const { Text } = Typography
 
@@ -53,6 +63,10 @@ export function ArtifactDetailsDrawer({
   onOpenPurgeModal,
 }: ArtifactDetailsDrawerProps) {
   const { message, modal } = App.useApp()
+  const { t } = useArtifactsTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
 
   const [activeTab, setActiveTab] = useState('versions')
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null)
@@ -78,6 +92,33 @@ export function ArtifactDetailsDrawer({
   const aliases = useMemo(() => (
     aliasesQuery.data?.aliases ?? []
   ), [aliasesQuery.data?.aliases])
+  const kindLabels = useMemo<ArtifactKindLabels>(() => ({
+    extension: t(($) => $.kinds.extension),
+    config_cf: t(($) => $.kinds.configCf),
+    config_xml: t(($) => $.kinds.configXml),
+    dt_backup: t(($) => $.kinds.dtBackup),
+    epf: t(($) => $.kinds.epf),
+    erf: t(($) => $.kinds.erf),
+    ibcmd_package: t(($) => $.kinds.ibcmdPackage),
+    ras_script: t(($) => $.kinds.rasScript),
+    other: t(($) => $.kinds.other),
+  }), [t])
+  const helperLabels = useMemo(() => ({
+    unavailable: unavailableShort,
+    blocked: t(($) => $.helpers.blocked),
+    blockersCount: (count: number) => t(($) => $.helpers.blockersCount, { count }),
+    retryAfter: (value: string) => t(($) => $.helpers.retryAfter, { value }),
+    operation: t(($) => $.helpers.operation),
+    workflow: t(($) => $.helpers.workflow),
+    more: (count: number) => t(($) => $.helpers.more, { count }),
+    inDays: (count: number) => t(($) => $.helpers.inDays, { count }),
+    overdue: t(($) => $.helpers.overdue),
+  }), [t, unavailableShort])
+  const aliasMenuItems = useMemo(() => createAliasMenuItems({
+    latest: t(($) => $.aliases.latest),
+    approved: t(($) => $.aliases.approved),
+    stable: t(($) => $.aliases.stable),
+  }), [t])
 
   const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null
   const selectedVersionRowKey = selectedVersionId ?? undefined
@@ -127,7 +168,7 @@ export function ArtifactDetailsDrawer({
       const isXmlFile = selectedVersion.filename.toLowerCase().endsWith('.xml')
       if (!isXmlKind && !isXmlFile) {
         setPreviewContent('')
-        setPreviewError('Preview available only for XML artifacts')
+        setPreviewError(t(($) => $.detail.previewOnlyXml))
         return
       }
 
@@ -142,7 +183,7 @@ export function ArtifactDetailsDrawer({
         }
       } catch (_error) {
         if (!cancelled) {
-          setPreviewError('Failed to load preview')
+          setPreviewError(t(($) => $.detail.previewFailed))
         }
       } finally {
         if (!cancelled) {
@@ -156,7 +197,7 @@ export function ArtifactDetailsDrawer({
     return () => {
       cancelled = true
     }
-  }, [activeTab, artifact, selectedVersion])
+  }, [activeTab, artifact, selectedVersion, t])
 
   const loadVersionText = useCallback(async (version: ArtifactVersion) => {
     if (versionTextCache[version.version]) {
@@ -177,7 +218,7 @@ export function ArtifactDetailsDrawer({
       if (!compareBaseVersion || !compareTargetVersion) return
       if (compareBaseVersion === compareTargetVersion) {
         setCompareDiff([])
-        setCompareError('Select two different versions to compare')
+        setCompareError(t(($) => $.detail.compareDifferentVersions))
         return
       }
       const base = versions.find((item) => item.version === compareBaseVersion)
@@ -189,7 +230,7 @@ export function ArtifactDetailsDrawer({
         || target.filename.toLowerCase().endsWith('.xml')
       if (!isXmlKind && !isXmlFile) {
         setCompareDiff([])
-        setCompareError('Diff available only for XML artifacts')
+        setCompareError(t(($) => $.detail.compareOnlyXml))
         return
       }
 
@@ -205,7 +246,7 @@ export function ArtifactDetailsDrawer({
         setCompareDiff(diff)
       } catch (_error) {
         if (!cancelled) {
-          setCompareError('Failed to load diff')
+          setCompareError(t(($) => $.detail.compareFailed))
         }
       } finally {
         if (!cancelled) {
@@ -226,6 +267,7 @@ export function ArtifactDetailsDrawer({
     compareTargetVersion,
     loadVersionText,
     selectedArtifactId,
+    t,
     versions,
   ])
 
@@ -242,13 +284,13 @@ export function ArtifactDetailsDrawer({
       link.remove()
       URL.revokeObjectURL(url)
     } catch (_error) {
-      message.error('Failed to download artifact')
+      message.error(t(($) => $.detail.downloadFailed))
     }
-  }, [artifact, message])
+  }, [artifact, message, t])
 
   const confirmAlias = useCallback((alias: string, version: ArtifactVersion) => {
     if (!isStaff) {
-      message.error('Alias update requires staff access')
+      message.error(t(($) => $.detail.aliasStaffRequired))
       return
     }
     const actionMeta = {
@@ -264,48 +306,51 @@ export function ArtifactDetailsDrawer({
       { alias, version: version.version },
       {
         onSuccess: () => {
-          message.success(`Alias ${alias} updated`)
+          message.success(t(($) => $.detail.aliasUpdated, { alias }))
         },
         onError: () => {
-          message.error('Failed to update alias')
+          message.error(t(($) => $.detail.aliasUpdateFailed))
         },
       }
     )
 
     if (alias === 'stable' || alias === 'approved') {
       confirmWithTracking(modal, {
-        title: `Set alias "${alias}"?`,
-        content: `This will point ${alias} to ${version.version}.`,
+        title: t(($) => $.detail.aliasConfirmTitle, { alias }),
+        content: t(($) => $.detail.aliasConfirmDescription, {
+          alias,
+          version: version.version,
+        }),
         onOk: applyAliasUpdate,
       }, actionMeta)
     } else {
       trackUiAction(actionMeta, applyAliasUpdate)
     }
-  }, [aliasMutation, isStaff, message, modal, selectedArtifactId])
+  }, [aliasMutation, isStaff, message, modal, selectedArtifactId, t])
 
   const handleCustomAlias = useCallback(() => {
     if (!selectedVersion) return
     const alias = customAlias.trim()
     if (!alias) {
-      message.warning('Введите alias')
+      message.warning(t(($) => $.detail.aliasWarningEmpty))
       return
     }
     confirmAlias(alias, selectedVersion)
     setCustomAlias('')
-  }, [confirmAlias, customAlias, message, selectedVersion])
+  }, [confirmAlias, customAlias, message, selectedVersion, t])
 
   const versionsColumns: ColumnsType<ArtifactVersion> = useMemo(() => ([
-    { title: 'Version', dataIndex: 'version', key: 'version', width: 120 },
-    { title: 'Filename', dataIndex: 'filename', key: 'filename', width: 240 },
+    { title: t(($) => $.detail.versions.version), dataIndex: 'version', key: 'version', width: 120 },
+    { title: t(($) => $.detail.versions.filename), dataIndex: 'filename', key: 'filename', width: 240 },
     {
-      title: 'Size',
+      title: t(($) => $.detail.versions.size),
       dataIndex: 'size',
       key: 'size',
       width: 120,
       render: (value: number) => formatBytes(value),
     },
     {
-      title: 'Checksum',
+      title: t(($) => $.detail.versions.checksum),
       dataIndex: 'checksum',
       key: 'checksum',
       width: 220,
@@ -314,14 +359,14 @@ export function ArtifactDetailsDrawer({
       ),
     },
     {
-      title: 'Created',
+      title: t(($) => $.detail.versions.created),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 200,
-      render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
+      render: (value: string) => formatters.dateTime(value, { fallback: unavailableShort }),
     },
     {
-      title: 'Actions',
+      title: t(($) => $.detail.versions.actions),
       key: 'actions',
       width: 180,
       render: (_value, record) => (
@@ -331,7 +376,7 @@ export function ArtifactDetailsDrawer({
             icon={<DownloadOutlined />}
             onClick={() => void handleDownload(record)}
           >
-            Download
+            {t(($) => $.detail.versions.download)}
           </Button>
           <Dropdown
             menu={{
@@ -341,25 +386,25 @@ export function ArtifactDetailsDrawer({
             disabled={!isStaff || aliasMutation.isPending}
           >
             <Button size="small" icon={<CheckOutlined />}>
-              Set alias
+              {t(($) => $.detail.versions.setAlias)}
             </Button>
           </Dropdown>
         </Space>
       ),
     },
-  ]), [aliasMutation.isPending, confirmAlias, handleDownload, isStaff])
+  ]), [aliasMenuItems, aliasMutation.isPending, confirmAlias, formatters, handleDownload, isStaff, t, unavailableShort])
 
   const aliasColumns: ColumnsType<ArtifactAlias> = useMemo(() => ([
-    { title: 'Alias', dataIndex: 'alias', key: 'alias', width: 160 },
-    { title: 'Version', dataIndex: 'version', key: 'version', width: 160 },
+    { title: t(($) => $.detail.aliases.alias), dataIndex: 'alias', key: 'alias', width: 160 },
+    { title: t(($) => $.detail.aliases.version), dataIndex: 'version', key: 'version', width: 160 },
     {
-      title: 'Updated',
+      title: t(($) => $.detail.aliases.updated),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 200,
-      render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
+      render: (value: string) => formatters.dateTime(value, { fallback: unavailableShort }),
     },
-  ]), [])
+  ]), [formatters, t, unavailableShort])
 
   const isPreviewAvailable = Boolean(artifact && selectedVersion)
   const compareVersionOptions = useMemo(() => (
@@ -373,22 +418,22 @@ export function ArtifactDetailsDrawer({
     <DrawerSurfaceShell
       open={open}
       onClose={onClose}
-      title="Artifact details"
+      title={t(($) => $.detail.title)}
       width={860}
       extra={artifact && (
         <Space>
           {catalogTab === 'deleted' ? (
             <>
               <Button disabled={!isStaff} onClick={() => onRestoreArtifact(artifact)}>
-                Restore
+                {t(($) => $.table.restore)}
               </Button>
               <Button danger disabled={!isStaff} onClick={() => onOpenPurgeModal(artifact)}>
-                Delete permanently
+                {t(($) => $.table.deletePermanently)}
               </Button>
             </>
           ) : (
             <Button danger disabled={!isStaff} onClick={() => onDeleteArtifact(artifact)}>
-              Delete
+              {t(($) => $.table.delete)}
             </Button>
           )}
         </Space>
@@ -401,29 +446,33 @@ export function ArtifactDetailsDrawer({
           <Spin />
         </div>
       ) : !artifact ? (
-        <Text type="secondary">Select an artifact to view details.</Text>
+        <Text type="secondary">{t(($) => $.detail.empty)}</Text>
       ) : (
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <Descriptions column={2} size="small">
-            <Descriptions.Item label="Name">{artifact.name}</Descriptions.Item>
-            <Descriptions.Item label="Kind">{KIND_LABELS[artifact.kind]}</Descriptions.Item>
-            <Descriptions.Item label="Versioned">{artifact.is_versioned ? 'Yes' : 'No'}</Descriptions.Item>
-            <Descriptions.Item label="Created">
-              {new Date(artifact.created_at).toLocaleString()}
+            <Descriptions.Item label={t(($) => $.detail.fields.name)}>{artifact.name}</Descriptions.Item>
+            <Descriptions.Item label={t(($) => $.detail.fields.kind)}>
+              {getArtifactKindLabel(artifact.kind, kindLabels)}
+            </Descriptions.Item>
+            <Descriptions.Item label={t(($) => $.detail.fields.versioned)}>
+              {artifact.is_versioned ? t(($) => $.detail.versionedYes) : t(($) => $.detail.versionedNo)}
+            </Descriptions.Item>
+            <Descriptions.Item label={t(($) => $.detail.fields.created)}>
+              {formatters.dateTime(artifact.created_at, { fallback: unavailableShort })}
             </Descriptions.Item>
             {artifact.is_deleted && (
               <>
-                <Descriptions.Item label="Deleted">
-                  {artifact.deleted_at ? new Date(artifact.deleted_at).toLocaleString() : '—'}
+                <Descriptions.Item label={t(($) => $.detail.fields.deleted)}>
+                  {formatters.dateTime(artifact.deleted_at, { fallback: unavailableShort })}
                 </Descriptions.Item>
-                <Descriptions.Item label="Auto purge">
-                  {renderAutoPurge(artifact)}
+                <Descriptions.Item label={t(($) => $.detail.fields.autoPurge)}>
+                  {renderAutoPurge(artifact, formatters.dateTime, helperLabels)}
                 </Descriptions.Item>
               </>
             )}
-            <Descriptions.Item label="Tags" span={2}>
+            <Descriptions.Item label={t(($) => $.detail.fields.tags)} span={2}>
               {(artifact.tags ?? []).length === 0
-                ? <Text type="secondary">—</Text>
+                ? <Text type="secondary">{unavailableShort}</Text>
                 : artifact.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
             </Descriptions.Item>
           </Descriptions>
@@ -432,8 +481,8 @@ export function ArtifactDetailsDrawer({
             <Alert
               type="warning"
               showIcon
-              message="Auto purge blocked"
-              description={renderPurgeBlockers(artifact.purge_blockers)}
+              message={t(($) => $.detail.autoPurgeBlocked)}
+              description={renderPurgeBlockers(artifact.purge_blockers, helperLabels)}
             />
           )}
 
@@ -443,7 +492,7 @@ export function ArtifactDetailsDrawer({
             items={[
               {
                 key: 'versions',
-                label: `Versions (${versions.length})`,
+                label: t(($) => $.detail.versions.tab, { count: versions.length }),
                 children: (
                   <Table
                     size="small"
@@ -464,12 +513,12 @@ export function ArtifactDetailsDrawer({
               },
               {
                 key: 'aliases',
-                label: `Aliases (${aliases.length})`,
+                label: t(($) => $.detail.aliases.tab, { count: aliases.length }),
                 children: (
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     <Space>
                       <Input
-                        placeholder="Custom alias"
+                        placeholder={t(($) => $.detail.customAliasPlaceholder)}
                         value={customAlias}
                         onChange={(event) => setCustomAlias(event.target.value)}
                         disabled={!isStaff}
@@ -479,7 +528,7 @@ export function ArtifactDetailsDrawer({
                         onClick={handleCustomAlias}
                         disabled={!isStaff || aliasMutation.isPending || !selectedVersion}
                       >
-                        Apply alias
+                        {t(($) => $.detail.applyAlias)}
                       </Button>
                     </Space>
                     <Table
@@ -495,11 +544,11 @@ export function ArtifactDetailsDrawer({
               },
               {
                 key: 'preview',
-                label: 'Preview XML',
+                label: t(($) => $.detail.preview.tab),
                 children: (
                   <div>
                     {!isPreviewAvailable && (
-                      <Text type="secondary">Select a version to preview.</Text>
+                      <Text type="secondary">{t(($) => $.detail.previewEmpty)}</Text>
                     )}
                     {previewError && <Alert type="warning" message={previewError} />}
                     {previewLoading && <Spin />}
@@ -519,7 +568,7 @@ export function ArtifactDetailsDrawer({
                           {previewContent}
                         </pre>
                         {previewContent.length >= MAX_PREVIEW_BYTES && (
-                          <Text type="secondary">Preview truncated.</Text>
+                          <Text type="secondary">{t(($) => $.detail.previewTruncated)}</Text>
                         )}
                       </>
                     )}
@@ -528,25 +577,25 @@ export function ArtifactDetailsDrawer({
               },
               {
                 key: 'compare',
-                label: 'Compare',
+                label: t(($) => $.detail.compareTitle),
                 children: (
                   <div>
                     {versions.length < 2 && (
-                      <Text type="secondary">Need at least two versions to compare.</Text>
+                      <Text type="secondary">{t(($) => $.detail.compareNeedTwoVersions)}</Text>
                     )}
                     {versions.length >= 2 && (
                       <Space direction="vertical" style={{ width: '100%' }} size="middle">
                         <Space wrap>
                           <Select
                             value={compareBaseVersion ?? undefined}
-                            placeholder="Base version"
+                            placeholder={t(($) => $.detail.compare.baseVersion)}
                             options={compareVersionOptions}
                             onChange={(value) => setCompareBaseVersion(value)}
                             style={{ minWidth: 200 }}
                           />
                           <Select
                             value={compareTargetVersion ?? undefined}
-                            placeholder="Compare version"
+                            placeholder={t(($) => $.detail.compare.targetVersion)}
                             options={compareVersionOptions}
                             onChange={(value) => setCompareTargetVersion(value)}
                             style={{ minWidth: 200 }}
@@ -590,7 +639,7 @@ export function ArtifactDetailsDrawer({
                           </div>
                         )}
                         {compareDiff.length === 0 && !compareLoading && !compareError && (
-                          <Text type="secondary">No differences detected.</Text>
+                          <Text type="secondary">{t(($) => $.detail.compareNoDiff)}</Text>
                         )}
                       </Space>
                     )}

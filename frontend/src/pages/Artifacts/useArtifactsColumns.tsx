@@ -4,7 +4,8 @@ import type { ColumnsType } from 'antd/es/table'
 import { EyeOutlined } from '@ant-design/icons'
 
 import type { Artifact, ArtifactKind } from '../../api/artifacts'
-import { KIND_LABELS, renderAutoPurge } from './artifactsUtils'
+import { useArtifactsTranslation, useCommonTranslation, useLocaleFormatters } from '../../i18n'
+import { getArtifactKindLabel, renderAutoPurge, type ArtifactKindLabels } from './artifactsUtils'
 
 const { Text } = Typography
 
@@ -25,10 +26,26 @@ export const useArtifactsColumns = ({
   onRestoreArtifact,
   onOpenPurgeModal,
 }: UseArtifactsColumnsParams) => {
+  const { t } = useArtifactsTranslation()
+  const { t: tCommon } = useCommonTranslation()
+  const formatters = useLocaleFormatters()
+  const unavailableShort = tCommon(($) => $.values.unavailableShort)
+  const kindLabels = useMemo<ArtifactKindLabels>(() => ({
+    extension: t(($) => $.kinds.extension),
+    config_cf: t(($) => $.kinds.configCf),
+    config_xml: t(($) => $.kinds.configXml),
+    dt_backup: t(($) => $.kinds.dtBackup),
+    epf: t(($) => $.kinds.epf),
+    erf: t(($) => $.kinds.erf),
+    ibcmd_package: t(($) => $.kinds.ibcmdPackage),
+    ras_script: t(($) => $.kinds.rasScript),
+    other: t(($) => $.kinds.other),
+  }), [t])
+
   return useMemo<ColumnsType<Artifact>>(() => {
     const base: ColumnsType<Artifact> = [
       {
-        title: 'Name',
+        title: t(($) => $.table.name),
         dataIndex: 'name',
         key: 'name',
         width: 260,
@@ -39,14 +56,14 @@ export const useArtifactsColumns = ({
         ),
       },
       {
-        title: 'Kind',
+        title: t(($) => $.table.kind),
         dataIndex: 'kind',
         key: 'kind',
         width: 160,
-        render: (value: ArtifactKind) => KIND_LABELS[value] ?? value,
+        render: (value: ArtifactKind) => getArtifactKindLabel(value, kindLabels),
       },
       {
-        title: 'Tags',
+        title: t(($) => $.table.tags),
         dataIndex: 'tags',
         key: 'tags',
         width: 240,
@@ -60,41 +77,51 @@ export const useArtifactsColumns = ({
       },
       ...(catalogTab === 'deleted' ? ([
         {
-          title: 'Auto purge',
+          title: t(($) => $.table.autoPurge),
           dataIndex: 'purge_after',
           key: 'purge_after',
           width: 220,
-          render: (_: unknown, record) => renderAutoPurge(record),
+          render: (_: unknown, record) => renderAutoPurge(record, formatters.dateTime, {
+            unavailable: unavailableShort,
+            blocked: t(($) => $.helpers.blocked),
+            blockersCount: (count) => t(($) => $.helpers.blockersCount, { count }),
+            retryAfter: (value) => t(($) => $.helpers.retryAfter, { value }),
+            operation: t(($) => $.helpers.operation),
+            workflow: t(($) => $.helpers.workflow),
+            more: (count) => t(($) => $.helpers.more, { count }),
+            inDays: (count) => t(($) => $.helpers.inDays, { count }),
+            overdue: t(($) => $.helpers.overdue),
+          }),
         },
       ] as ColumnsType<Artifact>) : []),
       {
-        title: 'Created',
+        title: t(($) => $.table.created),
         dataIndex: 'created_at',
         key: 'created_at',
         width: 200,
-        render: (value: string) => (value ? new Date(value).toLocaleString() : ''),
+        render: (value: string) => formatters.dateTime(value, { fallback: unavailableShort }),
       },
       {
-        title: 'Actions',
+        title: t(($) => $.table.actions),
         key: 'actions',
         width: catalogTab === 'deleted' ? 260 : 140,
         render: (_value, record) => (
           <Space>
             <Button icon={<EyeOutlined />} onClick={() => onOpenDetails(record)}>
-              Details
+              {t(($) => $.table.details)}
             </Button>
             {catalogTab === 'deleted' ? (
               <>
                 <Button disabled={!isStaff} onClick={() => onRestoreArtifact(record)}>
-                  Restore
+                  {t(($) => $.table.restore)}
                 </Button>
                 <Button danger disabled={!isStaff} onClick={() => onOpenPurgeModal(record)}>
-                  Delete permanently
+                  {t(($) => $.table.deletePermanently)}
                 </Button>
               </>
             ) : (
               <Button danger disabled={!isStaff} onClick={() => onDeleteArtifact(record)}>
-                Delete
+                {t(($) => $.table.delete)}
               </Button>
             )}
           </Space>
@@ -103,5 +130,16 @@ export const useArtifactsColumns = ({
     ]
 
     return base
-  }, [catalogTab, isStaff, onDeleteArtifact, onOpenDetails, onOpenPurgeModal, onRestoreArtifact])
+  }, [
+    catalogTab,
+    formatters,
+    isStaff,
+    kindLabels,
+    onDeleteArtifact,
+    onOpenDetails,
+    onOpenPurgeModal,
+    onRestoreArtifact,
+    t,
+    unavailableShort,
+  ])
 }

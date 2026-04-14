@@ -4,9 +4,11 @@ import { useSearchParams } from 'react-router-dom'
 
 import ServiceMeshTab from '../../components/service-mesh/ServiceMeshTab'
 import { PageHeader, RouteButton, WorkspacePage } from '../../components/platform'
+import { useServiceMeshTranslation } from '../../i18n'
 
 const ServiceMeshPage = () => {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { t } = useServiceMeshTranslation()
   const selectedService = (searchParams.get('service') || '').trim() || null
   const selectedOperationId = (searchParams.get('operation') || '').trim() || null
 
@@ -29,14 +31,14 @@ const ServiceMeshPage = () => {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Service mesh"
-          subtitle="Real-time topology and metrics inside the shared observability workspace."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Space wrap>
               <RouteButton
                 to={selectedService ? `/system-status?service=${encodeURIComponent(selectedService)}` : '/system-status'}
               >
-                Open system status
+                {t(($) => $.page.openSystemStatus)}
               </RouteButton>
             </Space>
           )}
@@ -47,7 +49,7 @@ const ServiceMeshPage = () => {
         <Alert
           type="info"
           showIcon
-          message="Operation timeline context restored from the route state."
+          message={t(($) => $.page.restoredOperationContext)}
         />
       ) : null}
       <ServiceMeshTab

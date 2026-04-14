@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import type { DecisionTable, PoolODataMetadataCatalogResponse } from '../../api/generated/model'
 import { listOrganizationPools, type OrganizationPool } from '../../api/intercompanyPools'
+import { useDecisionsTranslation } from '../../i18n'
 import { useDatabaseMetadataManagement, useDatabases } from '../../api/queries/databases'
 import { extractDocumentPolicyOutput } from './documentPolicyBuilder'
 import {
@@ -17,7 +18,6 @@ import {
   formatDatabaseOptionLabel,
   loadDecisionDetail,
   loadDecisionsCollection,
-  METADATA_CONTEXT_FALLBACK_MESSAGE,
   type MetadataContextLike,
   shouldPreferUnscopedReadFromMetadataManagement,
   toErrorMessage,
@@ -79,6 +79,7 @@ const parseSnapshotFilterMode = (value: string | null): DecisionSnapshotFilterMo
 )
 
 export function useDecisionsCatalog(): DecisionsCatalogState {
+  const { t } = useDecisionsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const pendingRouteSyncRef = useRef<{
@@ -286,7 +287,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
         setListReadFallbackUsed(usedFallback || shouldPreferUnscopedDecisionRead)
       } catch (error) {
         if (cancelled) return
-        setListError(toErrorMessage(error, 'Failed to load decision table revisions.'))
+        setListError(toErrorMessage(error, t(($) => $.page.listError)))
         setDecisions([])
         setMetadataContext(null)
         routeUpdateModeRef.current = 'replace'
@@ -341,7 +342,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
         if (cancelled) return
         setBindingUsagePools([])
         setBindingUsageError(
-          toErrorMessage(error, 'Failed to load workflow binding usage. Decisions pinned in bindings may be hidden.')
+          toErrorMessage(error, t(($) => $.page.bindingUsageError))
         )
       }
     }
@@ -421,7 +422,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
         setDetailReadFallbackUsed(usedFallback)
       } catch (error) {
         if (cancelled) return
-        setDetailError(toErrorMessage(error, 'Failed to load decision detail.'))
+        setDetailError(toErrorMessage(error, t(($) => $.messages.detailLoadFailed)))
         setSelectedDecision(null)
         setDetailContext(null)
       } finally {
@@ -471,26 +472,45 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
   const hiddenDecisionCount = decisionSnapshotFilter.hiddenCount
   const pinnedVisibleDecisionCount = decisionSnapshotFilter.pinnedVisibleCount
   const decisionListTitle = decisionSnapshotFilter.canFilterBySnapshot
-    ? `Decision revisions (${visibleDecisions.length} of ${decisions.length})`
-    : `Decision revisions (${decisions.length})`
+    ? t(($) => $.listTitle.filtered, {
+      visible: String(visibleDecisions.length),
+      total: String(decisions.length),
+    })
+    : t(($) => $.listTitle.all, { total: String(decisions.length) })
   const snapshotFilterMessage = decisionSnapshotFilter.canFilterBySnapshot
     ? (
       snapshotFilterMode === 'all'
         ? (
           hiddenDecisionCount > 0
-            ? `Showing all ${decisions.length} revisions for diagnostics. ${hiddenDecisionCount} ${hiddenDecisionCount === 1 ? 'revision is' : 'revisions are'} outside the selected configuration and not pinned in workflow bindings.`
-            : `Showing all ${decisions.length} revisions for diagnostics. All revisions match the selected configuration.`
+            ? (
+              hiddenDecisionCount === 1
+                ? t(($) => $.snapshot.allOutsideSingle, {
+                  total: String(decisions.length),
+                  hidden: String(hiddenDecisionCount),
+                })
+                : t(($) => $.snapshot.allOutsideMany, {
+                  total: String(decisions.length),
+                  hidden: String(hiddenDecisionCount),
+                })
+            )
+            : t(($) => $.snapshot.allMatching, { total: String(decisions.length) })
         )
         : (
           pinnedVisibleDecisionCount > 0
-            ? `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration or pinned in workflow bindings.`
-            : `Showing ${visibleDecisions.length} of ${decisions.length} revisions matching the selected configuration.`
+            ? t(($) => $.snapshot.matchingPinned, {
+              visible: String(visibleDecisions.length),
+              total: String(decisions.length),
+            })
+            : t(($) => $.snapshot.matching, {
+              visible: String(visibleDecisions.length),
+              total: String(decisions.length),
+            })
         )
     )
     : null
 
   const metadataContextWarning = metadataContextFallbackActive
-    ? METADATA_CONTEXT_FALLBACK_MESSAGE
+    ? t(($) => $.messages.metadataContextFallback)
     : null
 
   return {

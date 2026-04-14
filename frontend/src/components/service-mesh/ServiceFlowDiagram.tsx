@@ -28,6 +28,7 @@ import ReactFlow, {
 import { Button, Segmented } from 'antd'
 import { FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
 import 'reactflow/dist/style.css'
+import { useServiceMeshTranslation } from '../../i18n'
 import ServiceNode, { type ServiceNodeData } from './ServiceNode'
 import type {
   ServiceMetrics,
@@ -43,8 +44,6 @@ import {
   DEFAULT_SERVICE_POSITIONS,
   STATUS_COLORS,
   CONNECTION_TYPE_COLORS,
-  CONNECTION_TYPE_LABELS,
-  CONNECTION_TYPE_SHORT_LABELS,
   CONNECTION_TYPE_DASHARRAY,
   CONNECTION_TYPES,
 } from '../../types/serviceMesh'
@@ -200,10 +199,27 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
   direction,
   onDirectionModeChange,
 }) => {
+  const { t } = useServiceMeshTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
   const isInitialLoadRef = useRef(true)
+  const connectionTypeLabels: Record<ConnectionType, string> = {
+    http: t(($) => $.connectionTypes.http),
+    queue: t(($) => $.connectionTypes.queue),
+    database: t(($) => $.connectionTypes.database),
+    pubsub: t(($) => $.connectionTypes.pubsub),
+    streams: t(($) => $.connectionTypes.streams),
+    tcp: t(($) => $.connectionTypes.tcp),
+  }
+  const connectionShortLabels: Record<ConnectionType, string> = {
+    http: t(($) => $.connectionShort.http),
+    queue: t(($) => $.connectionShort.queue),
+    database: t(($) => $.connectionShort.database),
+    pubsub: t(($) => $.connectionShort.pubsub),
+    streams: t(($) => $.connectionShort.streams),
+    tcp: t(($) => $.connectionShort.tcp),
+  }
 
   // Throttle refs for node/edge updates
   const lastUpdateRef = useRef<number>(0)
@@ -388,7 +404,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
       const opacity = focusNode ? (isConnectedToFocus ? 1 : 0.1) : 1
 
       // Show connection type label when focusing a node (otherwise keep it minimal).
-      const shortType = CONNECTION_TYPE_SHORT_LABELS[connType]
+      const shortType = connectionShortLabels[connType]
       const labelText = focusNode
         ? (conn.requestsPerMinute > 0 ? `${shortType} ${conn.requestsPerMinute.toFixed(0)}/m` : shortType)
         : (conn.requestsPerMinute > 0 ? `${conn.requestsPerMinute.toFixed(0)}/min` : undefined)
@@ -428,7 +444,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
     })
 
     setEdges(newEdges)
-  }, [connections, activeOperation, hoveredNode, selectedService, setEdges])
+  }, [activeOperation, connectionShortLabels, connections, hoveredNode, selectedService, setEdges])
 
   // Handle click on empty canvas to deselect
   const handlePaneClick = useCallback(() => {
@@ -471,49 +487,49 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
           value={directionMode}
           onChange={(value) => onDirectionModeChange(value as DirectionMode)}
           options={[
-            { label: 'TB', value: 'TB', title: 'Top to Bottom (vertical)' },
-            { label: 'LR', value: 'LR', title: 'Left to Right (horizontal)' },
-            { label: 'Auto', value: 'auto', title: 'Auto-detect based on screen size' },
+            { label: 'TB', value: 'TB', title: t(($) => $.flowDiagram.directionTbTitle) },
+            { label: 'LR', value: 'LR', title: t(($) => $.flowDiagram.directionLrTitle) },
+            { label: 'Auto', value: 'auto', title: t(($) => $.flowDiagram.directionAutoTitle) },
           ]}
           size="small"
         />
         <Button
           icon={isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
           onClick={toggleFullscreen}
-          title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+          title={isFullscreen ? t(($) => $.flowDiagram.fullscreenExit) : t(($) => $.flowDiagram.fullscreenEnter)}
           size="small"
         />
       </div>
 
       {/* Status Legend */}
       <div className="service-flow-diagram__legend">
-        <div className="service-flow-diagram__legend-title">Status</div>
+        <div className="service-flow-diagram__legend-title">{t(($) => $.flowDiagram.statusLegend)}</div>
         <div className="service-flow-diagram__legend-item">
           <span
             className="service-flow-diagram__legend-dot"
             style={{ background: STATUS_COLORS.healthy }}
           />
-          <span>Healthy</span>
+          <span>{t(($) => $.status.healthy)}</span>
         </div>
         <div className="service-flow-diagram__legend-item">
           <span
             className="service-flow-diagram__legend-dot"
             style={{ background: STATUS_COLORS.degraded }}
           />
-          <span>Degraded</span>
+          <span>{t(($) => $.status.degraded)}</span>
         </div>
         <div className="service-flow-diagram__legend-item">
           <span
             className="service-flow-diagram__legend-dot"
             style={{ background: STATUS_COLORS.critical }}
           />
-          <span>Critical</span>
+          <span>{t(($) => $.status.critical)}</span>
         </div>
       </div>
 
       {/* Connection Types Legend */}
       <div className="service-flow-diagram__connection-legend">
-        <div className="service-flow-diagram__legend-title">Connections</div>
+        <div className="service-flow-diagram__legend-title">{t(($) => $.flowDiagram.connectionsLegend)}</div>
         {(Object.entries(CONNECTION_TYPE_COLORS) as [ConnectionType, string][]).map(
           ([type, color]) => (
             <div key={type} className="service-flow-diagram__legend-item">
@@ -524,7 +540,7 @@ const ServiceFlowDiagram: React.FC<ServiceFlowDiagramProps> = ({
                   background: 'transparent',
                 }}
               />
-              <span>{CONNECTION_TYPE_LABELS[type]}</span>
+              <span>{connectionTypeLabels[type]}</span>
             </div>
           )
         )}

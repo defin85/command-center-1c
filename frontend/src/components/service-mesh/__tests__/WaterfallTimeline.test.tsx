@@ -10,11 +10,20 @@
  * - Service icons and display names
  */
 
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import WaterfallTimeline from '../WaterfallTimeline'
 import type { WaterfallItem } from '../../../types/operationTimeline'
+import { changeLanguage } from '@/i18n/runtime'
+
+beforeEach(async () => {
+  await changeLanguage('en')
+})
+
+afterEach(async () => {
+  await changeLanguage('ru')
+})
 
 describe('WaterfallTimeline', () => {
   const mockItems: WaterfallItem[] = [

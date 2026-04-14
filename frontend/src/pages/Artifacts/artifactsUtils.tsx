@@ -5,20 +5,29 @@ import type { Artifact, ArtifactAlias, ArtifactKind, ArtifactPurgeBlocker, Artif
 
 const { Text } = Typography
 
-export const KIND_LABELS: Record<ArtifactKind, string> = {
-  extension: 'Расширение конфигурации (.cfe)',
-  config_cf: 'Конфигурация (*.cf)',
-  config_xml: 'Выгрузка конфигурации XML (.xml)',
-  dt_backup: 'Выгрузка ИБ (.dt)',
-  epf: 'Внешняя обработка (.epf)',
-  erf: 'Внешний отчет (.erf)',
-  ibcmd_package: 'Пакет IBCMD (.zip)',
-  ras_script: 'Скрипт RAS (.txt)',
-  other: 'Другое',
-}
-
 export const EMPTY_VERSIONS: ArtifactVersion[] = []
 export const EMPTY_ALIASES: ArtifactAlias[] = []
+
+export type ArtifactKindLabels = Record<ArtifactKind, string>
+
+type LocaleDateTimeFormatter = (
+  value: string | Date | null | undefined,
+  options?: Intl.DateTimeFormatOptions & { fallback?: string },
+) => string
+
+type ArtifactHelperLabels = {
+  unavailable: string
+  blocked: string
+  blockersCount: (count: number) => string
+  retryAfter: (value: string) => string
+  operation: string
+  workflow: string
+  more: (count: number) => string
+  inDays: (count: number) => string
+  overdue: string
+}
+
+export const getArtifactKindLabel = (kind: ArtifactKind, labels: ArtifactKindLabels) => labels[kind] ?? kind
 
 export const formatBytes = (value: number) => {
   if (!Number.isFinite(value)) return '-'
@@ -45,27 +54,34 @@ export const formatDuration = (seconds: number | null) => {
   return `${mins}m ${secs}s`
 }
 
-export const formatPurgeAfter = (value?: string | null) => {
-  if (!value) return '—'
+export const formatPurgeAfter = (
+  value: string | null | undefined,
+  dateTime: LocaleDateTimeFormatter,
+  labels: Pick<ArtifactHelperLabels, 'inDays' | 'overdue' | 'unavailable'>,
+) => {
+  if (!value) return labels.unavailable
   const target = new Date(value).getTime()
-  if (!Number.isFinite(target)) return '—'
+  if (!Number.isFinite(target)) return labels.unavailable
   const days = Math.ceil((target - Date.now()) / (1000 * 60 * 60 * 24))
   if (days > 0) {
-    return `${new Date(value).toLocaleString()} (in ${days}d)`
+    return `${dateTime(value, { fallback: labels.unavailable })} (${labels.inDays(days)})`
   }
-  return `${new Date(value).toLocaleString()} (overdue)`
+  return `${dateTime(value, { fallback: labels.unavailable })} (${labels.overdue})`
 }
 
-export const renderPurgeBlockers = (blockers?: ArtifactPurgeBlocker[]) => {
+export const renderPurgeBlockers = (
+  blockers: ArtifactPurgeBlocker[] | undefined,
+  labels: Pick<ArtifactHelperLabels, 'operation' | 'workflow' | 'more' | 'unavailable'>,
+) => {
   const items = blockers ?? []
   if (items.length === 0) {
-    return <Text type="secondary">—</Text>
+    return <Text type="secondary">{labels.unavailable}</Text>
   }
 
   return (
     <Space direction="vertical" size={0}>
       {items.slice(0, 10).map((blocker) => {
-        const label = blocker.type === 'batch_operation' ? 'Operation' : 'Workflow'
+        const label = blocker.type === 'batch_operation' ? labels.operation : labels.workflow
         const title = blocker.name ? `${label}: ${blocker.name}` : `${label}: ${blocker.id}`
         return (
           <Text key={`${blocker.type}:${blocker.id}`}>
@@ -74,30 +90,34 @@ export const renderPurgeBlockers = (blockers?: ArtifactPurgeBlocker[]) => {
         )
       })}
       {items.length > 10 && (
-        <Text type="secondary">+{items.length - 10} more</Text>
+        <Text type="secondary">{labels.more(items.length - 10)}</Text>
       )}
     </Space>
   )
 }
 
-export const renderAutoPurge = (artifact: Artifact) => {
-  if (!artifact.purge_after) return '—'
+export const renderAutoPurge = (
+  artifact: Artifact,
+  dateTime: LocaleDateTimeFormatter,
+  labels: ArtifactHelperLabels,
+) => {
+  if (!artifact.purge_after) return labels.unavailable
 
   if (artifact.purge_state !== 'blocked') {
-    return formatPurgeAfter(artifact.purge_after)
+    return formatPurgeAfter(artifact.purge_after, dateTime, labels)
   }
 
   const blockersCount = artifact.purge_blockers?.length ?? 0
-  const retryAt = artifact.purge_blocked_until ? new Date(artifact.purge_blocked_until).toLocaleString() : '—'
+  const retryAt = dateTime(artifact.purge_blocked_until, { fallback: labels.unavailable })
 
   return (
     <Space direction="vertical" size={0}>
       <Space size={8} wrap>
-        <Tag color="orange">Blocked</Tag>
-        {blockersCount > 0 && <Text type="secondary">{blockersCount} blockers</Text>}
+        <Tag color="orange">{labels.blocked}</Tag>
+        {blockersCount > 0 && <Text type="secondary">{labels.blockersCount(blockersCount)}</Text>}
       </Space>
-      <Text type="secondary">{formatPurgeAfter(artifact.purge_after)}</Text>
-      <Text type="secondary">Retry after {retryAt}</Text>
+      <Text type="secondary">{formatPurgeAfter(artifact.purge_after, dateTime, labels)}</Text>
+      <Text type="secondary">{labels.retryAfter(retryAt)}</Text>
     </Space>
   )
 }
@@ -135,10 +155,14 @@ export const buildMetadataTemplate = (payload: {
   created_at: new Date().toISOString(),
 })
 
-export const aliasMenuItems: MenuProps['items'] = [
-  { key: 'latest', label: 'Set alias: latest' },
-  { key: 'approved', label: 'Set alias: approved' },
-  { key: 'stable', label: 'Set alias: stable' },
+export const createAliasMenuItems = (labels: {
+  latest: string
+  approved: string
+  stable: string
+}): MenuProps['items'] => [
+  { key: 'latest', label: labels.latest },
+  { key: 'approved', label: labels.approved },
+  { key: 'stable', label: labels.stable },
 ]
 
 export const MAX_PREVIEW_BYTES = 1024 * 1024
@@ -220,4 +244,3 @@ export const diffLines = (before: string[], after: string[]): DiffLine[] => {
 
   return result.reverse()
 }
-

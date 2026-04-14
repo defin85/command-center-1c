@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { changeLanguage } from '@/i18n/runtime'
 
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 
@@ -294,7 +295,8 @@ function renderPage(path = '/decisions') {
 }
 
 describe('DecisionsPage', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await changeLanguage('en')
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()
     mockPostDecisionsCollection.mockReset()
@@ -371,6 +373,10 @@ describe('DecisionsPage', () => {
     })
   })
 
+  afterEach(async () => {
+    await changeLanguage('ru')
+  })
+
   it('renders decision lifecycle list with metadata context and selected detail', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -383,7 +389,7 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('shared_scope')).not.toBeInTheDocument()
     expect(screen.getByTestId('decisions-database-select')).toHaveTextContent('shared-profile')
     expect(screen.getByText('Services publication policy')).toBeInTheDocument()
-    expect(screen.getAllByText('compatible').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/compatible/i).length).toBeGreaterThan(0)
     expect(screen.getByText('services-publication-policy')).toBeInTheDocument()
     expect(await screen.findByText('Structured policy view')).toBeInTheDocument()
     expect(screen.getByText('Chain 1: sale_chain')).toBeInTheDocument()
@@ -668,7 +674,7 @@ describe('DecisionsPage', () => {
     })
 
     expect(await screen.findByText(
-      'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
+      'Metadata context is unavailable for the selected database. Showing the global list of revisions without this database compatibility context; manage the configuration profile and metadata snapshot through /databases.'
     )).toBeInTheDocument()
   })
 
@@ -1347,7 +1353,7 @@ describe('DecisionsPage', () => {
     })
 
     expect(await screen.findByText(
-      'Metadata context недоступен для выбранной базы. Показываем глобальный список revisions без compatibility context этой базы; управлять configuration profile и metadata snapshot нужно через /databases.'
+      'Metadata context is unavailable for the selected database. Showing the global list of revisions without this database compatibility context; manage the configuration profile and metadata snapshot through /databases.'
     )).toBeInTheDocument()
     expect(screen.getByTestId('decisions-warning-open-databases')).toBeInTheDocument()
     expect(screen.queryByText('Failed to load decision table revisions.')).not.toBeInTheDocument()

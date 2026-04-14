@@ -20,6 +20,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
+import { useDecisionsTranslation } from '../../i18n'
 import {
   DecisionLegacyImportPanel,
 } from './DecisionLegacyImportPanel'
@@ -40,6 +41,7 @@ const { Text } = Typography
 export function DecisionsPage() {
   const navigate = useNavigate()
   const { message } = App.useApp()
+  const { t } = useDecisionsTranslation()
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false)
   const catalog = useDecisionsCatalog()
   const legacyImport = useDecisionLegacyImport({
@@ -133,14 +135,14 @@ export function DecisionsPage() {
     <WorkspacePage
       header={(
         <PageHeader
-          title="Decision Policy Library"
-          subtitle="Create and revise document policies for the selected database without leaving the authoring workspace."
+          title={t(($) => $.page.title)}
+          subtitle={t(($) => $.page.subtitle)}
           actions={(
             <Select
-              aria-label="Target database"
+              aria-label={t(($) => $.page.databaseAriaLabel)}
               allowClear
               data-testid="decisions-database-select"
-              placeholder="Select database"
+              placeholder={t(($) => $.page.databasePlaceholder)}
               value={catalog.effectiveSelectedDatabaseId}
               style={{ width: 'min(320px, 100%)', minWidth: 240 }}
               options={catalog.databases.map((database) => ({
@@ -157,16 +159,15 @@ export function DecisionsPage() {
       <Alert
         type="info"
         showIcon
-        message="Task-first authoring flow"
+        message={t(($) => $.page.taskFirst.title)}
         description={(
           <Space direction="vertical" size={8}>
             <Text>
-              Start with a new policy or revise the selected revision for the current database. Use workflow and
-              execution-pack catalogs only when you need reusable references or rollout targets.
+              {t(($) => $.page.taskFirst.description)}
             </Text>
             <Space wrap>
-              <RouteButton to="/workflows">Open workflow references</RouteButton>
-              <RouteButton to="/pools/execution-packs">Open execution packs</RouteButton>
+              <RouteButton to="/workflows">{t(($) => $.page.taskFirst.workflows)}</RouteButton>
+              <RouteButton to="/pools/execution-packs">{t(($) => $.page.taskFirst.executionPacks)}</RouteButton>
             </Space>
           </Space>
         )}
@@ -183,7 +184,7 @@ export function DecisionsPage() {
               onClick={() => { navigate('/databases') }}
               data-testid="decisions-open-databases"
             >
-              Открыть /databases
+              {t(($) => $.page.openDatabases)}
             </Button>
           ) : undefined}
         />
@@ -194,22 +195,30 @@ export function DecisionsPage() {
           closable
           showIcon
           type={legacyImport.legacyImportResult.migration.binding_update_required ? 'warning' : 'success'}
-          message="Imported to /decisions"
+          message={t(($) => $.page.importedTitle)}
           description={(
             <Space direction="vertical" size={4}>
               <span>
-                {`Source: ${legacyImport.legacyImportResult.migration.source.source_path} (${legacyImport.legacyImportResult.migration.source.edge_version_id})`}
+                {t(($) => $.page.importedSource, {
+                  path: legacyImport.legacyImportResult.migration.source.source_path,
+                  edgeVersionId: legacyImport.legacyImportResult.migration.source.edge_version_id,
+                })}
               </span>
               <span>
-                {`Decision ref: ${legacyImport.legacyImportResult.migration.decision_ref.decision_table_id} r${legacyImport.legacyImportResult.migration.decision_ref.decision_revision}`}
+                {t(($) => $.page.importedDecisionRef, {
+                  decisionTableId: legacyImport.legacyImportResult.migration.decision_ref.decision_table_id,
+                  decisionRevision: String(legacyImport.legacyImportResult.migration.decision_ref.decision_revision),
+                })}
               </span>
               <span>
-                {`Binding slot: ${legacyImport.legacyImportResult.migration.slot_key}`}
+                {t(($) => $.page.importedBindingSlot, {
+                  slotKey: legacyImport.legacyImportResult.migration.slot_key,
+                })}
               </span>
               {legacyImport.legacyImportResult.migration.binding_update_required ? (
-                <span>Updated bindings: manual binding pin required</span>
+                <span>{t(($) => $.page.importedBindingManual)}</span>
               ) : (
-                <span>Affected workflow bindings were updated automatically.</span>
+                <span>{t(($) => $.page.importedBindingAutomatic)}</span>
               )}
             </Space>
           )}
@@ -217,7 +226,7 @@ export function DecisionsPage() {
         />
       ) : null}
 
-      <EntityDetails title="Authoring workspace">
+      <EntityDetails title={t(($) => $.page.authoringWorkspace)}>
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <Space direction="vertical" size={12} style={{ width: '100%' }}>
             <Button
@@ -225,9 +234,9 @@ export function DecisionsPage() {
               icon={<PlusOutlined />}
               onClick={() => openEditor('create', buildEmptyDraft('create', 'builder'))}
               disabled={saving}
-              aria-label="New policy"
+              aria-label={t(($) => $.page.newPolicy)}
             >
-              New policy
+              {t(($) => $.page.newPolicy)}
             </Button>
             <Space wrap>
               <Button
@@ -240,9 +249,9 @@ export function DecisionsPage() {
                   || catalog.selectedDecisionRequiresRollover
                   || catalog.metadataContextFallbackActive
                 }
-                aria-label="Edit selected decision"
+                aria-label={t(($) => $.page.editSelectedDecision)}
               >
-                Edit selected decision
+                {t(($) => $.page.editSelectedDecision)}
               </Button>
               <Button
                 onClick={handleOpenSelectedDecisionForRollover}
@@ -252,9 +261,9 @@ export function DecisionsPage() {
                   || saving
                   || !catalog.canOpenRollover
                 }
-                aria-label="Rollover selected revision"
+                aria-label={t(($) => $.page.rolloverSelectedRevision)}
               >
-                Rollover selected revision
+                {t(($) => $.page.rolloverSelectedRevision)}
               </Button>
               <Button
                 onClick={handleOpenSelectedDecisionForClone}
@@ -264,9 +273,9 @@ export function DecisionsPage() {
                   || saving
                   || catalog.metadataContextFallbackActive
                 }
-                aria-label="Clone selected revision"
+                aria-label={t(($) => $.page.cloneSelectedRevision)}
               >
-                Clone selected revision
+                {t(($) => $.page.cloneSelectedRevision)}
               </Button>
               <Button
                 danger
@@ -279,9 +288,9 @@ export function DecisionsPage() {
                   || catalog.selectedDecisionRequiresRollover
                   || catalog.metadataContextFallbackActive
                 }
-                aria-label="Deactivate selected decision"
+                aria-label={t(($) => $.page.deactivateSelectedDecision)}
               >
-                Deactivate selected decision
+                {t(($) => $.page.deactivateSelectedDecision)}
               </Button>
             </Space>
           </Space>
@@ -291,30 +300,30 @@ export function DecisionsPage() {
             items={[
               {
                 key: 'imports',
-                label: 'Import and migration tools',
+                label: t(($) => $.page.importTools),
                 children: (
                   <Space wrap>
                     <Button
                       icon={<ImportOutlined />}
                       onClick={openLegacyImport}
                       disabled={saving}
-                      aria-label="Import legacy edge"
+                      aria-label={t(($) => $.page.importLegacyEdge)}
                     >
-                      Import legacy edge
+                      {t(($) => $.page.importLegacyEdge)}
                     </Button>
                     <Button
                       onClick={openRawImport}
                       disabled={saving}
-                      aria-label="Import raw JSON"
+                      aria-label={t(($) => $.page.importRawJson)}
                     >
-                      Import raw JSON
+                      {t(($) => $.page.importRawJson)}
                     </Button>
                   </Space>
                 ),
               },
               {
                 key: 'metadata',
-                label: 'Target metadata context',
+                label: t(($) => $.page.targetMetadataContext),
                 children: (
                   <dl
                     style={{
@@ -324,9 +333,25 @@ export function DecisionsPage() {
                       margin: 0,
                     }}
                   >
-                    {normalizeMetadataItems(catalog.metadataContext).map((item) => (
+                    {normalizeMetadataItems(catalog.metadataContext, {
+                      unavailableLabel: t(($) => $.metadata.unavailable),
+                      driftYesLabel: t(($) => $.metadata.driftYes),
+                      driftNoLabel: t(($) => $.metadata.driftNo),
+                    }).map((item) => (
                       <div key={item.key} style={{ minWidth: 0 }}>
-                        <dt style={{ fontSize: 12, color: '#8c8c8c' }}>{item.label}</dt>
+                        <dt style={{ fontSize: 12, color: '#8c8c8c' }}>
+                          {{
+                            config: t(($) => $.metadata.config),
+                            version: t(($) => $.metadata.version),
+                            generation: t(($) => $.metadata.generation),
+                            snapshot: t(($) => $.metadata.snapshot),
+                            mode: t(($) => $.metadata.mode),
+                            hash: t(($) => $.metadata.hash),
+                            observed_hash: t(($) => $.metadata.observedHash),
+                            drift: t(($) => $.metadata.drift),
+                            provenance: t(($) => $.metadata.provenance),
+                          }[item.key as 'config' | 'version' | 'generation' | 'snapshot' | 'mode' | 'hash' | 'observed_hash' | 'drift' | 'provenance']}
+                        </dt>
                         <dd
                           style={{
                             margin: '4px 0 0',
@@ -356,7 +381,7 @@ export function DecisionsPage() {
                   onClick={() => { navigate('/databases') }}
                   data-testid="decisions-warning-open-databases"
                 >
-                  Открыть /databases
+                  {t(($) => $.page.openDatabases)}
                 </Button>
               )}
             />
@@ -364,13 +389,13 @@ export function DecisionsPage() {
         </Space>
       </EntityDetails>
 
-      {catalog.listError ? <Alert type="error" showIcon message={catalog.listError} /> : null}
-      {catalog.bindingUsageError ? <Alert type="warning" showIcon message={catalog.bindingUsageError} /> : null}
+      {catalog.listError ? <Alert type="error" showIcon message={catalog.listError || t(($) => $.page.listError)} /> : null}
+      {catalog.bindingUsageError ? <Alert type="warning" showIcon message={catalog.bindingUsageError || t(($) => $.page.bindingUsageError)} /> : null}
 
       <MasterDetailShell
         detailOpen={isDetailDrawerOpen}
         onCloseDetail={() => setIsDetailDrawerOpen(false)}
-        detailDrawerTitle={catalog.selectedDecision?.name || 'Decision detail'}
+        detailDrawerTitle={catalog.selectedDecision?.name || t(($) => $.page.detailTitle)}
         list={(
           <DecisionCatalogPanel
             title={catalog.decisionListTitle}
@@ -404,8 +429,8 @@ export function DecisionsPage() {
       <DrawerFormShell
         open={Boolean(legacyImport.legacyImportDraft)}
         onClose={legacyImport.closeLegacyImport}
-        title={<Typography.Title level={4} style={{ marginBottom: 0 }}>Import legacy edge</Typography.Title>}
-        subtitle="Migrate a legacy edge document policy into /decisions and optionally update workflow bindings."
+        title={<Typography.Title level={4} style={{ marginBottom: 0 }}>{t(($) => $.page.importLegacyEdge)}</Typography.Title>}
+        subtitle={t(($) => $.legacyImport.subtitle)}
       >
         {legacyImport.legacyImportDraft ? (
           <DecisionLegacyImportPanel
