@@ -22,6 +22,7 @@ import {
   getRegistryEntityLabel,
   getTokenQualifierOptions,
 } from './registry'
+import { usePoolsTranslation } from '../../../i18n'
 
 type BindingFormValues = {
   entity_type: string
@@ -35,27 +36,11 @@ type BindingFormValues = {
   fingerprint: string
 }
 
-const SYNC_STATUS_OPTIONS: { value: PoolMasterBindingSyncStatus; label: string }[] = [
-  { value: 'resolved', label: 'resolved' },
-  { value: 'upserted', label: 'upserted' },
-  { value: 'conflict', label: 'conflict' },
-]
-
-const BINDING_SCOPE_FIELD_LABELS: Record<string, string> = {
-  ib_catalog_kind: 'IB Catalog Kind',
-  owner_counterparty_canonical_id: 'Owner Counterparty Canonical ID',
-  chart_identity: 'Chart Identity',
-}
-
 const BINDING_SCOPE_FIELD_COLORS: Record<string, string> = {
   ib_catalog_kind: 'blue',
   owner_counterparty_canonical_id: 'purple',
   chart_identity: 'gold',
 }
-
-const getBindingScopeFieldLabel = (field: string): string => (
-  BINDING_SCOPE_FIELD_LABELS[field] ?? field
-)
 
 type BindingsTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
@@ -63,6 +48,7 @@ type BindingsTabProps = {
 
 export function BindingsTab({ registryEntries }: BindingsTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterDataBinding[]>([])
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [loading, setLoading] = useState(false)
@@ -92,16 +78,30 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     () => getTokenQualifierOptions(registryEntries, selectedEntityType),
     [registryEntries, selectedEntityType]
   )
+  const syncStatusOptions = useMemo<{ value: PoolMasterBindingSyncStatus; label: string }[]>(
+    () => [
+      { value: 'resolved', label: t('masterData.bindingsTab.syncStatus.resolved') },
+      { value: 'upserted', label: t('masterData.bindingsTab.syncStatus.upserted') },
+      { value: 'conflict', label: t('masterData.bindingsTab.syncStatus.conflict') },
+    ],
+    [t]
+  )
+  const getBindingScopeFieldLabel = useCallback((field: string): string => {
+    if (field === 'ib_catalog_kind') return t('masterData.bindingsTab.scopeFields.ibCatalogKind')
+    if (field === 'owner_counterparty_canonical_id') return t('masterData.bindingsTab.scopeFields.ownerCounterpartyCanonicalId')
+    if (field === 'chart_identity') return t('masterData.bindingsTab.scopeFields.chartIdentity')
+    return field
+  }, [t])
 
   const loadDatabases = useCallback(async () => {
     try {
       const items = await listPoolTargetDatabases()
       setDatabases(items)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить список баз.')
+      const resolved = resolveApiError(error, t('masterData.bindingsTab.messages.failedToLoadDatabases'))
       message.error(resolved.message)
     }
-  }, [message])
+  }, [message, t])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -114,12 +114,12 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       })
       setRows(response.bindings)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить Bindings.')
+      const resolved = resolveApiError(error, t('masterData.bindingsTab.messages.failedToLoadBindings'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [entityTypeFilter, message, queryCanonicalId])
+  }, [entityTypeFilter, message, queryCanonicalId, t])
 
   useEffect(() => {
     void loadRows()
@@ -165,19 +165,19 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     const values = await form.validateFields()
     const registryEntry = findRegistryEntryByEntityType(registryEntries, values.entity_type)
     if (!registryEntry) {
-      message.error('Не удалось определить registry contract для выбранного entity_type.')
+      message.error(t('masterData.bindingsTab.messages.missingRegistryContract'))
       return
     }
     const requiredScopeFields = getBindingScopePresentationFields(registryEntries, values.entity_type)
     const missingFieldErrors = requiredScopeFields.flatMap((field) => {
       if (field === 'ib_catalog_kind' && !values.ib_catalog_kind) {
-        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+        return [{ name: field, errors: [t('masterData.bindingsTab.messages.requiredByRegistryScope')] }]
       }
       if (field === 'owner_counterparty_canonical_id' && !values.owner_counterparty_canonical_id.trim()) {
-        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+        return [{ name: field, errors: [t('masterData.bindingsTab.messages.requiredByRegistryScope')] }]
       }
       if (field === 'chart_identity' && !values.chart_identity.trim()) {
-        return [{ name: field, errors: ['Required by registry binding scope.'] }]
+        return [{ name: field, errors: [t('masterData.bindingsTab.messages.requiredByRegistryScope')] }]
       }
       return []
     })
@@ -212,10 +212,14 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
         fingerprint: values.fingerprint.trim(),
       })
       setIsModalOpen(false)
-      message.success(editingBinding ? 'Binding обновлён.' : 'Binding создан.')
+      message.success(
+        editingBinding
+          ? t('masterData.bindingsTab.messages.bindingUpdated')
+          : t('masterData.bindingsTab.messages.bindingCreated')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить Binding.')
+      const resolved = resolveApiError(error, t('masterData.bindingsTab.messages.failedToSaveBinding'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields((
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors }))
@@ -227,25 +231,35 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     }
   }
 
-  const columns: ColumnsType<PoolMasterDataBinding> = [
+  const columns: ColumnsType<PoolMasterDataBinding> = useMemo(() => [
     {
-      title: 'Entity Type',
+      title: t('masterData.bindingsTab.columns.entityType'),
       dataIndex: 'entity_type',
       key: 'entity_type',
       width: 160,
       render: (value: string) => getRegistryEntityLabel(registryEntries, value),
     },
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
     {
-      title: 'Database',
+      title: t('masterData.bindingsTab.columns.canonicalId'),
+      dataIndex: 'canonical_id',
+      key: 'canonical_id',
+      width: 220,
+    },
+    {
+      title: t('masterData.bindingsTab.columns.database'),
       dataIndex: 'database_id',
       key: 'database_id',
       width: 260,
       render: (value: string) => databases.find((item) => item.id === value)?.name || value,
     },
-    { title: 'IB Ref Key', dataIndex: 'ib_ref_key', key: 'ib_ref_key', width: 240 },
     {
-      title: 'Scope',
+      title: t('masterData.bindingsTab.columns.ibRefKey'),
+      dataIndex: 'ib_ref_key',
+      key: 'ib_ref_key',
+      width: 240,
+    },
+    {
+      title: t('masterData.bindingsTab.columns.scope'),
       key: 'scope',
       width: 320,
       render: (_, row) => {
@@ -274,21 +288,37 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
         )
       },
     },
-    { title: 'Sync Status', dataIndex: 'sync_status', key: 'sync_status', width: 120 },
     {
-      title: 'Updated',
+      title: t('masterData.bindingsTab.columns.syncStatus'),
+      dataIndex: 'sync_status',
+      key: 'sync_status',
+      width: 120,
+      render: (value: PoolMasterBindingSyncStatus) => (
+        syncStatusOptions.find((option) => option.value === value)?.label ?? value
+      ),
+    },
+    {
+      title: t('masterData.bindingsTab.columns.updated'),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Actions',
+      title: t('masterData.bindingsTab.columns.actions'),
       key: 'actions',
       width: 100,
-      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>Edit</Button>,
+      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>{t('common.edit')}</Button>,
     },
-  ]
+  ], [
+    databases,
+    formatDateTime,
+    getBindingScopeFieldLabel,
+    openEditModal,
+    registryEntries,
+    syncStatusOptions,
+    t,
+  ])
 
   return (
     <>
@@ -296,21 +326,21 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
         <Space wrap style={{ marginBottom: 16 }}>
           <Input
             allowClear
-            placeholder="Canonical ID filter"
+            placeholder={t('masterData.bindingsTab.filters.canonicalIdPlaceholder')}
             value={queryCanonicalId}
             onChange={(event) => setQueryCanonicalId(event.target.value)}
             style={{ width: 280 }}
           />
           <Select
             allowClear
-            placeholder="Entity type"
+            placeholder={t('masterData.bindingsTab.filters.entityTypePlaceholder')}
             value={entityTypeFilter}
             options={entityTypeOptions}
             onChange={(value) => setEntityTypeFilter(value)}
             style={{ width: 180 }}
           />
-          <Button onClick={() => void loadRows()} loading={loading}>Refresh</Button>
-          <Button type="primary" onClick={openCreateModal}>Add Binding</Button>
+          <Button onClick={() => void loadRows()} loading={loading}>{t('masterData.bindingsTab.actions.refresh')}</Button>
+          <Button type="primary" onClick={openCreateModal}>{t('masterData.bindingsTab.actions.addBinding')}</Button>
         </Space>
         <Table
           rowKey="id"
@@ -323,7 +353,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       </Card>
 
       <Modal
-        title={editingBinding ? 'Edit Binding' : 'Create Binding'}
+        title={editingBinding ? t('masterData.bindingsTab.modal.editTitle') : t('masterData.bindingsTab.modal.createTitle')}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
@@ -331,19 +361,19 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="entity_type" label="Entity Type" rules={[{ required: true }]}>
+          <Form.Item name="entity_type" label={t('masterData.bindingsTab.modal.fields.entityType')} rules={[{ required: true }]}>
             <Select options={entityTypeOptions} />
           </Form.Item>
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.bindingsTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="database_id" label="Database" rules={[{ required: true }]}>
+          <Form.Item name="database_id" label={t('masterData.bindingsTab.modal.fields.database')} rules={[{ required: true }]}>
             <Select
               showSearch
               options={databases.map((database) => ({ value: database.id, label: database.name }))}
             />
           </Form.Item>
-          <Form.Item name="ib_ref_key" label="IB Ref Key" rules={[{ required: true }]}>
+          <Form.Item name="ib_ref_key" label={t('masterData.bindingsTab.modal.fields.ibRefKey')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           {requiresCatalogKind && (
@@ -364,10 +394,10 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
               <Input />
             </Form.Item>
           )}
-          <Form.Item name="sync_status" label="Sync Status" rules={[{ required: true }]}>
-            <Select options={SYNC_STATUS_OPTIONS} />
+          <Form.Item name="sync_status" label={t('masterData.bindingsTab.modal.fields.syncStatus')} rules={[{ required: true }]}>
+            <Select options={syncStatusOptions} />
           </Form.Item>
-          <Form.Item name="fingerprint" label="Fingerprint">
+          <Form.Item name="fingerprint" label={t('masterData.bindingsTab.modal.fields.fingerprint')}>
             <Input />
           </Form.Item>
         </Form>

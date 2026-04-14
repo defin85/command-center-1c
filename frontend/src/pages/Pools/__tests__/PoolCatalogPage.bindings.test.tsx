@@ -1588,7 +1588,7 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(
-      await screen.findByText('Attachment #1: binding_profile_revision_id обязателен.')
+      await screen.findByText('Attachment #1: binding_profile_revision_id is required.')
     ).toBeInTheDocument()
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
   }, SYNC_MODAL_TIMEOUT_MS)

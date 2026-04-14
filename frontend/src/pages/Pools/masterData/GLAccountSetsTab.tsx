@@ -22,6 +22,7 @@ import {
   ModalFormShell,
   StatusBadge,
 } from '../../../components/platform'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { findRegistryEntryByEntityType, getRegistryEntryLabel } from './registry'
@@ -54,7 +55,8 @@ const buildCompatibilityClass = (
 
 const summarizeMembersCompatibility = (
   expected: Pick<PoolMasterGLAccountSet, 'chart_identity' | 'config_name' | 'config_version'>,
-  members: PoolMasterGLAccountSetMember[]
+  members: PoolMasterGLAccountSetMember[],
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): CompatibilitySummary => {
   const mismatchedMembers = members.filter((member) => (
     String(member.chart_identity || '').trim() !== String(expected.chart_identity || '').trim()
@@ -64,53 +66,22 @@ const summarizeMembersCompatibility = (
   if (mismatchedMembers.length === 0) {
     return {
       status: 'compatible',
-      label: 'Compatibility aligned',
+      label: t('masterData.glAccountSetsTab.compatibility.aligned'),
       detail: members.length > 0
-        ? `All ${members.length} draft member(s) match the profile compatibility class.`
-        : 'Draft has no members yet.',
+        ? t('masterData.glAccountSetsTab.compatibility.alignedDetail', { count: members.length })
+        : t('masterData.glAccountSetsTab.compatibility.noMembers'),
     }
   }
   return {
     status: 'incompatible',
-    label: 'Compatibility gap',
-    detail: `${mismatchedMembers.length} draft member(s) do not match chart/config compatibility class.`,
+    label: t('masterData.glAccountSetsTab.compatibility.gap'),
+    detail: t('masterData.glAccountSetsTab.compatibility.gapDetail', { count: mismatchedMembers.length }),
   }
 }
 
-const memberColumns: ColumnsType<PoolMasterGLAccountSetMember> = [
-  { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 180 },
-  { title: 'Code', dataIndex: 'code', key: 'code', width: 120 },
-  { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
-  { title: 'Chart Identity', dataIndex: 'chart_identity', key: 'chart_identity', width: 220 },
-  {
-    title: 'Config',
-    key: 'config',
-    width: 220,
-    render: (_, row) => `${row.config_name || '—'} · ${row.config_version || '—'}`,
-  },
-]
-
-const revisionColumns: ColumnsType<PoolMasterGLAccountSetRevision> = [
-  { title: 'Revision', dataIndex: 'revision_number', key: 'revision_number', width: 100 },
-  { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
-  {
-    title: 'Members',
-    key: 'members',
-    width: 120,
-    render: (_, row) => row.members.length,
-  },
-  { title: 'Contract', dataIndex: 'contract_version', key: 'contract_version', width: 180 },
-  {
-    title: 'Created',
-    dataIndex: 'created_at',
-    key: 'created_at',
-    width: 220,
-    render: (value: string) => formatDateTime(value),
-  },
-]
-
 export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterGLAccountSetSummary[]>([])
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null)
   const [selectedSet, setSelectedSet] = useState<PoolMasterGLAccountSet | null>(null)
@@ -153,12 +124,12 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
         return response.gl_account_sets[0]?.gl_account_set_id ?? null
       })
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить GL Account Sets.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToLoadList'))
       message.error(resolved.message)
     } finally {
       setLoadingRows(false)
     }
-  }, [chartIdentityFilter, message, query])
+  }, [chartIdentityFilter, message, query, t])
 
   const loadSelectedSet = useCallback(async (glAccountSetId: string) => {
     setLoadingDetail(true)
@@ -166,13 +137,13 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       const response = await getMasterDataGlAccountSet(glAccountSetId)
       setSelectedSet(response.gl_account_set)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить детали GL Account Set.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToLoadDetail'))
       setSelectedSet(null)
       message.error(resolved.message)
     } finally {
       setLoadingDetail(false)
     }
-  }, [message])
+  }, [message, t])
 
   const loadGlAccounts = useCallback(async () => {
     setLoadingAccounts(true)
@@ -180,12 +151,12 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       const response = await listMasterDataGlAccounts({ limit: 200, offset: 0 })
       setGlAccounts(response.gl_accounts)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить каталог GL Accounts.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToLoadAccounts'))
       message.error(resolved.message)
     } finally {
       setLoadingAccounts(false)
     }
-  }, [message])
+  }, [message, t])
 
   useEffect(() => {
     void loadRows()
@@ -236,7 +207,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       hydrateFormFromDetail(detail)
       setIsModalOpen(true)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось подготовить форму GL Account Set.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToPrepareForm'))
       message.error(resolved.message)
     } finally {
       setLoadingEditor(false)
@@ -262,10 +233,14 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       setIsModalOpen(false)
       setSelectedSetId(response.gl_account_set.gl_account_set_id)
       setSelectedSet(response.gl_account_set)
-      message.success(editingSetId ? 'GL Account Set draft обновлён.' : 'GL Account Set создан.')
+      message.success(
+        editingSetId
+          ? t('masterData.glAccountSetsTab.messages.draftUpdated')
+          : t('masterData.glAccountSetsTab.messages.created')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить GL Account Set.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToSave'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields(
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors })) as never
@@ -285,10 +260,10 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
     try {
       const response = await publishMasterDataGlAccountSet(selectedSet.gl_account_set_id)
       setSelectedSet(response.gl_account_set)
-      message.success('Опубликована новая immutable revision.')
+      message.success(t('masterData.glAccountSetsTab.messages.publishedRevision'))
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось опубликовать GL Account Set revision.')
+      const resolved = resolveApiError(error, t('masterData.glAccountSetsTab.messages.failedToPublish'))
       message.error(resolved.message)
     } finally {
       setIsPublishing(false)
@@ -296,7 +271,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
   }
 
   const draftCompatibility = selectedSet
-    ? summarizeMembersCompatibility(selectedSet, selectedSet.draft_members)
+    ? summarizeMembersCompatibility(selectedSet, selectedSet.draft_members, t)
     : null
 
   const memberOptions = glAccounts
@@ -320,71 +295,131 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       label: `${account.canonical_id} - ${account.name} (${account.code} · ${account.chart_identity})`,
     }))
 
-  const columns: ColumnsType<PoolMasterGLAccountSetSummary> = [
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 180 },
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
-    { title: 'Chart Identity', dataIndex: 'chart_identity', key: 'chart_identity', width: 220 },
+  const memberColumns: ColumnsType<PoolMasterGLAccountSetMember> = useMemo(() => [
     {
-      title: 'Compatibility Class',
+      title: t('masterData.glAccountSetsTab.columns.canonicalId'),
+      dataIndex: 'canonical_id',
+      key: 'canonical_id',
+      width: 180,
+    },
+    { title: t('masterData.glAccountSetsTab.columns.code'), dataIndex: 'code', key: 'code', width: 120 },
+    { title: t('masterData.glAccountSetsTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
+    {
+      title: t('masterData.glAccountSetsTab.columns.chartIdentity'),
+      dataIndex: 'chart_identity',
+      key: 'chart_identity',
+      width: 220,
+    },
+    {
+      title: t('masterData.glAccountSetsTab.columns.config'),
+      key: 'config',
+      width: 220,
+      render: (_, row) => `${row.config_name || '—'} · ${row.config_version || '—'}`,
+    },
+  ], [t])
+
+  const revisionColumns: ColumnsType<PoolMasterGLAccountSetRevision> = useMemo(() => [
+    { title: t('masterData.glAccountSetsTab.columns.revision'), dataIndex: 'revision_number', key: 'revision_number', width: 100 },
+    { title: t('masterData.glAccountSetsTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
+    {
+      title: t('masterData.glAccountSetsTab.columns.members'),
+      key: 'members',
+      width: 120,
+      render: (_, row) => row.members.length,
+    },
+    {
+      title: t('masterData.glAccountSetsTab.columns.contract'),
+      dataIndex: 'contract_version',
+      key: 'contract_version',
+      width: 180,
+    },
+    {
+      title: t('masterData.glAccountSetsTab.columns.created'),
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 220,
+      render: (value: string) => formatDateTime(value),
+    },
+  ], [t])
+
+  const columns: ColumnsType<PoolMasterGLAccountSetSummary> = useMemo(() => [
+    {
+      title: t('masterData.glAccountSetsTab.columns.canonicalId'),
+      dataIndex: 'canonical_id',
+      key: 'canonical_id',
+      width: 180,
+    },
+    { title: t('masterData.glAccountSetsTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
+    {
+      title: t('masterData.glAccountSetsTab.columns.chartIdentity'),
+      dataIndex: 'chart_identity',
+      key: 'chart_identity',
+      width: 220,
+    },
+    {
+      title: t('masterData.glAccountSetsTab.columns.compatibilityClass'),
       key: 'compatibility',
       width: 260,
       render: (_, row) => (
         <Space direction="vertical" size={2}>
-          <StatusBadge status="compatible" label="Profile class" />
+          <StatusBadge status="compatible" label={t('masterData.glAccountSetsTab.columns.profileClass')} />
           <Text type="secondary">{`${row.config_name} · ${row.config_version}`}</Text>
         </Space>
       ),
     },
     {
-      title: 'Draft Members',
+      title: t('masterData.glAccountSetsTab.columns.draftMembers'),
       dataIndex: 'draft_members_count',
       key: 'draft_members_count',
       width: 120,
     },
     {
-      title: 'Revision State',
+      title: t('masterData.glAccountSetsTab.columns.revisionState'),
       key: 'revision_state',
       width: 200,
       render: (_, row) => (
         row.published_revision_number
-          ? <StatusBadge status="published" label={`Published r${row.published_revision_number}`} />
-          : <StatusBadge status="warning" label="Draft only" />
+          ? <StatusBadge status="published" label={t('masterData.glAccountSetsTab.details.publishedRevisionLabel', { revision: row.published_revision_number })} />
+          : <StatusBadge status="warning" label={t('masterData.glAccountSetsTab.details.draftOnly')} />
       ),
     },
     {
-      title: 'Actions',
+      title: t('masterData.glAccountSetsTab.columns.actions'),
       key: 'actions',
       width: 160,
       render: (_, row) => (
         <Space>
-          <Button size="small" onClick={() => setSelectedSetId(row.gl_account_set_id)}>Inspect</Button>
-          <Button size="small" onClick={() => void openEditModal(row.gl_account_set_id)}>Edit</Button>
+          <Button size="small" onClick={() => setSelectedSetId(row.gl_account_set_id)}>{t('masterData.glAccountSetsTab.actions.inspect')}</Button>
+          <Button size="small" onClick={() => void openEditModal(row.gl_account_set_id)}>{t('masterData.glAccountSetsTab.actions.edit')}</Button>
         </Space>
       ),
     },
-  ]
+  ], [openEditModal, t])
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Alert
         type="info"
         showIcon
-        message={`${getRegistryEntryLabel(registryEntry) || 'GL Account Set'} capability state`}
+        message={t('masterData.glAccountSetsTab.alerts.capabilityState', {
+          label: getRegistryEntryLabel(registryEntry) || 'GL Account Set',
+        })}
         description={(
           <Space direction="vertical" size={4}>
-            <Text>
-              This surface is profile-oriented: draft edits, publish actions and revision inspection stay here,
-              while direct sync mutations remain intentionally unavailable.
-            </Text>
+            <Text>{t('masterData.glAccountSetsTab.alerts.capabilityDescription')}</Text>
             <Space wrap>
-              <StatusBadge status="warning" label="Profile state only" />
+              <StatusBadge status="warning" label={t('masterData.glAccountSetsTab.alerts.profileStateOnly')} />
               <StatusBadge
                 status={registryEntry?.capabilities.direct_binding ? 'incompatible' : 'compatible'}
-                label={registryEntry?.capabilities.direct_binding ? 'Unexpected direct binding' : 'No direct binding'}
+                label={registryEntry?.capabilities.direct_binding
+                  ? t('masterData.glAccountSetsTab.alerts.unexpectedDirectBinding')
+                  : t('masterData.glAccountSetsTab.alerts.noDirectBinding')}
               />
               <StatusBadge
                 status={registryEntry?.capabilities.sync_outbound ? 'incompatible' : 'compatible'}
-                label={registryEntry?.capabilities.sync_outbound ? 'Unexpected sync mutation' : 'Non-actionable sync'}
+                label={registryEntry?.capabilities.sync_outbound
+                  ? t('masterData.glAccountSetsTab.alerts.unexpectedSyncMutation')
+                  : t('masterData.glAccountSetsTab.alerts.nonActionableSync')}
               />
             </Space>
           </Space>
@@ -392,17 +427,17 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       />
 
       <EntityTable
-        title="GL Account Sets"
+        title={t('masterData.glAccountSetsTab.table.title')}
         dataSource={rows}
         columns={columns}
         rowKey="gl_account_set_id"
         loading={loadingRows || loadingEditor}
-        emptyDescription="GL Account Sets are not configured yet."
+        emptyDescription={t('masterData.glAccountSetsTab.table.emptyDescription')}
         toolbar={(
           <Space wrap>
             <Input
               allowClear
-              placeholder="Search canonical_id / name"
+              placeholder={t('masterData.glAccountSetsTab.table.searchPlaceholder')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onPressEnter={() => void loadRows()}
@@ -410,13 +445,13 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
             />
             <Input
               allowClear
-              placeholder="Chart identity"
+              placeholder={t('masterData.glAccountSetsTab.table.chartIdentityFilter')}
               value={chartIdentityFilter}
               onChange={(event) => setChartIdentityFilter(event.target.value)}
               style={{ width: 220 }}
             />
-            <Button onClick={() => void loadRows()} loading={loadingRows}>Refresh</Button>
-            <Button type="primary" onClick={openCreateModal}>Add GL Account Set</Button>
+            <Button onClick={() => void loadRows()} loading={loadingRows}>{t('catalog.actions.refresh')}</Button>
+            <Button type="primary" onClick={openCreateModal}>{t('masterData.glAccountSetsTab.actions.add')}</Button>
           </Space>
         )}
         onRow={(row) => ({
@@ -426,18 +461,18 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
       />
 
       <EntityDetails
-        title={selectedSet ? selectedSet.name : 'GL Account Set details'}
+        title={selectedSet ? selectedSet.name : t('masterData.glAccountSetsTab.details.title')}
         empty={!selectedSet}
-        emptyDescription="Select a GL Account Set to inspect draft members, published revision and history."
+        emptyDescription={t('masterData.glAccountSetsTab.details.emptyDescription')}
         loading={loadingDetail}
         extra={selectedSet ? (
           <Space wrap>
             {selectedSet.published_revision
-              ? <StatusBadge status="published" label={`Published r${selectedSet.published_revision.revision_number}`} />
-              : <StatusBadge status="warning" label="Draft only" />}
-            <Button onClick={() => void openEditModal(selectedSet.gl_account_set_id)}>Edit draft</Button>
+              ? <StatusBadge status="published" label={t('masterData.glAccountSetsTab.details.publishedRevisionLabel', { revision: selectedSet.published_revision.revision_number })} />
+              : <StatusBadge status="warning" label={t('masterData.glAccountSetsTab.details.draftOnly')} />}
+            <Button onClick={() => void openEditModal(selectedSet.gl_account_set_id)}>{t('masterData.glAccountSetsTab.actions.editDraft')}</Button>
             <Button type="primary" onClick={() => void handlePublish()} loading={isPublishing}>
-              Publish revision
+              {t('masterData.glAccountSetsTab.actions.publishRevision')}
             </Button>
           </Space>
         ) : undefined}
@@ -445,33 +480,33 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
         {selectedSet ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions column={2} size="small" bordered>
-              <Descriptions.Item label="Canonical ID">{selectedSet.canonical_id}</Descriptions.Item>
-              <Descriptions.Item label="Name">{selectedSet.name}</Descriptions.Item>
-              <Descriptions.Item label="Chart Identity">{selectedSet.chart_identity}</Descriptions.Item>
-              <Descriptions.Item label="Compatibility Class">{buildCompatibilityClass(selectedSet)}</Descriptions.Item>
-              <Descriptions.Item label="Config Name">{selectedSet.config_name}</Descriptions.Item>
-              <Descriptions.Item label="Config Version">{selectedSet.config_version}</Descriptions.Item>
-              <Descriptions.Item label="Draft Members">{selectedSet.draft_members.length}</Descriptions.Item>
-              <Descriptions.Item label="Selected ID">
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.columns.canonicalId')}>{selectedSet.canonical_id}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.columns.name')}>{selectedSet.name}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.columns.chartIdentity')}>{selectedSet.chart_identity}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.columns.compatibilityClass')}>{buildCompatibilityClass(selectedSet)}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.details.configName')}>{selectedSet.config_name}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.details.configVersion')}>{selectedSet.config_version}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.columns.draftMembers')}>{selectedSet.draft_members.length}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.details.selectedId')}>
                 <Text code data-testid="pool-master-data-gl-account-set-selected-id">
                   {selectedSet.gl_account_set_id}
                 </Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Revision State" span={2}>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.details.revisionState')} span={2}>
                 <Space wrap>
                   {selectedSet.published_revision
-                    ? <StatusBadge status="published" label={`Published r${selectedSet.published_revision.revision_number}`} />
-                    : <StatusBadge status="warning" label="Draft only" />}
+                    ? <StatusBadge status="published" label={t('masterData.glAccountSetsTab.details.publishedRevisionLabel', { revision: selectedSet.published_revision.revision_number })} />
+                    : <StatusBadge status="warning" label={t('masterData.glAccountSetsTab.details.draftOnly')} />}
                   <StatusBadge
                     status={draftCompatibility?.status ?? 'warning'}
-                    label={draftCompatibility?.label ?? 'Compatibility pending'}
+                    label={draftCompatibility?.label ?? t('masterData.glAccountSetsTab.details.compatibilityPending')}
                   />
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="Published Revision" span={2}>
+              <Descriptions.Item label={t('masterData.glAccountSetsTab.details.publishedRevision')} span={2}>
                 {selectedSet.published_revision
                   ? `r${selectedSet.published_revision.revision_number} · ${formatDateTime(selectedSet.published_revision.created_at)}`
-                  : 'Not published yet'}
+                  : t('masterData.glAccountSetsTab.details.notPublishedYet')}
               </Descriptions.Item>
             </Descriptions>
 
@@ -485,7 +520,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
             ) : null}
 
             <div>
-              <Text strong>Draft Members</Text>
+              <Text strong>{t('masterData.glAccountSetsTab.details.draftMembers')}</Text>
               <div style={{ width: '100%', overflowX: 'auto', marginTop: 8 }}>
                 <Table
                   rowKey="gl_account_id"
@@ -500,7 +535,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
 
             {selectedSet.published_revision ? (
               <div>
-                <Text strong>Published Revision Members</Text>
+                <Text strong>{t('masterData.glAccountSetsTab.details.publishedRevisionMembers')}</Text>
                 <div style={{ width: '100%', overflowX: 'auto', marginTop: 8 }}>
                   <Table
                     rowKey="gl_account_id"
@@ -515,7 +550,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
             ) : null}
 
             <div>
-              <Text strong>Revision History</Text>
+              <Text strong>{t('masterData.glAccountSetsTab.details.revisionHistory')}</Text>
               <div style={{ width: '100%', overflowX: 'auto', marginTop: 8 }}>
                 <Table
                   rowKey="gl_account_set_revision_id"
@@ -528,7 +563,7 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
               </div>
             </div>
 
-            <JsonBlock title="Draft Metadata" value={selectedSet.metadata ?? {}} />
+            <JsonBlock title={t('masterData.glAccountSetsTab.details.draftMetadata')} value={selectedSet.metadata ?? {}} />
           </Space>
         ) : null}
       </EntityDetails>
@@ -537,44 +572,49 @@ export function GLAccountSetsTab({ registryEntries }: GLAccountSetsTabProps) {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={() => void handleSubmit()}
-        title={editingSetId ? 'Edit GL Account Set draft' : 'Create GL Account Set'}
-        subtitle="Draft edits stay mutable until publish creates a new immutable revision."
-        submitText={editingSetId ? 'Save draft' : 'Create draft'}
+        title={editingSetId ? t('masterData.glAccountSetsTab.modal.editTitle') : t('masterData.glAccountSetsTab.modal.createTitle')}
+        subtitle={t('masterData.glAccountSetsTab.modal.subtitle')}
+        submitText={editingSetId ? t('masterData.glAccountSetsTab.modal.saveDraft') : t('masterData.glAccountSetsTab.modal.createDraft')}
         confirmLoading={isSaving}
         width={840}
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.glAccountSetsTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('masterData.glAccountSetsTab.modal.fields.name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="description" label="Description">
+          <Form.Item name="description" label={t('masterData.glAccountSetsTab.modal.fields.description')}>
             <Input.TextArea rows={3} />
           </Form.Item>
-          <Form.Item name="chart_identity" label="Chart Identity" rules={[{ required: true }]}>
+          <Form.Item name="chart_identity" label={t('masterData.glAccountSetsTab.modal.fields.chartIdentity')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="config_name" label="Config Name" rules={[{ required: true }]}>
+          <Form.Item name="config_name" label={t('masterData.glAccountSetsTab.modal.fields.configName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="config_version" label="Config Version" rules={[{ required: true }]}>
+          <Form.Item name="config_version" label={t('masterData.glAccountSetsTab.modal.fields.configVersion')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item
             name="member_canonical_ids"
-            label="Draft Members"
-            rules={[{ required: true, type: 'array', min: 1, message: 'Select at least one GL Account.' }]}
-            extra="Member catalog is filtered by the draft compatibility class as fields are filled."
+            label={t('masterData.glAccountSetsTab.modal.fields.draftMembers')}
+            rules={[{
+              required: true,
+              type: 'array',
+              min: 1,
+              message: t('masterData.glAccountSetsTab.modal.validation.selectAtLeastOne'),
+            }]}
+            extra={t('masterData.glAccountSetsTab.modal.memberExtra')}
           >
             <Select
               mode="multiple"
               showSearch
               loading={loadingAccounts}
               options={memberOptions}
-              placeholder="Select canonical GL Accounts"
+              placeholder={t('masterData.glAccountSetsTab.modal.memberPlaceholder')}
             />
           </Form.Item>
         </Form>

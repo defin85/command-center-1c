@@ -15,7 +15,7 @@ describe('decisionPageUtils', () => {
       </div>,
     )
 
-    expect(screen.getByText('incompatible')).toHaveStyle({
+    expect(screen.getByText('Incompatible')).toHaveStyle({
       backgroundColor: '#ffedd5',
       borderColor: '#fdba74',
       color: '#9a3412',

@@ -7,6 +7,7 @@ import {
   upsertMasterDataTaxProfile,
   type PoolMasterTaxProfile,
 } from '../../../api/intercompanyPools'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 
@@ -19,6 +20,7 @@ type TaxProfileFormValues = {
 
 export function TaxProfilesTab() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterTaxProfile[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -39,12 +41,12 @@ export function TaxProfilesTab() {
       })
       setRows(response.tax_profiles)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить Tax Profile.')
+      const resolved = resolveApiError(error, t('masterData.taxProfilesTab.messages.failedToLoad'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [message, query, vatCodeFilter])
+  }, [message, query, vatCodeFilter, t])
 
   useEffect(() => {
     void loadRows()
@@ -84,10 +86,14 @@ export function TaxProfilesTab() {
         vat_code: values.vat_code.trim(),
       })
       setIsModalOpen(false)
-      message.success(editingTaxProfile ? 'Tax Profile обновлён.' : 'Tax Profile создан.')
+      message.success(
+        editingTaxProfile
+          ? t('masterData.taxProfilesTab.messages.updated')
+          : t('masterData.taxProfilesTab.messages.created')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить Tax Profile.')
+      const resolved = resolveApiError(error, t('masterData.taxProfilesTab.messages.failedToSave'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields((
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors }))
@@ -100,28 +106,32 @@ export function TaxProfilesTab() {
   }
 
   const columns: ColumnsType<PoolMasterTaxProfile> = [
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 240 },
-    { title: 'VAT Code', dataIndex: 'vat_code', key: 'vat_code', width: 180 },
-    { title: 'VAT Rate', dataIndex: 'vat_rate', key: 'vat_rate', width: 120 },
+    { title: t('masterData.taxProfilesTab.columns.canonicalId'), dataIndex: 'canonical_id', key: 'canonical_id', width: 240 },
+    { title: t('masterData.taxProfilesTab.columns.vatCode'), dataIndex: 'vat_code', key: 'vat_code', width: 180 },
+    { title: t('masterData.taxProfilesTab.columns.vatRate'), dataIndex: 'vat_rate', key: 'vat_rate', width: 120 },
     {
-      title: 'VAT Included',
+      title: t('masterData.taxProfilesTab.columns.vatIncluded'),
       dataIndex: 'vat_included',
       key: 'vat_included',
       width: 140,
-      render: (value: boolean) => (value ? 'yes' : 'no'),
+      render: (value: boolean) => (
+        value
+          ? t('masterData.taxProfilesTab.columns.yes')
+          : t('masterData.taxProfilesTab.columns.no')
+      ),
     },
     {
-      title: 'Updated',
+      title: t('masterData.taxProfilesTab.columns.updated'),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Actions',
+      title: t('masterData.taxProfilesTab.columns.actions'),
       key: 'actions',
       width: 100,
-      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>Edit</Button>,
+      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>{t('common.edit')}</Button>,
     },
   ]
 
@@ -131,7 +141,7 @@ export function TaxProfilesTab() {
         <Space wrap style={{ marginBottom: 16 }}>
           <Input
             allowClear
-            placeholder="Search canonical_id / VAT code"
+            placeholder={t('masterData.taxProfilesTab.filters.searchPlaceholder')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onPressEnter={() => void loadRows()}
@@ -139,13 +149,13 @@ export function TaxProfilesTab() {
           />
           <Input
             allowClear
-            placeholder="VAT code filter"
+            placeholder={t('masterData.taxProfilesTab.filters.vatCodePlaceholder')}
             value={vatCodeFilter}
             onChange={(event) => setVatCodeFilter(event.target.value)}
             style={{ width: 220 }}
           />
-          <Button onClick={() => void loadRows()} loading={loading}>Refresh</Button>
-          <Button type="primary" onClick={openCreateModal}>Add Tax Profile</Button>
+          <Button onClick={() => void loadRows()} loading={loading}>{t('catalog.actions.refresh')}</Button>
+          <Button type="primary" onClick={openCreateModal}>{t('masterData.taxProfilesTab.actions.add')}</Button>
         </Space>
         <Table
           rowKey="id"
@@ -158,7 +168,7 @@ export function TaxProfilesTab() {
       </Card>
 
       <Modal
-        title={editingTaxProfile ? 'Edit Tax Profile' : 'Create Tax Profile'}
+        title={editingTaxProfile ? t('masterData.taxProfilesTab.modal.editTitle') : t('masterData.taxProfilesTab.modal.createTitle')}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
@@ -166,16 +176,16 @@ export function TaxProfilesTab() {
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.taxProfilesTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="vat_code" label="VAT Code" rules={[{ required: true }]}>
+          <Form.Item name="vat_code" label={t('masterData.taxProfilesTab.modal.fields.vatCode')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="vat_rate" label="VAT Rate" rules={[{ required: true }]}>
+          <Form.Item name="vat_rate" label={t('masterData.taxProfilesTab.modal.fields.vatRate')} rules={[{ required: true }]}>
             <InputNumber min={0} max={100} precision={2} style={{ width: '100%' }} />
           </Form.Item>
-          <Form.Item name="vat_included" label="VAT Included" valuePropName="checked">
+          <Form.Item name="vat_included" label={t('masterData.taxProfilesTab.modal.fields.vatIncluded')} valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

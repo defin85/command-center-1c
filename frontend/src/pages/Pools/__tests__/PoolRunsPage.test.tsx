@@ -1001,7 +1001,7 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     await openRunsStage(user, 'Safe Actions')
-    expect(await screen.findByText('Pre-publish ещё выполняется')).toBeInTheDocument()
+    expect(await screen.findByText('Pre-publish is still running')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
@@ -1055,7 +1055,7 @@ describe('PoolRunsPage', () => {
     await user.click(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
+    expect(await screen.findByText('Check the run parameters and try again.')).toBeInTheDocument()
     expect(await screen.findByText('top_down starting_amount must be greater than 0.')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
@@ -1081,7 +1081,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(
       await screen.findByText(
-        'Исправьте topology-aware alias в document policy: malformed alias блокирует compile до публикации.'
+        'Fix the topology-aware alias in document policy: the malformed alias blocks compile before publication.'
       )
     ).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
@@ -1107,7 +1107,7 @@ describe('PoolRunsPage', () => {
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('“wf-top-down-execution-v1” is not a valid UUID.')).toBeInTheDocument()
-    expect(screen.queryByText('Проверьте корректность параметров запуска.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Check the run parameters and try again.')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps missing binding create-run error to workflow binding field and localized message', async () => {
@@ -1131,7 +1131,7 @@ describe('PoolRunsPage', () => {
     await user.click(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
-    expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
+    expect(await screen.findAllByText('Select a workflow binding before proceeding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
@@ -1155,22 +1155,22 @@ describe('PoolRunsPage', () => {
     await user.click(await screen.findByTestId('pool-runs-create-preview'))
 
     await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
-    expect(await screen.findAllByText('Перед продолжением выберите workflow binding.')).toHaveLength(2)
+    expect(await screen.findAllByText('Select a workflow binding before proceeding.')).toHaveLength(2)
     expect(screen.queryByText('pool_workflow_binding_id is required.')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it.each([
     [
       'ODATA_MAPPING_NOT_CONFIGURED',
-      'Для target databases не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.',
+      'OData Infobase Users are not configured for the target databases. Check /rbac → Infobase Users.',
     ],
     [
       'ODATA_MAPPING_AMBIGUOUS',
-      'Обнаружены неоднозначные OData Infobase Users mappings. Исправьте дубликаты в /rbac → Infobase Users.',
+      'Ambiguous OData Infobase Users mappings were found. Fix the duplicates in /rbac → Infobase Users.',
     ],
     [
       'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID',
-      'Некорректный publication auth context. Проверьте запуск run и настройки /rbac → Infobase Users.',
+      'The publication auth context is invalid. Check the run and the /rbac → Infobase Users settings.',
     ],
   ])(
     'maps create-run problem+json %s to publication mapping message',
@@ -1224,7 +1224,7 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(
       await screen.findByText(
-        'Для пользователя admin не настроен actor OData Infobase User для target database db-1. Проверьте /rbac → Infobase Users.'
+        'No actor OData Infobase User is configured for admin on target database db-1. Check /rbac → Infobase Users.'
       )
     ).toBeInTheDocument()
   })
@@ -1372,7 +1372,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('Remediation Hint')).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Выполните backfill Organization->Party и закройте remediation-list перед повторным запуском run.'
+        'Backfill Organization->Party and clear the remediation list before rerunning the run.'
       )
     ).toBeInTheDocument()
     expect(screen.getByText('Diagnostic Context')).toBeInTheDocument()
@@ -1442,7 +1442,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('Policy completeness')).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
+        'Complete the document policy: required fields and table parts must exist in the completeness profile and mapping.'
       )
     ).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: failed')
@@ -1605,7 +1605,7 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('required_role=counterparty')).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Исправьте topology-aware alias в document policy: допустимы только parent/child participant aliases.'
+        'Fix the topology-aware alias in document policy: only parent/child participant aliases are allowed.'
       )
     ).toBeInTheDocument()
 
@@ -1703,7 +1703,7 @@ describe('PoolRunsPage', () => {
     expect(await screen.findByText('Pool publication OData credentials source: /rbac')).toBeInTheDocument()
     expect(
       screen.getByText(
-        '`odata_url` берётся из Databases, а OData user/password для публикации — из /rbac → Infobase Users (actor/service mapping).'
+        '`odata_url` is loaded from Databases, and the OData user/password for publication are taken from /rbac → Infobase Users (actor/service mapping).'
       )
     ).toBeInTheDocument()
   })
@@ -1885,7 +1885,7 @@ describe('PoolRunsPage', () => {
     await user.click(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText('Проверьте корректность параметров запуска.')).toBeInTheDocument()
+    expect(await screen.findByText('Check the run parameters and try again.')).toBeInTheDocument()
     expect(await screen.findByText('top_down batch_id must reference an existing receipt batch in the selected pool.')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
@@ -2109,7 +2109,7 @@ describe('PoolRunsPage', () => {
 
     await openRunsStage(user, 'Safe Actions')
     await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
-    expect(screen.queryByText('Pre-publish ещё выполняется')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pre-publish is still running')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 

@@ -88,7 +88,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
-import { createLocaleFormatters, getCurrentAppLocale, usePoolsTranslation } from '../../i18n'
+import { createLocaleFormatters, getCurrentAppLocale, i18n, usePoolsTranslation } from '../../i18n'
 import { PoolBatchIntakeDrawer } from './PoolBatchIntakeDrawer'
 import { buildPoolFactualRoute, POOL_RUNS_ROUTE } from './routes'
 
@@ -169,30 +169,9 @@ const RETRY_FORM_INITIAL_VALUES: RetryFormValues = {
   documents_json: DEFAULT_RETRY_DOCUMENTS_JSON,
 }
 
-const CREATE_RUN_PROBLEM_CODE_MESSAGES: Record<string, string> = {
-  VALIDATION_ERROR: 'Проверьте корректность параметров запуска.',
-  TENANT_CONTEXT_REQUIRED: 'Для запуска run требуется активный tenant context.',
-  POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
-  POOL_WORKFLOW_BINDING_REQUIRED: 'Перед продолжением выберите workflow binding.',
-  POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: (
-    'Исправьте topology-aware alias в document policy: malformed alias блокирует compile до публикации.'
-  ),
-  MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: (
-    'Создайте Organization->Party binding для topology participant и повторите запуск.'
-  ),
-  MASTER_DATA_PARTY_ROLE_MISSING: (
-    'Проверьте Organization->Party binding и требуемую роль topology participant перед повторным запуском.'
-  ),
-  POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING: 'Сохранённые workflow bindings ссылаются на отсутствующий execution-pack revision. Выполните destructive reset затронутых данных и пересоздайте attachment.',
-  POOL_WORKFLOW_BINDING_NOT_FOUND: 'Выбранный attachment больше не найден в текущем пуле.',
-  POOL_WORKFLOW_BINDING_NOT_RESOLVED: 'Выбранный attachment неактивен или не попадает в effective scope для текущего запуска.',
-  POOL_WORKFLOW_BINDING_AMBIGUOUS: 'Найдено несколько подходящих workflow bindings. Нужен явный выбор binding.',
-  POOL_WORKFLOW_BINDING_INVALID: 'Сохранённые workflow bindings невалидны и не могут быть использованы для запуска.',
-  SCHEMA_TEMPLATE_NOT_FOUND: 'Выбранный schema template недоступен в текущем tenant context.',
-  ODATA_MAPPING_NOT_CONFIGURED: 'Для target databases не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.',
-  ODATA_MAPPING_AMBIGUOUS: 'Обнаружены неоднозначные OData Infobase Users mappings. Исправьте дубликаты в /rbac → Infobase Users.',
-  ODATA_PUBLICATION_AUTH_CONTEXT_INVALID: 'Некорректный publication auth context. Проверьте запуск run и настройки /rbac → Infobase Users.',
-}
+const tPools = (key: string, options?: Record<string, unknown>): string => (
+  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+)
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'default',
@@ -251,58 +230,12 @@ const READINESS_STATUS_COLORS: Record<string, string> = {
   not_ready: 'error',
 }
 
-const READINESS_CHECK_LABELS: Record<string, string> = {
-  master_data_coverage: 'Master data coverage',
-  organization_party_bindings: 'Organization->Party bindings',
-  policy_completeness: 'Policy completeness',
-  odata_verify_readiness: 'OData verify readiness',
-}
-
 const READINESS_CHECK_ORDER: PoolRunReadinessCheck['code'][] = [
   'master_data_coverage',
   'organization_party_bindings',
   'policy_completeness',
   'odata_verify_readiness',
 ]
-
-const MASTER_DATA_GATE_REMEDIATION_HINTS: Record<string, string> = {
-  MASTER_DATA_GATE_CONFIG_INVALID: (
-    'Проверьте runtime setting pools.master_data.gate_enabled: значение должно приводиться к bool.'
-  ),
-  MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING: (
-    'Выполните backfill Organization->Party и закройте remediation-list перед повторным запуском run.'
-  ),
-  MASTER_DATA_PARTY_ROLE_MISSING: (
-    'Проверьте роль master_party для выбранного topology participant и обновите Organization->Party binding.'
-  ),
-  MASTER_DATA_ENTITY_NOT_FOUND: (
-    'Создайте/исправьте canonical сущность в /pools/master-data и повторите run.'
-  ),
-  MASTER_DATA_BINDING_AMBIGUOUS: (
-    'Уберите дубли scope в Bindings (entity+canonical+database+qualifier) и повторите run.'
-  ),
-  MASTER_DATA_BINDING_CONFLICT: (
-    'Проверьте token scope, owner qualifier и ib_ref_key для target database.'
-  ),
-  MASTER_DATA_DEDUPE_REVIEW_REQUIRED: (
-    'Откройте Dedupe Review, разрешите cross-infobase conflict и только потом повторите rollout или publication.'
-  ),
-  POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID: (
-    'Исправьте topology-aware alias в document policy: допустимы только parent/child participant aliases.'
-  ),
-  POOL_DOCUMENT_POLICY_MAPPING_INVALID: (
-    'Дополните document policy: обязательные поля и табличные части должны присутствовать в completeness profile и mapping.'
-  ),
-}
-
-const MASTER_DATA_WORKSPACE_TAB_LABELS: Record<string, string> = {
-  party: 'Party',
-  item: 'Item',
-  contract: 'Contract',
-  'tax-profile': 'TaxProfile',
-  bindings: 'Bindings',
-  'dedupe-review': 'Dedupe Review',
-}
 
 const DEFAULT_STAGE: PoolRunsStage = 'create'
 
@@ -376,21 +309,21 @@ const parseDocumentsPayload = (raw: string): Record<string, Array<Record<string,
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error('documents_by_database: invalid JSON')
+    throw new Error(tPools('runs.retry.validation.invalidJson'))
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('documents_by_database: object expected')
+    throw new Error(tPools('runs.retry.validation.objectExpected'))
   }
 
   const asObject = parsed as Record<string, unknown>
   const result: Record<string, Array<Record<string, unknown>>> = {}
   for (const [databaseId, rows] of Object.entries(asObject)) {
     if (!Array.isArray(rows)) {
-      throw new Error(`documents_by_database.${databaseId}: array expected`)
+      throw new Error(tPools('runs.retry.validation.arrayExpected', { databaseId }))
     }
     result[databaseId] = rows.map((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) {
-        throw new Error(`documents_by_database.${databaseId}: object rows expected`)
+        throw new Error(tPools('runs.retry.validation.objectRowsExpected', { databaseId }))
       }
       return item as Record<string, unknown>
     })
@@ -403,17 +336,17 @@ const parseBottomUpSourcePayload = (raw: string): Record<string, unknown> | Arra
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error('source_payload: invalid JSON')
+    throw new Error(i18n.t('runs.create.messages.invalidSourcePayloadJson', { ns: 'pools' }))
   }
   if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
-    throw new Error('source_payload: object or array expected')
+    throw new Error(i18n.t('runs.create.messages.sourcePayloadObjectOrArrayExpected', { ns: 'pools' }))
   }
   if (!Array.isArray(parsed)) {
     return parsed as Record<string, unknown>
   }
   return parsed.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new Error('source_payload: array items must be objects')
+      throw new Error(i18n.t('runs.create.messages.sourcePayloadArrayItemsMustBeObjects', { ns: 'pools' }))
     }
     return item as Record<string, unknown>
   })
@@ -429,7 +362,7 @@ const buildCreateRunPayload = ({
   const workflowBindingId = values.pool_workflow_binding_id?.trim() || ''
 
   if (!workflowBindingId) {
-    throw new Error('Выберите workflow binding для запуска run.')
+    throw new Error(tPools('runs.create.messages.selectWorkflowBindingToStart'))
   }
 
   if (values.direction === 'top_down') {
@@ -437,10 +370,10 @@ const buildCreateRunPayload = ({
       const batchId = values.batch_id?.trim() || ''
       const startOrganizationId = values.start_organization_id?.trim() || ''
       if (!batchId) {
-        throw new Error('top_down: укажите canonical receipt batch ID.')
+        throw new Error(tPools('runs.create.messages.topDownBatchRequired'))
       }
       if (!startOrganizationId) {
-        throw new Error('top_down: выберите start organization из активной topology.')
+        throw new Error(tPools('runs.create.messages.topDownStartOrganizationRequired'))
       }
       return {
         pool_id: poolId,
@@ -458,7 +391,7 @@ const buildCreateRunPayload = ({
 
     const startingAmount = Number(values.starting_amount)
     if (!Number.isFinite(startingAmount) || startingAmount <= 0) {
-      throw new Error('top_down: starting amount должен быть положительным числом.')
+      throw new Error(tPools('runs.create.messages.topDownStartingAmountPositive'))
     }
     return {
       pool_id: poolId,
@@ -483,7 +416,7 @@ const buildCreateRunPayload = ({
     runInput.source_artifact_id = artifactId
   }
   if (!Object.prototype.hasOwnProperty.call(runInput, 'source_payload') && !artifactId) {
-    throw new Error('bottom_up: укажите source payload JSON или source artifact ID.')
+    throw new Error(tPools('runs.create.messages.bottomUpPayloadOrArtifactRequired'))
   }
 
   return {
@@ -607,9 +540,51 @@ const formatTargetDatabaseLabel = (targetDatabaseIds: string[]): string | null =
     return null
   }
   if (targetDatabaseIds.length === 1) {
-    return `target database ${targetDatabaseIds[0]}`
+    return tPools('runs.create.problemMessages.targetDatabaseSingle', { databaseId: targetDatabaseIds[0] })
   }
-  return `target databases ${targetDatabaseIds.join(', ')}`
+  return tPools('runs.create.problemMessages.targetDatabaseMany', { databaseIds: targetDatabaseIds.join(', ') })
+}
+
+const resolveCreateRunProblemCodeMessage = (code: string | null): string | null => {
+  if (!code) {
+    return null
+  }
+  switch (code) {
+    case 'VALIDATION_ERROR':
+      return tPools('runs.create.problemMessages.validationError')
+    case 'TENANT_CONTEXT_REQUIRED':
+      return tPools('runs.create.problemMessages.tenantContextRequired')
+    case 'POOL_NOT_FOUND':
+      return tPools('runs.create.problemMessages.poolNotFound')
+    case 'POOL_WORKFLOW_BINDING_REQUIRED':
+      return tPools('runs.create.problemMessages.workflowBindingRequired')
+    case 'POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID':
+      return tPools('runs.create.problemMessages.topologyAliasInvalid')
+    case 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING':
+      return tPools('runs.create.problemMessages.organizationPartyBindingMissing')
+    case 'MASTER_DATA_PARTY_ROLE_MISSING':
+      return tPools('runs.create.problemMessages.partyRoleMissing')
+    case 'POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING':
+      return tPools('runs.create.problemMessages.bindingProfileRefsMissing')
+    case 'POOL_WORKFLOW_BINDING_NOT_FOUND':
+      return tPools('runs.create.problemMessages.bindingNotFound')
+    case 'POOL_WORKFLOW_BINDING_NOT_RESOLVED':
+      return tPools('runs.create.problemMessages.bindingNotResolved')
+    case 'POOL_WORKFLOW_BINDING_AMBIGUOUS':
+      return tPools('runs.create.problemMessages.bindingAmbiguous')
+    case 'POOL_WORKFLOW_BINDING_INVALID':
+      return tPools('runs.create.problemMessages.bindingInvalid')
+    case 'SCHEMA_TEMPLATE_NOT_FOUND':
+      return tPools('runs.create.problemMessages.schemaTemplateNotFound')
+    case 'ODATA_MAPPING_NOT_CONFIGURED':
+      return tPools('runs.create.problemMessages.odataMappingNotConfigured')
+    case 'ODATA_MAPPING_AMBIGUOUS':
+      return tPools('runs.create.problemMessages.odataMappingAmbiguous')
+    case 'ODATA_PUBLICATION_AUTH_CONTEXT_INVALID':
+      return tPools('runs.create.problemMessages.odataPublicationAuthContextInvalid')
+    default:
+      return null
+  }
 }
 
 const resolvePublicationMappingProblemMessage = (
@@ -624,17 +599,19 @@ const resolvePublicationMappingProblemMessage = (
 
   if (problem.code === 'ODATA_MAPPING_NOT_CONFIGURED') {
     if (actorUsername && targetLabel) {
-      return (
-        `Для пользователя ${actorUsername} не настроен actor OData Infobase User `
-        + `для ${targetLabel}. Проверьте /rbac → Infobase Users.`
-      )
+      return tPools('runs.create.problemMessages.odataActorMappingNotConfigured', {
+        actorUsername,
+        targetLabel,
+      })
     }
     if (targetLabel) {
-      return `Для ${targetLabel} не настроены OData Infobase Users. Проверьте /rbac → Infobase Users.`
+      return tPools('runs.create.problemMessages.odataTargetMappingNotConfigured', {
+        targetLabel,
+      })
     }
   }
 
-  const codeMessage = CREATE_RUN_PROBLEM_CODE_MESSAGES[problem.code]
+  const codeMessage = resolveCreateRunProblemCodeMessage(problem.code)
   return codeMessage ?? null
 }
 
@@ -646,7 +623,7 @@ const resolveCreateRunProblemMessage = (
   if (publicationMappingMessage) {
     return publicationMappingMessage
   }
-  const codeMessage = problem.code ? CREATE_RUN_PROBLEM_CODE_MESSAGES[problem.code] : undefined
+  const codeMessage = resolveCreateRunProblemCodeMessage(problem.code)
   if (codeMessage) {
     return codeMessage
   }
@@ -787,9 +764,20 @@ const buildLegacyReadinessChecklist = (
   }
 }
 
-const resolveReadinessCheckLabel = (checkCode: PoolRunReadinessCheck['code']): string => (
-  READINESS_CHECK_LABELS[checkCode] ?? checkCode
-)
+const resolveReadinessCheckLabel = (checkCode: PoolRunReadinessCheck['code']): string => {
+  switch (checkCode) {
+    case 'master_data_coverage':
+      return tPools('runs.inspect.readiness.checkLabels.masterDataCoverage')
+    case 'organization_party_bindings':
+      return tPools('runs.inspect.readiness.checkLabels.organizationPartyBindings')
+    case 'policy_completeness':
+      return tPools('runs.inspect.readiness.checkLabels.policyCompleteness')
+    case 'odata_verify_readiness':
+      return tPools('runs.inspect.readiness.checkLabels.odataVerifyReadiness')
+    default:
+      return checkCode
+  }
+}
 
 const resolveInputContractVersion = (run: PoolRun): string => {
   if (run.input_contract_version) {
@@ -814,7 +802,47 @@ const resolveMasterDataGateHint = (errorCode: string | null): string | null => {
   if (!errorCode) {
     return null
   }
-  return MASTER_DATA_GATE_REMEDIATION_HINTS[errorCode] ?? null
+  switch (errorCode) {
+    case 'MASTER_DATA_GATE_CONFIG_INVALID':
+      return tPools('runs.inspect.masterDataGate.hints.configInvalid')
+    case 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING':
+      return tPools('runs.inspect.masterDataGate.hints.organizationPartyBindingMissing')
+    case 'MASTER_DATA_PARTY_ROLE_MISSING':
+      return tPools('runs.inspect.masterDataGate.hints.partyRoleMissing')
+    case 'MASTER_DATA_ENTITY_NOT_FOUND':
+      return tPools('runs.inspect.masterDataGate.hints.entityNotFound')
+    case 'MASTER_DATA_BINDING_AMBIGUOUS':
+      return tPools('runs.inspect.masterDataGate.hints.bindingAmbiguous')
+    case 'MASTER_DATA_BINDING_CONFLICT':
+      return tPools('runs.inspect.masterDataGate.hints.bindingConflict')
+    case 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED':
+      return tPools('runs.inspect.masterDataGate.hints.dedupeReviewRequired')
+    case 'POOL_DOCUMENT_POLICY_TOPOLOGY_ALIAS_INVALID':
+      return tPools('runs.inspect.masterDataGate.hints.topologyAliasInvalid')
+    case 'POOL_DOCUMENT_POLICY_MAPPING_INVALID':
+      return tPools('runs.inspect.masterDataGate.hints.policyMappingInvalid')
+    default:
+      return null
+  }
+}
+
+const resolveMasterDataWorkspaceTabLabel = (tab: string): string => {
+  switch (tab) {
+    case 'party':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.party')
+    case 'item':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.item')
+    case 'contract':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.contract')
+    case 'tax-profile':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.taxProfile')
+    case 'bindings':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.bindings')
+    case 'dedupe-review':
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.dedupeReview')
+    default:
+      return tPools('runs.inspect.masterDataGate.workspaceTabs.masterData')
+  }
 }
 
 const buildMasterDataWorkspaceHref = ({
@@ -901,7 +929,7 @@ const resolveMasterDataRemediationTarget = ({
 
   if (code === 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING' || code === 'MASTER_DATA_PARTY_ROLE_MISSING') {
     return {
-      label: 'Open Bindings workspace',
+      label: tPools('runs.inspect.masterDataGate.remediation.openBindingsWorkspace'),
       href: buildMasterDataWorkspaceHref({
         tab: 'bindings',
         entityType: normalizeMasterDataBindingEntityType(entityType || 'party'),
@@ -914,7 +942,7 @@ const resolveMasterDataRemediationTarget = ({
 
   if (code === 'MASTER_DATA_BINDING_AMBIGUOUS' || code === 'MASTER_DATA_BINDING_CONFLICT') {
     return {
-      label: 'Open Bindings workspace',
+      label: tPools('runs.inspect.masterDataGate.remediation.openBindingsWorkspace'),
       href: buildMasterDataWorkspaceHref({
         tab: 'bindings',
         entityType: normalizeMasterDataBindingEntityType(entityType),
@@ -926,7 +954,7 @@ const resolveMasterDataRemediationTarget = ({
 
   if (code === 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED') {
     return {
-      label: 'Open Dedupe Review',
+      label: tPools('runs.inspect.masterDataGate.remediation.openDedupeReview'),
       href: buildMasterDataWorkspaceHref({
         tab: 'dedupe-review',
         entityType,
@@ -942,12 +970,14 @@ const resolveMasterDataRemediationTarget = ({
     const tab = resolveMasterDataEntityWorkspaceTab(entityType)
     if (!tab) {
       return {
-        label: 'Open Master Data workspace',
+        label: tPools('runs.inspect.masterDataGate.remediation.openMasterDataWorkspace'),
         href: '/pools/master-data',
       }
     }
     return {
-      label: `Open ${MASTER_DATA_WORKSPACE_TAB_LABELS[tab] ?? 'Master Data'} workspace`,
+      label: tPools('runs.inspect.masterDataGate.remediation.openWorkspace', {
+        workspace: resolveMasterDataWorkspaceTabLabel(tab),
+      }),
       href: buildMasterDataWorkspaceHref({
         tab,
         entityType,
@@ -1014,7 +1044,7 @@ const resolveReadinessBlockerHint = (blocker: PoolRunReadinessBlocker): string |
   if (!code) {
     return null
   }
-  return MASTER_DATA_GATE_REMEDIATION_HINTS[code] ?? null
+  return resolveMasterDataGateHint(code)
 }
 
 const buildReadinessBlockerContextLines = (blocker: PoolRunReadinessBlocker): string[] => {
@@ -1181,12 +1211,14 @@ const formatWorkflowBindingOptionLabel = (
   binding: NonNullable<OrganizationPool['workflow_bindings']>[number]
 ): string => {
   const workflow = resolvePoolWorkflowBindingWorkflow(binding)
-  const workflowName = workflow?.workflow_name || workflow?.workflow_definition_key || 'workflow'
-  const bindingId = binding.binding_id || 'binding'
+  const workflowName = workflow?.workflow_name || workflow?.workflow_definition_key || tPools('runs.common.workflowFallback')
+  const bindingId = binding.binding_id || tPools('runs.common.bindingFallback')
   const profileRevision = binding.binding_profile_revision_number != null
-    ? `profile r${binding.binding_profile_revision_number}`
+    ? tPools('runs.common.profileRevision', { revision: binding.binding_profile_revision_number })
     : ''
-  const attachmentRevision = binding.revision != null ? `attach r${binding.revision}` : ''
+  const attachmentRevision = binding.revision != null
+    ? tPools('runs.common.attachmentRevision', { revision: binding.revision })
+    : ''
   return [workflowName, profileRevision, attachmentRevision, bindingId.slice(0, 8)]
     .filter((part) => part && part.trim().length > 0)
     .join(' · ')
@@ -1196,15 +1228,15 @@ const formatWorkflowBindingScope = (binding: PoolWorkflowBinding | null | undefi
   const selector = binding?.selector ?? {}
   const parts: string[] = []
   if (selector.direction) {
-    parts.push(`direction=${selector.direction}`)
+    parts.push(tPools('runs.common.bindingScopeDirection', { value: selector.direction }))
   }
   if (selector.mode) {
-    parts.push(`mode=${selector.mode}`)
+    parts.push(tPools('runs.common.bindingScopeMode', { value: selector.mode }))
   }
   if (selector.tags && selector.tags.length > 0) {
-    parts.push(`tags=${selector.tags.join(', ')}`)
+    parts.push(tPools('runs.common.bindingScopeTags', { value: selector.tags.join(', ') }))
   }
-  return parts.length > 0 ? parts.join(' · ') : 'unscoped'
+  return parts.length > 0 ? parts.join(' · ') : tPools('runs.common.unscoped')
 }
 
 const formatWorkflowBindingEffectivePeriod = (binding: PoolWorkflowBinding | null | undefined): string => {
@@ -1330,22 +1362,22 @@ function TopologySlotCoveragePanel({
   return (
     <Space direction="vertical" size="small" style={{ width: '100%' }}>
       <Space size={[4, 4]} wrap data-testid={summaryTestId}>
-        <Tag>edges: {summary.totalEdges}</Tag>
-        <Tag color="success">resolved: {summary.counts.resolved}</Tag>
+        <Tag>{tPools('common.topologyCoverage.totalEdges', { count: summary.totalEdges })}</Tag>
+        <Tag color="success">{tPools('common.topologyCoverage.resolvedCount', { count: summary.counts.resolved })}</Tag>
         {summary.counts.missing_slot > 0 ? (
-          <Tag color="error">missing slot: {summary.counts.missing_slot}</Tag>
+          <Tag color="error">{tPools('common.topologyCoverage.missingSlotCount', { count: summary.counts.missing_slot })}</Tag>
         ) : null}
         {summary.counts.missing_selector > 0 ? (
-          <Tag color="default">missing selector: {summary.counts.missing_selector}</Tag>
+          <Tag color="default">{tPools('common.topologyCoverage.missingSelectorCount', { count: summary.counts.missing_selector })}</Tag>
         ) : null}
         {summary.counts.ambiguous_slot > 0 ? (
-          <Tag color="warning">ambiguous slot: {summary.counts.ambiguous_slot}</Tag>
+          <Tag color="warning">{tPools('common.topologyCoverage.ambiguousSlotCount', { count: summary.counts.ambiguous_slot })}</Tag>
         ) : null}
         {summary.counts.ambiguous_context > 0 ? (
-          <Tag color="warning">ambiguous context: {summary.counts.ambiguous_context}</Tag>
+          <Tag color="warning">{tPools('common.topologyCoverage.ambiguousContextCount', { count: summary.counts.ambiguous_context })}</Tag>
         ) : null}
         {summary.counts.unavailable_context > 0 ? (
-          <Tag color="default">context unavailable: {summary.counts.unavailable_context}</Tag>
+          <Tag color="default">{tPools('common.topologyCoverage.unavailableContextCount', { count: summary.counts.unavailable_context })}</Tag>
         ) : null}
       </Space>
       {unresolvedItems.length === 0 ? (
@@ -1358,7 +1390,7 @@ function TopologySlotCoveragePanel({
               type="secondary"
               data-testid={itemTestIdPrefix ? `${itemTestIdPrefix}-${item.edgeId}` : undefined}
             >
-              {`${item.edgeLabel} · ${item.slotKey || 'slot not set'} · ${item.coverage.label}`}
+              {`${item.edgeLabel} · ${item.slotKey || tPools('common.topologyCoverage.slotNotSet')} · ${item.coverage.label}`}
             </Text>
           ))}
         </Space>
@@ -1402,33 +1434,24 @@ const normalizePreviewSlotCoverageSummary = (
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
   const { t } = usePoolsTranslation()
-  const stageLabels = useMemo<Record<PoolRunsStage, string>>(
-    () => ({
-      create: t('runs.page.stages.create'),
-      inspect: t('runs.page.stages.inspect'),
-      safe: t('runs.page.stages.safe'),
-      retry: t('runs.page.stages.retry'),
-    }),
-    [t]
-  )
-  const stageDetailTitles = useMemo<Record<PoolRunsStage, string>>(
-    () => ({
-      create: t('runs.page.detailTitles.create'),
-      inspect: t('runs.page.detailTitles.inspect'),
-      safe: t('runs.page.detailTitles.safe'),
-      retry: t('runs.page.detailTitles.retry'),
-    }),
-    [t]
-  )
-  const stageMessages = useMemo<Record<PoolRunsStage, string>>(
-    () => ({
-      create: t('runs.page.stageMessages.create'),
-      inspect: t('runs.page.stageMessages.inspect'),
-      safe: t('runs.page.stageMessages.safe'),
-      retry: t('runs.page.stageMessages.retry'),
-    }),
-    [t]
-  )
+  const stageLabels: Record<PoolRunsStage, string> = {
+    create: t('runs.page.stages.create'),
+    inspect: t('runs.page.stages.inspect'),
+    safe: t('runs.page.stages.safe'),
+    retry: t('runs.page.stages.retry'),
+  }
+  const stageDetailTitles: Record<PoolRunsStage, string> = {
+    create: t('runs.page.detailTitles.create'),
+    inspect: t('runs.page.detailTitles.inspect'),
+    safe: t('runs.page.detailTitles.safe'),
+    retry: t('runs.page.detailTitles.retry'),
+  }
+  const stageMessages: Record<PoolRunsStage, string> = {
+    create: t('runs.page.stageMessages.create'),
+    inspect: t('runs.page.stageMessages.inspect'),
+    safe: t('runs.page.stageMessages.safe'),
+    retry: t('runs.page.stageMessages.retry'),
+  }
   const screens = useBreakpoint()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -1585,11 +1608,11 @@ export function PoolRunsPage() {
     return buildTopologyCoverageSummary({
       bindingLabel,
       decisions: resolvePoolWorkflowBindingDecisionRefs(selectedCreateBinding),
-      detail: `Coverage is evaluated against selected binding ${bindingLabel}.`,
+      detail: t('runs.create.preview.coverageDetail', { bindingLabel }),
       selectors: topologyEdgeSelectors,
       source: 'selected',
     })
-  }, [selectedCreateBinding, topologyEdgeSelectors])
+  }, [selectedCreateBinding, t, topologyEdgeSelectors])
   const isCreateBindingContextAmbiguous = matchingWorkflowBindings.length > 1 && !String(createBindingId || '').trim()
 
   const loadPools = useCallback(async () => {
@@ -1602,11 +1625,11 @@ export function PoolRunsPage() {
       }))
       setPools(data)
     } catch {
-      setError('Не удалось загрузить список пулов.')
+      setError(t('runs.page.messages.failedToLoadPools'))
     } finally {
       setLoadingPools(false)
     }
-  }, [])
+  }, [t])
 
   const loadSchemaTemplates = useCallback(async () => {
     setLoadingSchemaTemplates(true)
@@ -1614,11 +1637,11 @@ export function PoolRunsPage() {
       const data = await listPoolSchemaTemplates({ isPublic: true, isActive: true })
       setSchemaTemplates(data)
     } catch {
-      setError('Не удалось загрузить шаблоны импорта.')
+      setError(t('runs.page.messages.failedToLoadSchemaTemplates'))
     } finally {
       setLoadingSchemaTemplates(false)
     }
-  }, [])
+  }, [t])
 
   const loadReceiptBatches = useCallback(async () => {
     if (!selectedPoolId) {
@@ -1634,11 +1657,11 @@ export function PoolRunsPage() {
       })
       setReceiptBatches(data)
     } catch {
-      setError('Не удалось загрузить canonical receipt batches.')
+      setError(t('runs.page.messages.failedToLoadReceiptBatches'))
     } finally {
       setLoadingReceiptBatches(false)
     }
-  }, [selectedPoolId])
+  }, [selectedPoolId, t])
 
   const loadGraph = useCallback(async () => {
     if (!selectedPoolId) {
@@ -1650,11 +1673,11 @@ export function PoolRunsPage() {
       const data = await getPoolGraph(selectedPoolId, graphDate || undefined)
       setGraph(data)
     } catch {
-      setError('Не удалось загрузить граф пула.')
+      setError(t('runs.page.messages.failedToLoadGraph'))
     } finally {
       setLoadingGraph(false)
     }
-  }, [graphDate, selectedPoolId])
+  }, [graphDate, selectedPoolId, t])
 
   const loadRuns = useCallback(async (options?: { preferredRunId?: string | null }) => {
     const poolId = selectedPoolId
@@ -1685,14 +1708,14 @@ export function PoolRunsPage() {
       })
     } catch {
       if (loadRunsRequestRef.current === requestId) {
-        setError('Не удалось загрузить список run.')
+        setError(t('runs.page.messages.failedToLoadRuns'))
       }
     } finally {
       if (loadRunsRequestRef.current === requestId) {
         setLoadingRuns(false)
       }
     }
-  }, [selectedPoolId])
+  }, [selectedPoolId, t])
 
   const loadReport = useCallback(async () => {
     const runId = selectedRunId
@@ -1712,14 +1735,14 @@ export function PoolRunsPage() {
       setReport(data)
     } catch {
       if (loadReportRequestRef.current === requestId) {
-        setError('Не удалось загрузить run report.')
+        setError(t('runs.page.messages.failedToLoadReport'))
       }
     } finally {
       if (loadReportRequestRef.current === requestId) {
         setLoadingReport(false)
       }
     }
-  }, [selectedRunId])
+  }, [selectedRunId, t])
 
   useEffect(() => {
     const nextSelectedPoolId = poolFromUrl
@@ -1939,7 +1962,7 @@ export function PoolRunsPage() {
 
   const handleCreateRun = useCallback(async () => {
     if (!selectedPoolId) {
-      setError('Выберите пул перед созданием run.')
+      setError(t('runs.create.messages.selectPoolBeforeCreate'))
       return
     }
     let values: CreateRunFormValues
@@ -1959,7 +1982,7 @@ export function PoolRunsPage() {
         values,
       })
       const payload = await createPoolRun(requestPayload)
-      message.success(payload.created ? 'Run создан' : 'Run переиспользован по idempotency key')
+      message.success(payload.created ? t('runs.create.messages.runCreated') : t('runs.create.messages.runReused'))
       setBindingPreview(null)
       await loadRuns({ preferredRunId: payload.run.id })
     } catch (err) {
@@ -1976,11 +1999,11 @@ export function PoolRunsPage() {
           }
           setError(resolveCreateRunPageLevelMessage({
             problem,
-            fallbackMessage: 'Не удалось создать run.',
+            fallbackMessage: t('runs.create.messages.failedToCreateRun'),
             hasFieldErrors: fieldErrors.length > 0,
           }))
         } else {
-          setError(resolveCreateRunProblemMessage(problem, 'Не удалось создать run.'))
+          setError(resolveCreateRunProblemMessage(problem, t('runs.create.messages.failedToCreateRun')))
         }
         if (
           problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
@@ -1992,23 +2015,23 @@ export function PoolRunsPage() {
           createForm.setFields([
             {
               name: 'pool_workflow_binding_id',
-              errors: [resolveCreateRunProblemMessage(problem, 'Не удалось выбрать workflow binding.')],
+              errors: [resolveCreateRunProblemMessage(problem, t('runs.create.messages.failedToSelectWorkflowBinding'))],
             },
           ])
         }
       } else if (err instanceof Error && err.message) {
         setError(err.message)
       } else {
-        setError('Не удалось создать run.')
+        setError(t('runs.create.messages.failedToCreateRun'))
       }
     } finally {
       setCreatingRun(false)
     }
-  }, [createForm, loadRuns, message, selectedPoolId])
+  }, [createForm, loadRuns, message, selectedPoolId, t])
 
   const handlePreviewBinding = useCallback(async () => {
     if (!selectedPoolId) {
-      setError('Выберите пул перед preview workflow binding.')
+      setError(t('runs.create.messages.selectPoolBeforePreview'))
       return
     }
     let values: CreateRunFormValues
@@ -2029,7 +2052,7 @@ export function PoolRunsPage() {
       })
       const preview = await previewPoolWorkflowBinding(requestPayload)
       setBindingPreview(preview)
-      message.success('Binding preview updated')
+      message.success(t('runs.create.messages.bindingPreviewUpdated'))
     } catch (err) {
       const problem = parseProblemDetails(err)
       if (problem) {
@@ -2044,11 +2067,11 @@ export function PoolRunsPage() {
           }
           setError(resolveCreateRunPageLevelMessage({
             problem,
-            fallbackMessage: 'Не удалось построить binding preview.',
+            fallbackMessage: t('runs.create.messages.failedToBuildBindingPreview'),
             hasFieldErrors: fieldErrors.length > 0,
           }))
         } else {
-          setError(resolveCreateRunProblemMessage(problem, 'Не удалось построить binding preview.'))
+          setError(resolveCreateRunProblemMessage(problem, t('runs.create.messages.failedToBuildBindingPreview')))
         }
         if (
           problem.code === 'POOL_WORKFLOW_BINDING_REQUIRED'
@@ -2060,7 +2083,7 @@ export function PoolRunsPage() {
           createForm.setFields([
             {
               name: 'pool_workflow_binding_id',
-              errors: [resolveCreateRunProblemMessage(problem, 'Не удалось выбрать workflow binding.')],
+              errors: [resolveCreateRunProblemMessage(problem, t('runs.create.messages.failedToSelectWorkflowBinding'))],
             },
           ])
         }
@@ -2070,16 +2093,16 @@ export function PoolRunsPage() {
         setError(err.message)
       } else {
         setBindingPreview(null)
-        setError('Не удалось построить binding preview.')
+        setError(t('runs.create.messages.failedToBuildBindingPreview'))
       }
     } finally {
       setPreviewingBinding(false)
     }
-  }, [createForm, message, selectedPoolId])
+  }, [createForm, message, selectedPoolId, t])
 
   const handleRetryFailed = useCallback(async () => {
     if (!selectedRunId) {
-      setError('Выберите run для retry.')
+      setError(t('runs.retry.messages.selectRun'))
       return
     }
     let values: RetryFormValues
@@ -2092,7 +2115,7 @@ export function PoolRunsPage() {
     try {
       documentsByDatabase = parseDocumentsPayload(values.documents_json)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Некорректный payload для retry.')
+      setError(err instanceof Error ? err.message : t('runs.retry.messages.invalidPayload'))
       return
     }
 
@@ -2110,9 +2133,9 @@ export function PoolRunsPage() {
       const enqueuedTargets = summary?.enqueued_targets ?? 0
       const failedTargets = summary?.failed_targets ?? 0
       if (response.accepted) {
-        message.success(`Retry accepted: ${enqueuedTargets}/${failedTargets} failed targets enqueued`)
+        message.success(t('runs.retry.messages.accepted', { enqueuedTargets, failedTargets }))
       } else {
-        message.warning('Retry request was not accepted by workflow runtime.')
+        message.warning(t('runs.retry.messages.notAccepted'))
       }
       await loadRuns()
       await loadReport()
@@ -2121,20 +2144,20 @@ export function PoolRunsPage() {
       if (conflict) {
         setError(`${conflict.error_message} (${conflict.conflict_reason})`)
       } else {
-        setError('Retry завершился ошибкой.')
+        setError(t('runs.retry.messages.failed'))
       }
     } finally {
       setRetrying(false)
     }
-  }, [loadReport, loadRuns, message, retryForm, selectedRunId])
+  }, [loadReport, loadRuns, message, retryForm, selectedRunId, t])
 
   const handleSafeCommand = useCallback(async (commandType: PoolRunSafeCommandType) => {
     if (!selectedRunId || !runDetails) {
-      setError('Выберите safe run для команды публикации.')
+      setError(t('runs.safe.messages.selectRun'))
       return
     }
     if (runDetails.mode !== 'safe') {
-      setError('Команды confirm/abort доступны только для safe run.')
+      setError(t('runs.safe.messages.safeOnly'))
       return
     }
 
@@ -2145,11 +2168,18 @@ export function PoolRunsPage() {
       const response = commandType === 'confirm-publication'
         ? await confirmPoolRunPublication(selectedRunId, idempotencyKey)
         : await abortPoolRunPublication(selectedRunId, idempotencyKey)
-      const commandLabel = commandType === 'confirm-publication' ? 'Confirm publication' : 'Abort publication'
       if (response.result === 'accepted') {
-        message.success(`${commandLabel}: accepted`)
+        message.success(
+          commandType === 'confirm-publication'
+            ? t('runs.safe.messages.confirmAccepted')
+            : t('runs.safe.messages.abortAccepted')
+        )
       } else {
-        message.info(`${commandLabel}: idempotent replay`)
+        message.info(
+          commandType === 'confirm-publication'
+            ? t('runs.safe.messages.confirmReplay')
+            : t('runs.safe.messages.abortReplay')
+        )
       }
       await loadRuns({ preferredRunId: response.run.id })
       await loadReport()
@@ -2164,22 +2194,22 @@ export function PoolRunsPage() {
             resolveSafeCommandProblemMessage(
               problem,
               commandType === 'confirm-publication'
-                ? 'Не удалось выполнить confirm-publication.'
-                : 'Не удалось выполнить abort-publication.'
+                ? t('runs.safe.messages.failedConfirm')
+                : t('runs.safe.messages.failedAbort')
             )
           )
         } else {
           setError(
             commandType === 'confirm-publication'
-              ? 'Не удалось выполнить confirm-publication.'
-              : 'Не удалось выполнить abort-publication.'
+              ? t('runs.safe.messages.failedConfirm')
+              : t('runs.safe.messages.failedAbort')
           )
         }
       }
     } finally {
       setSafeActionLoading(null)
     }
-  }, [loadReport, loadRuns, message, runDetails, selectedRunId])
+  }, [loadReport, loadRuns, message, runDetails, selectedRunId, t])
 
   const handleSelectPool = useCallback((nextPoolId: string) => {
     routeUpdateModeRef.current = 'push'
@@ -2266,7 +2296,7 @@ export function PoolRunsPage() {
   const runColumns: ColumnsType<PoolRun> = useMemo(
     () => [
       {
-        title: 'Run',
+        title: t('runs.inspect.columns.run'),
         dataIndex: 'id',
         key: 'id',
         width: 220,
@@ -2274,7 +2304,7 @@ export function PoolRunsPage() {
           <Space direction="vertical" size={4}>
             <Button
               type="link"
-              aria-label={`Open run ${record.id}`}
+              aria-label={t('runs.inspect.columns.openRun', { runId: record.id })}
               aria-pressed={record.id === selectedRunId}
               style={{
                 paddingInline: 0,
@@ -2296,7 +2326,7 @@ export function PoolRunsPage() {
         ),
       },
       {
-        title: 'Status',
+        title: t('runs.inspect.columns.status'),
         dataIndex: 'status',
         key: 'status',
         width: 220,
@@ -2310,7 +2340,7 @@ export function PoolRunsPage() {
         ),
       },
       {
-        title: 'Approval',
+        title: t('runs.inspect.columns.approval'),
         key: 'approval',
         width: 220,
         render: (_value, record) => (
@@ -2327,7 +2357,7 @@ export function PoolRunsPage() {
         ),
       },
       {
-        title: 'Workflow',
+        title: t('runs.inspect.columns.workflow'),
         key: 'workflow',
         width: 240,
         render: (_value, record) => {
@@ -2338,7 +2368,7 @@ export function PoolRunsPage() {
             <Space direction="vertical" size={2}>
               <Text code>{formatShortId(workflowRunId)}</Text>
               <Space size={4} wrap>
-                {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Tag>legacy</Tag>}
+                {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Tag>{t('runs.inspect.runtime.legacy')}</Tag>}
                 {executionBackend ? <Tag>{executionBackend}</Tag> : null}
               </Space>
             </Space>
@@ -2346,7 +2376,7 @@ export function PoolRunsPage() {
         },
       },
       {
-        title: 'Input',
+        title: t('runs.inspect.columns.input'),
         key: 'input',
         width: 220,
         render: (_value, record) => {
@@ -2360,32 +2390,32 @@ export function PoolRunsPage() {
         },
       },
       {
-        title: 'Period',
+        title: t('runs.inspect.columns.period'),
         key: 'period',
         render: (_value, record) => `${record.period_start}${record.period_end ? `..${record.period_end}` : ''}`,
       },
       {
-        title: 'Updated',
+        title: t('runs.inspect.columns.updated'),
         dataIndex: 'updated_at',
         key: 'updated_at',
         width: 190,
         render: (value: string) => formatDate(value),
       },
     ],
-    [handleSelectRun, selectedRunId]
+    [handleSelectRun, selectedRunId, t]
   )
 
   const publicationAttemptColumns: ColumnsType<PoolPublicationAttemptDiagnostics> = useMemo(
     () => [
       {
-        title: 'Target DB',
+        title: t('runs.inspect.publicationAttempts.columns.targetDb'),
         dataIndex: 'target_database_id',
         key: 'target_database_id',
         width: 180,
         render: (value: string) => <Text code>{formatShortId(value)}</Text>,
       },
       {
-        title: 'Status',
+        title: t('runs.inspect.publicationAttempts.columns.status'),
         dataIndex: 'status',
         key: 'status',
         width: 130,
@@ -2396,20 +2426,20 @@ export function PoolRunsPage() {
         ),
       },
       {
-        title: 'Attempt',
+        title: t('runs.inspect.publicationAttempts.columns.attempt'),
         dataIndex: 'attempt_number',
         key: 'attempt_number',
         width: 90,
       },
       {
-        title: 'Timestamp',
+        title: t('runs.inspect.publicationAttempts.columns.timestamp'),
         dataIndex: 'attempt_timestamp',
         key: 'attempt_timestamp',
         width: 180,
         render: (value?: string) => formatDate(value ?? null),
       },
       {
-        title: 'Identity',
+        title: t('runs.inspect.publicationAttempts.columns.identity'),
         key: 'identity',
         width: 220,
         render: (_value, record) => (
@@ -2420,7 +2450,7 @@ export function PoolRunsPage() {
         ),
       },
       {
-        title: 'Error',
+        title: t('runs.inspect.publicationAttempts.columns.error'),
         key: 'error',
         render: (_value, record) => {
           const code = record.domain_error_code || '-'
@@ -2432,7 +2462,7 @@ export function PoolRunsPage() {
               <Text>{code}</Text>
               <Text type="secondary">{messageText}</Text>
               {PUBLICATION_MAPPING_ERROR_CODES.has(code) ? (
-                <Text type="secondary">Remediation: /rbac - Infobase Users</Text>
+                <Text type="secondary">{t('runs.inspect.publicationAttempts.remediation')}</Text>
               ) : null}
               {httpStatusValue ? <Text type="secondary">HTTP {httpStatusValue}</Text> : null}
               {transportMessage ? <Text type="secondary">{transportMessage}</Text> : null}
@@ -2441,47 +2471,47 @@ export function PoolRunsPage() {
         },
       },
     ],
-    []
+    [t]
   )
 
   const verificationMismatchColumns: ColumnsType<PoolRunVerificationMismatch> = useMemo(
     () => [
       {
-        title: 'Database',
+        title: t('runs.inspect.verification.columns.database'),
         dataIndex: 'database_id',
         key: 'database_id',
         width: 180,
         render: (value?: string | null) => <Text code>{value ? formatShortId(value) : '-'}</Text>,
       },
       {
-        title: 'Entity',
+        title: t('runs.inspect.verification.columns.entity'),
         dataIndex: 'entity_name',
         key: 'entity_name',
         width: 180,
         render: (value?: string | null) => value || '-',
       },
       {
-        title: 'Document',
+        title: t('runs.inspect.verification.columns.document'),
         dataIndex: 'document_idempotency_key',
         key: 'document_idempotency_key',
         width: 180,
         render: (value?: string | null) => value || '-',
       },
       {
-        title: 'Path',
+        title: t('runs.inspect.verification.columns.path'),
         dataIndex: 'field_or_table_path',
         key: 'field_or_table_path',
         render: (value?: string | null) => value || '-',
       },
       {
-        title: 'Kind',
+        title: t('runs.inspect.verification.columns.kind'),
         dataIndex: 'kind',
         key: 'kind',
         width: 180,
         render: (value?: string | null) => value || '-',
       },
     ],
-    []
+    [t]
   )
 
   const workflowRunId = runDetails?.provenance?.workflow_run_id ?? null
@@ -2562,17 +2592,17 @@ export function PoolRunsPage() {
     const bindingLabel = workflowBinding
       ? describePoolWorkflowBindingCoverage(workflowBinding)
       : [
-        String(runtimeProjection?.workflow_binding.binding_id || '').trim() || 'run binding',
+        String(runtimeProjection?.workflow_binding.binding_id || '').trim() || t('runs.inspect.preview.runBindingFallback'),
         String(runtimeProjection?.workflow_binding.workflow_name || '').trim(),
       ].filter((item) => item).join(' · ')
     return buildTopologyCoverageSummary({
       bindingLabel,
       decisions: workflowDecisionRefs,
-      detail: `Coverage is evaluated against run lineage binding ${bindingLabel}.`,
+      detail: t('runs.inspect.preview.coverageDetail', { bindingLabel }),
       selectors: topologyEdgeSelectors,
       source: 'selected',
     })
-  }, [runtimeProjection, topologyEdgeSelectors, workflowBinding, workflowDecisionRefs])
+  }, [runtimeProjection, t, topologyEdgeSelectors, workflowBinding, workflowDecisionRefs])
   const runLineageSlotProjection = runtimeProjection?.document_policy_projection.compiled_document_policy_slots ?? null
   const workflowDiagnosticsId = runDetails?.workflow_execution_id
     ?? (retryChain.length > 0 ? retryChain[retryChain.length - 1].workflow_run_id : null)
@@ -2646,9 +2676,9 @@ export function PoolRunsPage() {
           actions={(
             <Space wrap size={16} align="start">
               <Space direction="vertical" size={4}>
-                <Text strong>Pool</Text>
+                <Text strong>{t('runs.page.contextPoolLabel')}</Text>
                 <Select
-                  aria-label="Run pool"
+                  aria-label={t('runs.page.contextPoolAriaLabel')}
                   data-testid="pool-runs-context-pool"
                   style={{ width: 320 }}
                   placeholder={t('catalog.fields.selectPool')}
@@ -2661,9 +2691,9 @@ export function PoolRunsPage() {
                 />
               </Space>
               <Space direction="vertical" size={4}>
-                <Text strong>Graph date</Text>
+                <Text strong>{t('runs.page.graphDateLabel')}</Text>
                 <Input
-                  aria-label="Graph date"
+                  aria-label={t('runs.page.graphDateAriaLabel')}
                   type="date"
                   value={graphDate}
                   onChange={(event) => handleGraphDateChange(event.target.value)}
@@ -2773,8 +2803,8 @@ export function PoolRunsPage() {
                     <Col span={4}>
                       <Form.Item name="direction" label={t('runs.create.fields.direction')} rules={[{ required: true }]}>
                         <Radio.Group data-testid="pool-runs-create-direction" optionType="button" buttonStyle="solid">
-                          <Radio.Button value="top_down">top_down</Radio.Button>
-                          <Radio.Button value="bottom_up">bottom_up</Radio.Button>
+                          <Radio.Button value="top_down">{t('runs.create.options.topDown')}</Radio.Button>
+                          <Radio.Button value="bottom_up">{t('runs.create.options.bottomUp')}</Radio.Button>
                         </Radio.Group>
                       </Form.Item>
                     </Col>
@@ -2783,8 +2813,8 @@ export function PoolRunsPage() {
                         <Select
                           data-testid="pool-runs-create-mode"
                           options={[
-                            { value: 'safe', label: 'safe' },
-                            { value: 'unsafe', label: 'unsafe' },
+                            { value: 'safe', label: t('runs.create.options.safe') },
+                            { value: 'unsafe', label: t('runs.create.options.unsafe') },
                           ]}
                         />
                       </Form.Item>
@@ -3008,15 +3038,15 @@ export function PoolRunsPage() {
                   {selectedCreateBinding && !bindingPreview ? (
                     <Card
                       size="small"
-                      title="Topology slot coverage"
+                      title={t('runs.create.preview.topologySlotCoverageTitle')}
                       data-testid="pool-runs-create-binding-coverage"
                     >
                       <TopologySlotCoveragePanel
                         summary={createBindingCoverageSummary}
                         summaryTestId="pool-runs-create-slot-coverage-summary"
                         itemTestIdPrefix="pool-runs-create-slot-coverage-item"
-                        emptyMessage="No topology edges in the selected snapshot yet."
-                        resolvedMessage="All topology edges are covered by the selected binding before preview."
+                        emptyMessage={t('runs.create.preview.noTopologyEdges')}
+                        resolvedMessage={t('runs.create.preview.allTopologyEdgesCoveredBeforePreview')}
                       />
                     </Card>
                   ) : null}
@@ -3024,13 +3054,13 @@ export function PoolRunsPage() {
                   {createDirection === 'bottom_up' && (
                     <Row gutter={12}>
                       <Col span={16}>
-                        <Form.Item name="source_payload_json" label="Source payload JSON">
+                        <Form.Item name="source_payload_json" label={t('runs.create.fields.sourcePayloadJson')}>
                           <Input.TextArea data-testid="pool-runs-create-source-payload" rows={6} placeholder='[{"inn":"730000000001","amount":"100.00"}]' />
                         </Form.Item>
                       </Col>
                       <Col span={8}>
-                        <Form.Item name="source_artifact_id" label="Source artifact ID">
-                          <Input data-testid="pool-runs-create-source-artifact" placeholder="artifact://..." />
+                        <Form.Item name="source_artifact_id" label={t('runs.create.fields.sourceArtifactId')}>
+                          <Input data-testid="pool-runs-create-source-artifact" placeholder={t('runs.create.placeholders.sourceArtifactId')} />
                         </Form.Item>
                         <Upload
                           accept=".json,application/json,text/plain"
@@ -3040,14 +3070,14 @@ export function PoolRunsPage() {
                             try {
                               const text = await file.text()
                               createForm.setFieldValue('source_payload_json', text)
-                              message.success('Source payload loaded from file.')
+                              message.success(t('runs.create.messages.sourcePayloadLoadedFromFile'))
                             } catch {
-                              message.error('Не удалось прочитать выбранный файл.')
+                              message.error(t('runs.create.messages.failedToReadSelectedFile'))
                             }
                             return false
                           }}
                         >
-                          <Button icon={<UploadOutlined />}>Load payload file</Button>
+                          <Button icon={<UploadOutlined />}>{t('runs.create.actions.loadPayloadFile')}</Button>
                         </Upload>
                       </Col>
                     </Row>
@@ -3060,67 +3090,67 @@ export function PoolRunsPage() {
                       disabled={!selectedPoolId || !createBindingId}
                       data-testid="pool-runs-create-preview"
                     >
-                      Preview Binding
+                      {t('runs.create.actions.previewBinding')}
                     </Button>
                     <Button type="primary" loading={creatingRun} onClick={() => void handleCreateRun()} data-testid="pool-runs-create-submit">
-                      Create / Upsert Run
+                      {t('runs.create.actions.createOrUpsertRun')}
                     </Button>
                   </Space>
 
                   {bindingPreview && (
                     <Card
                       size="small"
-                      title="Binding Preview"
+                      title={t('runs.create.preview.title')}
                       data-testid="pool-runs-binding-preview"
                       style={{ marginTop: 16 }}
                     >
                       <Descriptions bordered size="small" column={detailDescriptionColumns}>
-                        <Descriptions.Item label="Attachment ID" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.attachmentId')} span={1}>
                           <Text code>{bindingPreview.workflow_binding.binding_id ?? '-'}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Attachment Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.attachmentRevision')} span={1}>
                           <Text data-testid="pool-runs-binding-preview-attachment-revision">
                             {bindingPreview.workflow_binding.revision != null
                               ? `r${bindingPreview.workflow_binding.revision}`
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Execution Pack" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.executionPack')} span={1}>
                           <Text data-testid="pool-runs-binding-preview-profile">
                             {resolvePoolWorkflowBindingProfileLabel(bindingPreview.workflow_binding)}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Pack Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.pinnedPackRevision')} span={1}>
                           <Text data-testid="pool-runs-binding-preview-profile-revision">
                             {bindingPreview.workflow_binding.binding_profile_revision_number != null
                               ? `r${bindingPreview.workflow_binding.binding_profile_revision_number}`
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pinned Revision ID" span={2}>
+                        <Descriptions.Item label={t('runs.create.fields.pinnedRevisionId')} span={2}>
                           <Text code>{bindingPreview.workflow_binding.binding_profile_revision_id ?? '-'}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Scheme" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.workflowScheme')} span={1}>
                           <Text>
                             {previewBindingWorkflow?.workflow_name
                               || previewBindingWorkflow?.workflow_definition_key
                               || '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Workflow Revision" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.workflowRevision')} span={1}>
                           <Text>
                             {previewBindingWorkflow?.workflow_revision != null
                               ? `r${previewBindingWorkflow.workflow_revision}`
                               : '-'}
                           </Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Binding Scope" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.bindingScope')} span={1}>
                           <Text>{formatWorkflowBindingScope(bindingPreview.workflow_binding)}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Pack Status" span={1}>
+                        <Descriptions.Item label={t('runs.create.fields.packStatus')} span={1}>
                           <Text>{resolvePoolWorkflowBindingProfileStatus(bindingPreview.workflow_binding) ?? '-'}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Decision Snapshot" span={2}>
+                        <Descriptions.Item label={t('runs.create.preview.decisionSnapshot')} span={2}>
                           {previewBindingDecisionRefs.length > 0 ? (
                             <Space size={[4, 4]} wrap>
                                 {previewBindingDecisionRefs.map((decision) => (
@@ -3132,11 +3162,11 @@ export function PoolRunsPage() {
                                 ))}
                             </Space>
                           ) : (
-                            <Text type="secondary">No pinned decision refs.</Text>
+                            <Text type="secondary">{t('runs.create.preview.noPinnedDecisionRefs')}</Text>
                           )}
                         </Descriptions.Item>
                         {previewBindingLifecycleWarning ? (
-                          <Descriptions.Item label="Lifecycle Warning" span={2}>
+                          <Descriptions.Item label={t('runs.create.fields.lifecycleWarning')} span={2}>
                             <Alert
                               type="warning"
                               showIcon
@@ -3145,30 +3175,30 @@ export function PoolRunsPage() {
                             />
                           </Descriptions.Item>
                         ) : null}
-                        <Descriptions.Item label="Slot Coverage" span={2}>
+                        <Descriptions.Item label={t('runs.create.preview.slotCoverage')} span={2}>
                           <TopologySlotCoveragePanel
                             summary={bindingPreviewCoverageSummary}
                             summaryTestId="pool-runs-binding-preview-slot-coverage"
                             itemTestIdPrefix="pool-runs-binding-preview-slot-coverage-item"
-                            emptyMessage="No topology edges in the selected snapshot yet."
-                            resolvedMessage="All topology edges are covered by this binding preview."
+                            emptyMessage={t('runs.create.preview.noTopologyEdges')}
+                            resolvedMessage={t('runs.create.preview.allTopologyEdgesCovered')}
                           />
                         </Descriptions.Item>
-                        <Descriptions.Item label="Document Policy Source" span={1}>
+                        <Descriptions.Item label={t('runs.create.preview.documentPolicySource')} span={1}>
                           <Text>{bindingPreview.runtime_projection.document_policy_projection.source_mode}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Compile Plan" span={1}>
+                        <Descriptions.Item label={t('runs.create.preview.compilePlan')} span={1}>
                           <Text code>{bindingPreview.runtime_projection.workflow_definition.plan_key}</Text>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Compile Summary" span={2}>
+                        <Descriptions.Item label={t('runs.create.preview.compileSummary')} span={2}>
                           <Space size={[4, 4]} wrap>
-                            <Tag>compiled targets: {bindingPreview.runtime_projection.compile_summary.compiled_targets_count}</Tag>
-                            <Tag>policy refs: {bindingPreview.runtime_projection.document_policy_projection.policy_refs_count}</Tag>
-                            <Tag>steps: {bindingPreview.runtime_projection.compile_summary.steps_count}</Tag>
-                            <Tag>atomic publication: {bindingPreview.runtime_projection.compile_summary.atomic_publication_steps_count}</Tag>
+                            <Tag>{t('runs.create.preview.compiledTargets', { count: bindingPreview.runtime_projection.compile_summary.compiled_targets_count })}</Tag>
+                            <Tag>{t('runs.create.preview.policyRefs', { count: bindingPreview.runtime_projection.document_policy_projection.policy_refs_count })}</Tag>
+                            <Tag>{t('runs.create.preview.steps', { count: bindingPreview.runtime_projection.compile_summary.steps_count })}</Tag>
+                            <Tag>{t('runs.create.preview.atomicPublication', { count: bindingPreview.runtime_projection.compile_summary.atomic_publication_steps_count })}</Tag>
                           </Space>
                         </Descriptions.Item>
-                        <Descriptions.Item label="Compiled Slot Projection" span={2}>
+                        <Descriptions.Item label={t('runs.create.preview.compiledSlotProjection')} span={2}>
                           <TextArea
                             value={JSON.stringify(bindingPreview.compiled_document_policy_slots ?? {}, null, 2)}
                             rows={8}
@@ -3177,7 +3207,7 @@ export function PoolRunsPage() {
                           />
                         </Descriptions.Item>
                         {bindingPreview.compiled_document_policy ? (
-                          <Descriptions.Item label="Compatibility Policy Projection" span={2}>
+                          <Descriptions.Item label={t('runs.create.preview.compatibilityPolicyProjection')} span={2}>
                             <TextArea
                               value={JSON.stringify(bindingPreview.compiled_document_policy, null, 2)}
                               rows={6}
@@ -3192,7 +3222,7 @@ export function PoolRunsPage() {
                   <PoolBatchIntakeDrawer
                     open={isBatchIntakeDrawerOpen}
                     poolId={selectedPoolId ?? null}
-                    poolLabel={selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : 'No pool selected'}
+                    poolLabel={selectedPool ? `${selectedPool.code} - ${selectedPool.name}` : t('runs.create.preview.noPoolSelected')}
                     schemaTemplates={schemaTemplates}
                     loadingSchemaTemplates={loadingSchemaTemplates}
                     workflowBindingOptions={receiptBatchWorkflowBindingOptions}
@@ -3261,74 +3291,76 @@ export function PoolRunsPage() {
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                       {reportDetails ? (
                         <Space size="small" wrap>
-                          <Tag color="blue">run: {formatShortId(runDetails.id)}</Tag>
+                          <Tag color="blue">{t('runs.inspect.report.runTag', { runId: formatShortId(runDetails.id) })}</Tag>
                           <Tag color={getStatusColor(runDetails.status)}>{runDetails.status}</Tag>
                           {runDetails.status_reason ? (
                             <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag>
                           ) : null}
-                          <Tag>attempts: {reportDetails.publication_attempts.length}</Tag>
+                          <Tag>{t('runs.inspect.report.attempts', { count: reportDetails.publication_attempts.length })}</Tag>
                           {Object.entries(reportDetails.attempts_by_status ?? {}).map(([status, count]) => (
-                            <Tag key={status}>{status}: {count}</Tag>
+                            <Tag key={status}>{t('runs.inspect.report.attemptStatus', { status, count })}</Tag>
                           ))}
                         </Space>
                       ) : (
                         <Alert
                           type="info"
                           showIcon
-                          message={loadingReport ? 'Operator report is loading' : 'Operator report is unavailable'}
+                          message={loadingReport
+                            ? t('runs.inspect.report.loadingTitle')
+                            : t('runs.inspect.report.unavailableTitle')}
                           description={loadingReport
-                            ? 'Run lineage, readiness, and runtime context are already available. Publication attempts and diagnostics JSON will appear when report loading finishes.'
-                            : 'Publication attempts and diagnostics JSON are unavailable for the selected run.'}
+                            ? t('runs.inspect.report.loadingDescription')
+                            : t('runs.inspect.report.unavailableDescription')}
                         />
                       )}
 
                       <Alert
                         type="info"
                         showIcon
-                        message="Run Lineage is the primary operator context"
-                        description="Pool, selected binding, pinned workflow revision and compiled runtime projection stay on this screen. Generic workflow execution remains a secondary diagnostics surface."
+                        message={t('runs.inspect.lineage.primaryContextTitle')}
+                        description={t('runs.inspect.lineage.primaryContextDescription')}
                       />
 
                       <Alert
                         type="success"
                         showIcon
-                        message="Factual monitoring lives in a separate workspace"
-                        description="Keep create-run, safe actions, retry, lineage, and execution diagnostics on this screen. Use the factual workspace for settlement, factual balance monitoring, and manual review."
+                        message={t('runs.inspect.factualWorkspace.title')}
+                        description={t('runs.inspect.factualWorkspace.description')}
                         action={(
                           <RouteButton type="primary" size="small" to={factualWorkspaceHref} disabled={!selectedPoolId}>
-                            Open factual workspace
+                            {t('runs.inspect.factualWorkspace.open')}
                           </RouteButton>
                         )}
                       />
 
-                      <Card size="small" title="Run Lineage">
+                      <Card size="small" title={t('runs.inspect.lineage.title')}>
                         <Descriptions bordered size="small" column={detailDescriptionColumns}>
-                        <Descriptions.Item label="Pool" span={1}>
+                        <Descriptions.Item label={t('runs.inspect.lineage.pool')} span={1}>
                             <Text data-testid="pool-runs-lineage-pool">{selectedPoolLabel}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Attachment ID" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.attachmentId')} span={1}>
                             <Text code data-testid="pool-runs-lineage-binding-id">
                               {workflowBinding?.binding_id ?? runtimeProjection?.workflow_binding.binding_id ?? '-'}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Attachment Revision" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.attachmentRevision')} span={1}>
                             <Text data-testid="pool-runs-lineage-attachment-revision">
                               {workflowBindingAttachmentRevision != null ? `r${workflowBindingAttachmentRevision}` : '-'}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Execution Pack" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.executionPack')} span={1}>
                             <Text data-testid="pool-runs-lineage-profile">
                               {resolvePoolWorkflowBindingProfileLabel(workflowBinding) !== '-'
                                 ? resolvePoolWorkflowBindingProfileLabel(workflowBinding)
                                 : (workflowBindingProfileId ?? '-')}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Pinned Pack Revision" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.pinnedPackRevision')} span={1}>
                             <Text data-testid="pool-runs-lineage-profile-revision">
                               {workflowBindingProfileRevisionNumber != null ? `r${workflowBindingProfileRevisionNumber}` : '-'}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Workflow Scheme" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.workflowScheme')} span={1}>
                             <Text data-testid="pool-runs-lineage-workflow">
                               {resolveWorkflowLineageName({
                                 binding: workflowBinding,
@@ -3337,7 +3369,7 @@ export function PoolRunsPage() {
                               })}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Workflow Revision" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.workflowRevision')} span={1}>
                             <Text>
                               {workflowBindingWorkflow?.workflow_revision != null
                                 ? `r${workflowBindingWorkflow.workflow_revision}`
@@ -3346,22 +3378,22 @@ export function PoolRunsPage() {
                                   : '-'}
                             </Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Binding Scope" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.bindingScope')} span={1}>
                             <Text>{formatWorkflowBindingScope(workflowBinding)}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Effective Period" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.effectivePeriod')} span={1}>
                             <Text>{formatWorkflowBindingEffectivePeriod(workflowBinding)}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Pack Status" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.packStatus')} span={1}>
                             <Text>{workflowBindingProfileStatus ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Pinned Revision ID" span={1}>
+                          <Descriptions.Item label={t('runs.create.fields.pinnedRevisionId')} span={1}>
                             <Text code>{workflowBindingProfileRevisionId ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Execution Pack ID" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.lineage.executionPackId')} span={1}>
                             <Text code>{workflowBindingProfileId ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Decision Snapshot" span={2}>
+                          <Descriptions.Item label={t('runs.create.preview.decisionSnapshot')} span={2}>
                             {workflowDecisionRefs.length > 0 ? (
                               <Space size={[4, 4]} wrap>
                                 {workflowDecisionRefs.map((decision) => (
@@ -3373,11 +3405,11 @@ export function PoolRunsPage() {
                                 ))}
                               </Space>
                             ) : (
-                              <Text type="secondary">No pinned decision refs.</Text>
+                              <Text type="secondary">{t('runs.create.preview.noPinnedDecisionRefs')}</Text>
                             )}
                           </Descriptions.Item>
                           {workflowBindingLifecycleWarning ? (
-                            <Descriptions.Item label="Lifecycle Warning" span={2}>
+                            <Descriptions.Item label={t('runs.create.fields.lifecycleWarning')} span={2}>
                               <Alert
                                 type="warning"
                                 showIcon
@@ -3386,16 +3418,16 @@ export function PoolRunsPage() {
                               />
                             </Descriptions.Item>
                           ) : null}
-                          <Descriptions.Item label="Slot Coverage" span={2}>
+                          <Descriptions.Item label={t('runs.create.preview.slotCoverage')} span={2}>
                             <TopologySlotCoveragePanel
                               summary={runLineageCoverageSummary}
                               summaryTestId="pool-runs-lineage-slot-coverage"
                               itemTestIdPrefix="pool-runs-lineage-slot-coverage-item"
-                              emptyMessage="No topology edges in the selected snapshot yet."
-                              resolvedMessage="All topology edges are covered by the persisted run lineage binding."
+                              emptyMessage={t('runs.create.preview.noTopologyEdges')}
+                              resolvedMessage={t('runs.inspect.preview.lineageCoverageResolved')}
                             />
                           </Descriptions.Item>
-                          <Descriptions.Item label="Slot Projection" span={2}>
+                          <Descriptions.Item label={t('runs.inspect.lineage.slotProjection')} span={2}>
                             {runtimeProjection ? (
                               <TextArea
                                 data-testid="pool-runs-lineage-slot-projection"
@@ -3404,92 +3436,92 @@ export function PoolRunsPage() {
                                 readOnly
                               />
                             ) : (
-                              <Text type="secondary">Historical run without persisted slot projection.</Text>
+                              <Text type="secondary">{t('runs.inspect.preview.noPersistedSlotProjection')}</Text>
                             )}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Compiled Runtime" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.lineage.compiledRuntime')} span={1}>
                             <Text>{runtimeProjection?.workflow_definition.workflow_template_name ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Compile Plan" span={1}>
+                          <Descriptions.Item label={t('runs.create.preview.compilePlan')} span={1}>
                             <Text code>{runtimeProjection?.workflow_definition.plan_key ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Compile Summary" span={2}>
+                          <Descriptions.Item label={t('runs.create.preview.compileSummary')} span={2}>
                             {runtimeProjection ? (
                               <Space size={[4, 4]} wrap>
-                                <Tag>compiled targets: {runtimeProjection.compile_summary.compiled_targets_count}</Tag>
-                                <Tag>policy refs: {runtimeProjection.document_policy_projection.policy_refs_count}</Tag>
-                                <Tag>steps: {runtimeProjection.compile_summary.steps_count}</Tag>
-                                <Tag>atomic publication: {runtimeProjection.compile_summary.atomic_publication_steps_count}</Tag>
+                                <Tag>{t('runs.create.preview.compiledTargets', { count: runtimeProjection.compile_summary.compiled_targets_count })}</Tag>
+                                <Tag>{t('runs.create.preview.policyRefs', { count: runtimeProjection.document_policy_projection.policy_refs_count })}</Tag>
+                                <Tag>{t('runs.create.preview.steps', { count: runtimeProjection.compile_summary.steps_count })}</Tag>
+                                <Tag>{t('runs.create.preview.atomicPublication', { count: runtimeProjection.compile_summary.atomic_publication_steps_count })}</Tag>
                               </Space>
                             ) : (
-                              <Text type="secondary">Historical run without compiled runtime projection.</Text>
+                              <Text type="secondary">{t('runs.inspect.preview.noCompiledRuntimeProjection')}</Text>
                             )}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Workflow Diagnostics" span={2}>
+                          <Descriptions.Item label={t('runs.inspect.lineage.workflowDiagnostics')} span={2}>
                             {workflowDiagnosticsId ? (
                               <RouteButton
                                 type="link"
                                 to={`/workflows/executions/${workflowDiagnosticsId}`}
                                 style={{ paddingInline: 0 }}
                               >
-                                Open Workflow Diagnostics
+                                {t('runs.inspect.lineage.openWorkflowDiagnostics')}
                               </RouteButton>
                             ) : (
-                              <Text type="secondary">No linked workflow execution diagnostics.</Text>
+                              <Text type="secondary">{t('runs.inspect.preview.noWorkflowDiagnostics')}</Text>
                             )}
                           </Descriptions.Item>
                         </Descriptions>
                       </Card>
 
-                      <Card size="small" title="Underlying Workflow Runtime">
+                      <Card size="small" title={t('runs.inspect.runtime.title')}>
                         <Descriptions bordered size="small" column={detailDescriptionColumns}>
-                          <Descriptions.Item label="Workflow Run" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.workflowRun')} span={1}>
                             <Text code data-testid="pool-runs-provenance-workflow-id">{workflowRunId ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Workflow Status" span={1}>
-                            {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">legacy</Text>}
+                          <Descriptions.Item label={t('runs.inspect.runtime.workflowStatus')} span={1}>
+                            {workflowStatus ? <Tag color="processing">{workflowStatus}</Tag> : <Text type="secondary">{t('runs.inspect.runtime.legacy')}</Text>}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Root Operation" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.rootOperation')} span={1}>
                             <Text code data-testid="pool-runs-provenance-root-operation-id">{rootOperationId ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Execution Consumer" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.executionConsumer')} span={1}>
                             <Text data-testid="pool-runs-provenance-execution-consumer">{executionConsumer ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Lane" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.lane')} span={1}>
                             <Text data-testid="pool-runs-provenance-lane">{lane ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Execution Backend" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.executionBackend')} span={1}>
                             <Text>{executionBackend ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Workflow Template" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.workflowTemplate')} span={1}>
                             <Text>{runDetails.workflow_template_name ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Input Contract" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.inputContract')} span={1}>
                             <Tag color={getInputContractColor(resolveInputContractVersion(runDetails))}>
                               {resolveInputContractVersion(runDetails)}
                             </Tag>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Run Input" span={2}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.runInput')} span={2}>
                             <Text>{summarizeRunInput(runDetails)}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Approval State" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.approvalState')} span={1}>
                             {runDetails.approval_state ? (
                               <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag>
                             ) : (
-                              <Text type="secondary">n/a</Text>
+                              <Text type="secondary">{t('runs.inspect.runtime.notAvailable')}</Text>
                             )}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Publication Step" span={1}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.publicationStep')} span={1}>
                             {runDetails.publication_step_state ? (
                               <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag>
                             ) : (
-                              <Text type="secondary">n/a</Text>
+                              <Text type="secondary">{t('runs.inspect.runtime.notAvailable')}</Text>
                             )}
                           </Descriptions.Item>
-                          <Descriptions.Item label="Terminal Reason" span={2}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.terminalReason')} span={2}>
                             <Text>{runDetails.terminal_reason ?? '-'}</Text>
                           </Descriptions.Item>
-                          <Descriptions.Item label="Retry Chain" span={2}>
+                          <Descriptions.Item label={t('runs.inspect.runtime.retryChain')} span={2}>
                             {retryChain.length > 0 ? (
                               <Space direction="vertical" size={4}>
                                 {retryChain.map((item: PoolRunRetryChainAttempt) => (
@@ -3500,49 +3532,49 @@ export function PoolRunsPage() {
                                     <Tag color={getWorkflowExecutionStatusColor(item.status)}>{item.status}</Tag>
                                     <Text code>{formatShortId(item.workflow_run_id)}</Text>
                                     {item.parent_workflow_run_id ? (
-                                      <Text type="secondary">parent: {formatShortId(item.parent_workflow_run_id)}</Text>
+                                      <Text type="secondary">{t('runs.inspect.runtime.parentRun', { runId: formatShortId(item.parent_workflow_run_id) })}</Text>
                                     ) : (
-                                      <Text type="secondary">root</Text>
+                                      <Text type="secondary">{t('runs.inspect.runtime.rootRun')}</Text>
                                     )}
                                   </Space>
                                 ))}
                               </Space>
                             ) : (
-                              <Text type="secondary">empty</Text>
+                              <Text type="secondary">{t('runs.inspect.runtime.empty')}</Text>
                             )}
                           </Descriptions.Item>
                         </Descriptions>
                       </Card>
 
-                      <Card size="small" title="Master Data Gate">
+                      <Card size="small" title={t('runs.inspect.masterDataGate.title')}>
                         {!masterDataGate && (
                           <Text type="secondary">
-                            Historical run or gate step was not captured in this execution context.
+                            {t('runs.inspect.masterDataGate.historicalNotCaptured')}
                           </Text>
                         )}
                         {masterDataGate && (
                           <Space direction="vertical" size="small" style={{ width: '100%' }}>
                             <Space size="small" wrap>
                               <Tag color={MASTER_DATA_GATE_STATUS_COLORS[masterDataGate.status] ?? 'default'}>
-                                status: {masterDataGate.status}
+                                {t('runs.inspect.masterDataGate.tags.status', { value: masterDataGate.status })}
                               </Tag>
-                              <Tag>mode: {masterDataGate.mode}</Tag>
-                              <Tag>targets: {masterDataGate.targets_count}</Tag>
-                              <Tag>bindings: {masterDataGate.bindings_count}</Tag>
+                              <Tag>{t('runs.inspect.masterDataGate.tags.mode', { value: masterDataGate.mode })}</Tag>
+                              <Tag>{t('runs.inspect.masterDataGate.tags.targets', { count: masterDataGate.targets_count })}</Tag>
+                              <Tag>{t('runs.inspect.masterDataGate.tags.bindings', { count: masterDataGate.bindings_count })}</Tag>
                             </Space>
                             {masterDataGate.error_code && (
                               <Alert
                                 type="error"
                                 showIcon
                                 message={masterDataGate.error_code}
-                                description={masterDataGate.detail || 'Master data gate failed.'}
+                                description={masterDataGate.detail || t('runs.inspect.masterDataGate.failedFallback')}
                               />
                             )}
                             {masterDataGateHint && (
                               <Alert
                                 type="info"
                                 showIcon
-                                message="Remediation Hint"
+                                message={t('runs.inspect.masterDataGate.remediationHintTitle')}
                                 description={masterDataGateHint}
                               />
                             )}
@@ -3557,7 +3589,7 @@ export function PoolRunsPage() {
                             )}
                             {masterDataGateContextLines.length > 0 && (
                               <Space direction="vertical" size={0}>
-                                <Text strong>Diagnostic Context</Text>
+                                <Text strong>{t('runs.inspect.masterDataGate.diagnosticContext')}</Text>
                                 {masterDataGateContextLines.map((line) => (
                                   <Text key={line} code>
                                     {line}
@@ -3569,17 +3601,17 @@ export function PoolRunsPage() {
                         )}
                       </Card>
 
-                      <Card size="small" title="Readiness Checklist">
+                      <Card size="small" title={t('runs.inspect.readiness.title')}>
                         <Space direction="vertical" size="small" style={{ width: '100%' }}>
                           <Space size="small" wrap>
                             <Tag
                               color={READINESS_STATUS_COLORS[readinessChecklist.status] ?? 'default'}
                               data-testid="pool-runs-readiness-status"
                             >
-                              status: {readinessChecklist.status}
+                              {t('runs.inspect.readiness.tags.status', { value: readinessChecklist.status })}
                             </Tag>
-                            <Tag>checks: {readinessChecklist.checks.length}</Tag>
-                            <Tag>blockers: {readinessBlockers.length}</Tag>
+                            <Tag>{t('runs.inspect.readiness.tags.checks', { count: readinessChecklist.checks.length })}</Tag>
+                            <Tag>{t('runs.inspect.readiness.tags.blockers', { count: readinessBlockers.length })}</Tag>
                           </Space>
                           {readinessChecklist.checks.map((check) => (
                             <Alert
@@ -3589,9 +3621,9 @@ export function PoolRunsPage() {
                               message={resolveReadinessCheckLabel(check.code)}
                               description={(
                                 <Space direction="vertical" size={2}>
-                                  <Text>status: {check.status}</Text>
+                                  <Text>{t('runs.inspect.readiness.tags.status', { value: check.status })}</Text>
                                   {check.blockers.length === 0 ? (
-                                    <Text type="secondary">No blocking diagnostics.</Text>
+                                    <Text type="secondary">{t('runs.inspect.readiness.noBlockingDiagnostics')}</Text>
                                   ) : (
                                     check.blockers.map((blocker, index) => {
                                       const contextLines = buildReadinessBlockerContextLines(blocker)
@@ -3606,7 +3638,7 @@ export function PoolRunsPage() {
                                       return (
                                         <Space key={`${title}-${index}`} direction="vertical" size={2}>
                                           <Text strong>{title}</Text>
-                                          <Text>{blocker.detail || 'Run readiness blocked.'}</Text>
+                                          <Text>{blocker.detail || t('runs.inspect.readiness.blockedFallback')}</Text>
                                           {contextLines.map((line) => (
                                             <Text key={line} code>{line}</Text>
                                           ))}
@@ -3631,33 +3663,36 @@ export function PoolRunsPage() {
                         </Space>
                       </Card>
 
-                      <Card size="small" title="OData Verification">
+                      <Card size="small" title={t('runs.inspect.verification.title')}>
                         <Space direction="vertical" size="small" style={{ width: '100%' }}>
                           <Space size="small" wrap>
                             <Tag
                               color={VERIFICATION_STATUS_COLORS[verificationStatus] ?? 'default'}
                               data-testid="pool-runs-verification-status"
                             >
-                              status: {verificationStatus}
+                              {t('runs.inspect.verification.tags.status', { value: verificationStatus })}
                             </Tag>
-                            {verificationSummary ? <Tag>targets: {verificationSummary.checked_targets}</Tag> : null}
-                            {verificationSummary ? <Tag>documents: {verificationSummary.verified_documents}</Tag> : null}
-                            {verificationSummary ? <Tag>mismatches: {verificationSummary.mismatches_count}</Tag> : null}
+                            {verificationSummary ? <Tag>{t('runs.inspect.verification.tags.targets', { count: verificationSummary.checked_targets })}</Tag> : null}
+                            {verificationSummary ? <Tag>{t('runs.inspect.verification.tags.documents', { count: verificationSummary.verified_documents })}</Tag> : null}
+                            {verificationSummary ? <Tag>{t('runs.inspect.verification.tags.mismatches', { count: verificationSummary.mismatches_count })}</Tag> : null}
                           </Space>
                           {verificationStatus === 'not_verified' && (
                             <Alert
                               type="info"
                               showIcon
-                              message="Verification has not started yet"
-                              description="Post-run OData verification ещё не дала результата для этого run."
+                              message={t('runs.inspect.verification.notStartedTitle')}
+                              description={t('runs.inspect.verification.notStartedDescription')}
                             />
                           )}
                           {verificationStatus === 'passed' && verificationSummary && (
                             <Alert
                               type="success"
                               showIcon
-                              message="Published documents verified"
-                              description={`Проверено ${verificationSummary.verified_documents} документ(ов) по ${verificationSummary.checked_targets} target(s) без mismatches.`}
+                              message={t('runs.inspect.verification.verifiedTitle')}
+                              description={t('runs.inspect.verification.verifiedDescription', {
+                                checkedTargets: verificationSummary.checked_targets,
+                                verifiedDocuments: verificationSummary.verified_documents,
+                              })}
                             />
                           )}
                           {verificationStatus === 'failed' && verificationSummary && (
@@ -3665,7 +3700,7 @@ export function PoolRunsPage() {
                               items={[
                                 {
                                   key: 'verification-mismatches',
-                                  label: `Mismatches (${verificationSummary.mismatches_count})`,
+                                  label: t('runs.inspect.verification.mismatches', { count: verificationSummary.mismatches_count }),
                                   children: (
                                     <Table
                                       rowKey={(item) => [
@@ -3689,7 +3724,7 @@ export function PoolRunsPage() {
 
                       {reportDetails ? (
                         <>
-                          <Text strong>Publication Attempts</Text>
+                          <Text strong>{t('runs.inspect.publicationAttempts.title')}</Text>
                           <Table
                             rowKey="id"
                             size="small"
@@ -3702,29 +3737,29 @@ export function PoolRunsPage() {
                             items={[
                               {
                                 key: 'diagnostics-json',
-                                label: 'Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)',
+                                label: t('runs.inspect.diagnostics.title'),
                                 children: (
                                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                                    <Text strong>Run Input</Text>
+                                    <Text strong>{t('runs.inspect.diagnostics.runInput')}</Text>
                                     <TextArea
                                       data-testid="pool-runs-run-input"
                                       readOnly
                                       rows={6}
                                       value={JSON.stringify(runDetails.run_input ?? null, null, 2)}
                                     />
-                                    <Text strong>Validation Summary</Text>
+                                    <Text strong>{t('runs.inspect.diagnostics.validationSummary')}</Text>
                                     <TextArea
                                       readOnly
                                       rows={4}
                                       value={JSON.stringify(reportDetails.validation_summary ?? {}, null, 2)}
                                     />
-                                    <Text strong>Publication Summary</Text>
+                                    <Text strong>{t('runs.inspect.diagnostics.publicationSummary')}</Text>
                                     <TextArea
                                       readOnly
                                       rows={4}
                                       value={JSON.stringify(reportDetails.publication_summary ?? {}, null, 2)}
                                     />
-                                    <Text strong>Step Diagnostics</Text>
+                                    <Text strong>{t('runs.inspect.diagnostics.stepDiagnostics')}</Text>
                                     <TextArea
                                       readOnly
                                       rows={6}
@@ -3760,7 +3795,7 @@ export function PoolRunsPage() {
                 {runDetails && runDetails.mode === 'safe' && (
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     <Space wrap>
-                      <Tag color="geekblue">safe</Tag>
+                      <Tag color="geekblue">{t('runs.create.options.safe')}</Tag>
                       {runDetails.status_reason ? <Tag color={getStatusReasonColor(runDetails.status_reason)}>{runDetails.status_reason}</Tag> : null}
                       {runDetails.approval_state ? <Tag color={getApprovalStateColor(runDetails.approval_state)}>{runDetails.approval_state}</Tag> : null}
                       {runDetails.publication_step_state ? <Tag color={getPublicationStepColor(runDetails.publication_step_state)}>{runDetails.publication_step_state}</Tag> : null}

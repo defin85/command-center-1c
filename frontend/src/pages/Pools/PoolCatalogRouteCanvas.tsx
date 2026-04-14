@@ -70,7 +70,7 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
-import { createLocaleFormatters, getCurrentAppLocale, usePoolsTranslation } from '../../i18n'
+import { createLocaleFormatters, getCurrentAppLocale, i18n, usePoolsTranslation } from '../../i18n'
 import { withQueryPolicy } from '../../lib/queryRuntime'
 import {
   DrawerFormShell,
@@ -120,6 +120,10 @@ import {
 } from './masterData/tokenCatalog'
 
 const { Text } = Typography
+
+const tPools = (key: string, options?: Record<string, unknown>) => (
+  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+)
 const { TextArea } = Input
 
 const SYNC_MAX_ROWS = 1000
@@ -127,25 +131,30 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const STATUS_OPTIONS: OrganizationStatus[] = ['active', 'inactive', 'archived']
 const TOPOLOGY_DOCUMENT_POLICY_BUILDER_ENABLED = false
 
-const API_ERROR_MESSAGE_MAP: Record<string, string> = {
-  DATABASE_ALREADY_LINKED: 'Выбранная база уже привязана к другой организации.',
-  DUPLICATE_ORGANIZATION_INN: 'Организация с таким ИНН уже существует в текущем tenant.',
-  DUPLICATE_POOL_CODE: 'Пул с таким code уже существует в текущем tenant.',
-  DATABASE_NOT_FOUND: 'База данных не найдена в текущем tenant context.',
-  POOL_NOT_FOUND: 'Пул не найден в текущем tenant context.',
-  ORGANIZATION_NOT_FOUND: 'Организация не найдена в текущем tenant context.',
-  TENANT_NOT_FOUND: 'Текущий tenant context невалиден.',
-  TENANT_CONTEXT_REQUIRED: 'Для изменения каталога выберите активный tenant.',
-  TOPOLOGY_VERSION_CONFLICT: 'Топология уже была изменена другим оператором. Обновите граф и повторите сохранение.',
-  VALIDATION_ERROR: 'Проверьте корректность данных.',
-  ODATA_MAPPING_NOT_CONFIGURED: 'Не настроен Infobase mapping для чтения metadata. Проверьте /rbac.',
-  ODATA_MAPPING_AMBIGUOUS: 'Найдено несколько mapping для metadata path. Проверьте /rbac.',
-  POOL_METADATA_REFERENCE_INVALID: 'Document policy содержит ссылки на отсутствующие metadata поля.',
-  POOL_METADATA_SNAPSHOT_UNAVAILABLE: 'Metadata snapshot недоступен для выбранной базы.',
-  POOL_METADATA_REFRESH_IN_PROGRESS: 'Metadata refresh уже выполняется для этой базы.',
-  POOL_WORKFLOW_BINDING_REVISION_CONFLICT: 'Workflow binding уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
-  POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'Набор workflow bindings уже был изменён другим оператором. Обновите bindings и повторите сохранение.',
-  EXECUTION_PACK_TEMPLATE_INCOMPATIBLE: 'Выбранный execution pack не подходит для template-based topology path и должен использовать topology-aware aliases.',
+const API_ERROR_TRANSLATION_KEYS: Record<string, string> = {
+  DATABASE_ALREADY_LINKED: 'catalog.apiErrors.databaseAlreadyLinked',
+  DUPLICATE_ORGANIZATION_INN: 'catalog.apiErrors.duplicateOrganizationInn',
+  DUPLICATE_POOL_CODE: 'catalog.apiErrors.duplicatePoolCode',
+  DATABASE_NOT_FOUND: 'catalog.apiErrors.databaseNotFound',
+  POOL_NOT_FOUND: 'catalog.apiErrors.poolNotFound',
+  ORGANIZATION_NOT_FOUND: 'catalog.apiErrors.organizationNotFound',
+  TENANT_NOT_FOUND: 'catalog.apiErrors.tenantNotFound',
+  TENANT_CONTEXT_REQUIRED: 'catalog.apiErrors.tenantContextRequired',
+  TOPOLOGY_VERSION_CONFLICT: 'catalog.apiErrors.topologyVersionConflict',
+  VALIDATION_ERROR: 'catalog.apiErrors.validationError',
+  ODATA_MAPPING_NOT_CONFIGURED: 'catalog.apiErrors.odataMappingNotConfigured',
+  ODATA_MAPPING_AMBIGUOUS: 'catalog.apiErrors.odataMappingAmbiguous',
+  POOL_METADATA_REFERENCE_INVALID: 'catalog.apiErrors.poolMetadataReferenceInvalid',
+  POOL_METADATA_SNAPSHOT_UNAVAILABLE: 'catalog.apiErrors.poolMetadataSnapshotUnavailable',
+  POOL_METADATA_REFRESH_IN_PROGRESS: 'catalog.apiErrors.poolMetadataRefreshInProgress',
+  POOL_WORKFLOW_BINDING_REVISION_CONFLICT: 'catalog.apiErrors.poolWorkflowBindingRevisionConflict',
+  POOL_WORKFLOW_BINDING_COLLECTION_CONFLICT: 'catalog.apiErrors.poolWorkflowBindingCollectionConflict',
+  EXECUTION_PACK_TEMPLATE_INCOMPATIBLE: 'catalog.apiErrors.executionPackTemplateIncompatible',
+}
+
+const resolveCatalogApiErrorMessage = (code: string): string => {
+  const key = API_ERROR_TRANSLATION_KEYS[code]
+  return key ? tPools(key) : ''
 }
 
 const formatOrganizationOptionLabel = (organization: Pick<Organization, 'name' | 'inn'>): string => (
@@ -570,10 +579,10 @@ const resolveApiError = (
       const mappedMessage = (
         problemCode === 'VALIDATION_ERROR' && problemDetail && !hasProblemFieldErrors
           ? problemDetail
-          : (API_ERROR_MESSAGE_MAP[problemCode] ?? problemDetail)
+          : (resolveCatalogApiErrorMessage(problemCode) || problemDetail)
       )
       const baseMessage = mappedMessage || (hasProblemFieldErrors
-        ? 'Проверьте корректность заполнения полей.'
+        ? tPools('catalog.messages.checkFields')
         : fallbackMessage)
       return {
         message: mergeMessageParts([
@@ -596,14 +605,14 @@ const resolveApiError = (
       return {
         message: preferBackendValidationMessage
           ? backendMessage
-          : (API_ERROR_MESSAGE_MAP[code] ?? (backendMessage || fallbackMessage)),
+          : (resolveCatalogApiErrorMessage(code) || backendMessage || fallbackMessage),
         fieldErrors: {},
       }
     }
     const fieldErrors = normalizeFieldErrors(errorNode)
     if (Object.keys(fieldErrors).length > 0) {
       return {
-        message: 'Проверьте корректность заполнения полей.',
+        message: tPools('catalog.messages.checkFields'),
         fieldErrors,
       }
     }
@@ -645,7 +654,7 @@ const getApiErrorCode = (error: unknown): string => {
 }
 
 const appendMetadataManagementHandoff = (message: string): string => {
-  const handoff = 'Metadata context недоступен для topology editor. Откройте /databases, перепроверьте configuration identity или обновите metadata snapshot и повторите.'
+  const handoff = tPools('catalog.messages.metadataManagementHandoff')
   return mergeMessageParts([message, handoff]) || handoff
 }
 
@@ -971,22 +980,22 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
   try {
     parsed = JSON.parse(input)
   } catch {
-    return { rows: [], errors: ['Payload должен быть валидным JSON.'] }
+    return { rows: [], errors: [tPools('catalog.syncModal.validation.invalidJson')] }
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { rows: [], errors: ['Payload должен быть объектом вида {"rows": [...]}'] }
+    return { rows: [], errors: [tPools('catalog.syncModal.validation.invalidShape')] }
   }
 
   const rowsRaw = (parsed as { rows?: unknown }).rows
   if (!Array.isArray(rowsRaw)) {
-    return { rows: [], errors: ['Поле rows обязательно и должно быть массивом.'] }
+    return { rows: [], errors: [tPools('catalog.syncModal.validation.rowsRequired')] }
   }
   if (rowsRaw.length === 0) {
-    return { rows: [], errors: ['Поле rows не должно быть пустым.'] }
+    return { rows: [], errors: [tPools('catalog.syncModal.validation.rowsEmpty')] }
   }
   if (rowsRaw.length > SYNC_MAX_ROWS) {
-    return { rows: [], errors: [`Превышен лимит batch: максимум ${SYNC_MAX_ROWS} строк.`] }
+    return { rows: [], errors: [tPools('catalog.syncModal.validation.maxRows', { count: SYNC_MAX_ROWS })] }
   }
 
   const rows: Array<Record<string, unknown>> = []
@@ -995,7 +1004,7 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
   rowsRaw.forEach((raw, index) => {
     const rowNumber = index + 1
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      errors.push(`Строка ${rowNumber}: ожидается объект.`)
+      errors.push(tPools('catalog.syncModal.validation.rowExpectedObject', { row: rowNumber }))
       return
     }
 
@@ -1004,14 +1013,14 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
 
     const inn = String(row.inn ?? '').trim()
     if (!inn) {
-      errors.push(`Строка ${rowNumber}: поле inn обязательно.`)
+      errors.push(tPools('catalog.syncModal.validation.innRequired', { row: rowNumber }))
     } else {
       normalized.inn = inn
     }
 
     const name = String(row.name ?? '').trim()
     if (!name) {
-      errors.push(`Строка ${rowNumber}: поле name обязательно.`)
+      errors.push(tPools('catalog.syncModal.validation.nameRequired', { row: rowNumber }))
     } else {
       normalized.name = name
     }
@@ -1020,7 +1029,7 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
     if (statusRaw !== undefined && statusRaw !== null && String(statusRaw).trim() !== '') {
       const status = String(statusRaw).trim().toLowerCase()
       if (!STATUS_OPTIONS.includes(status as OrganizationStatus)) {
-        errors.push(`Строка ${rowNumber}: недопустимый status "${status}".`)
+        errors.push(tPools('catalog.syncModal.validation.invalidStatus', { row: rowNumber, status }))
       } else {
         normalized.status = status
       }
@@ -1033,7 +1042,7 @@ const parseSyncPayload = (input: string): SyncPreflightResult => {
       } else {
         const databaseId = String(databaseIdRaw).trim()
         if (!UUID_REGEX.test(databaseId)) {
-          errors.push(`Строка ${rowNumber}: database_id должен быть UUID.`)
+          errors.push(tPools('catalog.syncModal.validation.databaseIdUuid', { row: rowNumber }))
         } else {
           normalized.database_id = databaseId
         }
@@ -1076,14 +1085,14 @@ const parseTopologyMetadata = (
   } catch {
     return {
       metadata: {},
-      errors: [`${rowLabel}: metadata должен быть валидным JSON.`],
+      errors: [tPools('catalog.topologyEditor.manual.validation.metadataJsonInvalid', { rowLabel })],
     }
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return {
       metadata: {},
-      errors: [`${rowLabel}: metadata должен быть JSON object.`],
+      errors: [tPools('catalog.topologyEditor.manual.validation.metadataJsonObject', { rowLabel })],
     }
   }
 
@@ -1106,10 +1115,10 @@ const stringifyMetadataForForm = (rawMetadata: unknown): string => {
 }
 
 const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
-const TOKEN_SOURCE_TYPE_OPTIONS: Array<{ value: DocumentPolicySourceType; label: string }> = [
-  { value: 'expression', label: 'expression' },
-  { value: 'master_data_token', label: 'master_data_token' },
-]
+const getTokenSourceTypeOptions = (): Array<{ value: DocumentPolicySourceType; label: string }> => ([
+  { value: 'expression', label: tPools('catalog.topologyEditor.manual.sourceTypes.expression') },
+  { value: 'master_data_token', label: tPools('catalog.topologyEditor.manual.sourceTypes.masterDataToken') },
+])
 const decodeDocumentPolicySourceValue = (
   rawSource: unknown,
   registryEntries: PoolMasterDataRegistryEntry[]
@@ -1158,13 +1167,13 @@ const getDocumentPolicyTokenQualifierField = (
 
 const getDocumentPolicyTokenQualifierLabel = (entry: PoolMasterDataRegistryEntry | null): string => {
   if (!entry) {
-    return 'qualifier'
+    return tPools('catalog.topologyEditor.manual.qualifiers.default')
   }
   if (entry.token_contract.qualifier_kind === 'ib_catalog_kind') {
-    return 'IB catalog kind'
+    return tPools('catalog.topologyEditor.manual.qualifiers.ibCatalogKind')
   }
   if (entry.token_contract.qualifier_kind === 'owner_counterparty_canonical_id') {
-    return 'Owner counterparty canonical id'
+    return tPools('catalog.topologyEditor.manual.qualifiers.ownerCounterpartyCanonicalId')
   }
   return entry.token_contract.qualifier_kind
 }
@@ -1198,7 +1207,7 @@ const resolveDocumentPolicySourceValue = (
     if (isMasterDataTokenLike(expressionSource)) {
       return {
         source: null,
-        error: `${rowLabel}: canonical master_data token недопустим для source_type=expression.`,
+        error: tPools('catalog.topologyEditor.manual.validation.expressionCanonicalTokenInvalid', { rowLabel }),
       }
     }
     return { source: expressionSource, error: null }
@@ -1208,21 +1217,21 @@ const resolveDocumentPolicySourceValue = (
   if (!entityType) {
     return {
       source: null,
-      error: `${rowLabel}: source_type=master_data_token требует entity_type.`,
+      error: tPools('catalog.topologyEditor.manual.validation.tokenEntityTypeRequired', { rowLabel }),
     }
   }
   const canonicalId = String(sourceValue.token_canonical_id ?? '').trim()
   if (!canonicalId) {
     return {
       source: null,
-      error: `${rowLabel}: source_type=master_data_token требует canonical_id.`,
+      error: tPools('catalog.topologyEditor.manual.validation.tokenCanonicalIdRequired', { rowLabel }),
     }
   }
   const registryEntry = findRegistryEntryByEntityType(registryEntries, entityType)
   if (!registryEntry || !registryEntry.capabilities.token_exposure || !registryEntry.token_contract.enabled) {
     return {
       source: null,
-      error: `${rowLabel}: entity_type=${entityType} не опубликован в reusable-data registry для token exposure.`,
+      error: tPools('catalog.topologyEditor.manual.validation.tokenEntityTypeNotPublished', { rowLabel, entityType }),
     }
   }
   const qualifierField = getDocumentPolicyTokenQualifierField(registryEntry)
@@ -1233,16 +1242,21 @@ const resolveDocumentPolicySourceValue = (
   if (registryEntry.token_contract.qualifier_required && !qualifierValue) {
     return {
       source: null,
-      error: `${rowLabel}: для entity_type=${entityType} требуется ${getDocumentPolicyTokenQualifierLabel(registryEntry)}.`,
+      error: tPools('catalog.topologyEditor.manual.validation.tokenQualifierRequired', {
+        rowLabel,
+        entityType,
+        qualifier: getDocumentPolicyTokenQualifierLabel(registryEntry),
+      }),
     }
   }
   if (qualifierOptions.length > 0 && qualifierValue && !qualifierOptions.includes(qualifierValue)) {
     return {
       source: null,
-      error: (
-        `${rowLabel}: ${getDocumentPolicyTokenQualifierLabel(registryEntry)} должен быть одним из `
-        + `${qualifierOptions.join('|')}.`
-      ),
+      error: tPools('catalog.topologyEditor.manual.validation.tokenQualifierOptions', {
+        rowLabel,
+        qualifier: getDocumentPolicyTokenQualifierLabel(registryEntry),
+        options: qualifierOptions.join('|'),
+      }),
     }
   }
 
@@ -1250,7 +1264,7 @@ const resolveDocumentPolicySourceValue = (
   if (!token || !parseMasterDataToken(token, registryEntries)) {
     return {
       source: null,
-      error: `${rowLabel}: token должен соответствовать canonical master_data.*.ref формату.`,
+      error: tPools('catalog.topologyEditor.manual.validation.tokenFormatInvalid', { rowLabel }),
     }
   }
   return { source: token, error: null }
@@ -1263,36 +1277,40 @@ const validateDocumentPolicyObject = (
   const errors: string[] = []
   const version = String(policy.version ?? '').trim()
   if (version !== DOCUMENT_POLICY_VERSION) {
-    errors.push(`Edge #${rowNo}: document_policy.version должен быть "${DOCUMENT_POLICY_VERSION}".`)
+    errors.push(tPools('catalog.topologyEditor.manual.validation.documentPolicyVersion', { row: rowNo, version: DOCUMENT_POLICY_VERSION }))
   }
 
   const chainsRaw = policy.chains
   if (!Array.isArray(chainsRaw) || chainsRaw.length === 0) {
-    errors.push(`Edge #${rowNo}: document_policy.chains должен содержать хотя бы одну цепочку.`)
+    errors.push(tPools('catalog.topologyEditor.manual.validation.documentPolicyChainsRequired', { row: rowNo }))
     return errors
   }
 
   chainsRaw.forEach((chain, chainIndex) => {
     const chainNo = chainIndex + 1
     if (!chain || typeof chain !== 'object' || Array.isArray(chain)) {
-      errors.push(`Edge #${rowNo}: chain #${chainNo} должен быть объектом.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.chainObjectRequired', { row: rowNo, chain: chainNo }))
       return
     }
     const chainObject = chain as Record<string, unknown>
     const chainId = String(chainObject.chain_id ?? '').trim()
     if (!chainId) {
-      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать chain_id.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.chainIdRequired', { row: rowNo, chain: chainNo }))
     }
     const documentsRaw = chainObject.documents
     if (!Array.isArray(documentsRaw) || documentsRaw.length === 0) {
-      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать documents[].`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.chainDocumentsRequired', { row: rowNo, chain: chainNo }))
       return
     }
 
     documentsRaw.forEach((document, documentIndex) => {
       const documentNo = documentIndex + 1
       if (!document || typeof document !== 'object' || Array.isArray(document)) {
-        errors.push(`Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен быть объектом.`)
+        errors.push(tPools('catalog.topologyEditor.manual.validation.documentObjectRequired', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+        }))
         return
       }
       const documentObject = document as Record<string, unknown>
@@ -1300,16 +1318,21 @@ const validateDocumentPolicyObject = (
       requiredFields.forEach((fieldName) => {
         const fieldValue = String(documentObject[fieldName] ?? '').trim()
         if (!fieldValue) {
-          errors.push(
-            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать ${fieldName}.`
-          )
+          errors.push(tPools('catalog.topologyEditor.manual.validation.documentFieldRequired', {
+            row: rowNo,
+            chain: chainNo,
+            document: documentNo,
+            fieldName,
+          }))
         }
       })
       const invoiceModeRaw = String(documentObject.invoice_mode ?? '').trim()
       if (invoiceModeRaw && invoiceModeRaw !== 'optional' && invoiceModeRaw !== 'required') {
-        errors.push(
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} содержит недопустимый invoice_mode.`
-        )
+        errors.push(tPools('catalog.topologyEditor.manual.validation.invalidInvoiceMode', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+        }))
       }
     })
   })
@@ -1431,7 +1454,7 @@ const buildDocumentPolicyFromBuilder = (
   const normalizedChains: Array<Record<string, unknown>> = []
 
   if (chainsSource.length === 0) {
-    errors.push(`Edge #${rowNo}: document_policy.chains должен содержать хотя бы одну цепочку.`)
+    errors.push(tPools('catalog.topologyEditor.manual.validation.documentPolicyChainsRequired', { row: rowNo }))
     return { policy: null, errors }
   }
 
@@ -1439,12 +1462,12 @@ const buildDocumentPolicyFromBuilder = (
     const chainNo = chainIndex + 1
     const chainId = String(rawChain?.chain_id ?? '').trim()
     if (!chainId) {
-      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать chain_id.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.chainIdRequired', { row: rowNo, chain: chainNo }))
     }
 
     const documentsRaw = Array.isArray(rawChain?.documents) ? rawChain.documents : []
     if (documentsRaw.length === 0) {
-      errors.push(`Edge #${rowNo}: chain #${chainNo} должен содержать documents[].`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.chainDocumentsRequired', { row: rowNo, chain: chainNo }))
       return
     }
 
@@ -1456,27 +1479,38 @@ const buildDocumentPolicyFromBuilder = (
       const entityName = String(rawDocument?.entity_name ?? '').trim()
       const documentRole = String(rawDocument?.document_role ?? '').trim()
       if (!documentId) {
-        errors.push(
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать document_id.`
-        )
+        errors.push(tPools('catalog.topologyEditor.manual.validation.documentFieldRequired', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+          fieldName: 'document_id',
+        }))
       }
       if (!entityName) {
-        errors.push(
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать entity_name.`
-        )
+        errors.push(tPools('catalog.topologyEditor.manual.validation.documentFieldRequired', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+          fieldName: 'entity_name',
+        }))
       }
       if (!documentRole) {
-        errors.push(
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} должен содержать document_role.`
-        )
+        errors.push(tPools('catalog.topologyEditor.manual.validation.documentFieldRequired', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+          fieldName: 'document_role',
+        }))
       }
 
       const invoiceModeRaw = String(rawDocument?.invoice_mode ?? 'optional').trim().toLowerCase()
       const invoiceMode = invoiceModeRaw || 'optional'
       if (invoiceMode !== 'optional' && invoiceMode !== 'required') {
-        errors.push(
-          `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} содержит недопустимый invoice_mode.`
-        )
+        errors.push(tPools('catalog.topologyEditor.manual.validation.invalidInvoiceMode', {
+          row: rowNo,
+          chain: chainNo,
+          document: documentNo,
+        }))
       }
 
       const fieldMappingsRaw = Array.isArray(rawDocument?.field_mappings) ? rawDocument.field_mappings : []
@@ -1495,9 +1529,11 @@ const buildDocumentPolicyFromBuilder = (
         const hasSourceInput = hasDocumentPolicySourceInput(sourceValue)
         if (!targetField && !hasSourceInput) return
         if (!targetField) {
-          errors.push(
-            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping должен содержать target и source.`
-          )
+          errors.push(tPools('catalog.topologyEditor.manual.validation.fieldMappingTargetSource', {
+            row: rowNo,
+            chain: chainNo,
+            document: documentNo,
+          }))
           return
         }
         const resolvedSource = resolveDocumentPolicySourceValue(
@@ -1508,7 +1544,11 @@ const buildDocumentPolicyFromBuilder = (
         if (!resolvedSource.source) {
           errors.push(
             resolvedSource.error
-            || `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} field_mapping должен содержать target и source.`
+            || tPools('catalog.topologyEditor.manual.validation.fieldMappingTargetSource', {
+              row: rowNo,
+              chain: chainNo,
+              document: documentNo,
+            })
           )
           return
         }
@@ -1535,9 +1575,11 @@ const buildDocumentPolicyFromBuilder = (
           const hasSourceInput = hasDocumentPolicySourceInput(sourceValue)
           if (!targetRowField && !hasSourceInput) return
           if (!targetRowField) {
-            errors.push(
-              `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать target и source.`
-            )
+            errors.push(tPools('catalog.topologyEditor.manual.validation.tablePartMappingTargetSource', {
+              row: rowNo,
+              chain: chainNo,
+              document: documentNo,
+            }))
             return
           }
           const resolvedSource = resolveDocumentPolicySourceValue(
@@ -1548,7 +1590,11 @@ const buildDocumentPolicyFromBuilder = (
           if (!resolvedSource.source) {
             errors.push(
               resolvedSource.error
-              || `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать target и source.`
+              || tPools('catalog.topologyEditor.manual.validation.tablePartMappingTargetSource', {
+                row: rowNo,
+                chain: chainNo,
+                document: documentNo,
+              })
             )
             return
           }
@@ -1556,9 +1602,11 @@ const buildDocumentPolicyFromBuilder = (
         })
         if (!tablePartName) {
           if (Object.keys(rowMapping).length > 0) {
-            errors.push(
-              `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} table_parts_mapping должен содержать table_part.`
-            )
+            errors.push(tPools('catalog.topologyEditor.manual.validation.tablePartRequired', {
+              row: rowNo,
+              chain: chainNo,
+              document: documentNo,
+            }))
           }
           return
         }
@@ -1573,9 +1621,11 @@ const buildDocumentPolicyFromBuilder = (
         const source = String(item?.source ?? '').trim()
         if (!targetField && !source) return
         if (!targetField || !source) {
-          errors.push(
-            `Edge #${rowNo}: chain #${chainNo}, document #${documentNo} link_rules должен содержать target и source.`
-          )
+          errors.push(tPools('catalog.topologyEditor.manual.validation.linkRulesTargetSource', {
+            row: rowNo,
+            chain: chainNo,
+            document: documentNo,
+          }))
           return
         }
         linkRules[targetField] = source
@@ -1638,14 +1688,14 @@ const parseDocumentPolicyMetadata = (
   } catch {
     return {
       policy: null,
-      errors: [`Edge #${rowNo}: document_policy должен быть валидным JSON.`],
+      errors: [tPools('catalog.topologyEditor.manual.validation.documentPolicyJsonInvalid', { row: rowNo })],
     }
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return {
       policy: null,
-      errors: [`Edge #${rowNo}: document_policy должен быть JSON object.`],
+      errors: [tPools('catalog.topologyEditor.manual.validation.documentPolicyJsonObject', { row: rowNo })],
     }
   }
   const policy = parsed as Record<string, unknown>
@@ -1671,21 +1721,21 @@ const buildEdgeMetadataFromBuilder = (
 
     if (!key && !valueJson) return
     if (!key) {
-      errors.push(`Edge #${rowNo}: metadata field #${fieldNo} должен содержать key.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.metadataFieldKeyRequired', { row: rowNo, field: fieldNo }))
       return
     }
     if (!valueJson) {
-      errors.push(`Edge #${rowNo}: metadata field "${key}" должен содержать JSON value.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.metadataFieldJsonValueRequired', { row: rowNo, key }))
       return
     }
     if (Object.prototype.hasOwnProperty.call(metadata, key)) {
-      errors.push(`Edge #${rowNo}: metadata field "${key}" дублируется.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.metadataFieldDuplicate', { row: rowNo, key }))
       return
     }
     try {
       metadata[key] = JSON.parse(valueJson)
     } catch {
-      errors.push(`Edge #${rowNo}: metadata field "${key}" содержит невалидный JSON value.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.metadataFieldJsonValueInvalid', { row: rowNo, key }))
     }
   })
 
@@ -1727,21 +1777,21 @@ const buildTopologyPreflight = (
     ? 'template'
     : 'manual'
   if (!effectiveFrom) {
-    errors.push(messages?.effectiveFromRequired ?? 'effective_from обязателен.')
+    errors.push(messages?.effectiveFromRequired ?? tPools('catalog.preflight.effectiveFromRequired'))
   }
   if (effectiveToRaw && effectiveFrom && effectiveToRaw < effectiveFrom) {
-    errors.push(messages?.effectiveToBeforeEffectiveFrom ?? 'effective_to не может быть раньше effective_from.')
+    errors.push(messages?.effectiveToBeforeEffectiveFrom ?? tPools('catalog.preflight.effectiveToBeforeEffectiveFrom'))
   }
 
   if (authoringMode === 'template') {
     const topologyTemplateRevisionId = String(values.topology_template_revision_id || '').trim()
     if (!topologyTemplateRevisionId) {
-      errors.push(messages?.selectTopologyTemplateRevision ?? 'Выберите topology template revision.')
+      errors.push(messages?.selectTopologyTemplateRevision ?? tPools('catalog.preflight.selectTopologyTemplateRevision'))
     }
     if (!selectedTemplateRevision) {
       errors.push(
         messages?.failedToLoadSelectedTopologyTemplateRevision
-        ?? 'Не удалось загрузить выбранную topology template revision.'
+        ?? tPools('catalog.preflight.failedToLoadSelectedTopologyTemplateRevision')
       )
     }
     const slotAssignmentsSource = Array.isArray(values.slot_assignments) ? values.slot_assignments : []
@@ -1758,7 +1808,7 @@ const buildTopologyPreflight = (
         if (!assignment?.organization_id) {
           errors.push(
             messages?.assignOrganizationForSlot(slotKey || `#${index + 1}`)
-            ?? `Назначьте организацию для slot ${slotKey || `#${index + 1}`}.`
+            ?? tPools('catalog.preflight.assignOrganizationForSlot', { slotKey: slotKey || `#${index + 1}` })
           )
         }
       })
@@ -1812,16 +1862,18 @@ const buildTopologyPreflight = (
     })
   })
   if (nodes.length === 0) {
-    errors.push('Добавьте хотя бы один topology node.')
+    errors.push(tPools('catalog.topologyEditor.manual.validation.addNodeRequired'))
   }
   const rootCount = nodes.filter((item) => item.is_root).length
   if (nodes.length > 0 && rootCount === 0) {
-    errors.push('Отметьте хотя бы один root node.')
+    errors.push(tPools('catalog.topologyEditor.manual.validation.rootNodeRequired'))
   }
   const nodeIds = nodes.map((item) => item.organization_id)
   const duplicates = nodeIds.filter((item, index) => nodeIds.indexOf(item) !== index)
   if (duplicates.length > 0) {
-    errors.push(`Найдены дубликаты organization_id в nodes: ${Array.from(new Set(duplicates)).join(', ')}`)
+    errors.push(tPools('catalog.topologyEditor.manual.validation.duplicateNodeOrganizations', {
+      ids: Array.from(new Set(duplicates)).join(', '),
+    }))
   }
   const allowedNodeIds = new Set(nodeIds)
 
@@ -1835,21 +1887,21 @@ const buildTopologyPreflight = (
       return
     }
     if (!parentId || !childId) {
-      errors.push(`Edge #${rowNo}: parent и child обязательны.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.edgeParentChildRequired', { row: rowNo }))
       return
     }
     if (parentId === childId) {
-      errors.push(`Edge #${rowNo}: parent и child не могут совпадать.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.edgeParentChildDistinct', { row: rowNo }))
       return
     }
     if (!allowedNodeIds.has(parentId) || !allowedNodeIds.has(childId)) {
-      errors.push(`Edge #${rowNo}: parent/child должны ссылаться на узлы из nodes.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.edgeParentChildUnknownNodes', { row: rowNo }))
       return
     }
     const minAmount = formatOptionalDecimal(edge.min_amount)
     const maxAmount = formatOptionalDecimal(edge.max_amount)
     if (minAmount && maxAmount && Number(maxAmount) < Number(minAmount)) {
-      errors.push(`Edge #${rowNo}: max_amount должен быть >= min_amount.`)
+      errors.push(tPools('catalog.topologyEditor.manual.validation.edgeMaxAmountMinAmount', { row: rowNo }))
       return
     }
     const policyMode = String(edge.document_policy_mode ?? 'raw').trim().toLowerCase() === 'builder'
@@ -1867,7 +1919,7 @@ const buildTopologyPreflight = (
     }
     if (policyResult.policy) {
       errors.push(
-        `Edge #${rowNo}: legacy document_policy больше не поддерживается в Topology Editor. Используйте /decisions и workflow bindings remediation flow.`
+        tPools('catalog.topologyEditor.manual.legacyDocumentPolicyUnsupported', { row: rowNo })
       )
       return
     }
@@ -1954,6 +2006,11 @@ export function PoolCatalogPage() {
     failedToLoadSelectedTopologyTemplateRevision: t('catalog.preflight.failedToLoadSelectedTopologyTemplateRevision'),
     assignOrganizationForSlot: (slotKey: string) => t('catalog.preflight.assignOrganizationForSlot', { slotKey }),
   }), [locale, ready, t])
+  const tokenSourceTypeOptions = useMemo(() => getTokenSourceTypeOptions(), [locale, ready])
+  const invoiceModeOptions = useMemo(() => ([
+    { value: 'optional', label: t('catalog.topologyEditor.manual.invoiceModes.optional') },
+    { value: 'required', label: t('catalog.topologyEditor.manual.invoiceModes.required') },
+  ]), [locale, ready, t])
 
   const [organizationForm] = Form.useForm<OrganizationFormValues>()
   const [poolForm] = Form.useForm<PoolFormValues>()
@@ -2299,7 +2356,7 @@ export function PoolCatalogPage() {
       setBindingProfileDetailsError(
         validDetails.length === results.length
           ? null
-          : 'Некоторые execution packs вернули неконсистентную историю revisions; используется latest revision из summary catalog.',
+          : t('catalog.messages.executionPackRevisionHistoryInconsistent'),
       )
     } finally {
       setBindingProfileDetailsLoading(false)
@@ -2514,7 +2571,7 @@ export function PoolCatalogPage() {
         return data[0]?.id ?? null
       })
     } catch {
-      setError('Не удалось загрузить каталог организаций.')
+      setError(t('catalog.messages.failedToLoadOrganizationsCatalog'))
     } finally {
       setLoadingOrganizations(false)
     }
@@ -2538,7 +2595,7 @@ export function PoolCatalogPage() {
       }))
       setOrganizationDetail(detail)
     } catch {
-      setError('Не удалось загрузить детали организации.')
+      setError(t('catalog.messages.failedToLoadOrganizationDetail'))
     } finally {
       setLoadingOrganizationDetail(false)
     }
@@ -2568,7 +2625,7 @@ export function PoolCatalogPage() {
         return data[0]?.id ?? null
       })
     } catch {
-      setError('Не удалось загрузить каталог пулов.')
+      setError(t('catalog.messages.failedToLoadPoolsCatalog'))
     } finally {
       setLoadingPools(false)
     }
@@ -2589,7 +2646,7 @@ export function PoolCatalogPage() {
       }))
       setGraph(payload)
     } catch {
-      setError('Не удалось загрузить граф пула.')
+      setError(t('catalog.messages.failedToLoadPoolGraph'))
     } finally {
       setLoadingGraph(false)
     }
@@ -2639,7 +2696,7 @@ export function PoolCatalogPage() {
       setTopologyTemplatesLoadError(null)
     } catch {
       setTopologyTemplates([])
-      setTopologyTemplatesLoadError('Не удалось загрузить topology templates catalog.')
+      setTopologyTemplatesLoadError(t('catalog.messages.failedToLoadTopologyTemplatesCatalog'))
     } finally {
       setLoadingTopologyTemplates(false)
     }
@@ -2677,7 +2734,7 @@ export function PoolCatalogPage() {
     } catch (err) {
       const resolved = resolveApiError(
         err,
-        'Не удалось загрузить metadata catalog.',
+        t('catalog.messages.failedToLoadMetadataCatalog'),
         { includeProblemDetail: true, includeProblemItems: true }
       )
       setMetadataCatalogErrorByDatabase((previous) => ({
@@ -2712,11 +2769,13 @@ export function PoolCatalogPage() {
       setLoadedMasterDataTokenCatalogSignature(masterDataTokenEntityCatalogSignature)
       if (snapshot.unsupported_entity_types.length > 0) {
         setMasterDataTokenCatalogError(
-          `Token catalog compatibility loader is missing for registry-published entity types: ${snapshot.unsupported_entity_types.join(', ')}.`
+          t('catalog.messages.tokenCatalogCompatibilityMissing', {
+            entityTypes: snapshot.unsupported_entity_types.join(', '),
+          })
         )
       }
     } catch {
-      setMasterDataTokenCatalogError('Не удалось загрузить master-data каталог для token picker.')
+      setMasterDataTokenCatalogError(t('catalog.messages.failedToLoadTokenCatalog'))
     } finally {
       setLoadingMasterDataTokenCatalog(false)
     }
@@ -2733,7 +2792,7 @@ export function PoolCatalogPage() {
       const response = await getPoolMasterDataRegistry()
       setMasterDataRegistryEntries(Array.isArray(response.entries) ? response.entries : [])
     } catch {
-      setMasterDataTokenCatalogError('Не удалось загрузить reusable-data registry для token picker.')
+      setMasterDataTokenCatalogError(t('catalog.messages.failedToLoadTokenRegistry'))
     } finally {
       setLoadingMasterDataRegistry(false)
     }
@@ -2755,7 +2814,7 @@ export function PoolCatalogPage() {
         `Edge #${edgeIndex + 1}`
       )
       if (parsed.errors.length > 0) {
-        message.error(parsed.errors[0] || `Edge #${edgeIndex + 1}: не удалось переключить metadata в builder.`)
+        message.error(parsed.errors[0] || t('catalog.messages.failedToSwitchMetadataToBuilder', { row: edgeIndex + 1 }))
         return
       }
       topologyForm.setFieldValue(
@@ -2770,10 +2829,10 @@ export function PoolCatalogPage() {
       topologyForm.getFieldValue(['edges', edgeIndex, 'edge_metadata_builder']),
       edgeIndex + 1
     )
-    if (built.errors.length > 0) {
-      message.error(built.errors[0] || `Edge #${edgeIndex + 1}: исправьте metadata builder перед переключением.`)
-      return
-    }
+      if (built.errors.length > 0) {
+        message.error(built.errors[0] || t('catalog.messages.fixMetadataBuilderBeforeSwitch', { row: edgeIndex + 1 }))
+        return
+      }
     topologyForm.setFieldValue(
       ['edges', edgeIndex, 'metadata_json'],
       Object.keys(built.metadata).length > 0 ? JSON.stringify(built.metadata, null, 2) : ''
@@ -3118,7 +3177,7 @@ export function PoolCatalogPage() {
       const response = await upsertOrganization(payload)
       const organizationId = response.organization.id
       setSelectedOrganizationId(organizationId)
-      message.success(response.created ? 'Организация создана.' : 'Организация обновлена.')
+      message.success(response.created ? t('catalog.messages.organizationCreated') : t('catalog.messages.organizationUpdated'))
       setIsOrganizationDrawerOpen(false)
       await Promise.all([
         loadOrganizations({ force: true }),
@@ -3135,8 +3194,8 @@ export function PoolCatalogPage() {
       const resolved = resolveApiError(
         err,
         organizationDrawerMode === 'create'
-          ? 'Не удалось создать организацию.'
-          : 'Не удалось обновить организацию.'
+          ? t('catalog.messages.failedToCreateOrganization')
+          : t('catalog.messages.failedToUpdateOrganization')
       )
       if (Object.keys(resolved.fieldErrors).length > 0) {
         const fields = Object.entries(resolved.fieldErrors)
@@ -3196,7 +3255,7 @@ export function PoolCatalogPage() {
         workflow_bindings: workflowBindingsToFormValues(collection.workflow_bindings),
       } as unknown as Parameters<typeof poolBindingsForm.setFieldsValue>[0])
     } catch (err) {
-      const resolved = resolveApiError(err, 'Не удалось загрузить workflow bindings.')
+      const resolved = resolveApiError(err, t('catalog.messages.failedToLoadWorkflowBindings'))
       setLoadedPoolBindings([])
       setLoadedPoolBindingsCollectionEtag('')
       setPoolBindingsBackendBlockingRemediation(null)
@@ -3290,7 +3349,7 @@ export function PoolCatalogPage() {
         ])
       }
       setSelectedPoolId(response.pool.id)
-      message.success(response.created ? 'Пул создан.' : 'Пул обновлён.')
+      message.success(response.created ? t('catalog.messages.poolCreated') : t('catalog.messages.poolUpdated'))
       setIsPoolDrawerOpen(false)
       await loadPools({ force: true })
       await loadGraph({ force: true })
@@ -3305,8 +3364,8 @@ export function PoolCatalogPage() {
       const resolved = resolveApiError(
         err,
         poolDrawerMode === 'create'
-          ? 'Не удалось создать пул.'
-          : 'Не удалось обновить пул.'
+          ? t('catalog.messages.failedToCreatePool')
+          : t('catalog.messages.failedToUpdatePool')
       )
       setPoolSubmitError(resolved.message)
     } finally {
@@ -3348,7 +3407,7 @@ export function PoolCatalogPage() {
       ) {
         return
       }
-      const resolved = resolveApiError(err, 'Не удалось сохранить workflow bindings.')
+      const resolved = resolveApiError(err, t('catalog.messages.failedToSaveWorkflowBindings'))
       setPoolBindingsSubmitError(resolved.message)
     } finally {
       setIsPoolBindingsSaving(false)
@@ -3382,11 +3441,11 @@ export function PoolCatalogPage() {
         is_active: !selectedPool.is_active,
         metadata: selectedPool.metadata,
       })
-      message.success(selectedPool.is_active ? 'Пул деактивирован.' : 'Пул активирован.')
+      message.success(selectedPool.is_active ? t('catalog.messages.poolDeactivated') : t('catalog.messages.poolActivated'))
       await loadPools({ force: true })
       await loadGraph({ force: true })
     } catch (err) {
-      const resolved = resolveApiError(err, 'Не удалось изменить статус пула.')
+      const resolved = resolveApiError(err, t('catalog.messages.failedToTogglePoolStatus'))
       setPoolSubmitError(resolved.message)
     } finally {
       setIsPoolSaving(false)
@@ -4091,26 +4150,26 @@ export function PoolCatalogPage() {
                     ) : (
                       <>
                         <Descriptions size="small" column={1} bordered style={{ marginBottom: 16 }}>
-                          <Descriptions.Item label="Pool">{`${selectedPool.code} - ${selectedPool.name}`}</Descriptions.Item>
-                          <Descriptions.Item label="Status">
+                          <Descriptions.Item label={t('catalog.bindingsWorkspace.labels.pool')}>{`${selectedPool.code} - ${selectedPool.name}`}</Descriptions.Item>
+                          <Descriptions.Item label={t('catalog.bindingsWorkspace.labels.status')}>
                             <StatusBadge status={selectedPool.is_active ? 'active' : 'inactive'} />
                           </Descriptions.Item>
-                          <Descriptions.Item label="Attachment state">
+                          <Descriptions.Item label={t('catalog.bindingsWorkspace.labels.attachmentState')}>
                             {loadedPoolBindings.length > 0
-                              ? `${loadedPoolBindings.length} configured attachment${loadedPoolBindings.length === 1 ? '' : 's'}`
-                              : 'No attachments configured yet'}
+                              ? t('catalog.bindingsWorkspace.attachmentStateConfigured', { count: loadedPoolBindings.length })
+                              : t('catalog.bindingsWorkspace.attachmentStateEmpty')}
                           </Descriptions.Item>
                         </Descriptions>
                         <Alert
                           type="info"
                           showIcon
-                          message="Attachment editing moved to a dedicated secondary surface"
-                          description="The canonical attachment workspace now opens in a drawer so pool basics, topology authoring, and reusable execution-pack logic do not compete on one default canvas."
+                          message={t('catalog.bindingsWorkspace.routeOwnedTitle')}
+                          description={t('catalog.bindingsWorkspace.routeOwnedDescription')}
                         />
                         <DrawerFormShell
                           open={isBindingsWorkspaceOpen}
                           onClose={() => setIsBindingsWorkspaceOpen(false)}
-                          title="Attachment workspace"
+                          title={t('catalog.bindingsWorkspace.title')}
                           subtitle={`${selectedPool.code} - ${selectedPool.name}`}
                           width={960}
                           drawerTestId="pool-catalog-bindings-drawer"
@@ -4127,7 +4186,7 @@ export function PoolCatalogPage() {
                                 loading={isPoolBindingsLoading}
                                 data-testid="pool-catalog-refresh-bindings"
                               >
-                                Refresh bindings
+                                {t('catalog.actions.refreshBindings')}
                               </Button>
                               <Button
                                 type="primary"
@@ -4160,7 +4219,7 @@ export function PoolCatalogPage() {
                                 bindingProfileDetailsLoading={bindingProfileDetailsLoading}
                                 bindingProfilesLoadError={
                                   bindingProfilesQuery.isError
-                                    ? resolveApiError(bindingProfilesQuery.error, 'Не удалось загрузить execution-pack catalog.').message
+                                    ? resolveApiError(bindingProfilesQuery.error, t('catalog.messages.failedToLoadExecutionPackCatalog')).message
                                     : bindingProfileDetailsError
                                 }
                                 onBindingProfileRevisionSelectOpen={() => {
@@ -4185,9 +4244,9 @@ export function PoolCatalogPage() {
             },
             {
               key: 'topology',
-              label: 'Topology Editor',
+              label: t('catalog.topologyEditor.tabLabel'),
               children: (
-                <Card title="Topology snapshot editor">
+                <Card title={t('catalog.topologyEditor.cardTitle')}>
                   <Space direction="vertical" size="middle" style={{ width: '100%' }}>
                     {mutatingDisabled && (
                       <Alert
@@ -4198,7 +4257,7 @@ export function PoolCatalogPage() {
                       />
                     )}
                     {!selectedPool && (
-                      <Text type="secondary">Выберите пул, чтобы редактировать topology snapshot.</Text>
+                      <Text type="secondary">{t('catalog.topologyEditor.selectPoolToEdit')}</Text>
                     )}
                     {selectedPool && (
                       <Form form={topologyForm} layout="vertical">
@@ -4869,7 +4928,7 @@ export function PoolCatalogPage() {
                                                 />
                                               ) : (
                                                 <Input
-                                                  placeholder="sale"
+                                                  placeholder={t('catalog.topologyEditor.manual.placeholders.publicationSlotExample')}
                                                   data-testid={`pool-catalog-topology-edge-slot-${field.name}`}
                                                 />
                                               )}
@@ -4894,7 +4953,7 @@ export function PoolCatalogPage() {
                                           disabled={field.name === fields.length - 1}
                                           data-testid={`pool-catalog-topology-edge-move-down-${field.name}`}
                                         />
-                                        <Button danger onClick={() => remove(field.name)}>x</Button>
+                                        <Button danger onClick={() => remove(field.name)}>{t('common.remove')}</Button>
                                       </Space>
                                     </Col>
                                   </Row>
@@ -5007,7 +5066,7 @@ export function PoolCatalogPage() {
                                                           <Alert
                                                             type="warning"
                                                             showIcon
-                                                            message="Builder требует child organization с привязанной базой."
+                                                            message={t('catalog.topologyEditor.builderDatabaseRequired')}
                                                           />
                                                         )}
                                                         {databaseId && (
@@ -5015,21 +5074,24 @@ export function PoolCatalogPage() {
                                                             <Space size="small" wrap>
                                                               <Tag color={metadataCatalog ? 'blue' : metadataLoading ? 'processing' : 'default'}>
                                                                 {metadataCatalog
-                                                                  ? `каталог ${metadataCatalog?.catalog_version} • документов ${metadataDocuments.length}`
+                                                                  ? t('catalog.topologyEditor.metadataCatalogSummary', {
+                                                                    version: metadataCatalog?.catalog_version,
+                                                                    count: metadataDocuments.length,
+                                                                  })
                                                                   : metadataLoading
-                                                                    ? 'metadata context загружается'
-                                                                    : 'metadata context недоступен'}
+                                                                    ? t('catalog.topologyEditor.metadataContextLoading')
+                                                                    : t('catalog.topologyEditor.metadataContextUnavailable')}
                                                               </Tag>
                                                               <Button
                                                                 size="small"
                                                                 onClick={() => { navigate('/databases') }}
                                                                 data-testid={`pool-catalog-topology-edge-policy-open-databases-${field.name}`}
                                                               >
-                                                                Открыть /databases
+                                                                {t('catalog.topologyEditor.manual.actions.openDatabases')}
                                                               </Button>
                                                             </Space>
                                                             <Text type="secondary">
-                                                              Configuration profile и metadata snapshot управляются на странице /databases. В topology editor используется только текущий metadata context.
+                                                              {t('catalog.topologyEditor.manual.builder.databasesContextDescription')}
                                                             </Text>
                                                           </Space>
                                                         )}
@@ -5044,7 +5106,7 @@ export function PoolCatalogPage() {
                                                                 onClick={() => { navigate('/databases') }}
                                                                 data-testid={`pool-catalog-topology-edge-policy-error-open-databases-${field.name}`}
                                                               >
-                                                                Открыть /databases
+                                                                {t('catalog.topologyEditor.manual.actions.openDatabases')}
                                                               </Button>
                                                             )}
                                                           />
@@ -5060,7 +5122,7 @@ export function PoolCatalogPage() {
                                                                 onClick={() => { void loadMasterDataTokenCatalog() }}
                                                                 loading={loadingMasterDataTokenCatalog}
                                                               >
-                                                                Retry token catalog
+                                                                {t('catalog.topologyEditor.manual.actions.retryTokenCatalog')}
                                                               </Button>
                                                             )}
                                                           />
@@ -5072,7 +5134,7 @@ export function PoolCatalogPage() {
                                                                 <Card
                                                                   key={chainField.key}
                                                                   size="small"
-                                                                  title={`Chain #${chainField.name + 1}`}
+                                                                  title={t('catalog.topologyEditor.manual.builder.chainTitle', { index: chainField.name + 1 })}
                                                                   extra={(
                                                                     <Space size={4}>
                                                                       <Button
@@ -5092,17 +5154,17 @@ export function PoolCatalogPage() {
                                                                         danger
                                                                         onClick={() => removeChain(chainField.name)}
                                                                       >
-                                                                        Remove
+                                                                        {t('common.remove')}
                                                                       </Button>
                                                                     </Space>
                                                                   )}
                                                                 >
                                                                   <Form.Item
                                                                     name={[chainField.name, 'chain_id']}
-                                                                    label="chain_id"
+                                                                    label={t('catalog.topologyEditor.manual.builder.fields.chainId')}
                                                                     style={{ marginBottom: 8 }}
                                                                   >
-                                                                    <Input placeholder="sale_chain" />
+                                                                    <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.chainId')} />
                                                                   </Form.Item>
 
                                                                   <Form.List name={[chainField.name, 'documents']}>
@@ -5154,7 +5216,7 @@ export function PoolCatalogPage() {
                                                                             <Card
                                                                               key={documentField.key}
                                                                               size="small"
-                                                                              title={`Document #${documentField.name + 1}`}
+                                                                              title={t('catalog.topologyEditor.manual.builder.documentTitle', { index: documentField.name + 1 })}
                                                                               extra={(
                                                                                 <Space size={4}>
                                                                                   <Button
@@ -5174,7 +5236,7 @@ export function PoolCatalogPage() {
                                                                                     danger
                                                                                     onClick={() => removeDocument(documentField.name)}
                                                                                   >
-                                                                                    Remove
+                                                                                    {t('common.remove')}
                                                                                   </Button>
                                                                                 </Space>
                                                                               )}
@@ -5183,16 +5245,16 @@ export function PoolCatalogPage() {
                                                                                 <Col span={8}>
                                                                                   <Form.Item
                                                                                     name={[documentField.name, 'document_id']}
-                                                                                    label="document_id"
+                                                                                    label={t('catalog.topologyEditor.manual.builder.fields.documentId')}
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
-                                                                                    <Input placeholder="sale" />
+                                                                                    <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.documentId')} />
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                                 <Col span={8}>
                                                                                   <Form.Item
                                                                                     name={[documentField.name, 'entity_name']}
-                                                                                    label="entity_name"
+                                                                                    label={t('catalog.topologyEditor.manual.builder.fields.entityName')}
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
                                                                                     <Select
@@ -5208,10 +5270,10 @@ export function PoolCatalogPage() {
                                                                                 <Col span={8}>
                                                                                   <Form.Item
                                                                                     name={[documentField.name, 'document_role']}
-                                                                                    label="document_role"
+                                                                                    label={t('catalog.topologyEditor.manual.builder.fields.documentRole')}
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
-                                                                                    <Input placeholder="sale|invoice" />
+                                                                                    <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.documentRole')} />
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                               </Row>
@@ -5219,21 +5281,16 @@ export function PoolCatalogPage() {
                                                                                 <Col span={8}>
                                                                                   <Form.Item
                                                                                     name={[documentField.name, 'invoice_mode']}
-                                                                                    label="invoice_mode"
+                                                                                    label={t('catalog.topologyEditor.manual.builder.fields.invoiceMode')}
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
-                                                                                    <Select
-                                                                                      options={[
-                                                                                        { value: 'optional', label: 'optional' },
-                                                                                        { value: 'required', label: 'required' },
-                                                                                      ]}
-                                                                                    />
+                                                                                    <Select options={invoiceModeOptions} />
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                                 <Col span={16}>
                                                                                   <Form.Item
                                                                                     name={[documentField.name, 'link_to']}
-                                                                                    label="link_to"
+                                                                                    label={t('catalog.topologyEditor.manual.builder.fields.linkTo')}
                                                                                     style={{ marginBottom: 8 }}
                                                                                   >
                                                                                     <Select
@@ -5241,15 +5298,15 @@ export function PoolCatalogPage() {
                                                                                       showSearch
                                                                                       optionFilterProp="label"
                                                                                       options={uniqueLinkToOptions}
-                                                                                      placeholder="document_id from this chain"
-                                                                                      notFoundContent="Сначала задайте document_id для документов в этой цепочке."
+                                                                                      placeholder={t('catalog.topologyEditor.manual.builder.placeholders.linkTo')}
+                                                                                      notFoundContent={t('catalog.topologyEditor.manual.builder.notFound.documentIdsInChain')}
                                                                                     />
                                                                                   </Form.Item>
                                                                                 </Col>
                                                                               </Row>
                                                                               {uniqueLinkToOptions.length === 0 && (
                                                                                 <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-                                                                                  link_to доступен после добавления в цепочку второго документа с `document_id`.
+                                                                                  {t('catalog.topologyEditor.manual.builder.linkToAvailableAfterSecondDocument')}
                                                                                 </Text>
                                                                               )}
                                                                               {selectedEntityName && !selectedDocument && (
@@ -5257,10 +5314,8 @@ export function PoolCatalogPage() {
                                                                                   type="warning"
                                                                                   showIcon
                                                                                   style={{ marginBottom: 8 }}
-                                                                                  message={(
-                                                                                    `Entity "${selectedEntityName}" не найден в загруженном metadata catalog.`
-                                                                                  )}
-                                                                                  description="Проверьте metadata snapshot через /databases или выберите другой entity_name."
+                                                                                  message={t('catalog.topologyEditor.manual.builder.entityNotFound', { entityName: selectedEntityName })}
+                                                                                  description={t('catalog.topologyEditor.manual.builder.checkMetadataSnapshot')}
                                                                                 />
                                                                               )}
                                                                               {selectedDocument && fieldOptions.length === 0 && (
@@ -5268,19 +5323,15 @@ export function PoolCatalogPage() {
                                                                                   type="warning"
                                                                                   showIcon
                                                                                   style={{ marginBottom: 8 }}
-                                                                                  message={(
-                                                                                    `Для "${selectedEntityName}" в metadata catalog нет fields.`
-                                                                                  )}
-                                                                                  description={(
-                                                                                    'Проверьте metadata snapshot через /databases, включая BaseType-наследование и publication drift.'
-                                                                                  )}
+                                                                                  message={t('catalog.topologyEditor.manual.builder.entityFieldsMissing', { entityName: selectedEntityName })}
+                                                                                  description={t('catalog.topologyEditor.manual.builder.checkMetadataSnapshotWithBaseType')}
                                                                                 />
                                                                               )}
 
                                                                               <Form.List name={[documentField.name, 'link_rule_mappings']}>
                                                                                 {(linkRuleFields, { add: addLinkRule, remove: removeLinkRule }) => (
                                                                                   <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
-                                                                                    <Text type="secondary">link_rules</Text>
+                                                                                    <Text type="secondary">{t('catalog.topologyEditor.manual.builder.sections.linkRules')}</Text>
                                                                                     {linkRuleFields.map((linkRuleField) => (
                                                                                       <Row key={linkRuleField.key} gutter={8} align="middle">
                                                                                         <Col span={9}>
@@ -5288,7 +5339,7 @@ export function PoolCatalogPage() {
                                                                                             name={[linkRuleField.name, 'target_field']}
                                                                                             style={{ marginBottom: 0 }}
                                                                                           >
-                                                                                            <Input placeholder="rule key" />
+                                                                                            <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.linkRuleTargetField')} />
                                                                                           </Form.Item>
                                                                                         </Col>
                                                                                         <Col span={12}>
@@ -5296,13 +5347,11 @@ export function PoolCatalogPage() {
                                                                                             name={[linkRuleField.name, 'source']}
                                                                                             style={{ marginBottom: 0 }}
                                                                                           >
-                                                                                            <Input placeholder="sale.document_id" />
+                                                                                            <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.linkRuleSource')} />
                                                                                           </Form.Item>
                                                                                         </Col>
                                                                                         <Col span={3}>
-                                                                                          <Button danger onClick={() => removeLinkRule(linkRuleField.name)}>
-                                                                                            x
-                                                                                          </Button>
+                                                                                          <Button danger onClick={() => removeLinkRule(linkRuleField.name)}>{t('common.remove')}</Button>
                                                                                         </Col>
                                                                                       </Row>
                                                                                     ))}
@@ -5310,7 +5359,7 @@ export function PoolCatalogPage() {
                                                                                       size="small"
                                                                                       onClick={() => addLinkRule({ target_field: '', source: '' })}
                                                                                     >
-                                                                                      Add link rule
+                                                                                      {t('catalog.topologyEditor.manual.actions.addLinkRule')}
                                                                                     </Button>
                                                                                   </Space>
                                                                                 )}
@@ -5319,7 +5368,7 @@ export function PoolCatalogPage() {
                                                                               <Form.List name={[documentField.name, 'field_mappings']}>
                                                                                 {(fieldMappingFields, { add: addFieldMapping, remove: removeFieldMapping }) => (
                                                                                   <Space direction="vertical" size={4} style={{ width: '100%', marginBottom: 8 }}>
-                                                                                    <Text type="secondary">field_mapping</Text>
+                                                                                    <Text type="secondary">{t('catalog.topologyEditor.manual.builder.sections.fieldMappings')}</Text>
                                                                                     {fieldMappingFields.map((mappingField) => {
                                                                                       const sourceType = (
                                                                                         String(
@@ -5455,11 +5504,11 @@ export function PoolCatalogPage() {
                                                                                                 showSearch
                                                                                                 optionFilterProp="label"
                                                                                                 options={fieldOptions}
-                                                                                                placeholder="target field"
+                                                                                                placeholder={t('catalog.topologyEditor.manual.builder.placeholders.targetField')}
                                                                                                 notFoundContent={(
                                                                                                   selectedEntityName
-                                                                                                    ? 'Для выбранного entity_name нет fields в metadata catalog.'
-                                                                                                    : 'Сначала выберите entity_name.'
+                                                                                                    ? t('catalog.topologyEditor.manual.builder.notFound.targetFieldNoFields')
+                                                                                                    : t('catalog.topologyEditor.manual.builder.notFound.selectEntityFirst')
                                                                                                 )}
                                                                                               />
                                                                                             </Form.Item>
@@ -5471,7 +5520,7 @@ export function PoolCatalogPage() {
                                                                                               initialValue="expression"
                                                                                             >
                                                                                               <Select
-                                                                                                options={TOKEN_SOURCE_TYPE_OPTIONS}
+                                                                                                options={tokenSourceTypeOptions}
                                                                                                 data-testid={(
                                                                                                   `pool-catalog-topology-field-mapping-source-type-${field.name}-${chainField.name}-${documentField.name}-${mappingField.name}`
                                                                                                 )}
@@ -5488,7 +5537,7 @@ export function PoolCatalogPage() {
                                                                                                       style={{ marginBottom: 0 }}
                                                                                                     >
                                                                                                       <Select
-                                                                                                        placeholder="entity"
+                                                                                                        placeholder={t('catalog.topologyEditor.manual.builder.placeholders.tokenEntityType')}
                                                                                                         options={masterDataTokenPickerEntityOptions}
                                                                                                         loading={isMasterDataTokenPickerLoading}
                                                                                                         data-testid={(
@@ -5506,7 +5555,7 @@ export function PoolCatalogPage() {
                                                                                                         showSearch
                                                                                                         optionFilterProp="label"
                                                                                                         allowClear
-                                                                                                        placeholder="canonical_id"
+                                                                                                        placeholder={t('catalog.topologyEditor.manual.builder.placeholders.tokenCanonicalId')}
                                                                                                         options={tokenCanonicalOptions}
                                                                                                         loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                         data-testid={(
@@ -5554,7 +5603,7 @@ export function PoolCatalogPage() {
                                                                                                   <Text code>{tokenPreview}</Text>
                                                                                                 ) : (
                                                                                                   <Text type="secondary">
-                                                                                                    Configure token fields.
+                                                                                                    {t('catalog.topologyEditor.manual.builder.tokenPreviewPending')}
                                                                                                   </Text>
                                                                                                 )}
                                                                                               </Space>
@@ -5563,14 +5612,12 @@ export function PoolCatalogPage() {
                                                                                                 name={[mappingField.name, 'expression_source']}
                                                                                                 style={{ marginBottom: 0 }}
                                                                                               >
-                                                                                                <Input placeholder="allocation.amount" />
+                                                                                                <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.expressionSource')} />
                                                                                               </Form.Item>
                                                                                             )}
                                                                                           </Col>
                                                                                           <Col span={3}>
-                                                                                            <Button danger onClick={() => removeFieldMapping(mappingField.name)}>
-                                                                                              x
-                                                                                            </Button>
+                                                                                            <Button danger onClick={() => removeFieldMapping(mappingField.name)}>{t('common.remove')}</Button>
                                                                                           </Col>
                                                                                         </Row>
                                                                                       )
@@ -5583,7 +5630,7 @@ export function PoolCatalogPage() {
                                                                                         expression_source: '',
                                                                                       })}
                                                                                     >
-                                                                                      Add field mapping
+                                                                                      {t('catalog.topologyEditor.manual.actions.addFieldMapping')}
                                                                                     </Button>
                                                                                   </Space>
                                                                                 )}
@@ -5592,7 +5639,7 @@ export function PoolCatalogPage() {
                                                                               <Form.List name={[documentField.name, 'table_part_mappings']}>
                                                                                 {(tablePartFields, { add: addTablePart, remove: removeTablePart }) => (
                                                                                   <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                                                                                    <Text type="secondary">table_parts_mapping</Text>
+                                                                                    <Text type="secondary">{t('catalog.topologyEditor.manual.builder.sections.tablePartMappings')}</Text>
                                                                                     {tablePartFields.map((tablePartField) => {
                                                                                       const selectedTablePart = String(
                                                                                         getFieldValue([
@@ -5634,20 +5681,20 @@ export function PoolCatalogPage() {
                                                                                         <Card
                                                                                           key={tablePartField.key}
                                                                                           size="small"
-                                                                                          title={`Table part #${tablePartField.name + 1}`}
+                                                                                          title={t('catalog.topologyEditor.manual.builder.tablePartTitle', { index: tablePartField.name + 1 })}
                                                                                           extra={(
                                                                                             <Button
                                                                                               size="small"
                                                                                               danger
                                                                                               onClick={() => removeTablePart(tablePartField.name)}
                                                                                             >
-                                                                                              Remove
+                                                                                              {t('common.remove')}
                                                                                             </Button>
                                                                                           )}
                                                                                         >
                                                                                           <Form.Item
                                                                                             name={[tablePartField.name, 'table_part']}
-                                                                                            label="table_part"
+                                                                                            label={t('catalog.topologyEditor.manual.builder.fields.tablePart')}
                                                                                             style={{ marginBottom: 8 }}
                                                                                           >
                                                                                             <Select
@@ -5656,8 +5703,8 @@ export function PoolCatalogPage() {
                                                                                               options={tablePartOptions}
                                                                                               notFoundContent={(
                                                                                                 selectedEntityName
-                                                                                                  ? 'Для выбранного entity_name нет table_parts в metadata catalog.'
-                                                                                                  : 'Сначала выберите entity_name.'
+                                                                                                  ? t('catalog.topologyEditor.manual.builder.notFound.tablePartsUnavailable')
+                                                                                                  : t('catalog.topologyEditor.manual.builder.notFound.selectEntityFirst')
                                                                                               )}
                                                                                             />
                                                                                           </Form.Item>
@@ -5809,11 +5856,11 @@ export function PoolCatalogPage() {
                                                                                                             showSearch
                                                                                                             optionFilterProp="label"
                                                                                                             options={rowFieldOptions}
-                                                                                                            placeholder="target row field"
+                                                                                                            placeholder={t('catalog.topologyEditor.manual.builder.placeholders.targetRowField')}
                                                                                                             notFoundContent={(
                                                                                                               selectedTablePart
-                                                                                                                ? 'Для выбранной табличной части нет row_fields.'
-                                                                                                                : 'Сначала выберите table_part.'
+                                                                                                                ? t('catalog.topologyEditor.manual.builder.notFound.rowFieldsUnavailable')
+                                                                                                                : t('catalog.topologyEditor.manual.builder.notFound.selectTablePartFirst')
                                                                                                             )}
                                                                                                           />
                                                                                                         </Form.Item>
@@ -5824,7 +5871,7 @@ export function PoolCatalogPage() {
                                                                                                           style={{ marginBottom: 0 }}
                                                                                                           initialValue="expression"
                                                                                                         >
-                                                                                                          <Select options={TOKEN_SOURCE_TYPE_OPTIONS} />
+                                                                                                          <Select options={tokenSourceTypeOptions} />
                                                                                                         </Form.Item>
                                                                                                       </Col>
                                                                                                       <Col span={9}>
@@ -5837,7 +5884,7 @@ export function PoolCatalogPage() {
                                                                                                                   style={{ marginBottom: 0 }}
                                                                                                                 >
                                                                                                                   <Select
-                                                                                                                    placeholder="entity"
+                                                                                                                    placeholder={t('catalog.topologyEditor.manual.builder.placeholders.tokenEntityType')}
                                                                                                                     options={masterDataTokenPickerEntityOptions}
                                                                                                                     loading={isMasterDataTokenPickerLoading}
                                                                                                                   />
@@ -5852,7 +5899,7 @@ export function PoolCatalogPage() {
                                                                                                                     showSearch
                                                                                                                     optionFilterProp="label"
                                                                                                                     allowClear
-                                                                                                                    placeholder="canonical_id"
+                                                                                                                    placeholder={t('catalog.topologyEditor.manual.builder.placeholders.tokenCanonicalId')}
                                                                                                                     options={tokenCanonicalOptions}
                                                                                                                     loading={loadingMasterDataRegistry || loadingMasterDataTokenCatalog}
                                                                                                                   />
@@ -5891,7 +5938,7 @@ export function PoolCatalogPage() {
                                                                                                               <Text code>{tokenPreview}</Text>
                                                                                                             ) : (
                                                                                                               <Text type="secondary">
-                                                                                                                Configure token fields.
+                                                                                                                {t('catalog.topologyEditor.manual.builder.tokenPreviewPending')}
                                                                                                               </Text>
                                                                                                             )}
                                                                                                           </Space>
@@ -5900,14 +5947,12 @@ export function PoolCatalogPage() {
                                                                                                             name={[rowMappingField.name, 'expression_source']}
                                                                                                             style={{ marginBottom: 0 }}
                                                                                                           >
-                                                                                                            <Input placeholder="allocation.lines.amount" />
+                                                                                                            <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.rowExpressionSource')} />
                                                                                                           </Form.Item>
                                                                                                         )}
                                                                                                       </Col>
                                                                                                       <Col span={3}>
-                                                                                                        <Button danger onClick={() => removeRowMapping(rowMappingField.name)}>
-                                                                                                          x
-                                                                                                        </Button>
+                                                                                                        <Button danger onClick={() => removeRowMapping(rowMappingField.name)}>{t('common.remove')}</Button>
                                                                                                       </Col>
                                                                                                     </Row>
                                                                                                   )
@@ -5920,7 +5965,7 @@ export function PoolCatalogPage() {
                                                                                                     expression_source: '',
                                                                                                   })}
                                                                                                 >
-                                                                                                  Add row mapping
+                                                                                                  {t('catalog.topologyEditor.manual.actions.addRowMapping')}
                                                                                                 </Button>
                                                                                               </Space>
                                                                                             )}
@@ -5932,7 +5977,7 @@ export function PoolCatalogPage() {
                                                                                       size="small"
                                                                                       onClick={() => addTablePart({ table_part: '', row_mappings: [] })}
                                                                                     >
-                                                                                      Add table part mapping
+                                                                                      {t('catalog.topologyEditor.manual.actions.addTablePartMapping')}
                                                                                     </Button>
                                                                                   </Space>
                                                                                 )}
@@ -5953,7 +5998,7 @@ export function PoolCatalogPage() {
                                                                             table_part_mappings: [],
                                                                           })}
                                                                         >
-                                                                          Add document
+                                                                          {t('catalog.topologyEditor.manual.actions.addDocument')}
                                                                         </Button>
                                                                       </Space>
                                                                     )}
@@ -5965,7 +6010,7 @@ export function PoolCatalogPage() {
                                                                 onClick={() => addChain({ chain_id: '', documents: [] })}
                                                                 data-testid={`pool-catalog-topology-edge-policy-add-chain-${field.name}`}
                                                               >
-                                                                Add chain
+                                                                {t('catalog.topologyEditor.manual.addChain')}
                                                               </Button>
                                                             </Space>
                                                           )}
@@ -5975,13 +6020,13 @@ export function PoolCatalogPage() {
 
                                                     <Form.Item
                                                       name={[field.name, 'edge_metadata_mode']}
-                                                      label="Edge metadata mode"
+                                                      label={t('catalog.topologyEditor.manual.edgeMetadataMode')}
                                                       style={{ marginBottom: 0 }}
                                                     >
                                                       <Select
                                                         options={[
-                                                          { value: 'builder', label: 'Builder' },
-                                                          { value: 'raw', label: 'Raw JSON' },
+                                                          { value: 'builder', label: t('catalog.topologyEditor.manual.edgeMetadataModeBuilder') },
+                                                          { value: 'raw', label: t('catalog.topologyEditor.manual.edgeMetadataModeRaw') },
                                                         ]}
                                                         onChange={(value) => {
                                                           switchEdgeMetadataMode(
@@ -6003,7 +6048,7 @@ export function PoolCatalogPage() {
                                                                     name={[metadataField.name, 'key']}
                                                                     style={{ marginBottom: 0 }}
                                                                   >
-                                                                    <Input placeholder="metadata key" />
+                                                                    <Input placeholder={t('catalog.topologyEditor.manual.builder.placeholders.metadataKey')} />
                                                                   </Form.Item>
                                                                 </Col>
                                                                 <Col span={13}>
@@ -6013,14 +6058,12 @@ export function PoolCatalogPage() {
                                                                   >
                                                                     <TextArea
                                                                       autoSize={{ minRows: 1, maxRows: 4 }}
-                                                                      placeholder='"value" или {"nested":true}'
+                                                                      placeholder={t('catalog.topologyEditor.manual.builder.placeholders.metadataJsonValue')}
                                                                     />
                                                                   </Form.Item>
                                                                 </Col>
                                                                 <Col span={3}>
-                                                                  <Button danger onClick={() => removeMetadataField(metadataField.name)}>
-                                                                    x
-                                                                  </Button>
+                                                                  <Button danger onClick={() => removeMetadataField(metadataField.name)}>{t('common.remove')}</Button>
                                                                 </Col>
                                                               </Row>
                                                             ))}
@@ -6029,7 +6072,7 @@ export function PoolCatalogPage() {
                                                               onClick={() => addMetadataField({ key: '', value_json: '' })}
                                                               data-testid={`pool-catalog-topology-edge-metadata-add-field-${field.name}`}
                                                             >
-                                                              Add metadata field
+                                                              {t('catalog.topologyEditor.manual.actions.addMetadataField')}
                                                             </Button>
                                                           </Space>
                                                         )}
@@ -6037,7 +6080,7 @@ export function PoolCatalogPage() {
                                                     ) : (
                                                       <Form.Item
                                                         name={[field.name, 'metadata_json']}
-                                                        label="Edge metadata (JSON)"
+                                                        label={t('catalog.topologyEditor.manual.builder.fields.edgeMetadataJson')}
                                                         style={{ marginBottom: 0 }}
                                                       >
                                                         <TextArea

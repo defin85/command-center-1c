@@ -5,6 +5,7 @@ import type {
 } from '../../api/poolBindingProfiles'
 import type { BindingProfileRevisionWriteRoleMapping } from '../../api/generated/model/bindingProfileRevisionWriteRoleMapping'
 import type { PoolWorkflowBindingDecisionRef } from '../../api/intercompanyPools'
+import { i18n } from '../../i18n'
 
 export type BindingProfileEditorMode = 'create' | 'revise'
 
@@ -36,6 +37,10 @@ type FormError = {
 }
 
 const DEFAULT_OBJECT_JSON = '{}'
+
+const tPools = (key: string, options?: Record<string, unknown>) => (
+  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+)
 
 export function buildBindingProfileEditorInitialValues(
   revision?: BindingProfileRevision,
@@ -86,17 +91,17 @@ const parseJsonField = <T,>(
   try {
     const parsed = JSON.parse(trimmed) as unknown
     if (kind === 'array' && !Array.isArray(parsed)) {
-      return { error: { field, message: 'Expected a JSON array.' } }
+      return { error: { field, message: tPools('executionPacks.editor.errors.jsonArrayExpected') } }
     }
     if (
       kind === 'object'
       && (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed))
     ) {
-      return { error: { field, message: 'Expected a JSON object.' } }
+      return { error: { field, message: tPools('executionPacks.editor.errors.jsonObjectExpected') } }
     }
     return { value: parsed as T }
   } catch (_error) {
-    return { error: { field, message: 'Invalid JSON.' } }
+    return { error: { field, message: tPools('executionPacks.editor.errors.invalidJson') } }
   }
 }
 
@@ -162,7 +167,10 @@ export function buildBindingProfileRevisionCreateRequest(
     ) {
       return []
     }
-    return [{ field: 'decisions' as const, message: 'Each publication slot requires slot_key and pinned decision revision.' }]
+    return [{
+      field: 'decisions' as const,
+      message: tPools('executionPacks.editor.errors.decisionRefIncomplete'),
+    }]
   })
 
   const errors = [parameters.error, roleMapping.error, metadata.error, ...decisionErrors]

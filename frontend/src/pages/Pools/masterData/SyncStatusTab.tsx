@@ -36,6 +36,7 @@ import {
   type PoolMasterDataSyncRole,
   type PoolMasterDataSyncStatus,
 } from '../../../api/intercompanyPools'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { findRegistryEntryByEntityType, getSyncEntityOptions } from './registry'
@@ -137,14 +138,9 @@ type SyncStatusTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
 
-const buildLaunchSummary = (launch: PoolMasterDataSyncLaunch): string => (
-  launch.target_mode === 'cluster_all'
-    ? `cluster_all · ${launch.database_ids.length} db`
-    : `database_set · ${launch.database_ids.length} db`
-)
-
 export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [clusters, setClusters] = useState<Array<{ id: string; name: string }>>([])
@@ -176,6 +172,34 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const filterEntityTypeOptions = useMemo(
     () => getSyncEntityOptions(registryEntries),
     [registryEntries]
+  )
+  const conflictStatusOptions = useMemo(
+    () => CONFLICT_STATUS_OPTIONS.map((option) => ({
+      ...option,
+      label: t(`masterData.syncStatusTab.status.${option.value}`),
+    })),
+    [t]
+  )
+  const priorityOptions = useMemo(
+    () => PRIORITY_OPTIONS.map((option) => ({
+      ...option,
+      label: t(`masterData.syncStatusTab.priority.${option.value}`),
+    })),
+    [t]
+  )
+  const roleOptions = useMemo(
+    () => ROLE_OPTIONS.map((option) => ({
+      ...option,
+      label: t(`masterData.syncStatusTab.role.${option.value}`),
+    })),
+    [t]
+  )
+  const deadlineStateOptions = useMemo(
+    () => DEADLINE_STATE_OPTIONS.map((option) => ({
+      ...option,
+      label: t(`masterData.syncStatusTab.deadline.${option.value}`),
+    })),
+    [t]
   )
   const visibleSyncEntityTypes = useMemo(
     () => new Set(filterEntityTypeOptions.map((option) => option.value)),
@@ -223,12 +247,12 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       setClusters(clusterRows)
       setDatabases(databaseRows)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить кластеры и базы для Sync.')
+      const resolved = resolveApiError(error, t('masterData.syncStatusTab.messages.failedToLoadTargets'))
       message.error(resolved.message)
     } finally {
       setLoadingTargets(false)
     }
-  }, [message])
+  }, [message, t])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -252,12 +276,12 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       setStatusRows(statusResponse.statuses)
       setConflictRows(conflictsResponse.conflicts)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить sync status/conflicts.')
+      const resolved = resolveApiError(error, t('masterData.syncStatusTab.messages.failedToLoadStatus'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [conflictStatus, databaseId, deadlineState, entityType, message, priority, role, serverAffinity])
+  }, [conflictStatus, databaseId, deadlineState, entityType, message, priority, role, serverAffinity, t])
 
   const loadLaunches = useCallback(async () => {
     setLoadingLaunches(true)
@@ -273,12 +297,12 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         updateRouteParams({ launchId: nextId })
       }
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить launch history.')
+      const resolved = resolveApiError(error, t('masterData.syncStatusTab.messages.failedToLoadLaunchHistory'))
       message.error(resolved.message)
     } finally {
       setLoadingLaunches(false)
     }
-  }, [message, selectedLaunchId, updateRouteParams])
+  }, [message, selectedLaunchId, t, updateRouteParams])
 
   const loadLaunchDetail = useCallback(async (launchId: string, silent = false) => {
     if (!silent) {
@@ -289,7 +313,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       setSelectedLaunch(response.launch)
     } catch (error) {
       if (!silent) {
-        const resolved = resolveApiError(error, 'Не удалось загрузить детали manual sync launch.')
+        const resolved = resolveApiError(error, t('masterData.syncStatusTab.messages.failedToLoadLaunchDetail'))
         message.error(resolved.message)
       }
     } finally {
@@ -297,7 +321,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         setLoadingLaunchDetail(false)
       }
     }
-  }, [message])
+  }, [message, t])
 
   useEffect(() => {
     void loadTargets()
@@ -341,32 +365,32 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       try {
         if (action === 'retry') {
           await retryMasterDataSyncConflict(conflict.id, {
-            note: 'Manual retry from Pool Master Data Sync UI',
+            note: t('masterData.syncStatusTab.messages.manualRetryNote'),
           })
-          message.success('Conflict переведён в retrying.')
+          message.success(t('masterData.syncStatusTab.messages.retrying'))
         } else if (action === 'reconcile') {
           await reconcileMasterDataSyncConflict(conflict.id, {
-            note: 'Manual reconcile from Pool Master Data Sync UI',
+            note: t('masterData.syncStatusTab.messages.manualReconcileNote'),
             reconcile_payload: { strategy: 'manual_reconcile' },
           })
-          message.success('Conflict отправлен в reconcile.')
+          message.success(t('masterData.syncStatusTab.messages.reconcileQueued'))
         } else {
           await resolveMasterDataSyncConflict(conflict.id, {
             resolution_code: 'MANUAL_RECONCILE',
-            note: 'Manual resolve from Pool Master Data Sync UI',
+            note: t('masterData.syncStatusTab.messages.manualResolveNote'),
             metadata: { source: 'ui' },
           })
-          message.success('Conflict помечен как resolved.')
+          message.success(t('masterData.syncStatusTab.messages.resolved'))
         }
         await loadData()
       } catch (error) {
-        const resolved = resolveApiError(error, 'Не удалось выполнить conflict action.')
+        const resolved = resolveApiError(error, t('masterData.syncStatusTab.messages.failedToRunConflictAction'))
         message.error(resolved.message)
       } finally {
         setActionConflictId(null)
       }
     },
-    [loadData, message]
+    [loadData, message, t]
   )
 
   const canRunConflictWorkflowAction = useCallback(
@@ -411,12 +435,12 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
     setDrawerOpen(false)
     setSelectedLaunchId(response.launch.id)
     updateRouteParams({ launchId: response.launch.id })
-    message.success('Manual sync launch создан.')
+    message.success(t('masterData.syncStatusTab.messages.launchCreated'))
     await Promise.all([
       loadLaunches(),
       loadLaunchDetail(response.launch.id),
     ])
-  }, [loadLaunchDetail, loadLaunches, message, updateRouteParams])
+  }, [loadLaunchDetail, loadLaunches, message, t, updateRouteParams])
 
   const openEligibilityContext = useCallback((context: { clusterId: string; databaseId?: string }) => {
     const next = new URLSearchParams()
@@ -432,126 +456,134 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
     () => statusRows.filter((row) => visibleSyncEntityTypes.has(row.entity_type)),
     [statusRows, visibleSyncEntityTypes]
   )
+  const buildLaunchSummary = useCallback(
+    (launch: PoolMasterDataSyncLaunch): string => (
+      launch.target_mode === 'cluster_all'
+        ? t('masterData.syncStatusTab.launchSummary.clusterAll', { count: launch.database_ids.length })
+        : t('masterData.syncStatusTab.launchSummary.databaseSet', { count: launch.database_ids.length })
+    ),
+    [t]
+  )
 
   const statusColumns: ColumnsType<PoolMasterDataSyncStatus> = [
     {
-      title: 'Database',
+      title: t('masterData.syncStatusTab.columns.database'),
       dataIndex: 'database_id',
       key: 'database_id',
       width: 260,
       render: (value: string) => databaseNameById.get(value) || value,
     },
-    { title: 'Entity', dataIndex: 'entity_type', key: 'entity_type', width: 120 },
-    { title: 'Checkpoint', dataIndex: 'checkpoint_token', key: 'checkpoint_token', width: 220 },
-    { title: 'Pending', dataIndex: 'pending_count', key: 'pending_count', width: 100 },
-    { title: 'Retry', dataIndex: 'retry_count', key: 'retry_count', width: 100 },
-    { title: 'Conflicts', dataIndex: 'conflict_pending_count', key: 'conflict_pending_count', width: 120 },
-    { title: 'Lag (s)', dataIndex: 'lag_seconds', key: 'lag_seconds', width: 100 },
+    { title: t('masterData.syncStatusTab.columns.entity'), dataIndex: 'entity_type', key: 'entity_type', width: 120 },
+    { title: t('masterData.syncStatusTab.columns.checkpoint'), dataIndex: 'checkpoint_token', key: 'checkpoint_token', width: 220 },
+    { title: t('masterData.syncStatusTab.columns.pending'), dataIndex: 'pending_count', key: 'pending_count', width: 100 },
+    { title: t('masterData.syncStatusTab.columns.retry'), dataIndex: 'retry_count', key: 'retry_count', width: 100 },
+    { title: t('masterData.syncStatusTab.columns.conflicts'), dataIndex: 'conflict_pending_count', key: 'conflict_pending_count', width: 120 },
+    { title: t('masterData.syncStatusTab.columns.lagSeconds'), dataIndex: 'lag_seconds', key: 'lag_seconds', width: 100 },
     {
-      title: 'Priority',
+      title: t('masterData.syncStatusTab.columns.priority'),
       dataIndex: 'priority',
       key: 'priority',
       width: 120,
       render: (value: PoolMasterDataSyncStatus['priority']) => (
-        value ? <Tag>{value}</Tag> : <Text type="secondary">-</Text>
+        value ? <Tag>{t(`masterData.syncStatusTab.priority.${value}`)}</Tag> : <Text type="secondary">{t('common.noValue')}</Text>
       ),
     },
     {
-      title: 'Role',
+      title: t('masterData.syncStatusTab.columns.role'),
       dataIndex: 'role',
       key: 'role',
       width: 180,
       render: (value: PoolMasterDataSyncStatus['role']) => (
-        value ? <Tag color="blue">{value}</Tag> : <Text type="secondary">-</Text>
+        value ? <Tag color="blue">{t(`masterData.syncStatusTab.role.${value}`)}</Tag> : <Text type="secondary">{t('common.noValue')}</Text>
       ),
     },
     {
-      title: 'Server affinity',
+      title: t('masterData.syncStatusTab.columns.serverAffinity'),
       dataIndex: 'server_affinity',
       key: 'server_affinity',
       width: 200,
-      render: (value: string) => (value ? <Text code>{value}</Text> : <Text type="secondary">-</Text>),
+      render: (value: string) => (value ? <Text code>{value}</Text> : <Text type="secondary">{t('common.noValue')}</Text>),
     },
     {
-      title: 'Deadline state',
+      title: t('masterData.syncStatusTab.columns.deadlineState'),
       dataIndex: 'deadline_state',
       key: 'deadline_state',
       width: 160,
       render: (value: PoolMasterDataSyncStatus['deadline_state']) => (
-        <Tag color={DEADLINE_STATE_COLORS[value]}>{value}</Tag>
+        <Tag color={DEADLINE_STATE_COLORS[value]}>{t(`masterData.syncStatusTab.deadline.${value}`)}</Tag>
       ),
     },
     {
-      title: 'Last Success',
+      title: t('masterData.syncStatusTab.columns.lastSuccess'),
       dataIndex: 'last_success_at',
       key: 'last_success_at',
       width: 220,
       render: (value: string | null) => formatDateTime(value),
     },
     {
-      title: 'Error',
+      title: t('masterData.syncStatusTab.columns.error'),
       dataIndex: 'last_error_code',
       key: 'last_error_code',
       width: 220,
-      render: (value: string) => (value ? <Tag color="red">{value}</Tag> : <Text type="secondary">-</Text>),
+      render: (value: string) => (value ? <Tag color="red">{value}</Tag> : <Text type="secondary">{t('common.noValue')}</Text>),
     },
   ]
 
   const launchColumns: ColumnsType<PoolMasterDataSyncLaunch> = [
     {
-      title: 'Created',
+      title: t('masterData.syncStatusTab.columns.created'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Mode',
+      title: t('masterData.syncStatusTab.columns.mode'),
       dataIndex: 'mode',
       key: 'mode',
       width: 120,
-      render: (value: string) => <Tag color="blue">{value}</Tag>,
+      render: (value: string) => <Tag color="blue">{t(`masterData.syncLaunchDrawer.mode.${value}`)}</Tag>,
     },
     {
-      title: 'Status',
+      title: t('masterData.syncStatusTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 140,
       render: (value: string) => <Tag color={LAUNCH_STATUS_COLORS[value] || 'default'}>{value}</Tag>,
     },
     {
-      title: 'Targets',
+      title: t('masterData.syncStatusTab.columns.targets'),
       key: 'targets',
       width: 220,
       render: (_, row) => buildLaunchSummary(row),
     },
     {
-      title: 'Entities',
+      title: t('masterData.syncStatusTab.columns.entities'),
       dataIndex: 'entity_scope',
       key: 'entity_scope',
       width: 220,
       render: (value: string[]) => value.join(', '),
     },
     {
-      title: 'Requested By',
+      title: t('masterData.syncStatusTab.columns.requestedBy'),
       dataIndex: 'requested_by_username',
       key: 'requested_by_username',
       width: 180,
-      render: (value: string) => value || <Text type="secondary">service</Text>,
+      render: (value: string) => value || <Text type="secondary">{t('masterData.syncStatusTab.serviceUser')}</Text>,
     },
     {
-      title: 'Counters',
+      title: t('masterData.syncStatusTab.columns.counters'),
       key: 'counters',
       width: 260,
       render: (_, row) => {
         const counters = row.aggregate_counters ?? {}
         return (
           <Space size={4} wrap>
-            <Tag>scheduled {counters.scheduled ?? 0}</Tag>
-            <Tag color="blue">coalesced {counters.coalesced ?? 0}</Tag>
-            <Tag>skipped {counters.skipped ?? 0}</Tag>
-            <Tag color="red">failed {counters.failed ?? 0}</Tag>
-            <Tag color="green">completed {counters.completed ?? 0}</Tag>
+            <Tag>{t('masterData.syncStatusTab.counterSummary.scheduled', { count: counters.scheduled ?? 0 })}</Tag>
+            <Tag color="blue">{t('masterData.syncStatusTab.counterSummary.coalesced', { count: counters.coalesced ?? 0 })}</Tag>
+            <Tag>{t('masterData.syncStatusTab.counterSummary.skipped', { count: counters.skipped ?? 0 })}</Tag>
+            <Tag color="red">{t('masterData.syncStatusTab.counterSummary.failed', { count: counters.failed ?? 0 })}</Tag>
+            <Tag color="green">{t('masterData.syncStatusTab.counterSummary.completed', { count: counters.completed ?? 0 })}</Tag>
           </Space>
         )
       },
@@ -560,19 +592,19 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
 
   const launchItemColumns: ColumnsType<PoolMasterDataSyncLaunchItem> = [
     {
-      title: 'Database',
+      title: t('masterData.syncStatusTab.columns.database'),
       dataIndex: 'database_name',
       key: 'database_name',
       width: 220,
     },
     {
-      title: 'Entity',
+      title: t('masterData.syncStatusTab.columns.entity'),
       dataIndex: 'entity_type',
       key: 'entity_type',
       width: 120,
     },
     {
-      title: 'Outcome',
+      title: t('masterData.syncStatusTab.columns.outcome'),
       dataIndex: 'status',
       key: 'status',
       width: 140,
@@ -581,7 +613,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       ),
     },
     {
-      title: 'Child Job',
+      title: t('masterData.syncStatusTab.columns.childJob'),
       key: 'child_job',
       width: 280,
       render: (_, row) => (
@@ -592,11 +624,11 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               {row.child_job_status ? <Text type="secondary">{row.child_job_status}</Text> : null}
             </Space>
           )
-          : <Text type="secondary">-</Text>
+          : <Text type="secondary">{t('common.noValue')}</Text>
       ),
     },
     {
-      title: 'Reason',
+      title: t('masterData.syncStatusTab.columns.reason'),
       key: 'reason',
       width: 260,
       render: (_, row) => (
@@ -607,20 +639,20 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               {row.reason_detail ? <Text type="secondary">{row.reason_detail}</Text> : null}
             </Space>
           )
-          : <Text type="secondary">-</Text>
+          : <Text type="secondary">{t('common.noValue')}</Text>
       ),
     },
     {
-      title: 'Actions',
+      title: t('masterData.syncStatusTab.columns.actions'),
       key: 'actions',
       width: 220,
       render: (_, row) => (
         <Space>
           <Button size="small" onClick={() => handoffToScope(row, 'status')}>
-            Filter Status
+            {t('masterData.syncStatusTab.actions.filterStatus')}
           </Button>
           <Button size="small" onClick={() => handoffToScope(row, 'conflicts')}>
-            Filter Conflicts
+            {t('masterData.syncStatusTab.actions.filterConflicts')}
           </Button>
         </Space>
       ),
@@ -629,14 +661,14 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
 
   const conflictColumns: ColumnsType<PoolMasterDataSyncConflict> = [
     {
-      title: 'Created',
+      title: t('masterData.syncStatusTab.columns.created'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Status',
+      title: t('masterData.syncStatusTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 120,
@@ -646,31 +678,31 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         </Tag>
       ),
     },
-    { title: 'Entity', dataIndex: 'entity_type', key: 'entity_type', width: 120 },
+    { title: t('masterData.syncStatusTab.columns.entity'), dataIndex: 'entity_type', key: 'entity_type', width: 120 },
     {
-      title: 'Database',
+      title: t('masterData.syncStatusTab.columns.database'),
       dataIndex: 'database_id',
       key: 'database_id',
       width: 240,
       render: (value: string) => databaseNameById.get(value) || value,
     },
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 200 },
-    { title: 'Conflict Code', dataIndex: 'conflict_code', key: 'conflict_code', width: 220 },
+    { title: t('masterData.syncStatusTab.columns.canonicalId'), dataIndex: 'canonical_id', key: 'canonical_id', width: 200 },
+    { title: t('masterData.syncStatusTab.columns.conflictCode'), dataIndex: 'conflict_code', key: 'conflict_code', width: 220 },
     {
-      title: 'Origin',
+      title: t('masterData.syncStatusTab.columns.origin'),
       key: 'origin',
       width: 220,
-      render: (_, row) => `${row.origin_system || '-'}:${row.origin_event_id || '-'}`,
+      render: (_, row) => `${row.origin_system || t('common.noValue')}:${row.origin_event_id || t('common.noValue')}`,
     },
     {
-      title: 'Actions',
+      title: t('masterData.syncStatusTab.columns.actions'),
       key: 'actions',
       width: 300,
       render: (_, row) => (
         <Space>
           {buildDedupeReviewHref(row) ? (
             <Button size="small" type="link" href={buildDedupeReviewHref(row) || undefined}>
-              Open Review
+              {t('masterData.syncStatusTab.actions.openReview')}
             </Button>
           ) : null}
           {canRunConflictWorkflowAction(row) && (
@@ -680,7 +712,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               loading={actionConflictId === row.id}
               disabled={row.status === 'resolved'}
             >
-              Retry
+              {t('masterData.syncStatusTab.actions.retry')}
             </Button>
           )}
           {canRunConflictWorkflowAction(row) && (
@@ -690,7 +722,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               loading={actionConflictId === row.id}
               disabled={row.status === 'resolved'}
             >
-              Reconcile
+              {t('masterData.syncStatusTab.actions.reconcile')}
             </Button>
           )}
           <Button
@@ -700,7 +732,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             loading={actionConflictId === row.id}
             disabled={row.status === 'resolved'}
           >
-            Resolve
+            {t('masterData.syncStatusTab.actions.resolve')}
           </Button>
         </Space>
       ),
@@ -713,7 +745,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         <Space wrap style={{ marginBottom: 16 }}>
           <Select
             allowClear
-            placeholder="Database"
+            placeholder={t('masterData.syncStatusTab.filters.databasePlaceholder')}
             value={databaseId}
             options={databases.map((database) => ({ value: database.id, label: database.name }))}
             onChange={(value) => {
@@ -725,7 +757,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
           <Select
             data-testid="sync-status-filter-entity-type"
             allowClear
-            placeholder="Entity type"
+            placeholder={t('masterData.syncStatusTab.filters.entityTypePlaceholder')}
             value={entityType}
             options={filterEntityTypeOptions}
             onChange={(value) => {
@@ -737,25 +769,25 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
           <Select
             data-testid="sync-status-filter-priority"
             allowClear
-            placeholder="Priority"
+            placeholder={t('masterData.syncStatusTab.filters.priorityPlaceholder')}
             value={priority}
-            options={PRIORITY_OPTIONS}
+            options={priorityOptions}
             onChange={(value) => setPriority(value)}
             style={{ width: 160 }}
           />
           <Select
             data-testid="sync-status-filter-role"
             allowClear
-            placeholder="Role"
+            placeholder={t('masterData.syncStatusTab.filters.rolePlaceholder')}
             value={role}
-            options={ROLE_OPTIONS}
+            options={roleOptions}
             onChange={(value) => setRole(value)}
             style={{ width: 220 }}
           />
           <Input
             data-testid="sync-status-filter-server-affinity"
             allowClear
-            placeholder="Server affinity"
+            placeholder={t('masterData.syncStatusTab.filters.serverAffinityPlaceholder')}
             value={serverAffinity}
             onChange={(event) => {
               const value = event.target.value.trim()
@@ -766,18 +798,18 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
           <Select
             data-testid="sync-status-filter-deadline-state"
             allowClear
-            placeholder="Deadline state"
+            placeholder={t('masterData.syncStatusTab.filters.deadlineStatePlaceholder')}
             value={deadlineState}
-            options={DEADLINE_STATE_OPTIONS}
+            options={deadlineStateOptions}
             onChange={(value) => setDeadlineState(value)}
             style={{ width: 200 }}
           />
           <Select
             data-testid="sync-status-filter-conflict-status"
             allowClear
-            placeholder="Conflict status"
+            placeholder={t('masterData.syncStatusTab.filters.conflictStatusPlaceholder')}
             value={conflictStatus}
-            options={CONFLICT_STATUS_OPTIONS}
+            options={conflictStatusOptions}
             onChange={(value) => setConflictStatus(value)}
             style={{ width: 200 }}
           />
@@ -787,7 +819,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             onClick={() => setDrawerOpen(true)}
             loading={loadingTargets}
           >
-            Launch Sync
+            {t('masterData.syncStatusTab.actions.launchSync')}
           </Button>
           <Button data-testid="sync-status-refresh" onClick={() => {
             void loadData()
@@ -796,15 +828,15 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               void loadLaunchDetail(selectedLaunchId)
             }
           }} loading={loading || loadingLaunches}>
-            Refresh
+            {t('catalog.actions.refresh')}
           </Button>
         </Space>
         <Text type="secondary">
-          Monitor lag/retries/checkpoints, launch cluster-wide sync waves, and manage conflict queue actions in one place.
+          {t('masterData.syncStatusTab.page.subtitle')}
         </Text>
       </Card>
 
-      <Card title="Sync Status">
+      <Card title={t('masterData.syncStatusTab.page.syncStatusTitle')}>
         <Table
           rowKey={(row) => `${row.database_id}:${row.entity_type}`}
           loading={loading}
@@ -815,7 +847,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         />
       </Card>
 
-      <Card title="Launch History">
+      <Card title={t('masterData.syncStatusTab.page.launchHistoryTitle')}>
         <Table
           rowKey="id"
           loading={loadingLaunches}
@@ -831,38 +863,43 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
 
       {selectedLaunch ? (
         <Card
-          title="Launch Detail"
+          title={t('masterData.syncStatusTab.page.launchDetailTitle')}
           loading={loadingLaunchDetail}
           extra={selectedLaunch.status ? <Tag color={LAUNCH_STATUS_COLORS[selectedLaunch.status] || 'default'}>{selectedLaunch.status}</Tag> : null}
         >
           <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="Launch ID">{selectedLaunch.id}</Descriptions.Item>
-            <Descriptions.Item label="Mode">{selectedLaunch.mode}</Descriptions.Item>
-            <Descriptions.Item label="Requested By">
-              {selectedLaunch.requested_by_username || 'service'}
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.launchId')}>{selectedLaunch.id}</Descriptions.Item>
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.mode')}>
+              {t(`masterData.syncLaunchDrawer.mode.${selectedLaunch.mode}`)}
             </Descriptions.Item>
-            <Descriptions.Item label="Created">{formatDateTime(selectedLaunch.created_at)}</Descriptions.Item>
-            <Descriptions.Item label="Targets">
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.requestedBy')}>
+              {selectedLaunch.requested_by_username || t('masterData.syncStatusTab.serviceUser')}
+            </Descriptions.Item>
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.created')}>{formatDateTime(selectedLaunch.created_at)}</Descriptions.Item>
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.targets')}>
               {selectedLaunch.target_mode === 'cluster_all'
-                ? `${clusterNameById.get(selectedLaunch.cluster_id ?? '') || selectedLaunch.cluster_id || 'cluster_all'} · ${selectedLaunch.database_ids.length} db`
-                : `${selectedLaunch.database_ids.length} db`}
+                ? t('masterData.syncStatusTab.details.clusterTargets', {
+                  cluster: clusterNameById.get(selectedLaunch.cluster_id ?? '') || selectedLaunch.cluster_id || 'cluster_all',
+                  count: selectedLaunch.database_ids.length,
+                })
+                : t('masterData.syncStatusTab.details.databaseTargets', { count: selectedLaunch.database_ids.length })}
             </Descriptions.Item>
-            <Descriptions.Item label="Entities">{selectedLaunch.entity_scope.join(', ')}</Descriptions.Item>
-            <Descriptions.Item label="Workflow Execution">
-              {selectedLaunch.workflow_execution_id ? <Text code>{selectedLaunch.workflow_execution_id}</Text> : '-'}
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.entities')}>{selectedLaunch.entity_scope.join(', ')}</Descriptions.Item>
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.workflowExecution')}>
+              {selectedLaunch.workflow_execution_id ? <Text code>{selectedLaunch.workflow_execution_id}</Text> : t('common.noValue')}
             </Descriptions.Item>
-            <Descriptions.Item label="Operation">
-              {selectedLaunch.operation_id ? <Text code>{selectedLaunch.operation_id}</Text> : '-'}
+            <Descriptions.Item label={t('masterData.syncStatusTab.details.operation')}>
+              {selectedLaunch.operation_id ? <Text code>{selectedLaunch.operation_id}</Text> : t('common.noValue')}
             </Descriptions.Item>
           </Descriptions>
 
           <Space wrap style={{ marginBottom: 12 }}>
-            <Tag>scheduled {selectedLaunch.aggregate_counters?.scheduled ?? 0}</Tag>
-            <Tag color="blue">coalesced {selectedLaunch.aggregate_counters?.coalesced ?? 0}</Tag>
-            <Tag>skipped {selectedLaunch.aggregate_counters?.skipped ?? 0}</Tag>
-            <Tag color="red">failed {selectedLaunch.aggregate_counters?.failed ?? 0}</Tag>
-            <Tag color="green">completed {selectedLaunch.aggregate_counters?.completed ?? 0}</Tag>
-            <Tag>terminal {selectedLaunch.progress?.terminal_items ?? 0}</Tag>
+            <Tag>{t('masterData.syncStatusTab.counterSummary.scheduled', { count: selectedLaunch.aggregate_counters?.scheduled ?? 0 })}</Tag>
+            <Tag color="blue">{t('masterData.syncStatusTab.counterSummary.coalesced', { count: selectedLaunch.aggregate_counters?.coalesced ?? 0 })}</Tag>
+            <Tag>{t('masterData.syncStatusTab.counterSummary.skipped', { count: selectedLaunch.aggregate_counters?.skipped ?? 0 })}</Tag>
+            <Tag color="red">{t('masterData.syncStatusTab.counterSummary.failed', { count: selectedLaunch.aggregate_counters?.failed ?? 0 })}</Tag>
+            <Tag color="green">{t('masterData.syncStatusTab.counterSummary.completed', { count: selectedLaunch.aggregate_counters?.completed ?? 0 })}</Tag>
+            <Tag>{t('masterData.syncStatusTab.counterSummary.terminal', { count: selectedLaunch.progress?.terminal_items ?? 0 })}</Tag>
           </Space>
 
           {selectedLaunch.target_mode === 'cluster_all' && selectedLaunch.target_resolution ? (
@@ -870,17 +907,23 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message={`Cluster resolution: ${selectedLaunch.target_resolution.eligible_count} eligible, ${selectedLaunch.target_resolution.excluded_count} excluded, ${selectedLaunch.target_resolution.unconfigured_count} unconfigured.`}
+              message={t('masterData.syncStatusTab.clusterResolution.summary', {
+                eligibleCount: selectedLaunch.target_resolution.eligible_count,
+                excludedCount: selectedLaunch.target_resolution.excluded_count,
+                unconfiguredCount: selectedLaunch.target_resolution.unconfigured_count,
+              })}
               description={(
                 <Space direction="vertical" size={4}>
                   {selectedLaunch.target_resolution.excluded_databases && selectedLaunch.target_resolution.excluded_databases.length > 0 ? (
                     <Text>
-                      Excluded from snapshot: {selectedLaunch.target_resolution.excluded_databases.map((database) => database.database_name).join(', ')}.
+                      {t('masterData.syncStatusTab.clusterResolution.excluded', {
+                        databases: selectedLaunch.target_resolution.excluded_databases.map((database) => database.database_name).join(', '),
+                      })}
                     </Text>
                   ) : null}
                   {selectedLaunch.target_resolution.excluded_count > 0 ? (
                     <Text type="secondary">
-                      Use Database Set for one-off launches that must include excluded databases.
+                      {t('masterData.syncStatusTab.clusterResolution.useDatabaseSet')}
                     </Text>
                   ) : null}
                 </Space>
@@ -907,7 +950,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         </Card>
       ) : null}
 
-      <Card title="Conflict Queue">
+      <Card title={t('masterData.syncStatusTab.page.conflictQueueTitle')}>
         <Table
           rowKey="id"
           loading={loading}

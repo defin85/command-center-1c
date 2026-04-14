@@ -16,9 +16,10 @@ import {
   ModalFormShell,
   StatusBadge,
 } from '../../../components/platform'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
-import { findRegistryEntryByEntityType, getRegistryEntryLabel } from './registry'
+import { findRegistryEntryByEntityType, getRegistryEntityLabel } from './registry'
 
 const { Text } = Typography
 
@@ -41,6 +42,7 @@ const buildCompatibilityClass = (account: Pick<PoolMasterGLAccount, 'chart_ident
 
 export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterGLAccount[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [selectedAccount, setSelectedAccount] = useState<PoolMasterGLAccount | null>(null)
@@ -77,12 +79,12 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
         return response.gl_accounts[0]?.id ?? null
       })
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить GL Accounts.')
+      const resolved = resolveApiError(error, t('masterData.glAccountsTab.messages.failedToLoadList'))
       message.error(resolved.message)
     } finally {
       setLoadingRows(false)
     }
-  }, [chartIdentityFilter, codeFilter, message, query])
+  }, [chartIdentityFilter, codeFilter, message, query, t])
 
   const loadSelectedAccount = useCallback(async (glAccountId: string) => {
     setLoadingDetail(true)
@@ -90,13 +92,13 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
       const response = await getMasterDataGlAccount(glAccountId)
       setSelectedAccount(response.gl_account)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить детали GL Account.')
+      const resolved = resolveApiError(error, t('masterData.glAccountsTab.messages.failedToLoadDetail'))
       setSelectedAccount(null)
       message.error(resolved.message)
     } finally {
       setLoadingDetail(false)
     }
-  }, [message])
+  }, [message, t])
 
   useEffect(() => {
     void loadRows()
@@ -152,10 +154,14 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
       setIsModalOpen(false)
       setSelectedAccountId(response.gl_account.id)
       setSelectedAccount(response.gl_account)
-      message.success(editingAccount ? 'GL Account обновлён.' : 'GL Account создан.')
+      message.success(
+        editingAccount
+          ? t('masterData.glAccountsTab.messages.accountUpdated')
+          : t('masterData.glAccountsTab.messages.accountCreated')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить GL Account.')
+      const resolved = resolveApiError(error, t('masterData.glAccountsTab.messages.failedToSave'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields(
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors })) as never
@@ -167,24 +173,34 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
     }
   }
 
-  const columns: ColumnsType<PoolMasterGLAccount> = [
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 180 },
-    { title: 'Code', dataIndex: 'code', key: 'code', width: 120 },
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
-    { title: 'Chart Identity', dataIndex: 'chart_identity', key: 'chart_identity', width: 220 },
+  const columns: ColumnsType<PoolMasterGLAccount> = useMemo(() => [
     {
-      title: 'Compatibility Class',
+      title: t('masterData.glAccountsTab.columns.canonicalId'),
+      dataIndex: 'canonical_id',
+      key: 'canonical_id',
+      width: 180,
+    },
+    { title: t('masterData.glAccountsTab.columns.code'), dataIndex: 'code', key: 'code', width: 120 },
+    { title: t('masterData.glAccountsTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
+    {
+      title: t('masterData.glAccountsTab.columns.chartIdentity'),
+      dataIndex: 'chart_identity',
+      key: 'chart_identity',
+      width: 220,
+    },
+    {
+      title: t('masterData.glAccountsTab.columns.compatibilityClass'),
       key: 'compatibility',
       width: 260,
       render: (_, row) => (
         <Space direction="vertical" size={2}>
-          <StatusBadge status="compatible" label="Compatible class" />
+          <StatusBadge status="compatible" label={t('masterData.glAccountsTab.columns.compatibleClass')} />
           <Text type="secondary">{`${row.config_name} · ${row.config_version}`}</Text>
         </Space>
       ),
     },
     {
-      title: 'Actions',
+      title: t('masterData.glAccountsTab.columns.actions'),
       key: 'actions',
       width: 120,
       render: (_, row) => (
@@ -195,32 +211,35 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
             openEditModal(row)
           }}
         >
-          Edit
+          {t('common.edit')}
         </Button>
       ),
     },
-  ]
+  ], [openEditModal, t])
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Alert
         type="info"
         showIcon
-        message={`${getRegistryEntryLabel(registryEntry) || 'GL Account'} capability state`}
+        message={t('masterData.glAccountsTab.alerts.capabilityState', {
+          label: getRegistryEntityLabel(registryEntries, 'gl_account') || 'GL Account',
+        })}
         description={(
           <Space direction="vertical" size={4}>
-            <Text>
-              Bootstrap import availability is governed by the reusable-data registry. Generic mutating sync
-              controls stay outside this authoring surface.
-            </Text>
+            <Text>{t('masterData.glAccountsTab.alerts.capabilityDescription')}</Text>
             <Space wrap>
               <StatusBadge
                 status={registryEntry?.capabilities.bootstrap_import ? 'compatible' : 'warning'}
-                label={registryEntry?.capabilities.bootstrap_import ? 'Bootstrap-capable' : 'Bootstrap-disabled'}
+                label={registryEntry?.capabilities.bootstrap_import
+                  ? t('masterData.glAccountsTab.alerts.bootstrapCapable')
+                  : t('masterData.glAccountsTab.alerts.bootstrapDisabled')}
               />
               <StatusBadge
                 status={registryEntry?.capabilities.token_exposure ? 'compatible' : 'warning'}
-                label={registryEntry?.capabilities.token_exposure ? 'Token-exposed' : 'Token-disabled'}
+                label={registryEntry?.capabilities.token_exposure
+                  ? t('masterData.glAccountsTab.alerts.tokenExposed')
+                  : t('masterData.glAccountsTab.alerts.tokenDisabled')}
               />
             </Space>
           </Space>
@@ -228,17 +247,17 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
       />
 
       <EntityTable
-        title="GL Accounts"
+        title={t('masterData.glAccountsTab.table.title')}
         dataSource={rows}
         columns={columns}
         rowKey="id"
         loading={loadingRows}
-        emptyDescription="GL Accounts are not configured yet."
+        emptyDescription={t('masterData.glAccountsTab.table.emptyDescription')}
         toolbar={(
           <Space wrap>
             <Input
               allowClear
-              placeholder="Search canonical_id / code / name"
+              placeholder={t('masterData.glAccountsTab.table.searchPlaceholder')}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onPressEnter={() => void loadRows()}
@@ -246,20 +265,20 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
             />
             <Input
               allowClear
-              placeholder="Code filter"
+              placeholder={t('masterData.glAccountsTab.table.codeFilter')}
               value={codeFilter}
               onChange={(event) => setCodeFilter(event.target.value)}
               style={{ width: 180 }}
             />
             <Input
               allowClear
-              placeholder="Chart identity"
+              placeholder={t('masterData.glAccountsTab.table.chartIdentityFilter')}
               value={chartIdentityFilter}
               onChange={(event) => setChartIdentityFilter(event.target.value)}
               style={{ width: 220 }}
             />
-            <Button onClick={() => void loadRows()} loading={loadingRows}>Refresh</Button>
-            <Button type="primary" onClick={openCreateModal}>Add GL Account</Button>
+            <Button onClick={() => void loadRows()} loading={loadingRows}>{t('catalog.actions.refresh')}</Button>
+            <Button type="primary" onClick={openCreateModal}>{t('masterData.glAccountsTab.modal.create')}</Button>
           </Space>
         )}
         onRow={(row) => ({
@@ -269,38 +288,38 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
       />
 
       <EntityDetails
-        title={selectedAccount ? selectedAccount.name : 'GL Account details'}
+        title={selectedAccount ? selectedAccount.name : t('masterData.glAccountsTab.details.title')}
         empty={!selectedAccount}
-        emptyDescription="Select a GL Account to inspect its compatibility class and metadata."
+        emptyDescription={t('masterData.glAccountsTab.details.emptyDescription')}
         loading={loadingDetail}
         extra={selectedAccount ? (
           <Space wrap>
-            <StatusBadge status="compatible" label="Compatibility class" />
-            <Button onClick={() => openEditModal(selectedAccount)}>Edit GL Account</Button>
+            <StatusBadge status="compatible" label={t('masterData.glAccountsTab.details.compatibilityClass')} />
+            <Button onClick={() => openEditModal(selectedAccount)}>{t('masterData.glAccountsTab.details.edit')}</Button>
           </Space>
         ) : undefined}
       >
         {selectedAccount ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions column={2} size="small" bordered>
-              <Descriptions.Item label="Canonical ID">{selectedAccount.canonical_id}</Descriptions.Item>
-              <Descriptions.Item label="Code">{selectedAccount.code}</Descriptions.Item>
-              <Descriptions.Item label="Name">{selectedAccount.name}</Descriptions.Item>
-              <Descriptions.Item label="Chart Identity">{selectedAccount.chart_identity}</Descriptions.Item>
-              <Descriptions.Item label="Config Name">{selectedAccount.config_name}</Descriptions.Item>
-              <Descriptions.Item label="Config Version">{selectedAccount.config_version}</Descriptions.Item>
-              <Descriptions.Item label="Compatibility Class" span={2}>
+              <Descriptions.Item label={t('masterData.glAccountsTab.columns.canonicalId')}>{selectedAccount.canonical_id}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.columns.code')}>{selectedAccount.code}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.columns.name')}>{selectedAccount.name}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.columns.chartIdentity')}>{selectedAccount.chart_identity}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.details.configName')}>{selectedAccount.config_name}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.details.configVersion')}>{selectedAccount.config_version}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.columns.compatibilityClass')} span={2}>
                 <Space wrap>
-                  <StatusBadge status="compatible" label="Compatible class" />
+                  <StatusBadge status="compatible" label={t('masterData.glAccountsTab.columns.compatibleClass')} />
                   <Text>{buildCompatibilityClass(selectedAccount)}</Text>
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="Updated">{formatDateTime(selectedAccount.updated_at)}</Descriptions.Item>
-              <Descriptions.Item label="Selected ID">
+              <Descriptions.Item label={t('masterData.glAccountsTab.details.updated')}>{formatDateTime(selectedAccount.updated_at)}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.glAccountsTab.details.selectedId')}>
                 <Text code data-testid="pool-master-data-gl-account-selected-id">{selectedAccount.id}</Text>
               </Descriptions.Item>
             </Descriptions>
-            <JsonBlock title="Metadata" value={selectedAccount.metadata ?? {}} />
+            <JsonBlock title={t('masterData.glAccountsTab.details.metadata')} value={selectedAccount.metadata ?? {}} />
           </Space>
         ) : null}
       </EntityDetails>
@@ -309,30 +328,30 @@ export function GLAccountsTab({ registryEntries }: GLAccountsTabProps) {
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={() => void handleSubmit()}
-        title={editingAccount ? 'Edit GL Account' : 'Create GL Account'}
-        subtitle="Operator-facing compatibility class is explicit and separate from runtime provenance."
-        submitText={editingAccount ? 'Save GL Account' : 'Create GL Account'}
+        title={editingAccount ? t('masterData.glAccountsTab.modal.editTitle') : t('masterData.glAccountsTab.modal.createTitle')}
+        subtitle={t('masterData.glAccountsTab.modal.subtitle')}
+        submitText={editingAccount ? t('masterData.glAccountsTab.modal.save') : t('masterData.glAccountsTab.modal.create')}
         confirmLoading={isSaving}
         width={760}
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.glAccountsTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="code" label="Code" rules={[{ required: true }]}>
+          <Form.Item name="code" label={t('masterData.glAccountsTab.modal.fields.code')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('masterData.glAccountsTab.modal.fields.name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="chart_identity" label="Chart Identity" rules={[{ required: true }]}>
+          <Form.Item name="chart_identity" label={t('masterData.glAccountsTab.modal.fields.chartIdentity')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="config_name" label="Config Name" rules={[{ required: true }]}>
+          <Form.Item name="config_name" label={t('masterData.glAccountsTab.modal.fields.configName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="config_version" label="Config Version" rules={[{ required: true }]}>
+          <Form.Item name="config_version" label={t('masterData.glAccountsTab.modal.fields.configVersion')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
         </Form>

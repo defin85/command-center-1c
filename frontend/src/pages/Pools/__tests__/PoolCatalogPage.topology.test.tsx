@@ -899,7 +899,7 @@ describe('PoolCatalogPage', () => {
     await user.click(screen.getByTestId('pool-catalog-topology-save'))
 
     expect(await screen.findByText('Preflight validation failed')).toBeInTheDocument()
-    expect(await screen.findByText('Добавьте хотя бы один topology node.')).toBeInTheDocument()
+    expect(await screen.findByText('Add at least one topology node.')).toBeInTheDocument()
     expect(mockUpsertPoolTopologySnapshot).not.toHaveBeenCalled()
   }, SYNC_MODAL_TIMEOUT_MS)
 
@@ -1897,10 +1897,10 @@ describe('PoolCatalogPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('/pools/topology-templates')
     })
-    expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('compose=create')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_pool_id=44444444-4444-4444-4444-444444444444')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_tab=topology')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('return_date=2026-01-01')
+    expect(screen.getByTestId('pool-catalog-location')).not.toHaveTextContent('compose=create')
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 
   it('hands off selected reusable topology template revision to the dedicated revise workspace with preserved context', async () => {

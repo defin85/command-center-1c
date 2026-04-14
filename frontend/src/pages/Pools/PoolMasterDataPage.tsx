@@ -133,7 +133,7 @@ const buildZoneButtonStyle = (selected: boolean) => ({
 
 export function PoolMasterDataPage() {
   const { message } = AntApp.useApp()
-  const { t, locale, ready } = usePoolsTranslation()
+  const { t, ready } = usePoolsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
   const activeTabFromUrl = normalizeMasterDataTab(searchParams.get('tab'))
@@ -141,7 +141,7 @@ export function PoolMasterDataPage() {
   const [activeTab, setActiveTab] = useState<MasterDataTabKey>(activeTabFromUrl)
   const [isDetailOpen, setIsDetailOpen] = useState(detailOpenFromUrl)
   const [registryEntries, setRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
-  const masterDataZones = useMemo(() => buildMasterDataZones(t), [locale, ready, t])
+  const masterDataZones = buildMasterDataZones(t)
 
   useEffect(() => {
     setActiveTab((current) => (current === activeTabFromUrl ? current : activeTabFromUrl))
@@ -221,6 +221,10 @@ export function PoolMasterDataPage() {
     () => masterDataZones.find((zone) => zone.key === activeTab) ?? masterDataZones[0],
     [activeTab, masterDataZones]
   )
+
+  if (!ready) {
+    return null
+  }
 
   return (
     <WorkspacePage

@@ -10,6 +10,8 @@ import {
   type PoolSchemaTemplate,
 } from '../../api/intercompanyPools'
 import { DrawerFormShell } from '../../components/platform/DrawerFormShell'
+import type { TFunction } from 'i18next'
+import { usePoolsTranslation } from '../../i18n'
 import { resolveApiError } from './masterData/errorUtils'
 
 
@@ -69,31 +71,37 @@ const DEFAULT_JSON_PAYLOAD = JSON.stringify(
   2,
 )
 
-function parseBatchPayloadJson(raw: string): Record<string, unknown> | Array<Record<string, unknown>> {
+function parseBatchPayloadJson(
+  raw: string,
+  t: TFunction<'translation', undefined>
+): Record<string, unknown> | Array<Record<string, unknown>> {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error('source_payload: invalid JSON')
+    throw new Error(t('runs.batchIntake.validation.invalidJson'))
   }
   if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
-    throw new Error('source_payload: object or array expected')
+    throw new Error(t('runs.batchIntake.validation.objectOrArrayExpected'))
   }
   if (!Array.isArray(parsed)) {
     return parsed as Record<string, unknown>
   }
   return parsed.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new Error('source_payload: array items must be objects')
+      throw new Error(t('runs.batchIntake.validation.arrayItemsMustBeObjects'))
     }
     return item as Record<string, unknown>
   })
 }
 
-async function readFileAsBase64(file: File): Promise<string> {
+async function readFileAsBase64(
+  file: File,
+  t: TFunction<'translation', undefined>
+): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
-    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`))
+    reader.onerror = () => reject(new Error(t('runs.batchIntake.messages.failedToReadFile', { fileName: file.name })))
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : ''
       const base64 = result.includes(',') ? result.split(',')[1] : result
@@ -103,19 +111,27 @@ async function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
-function requireTrimmedValue(value: string | undefined, fieldName: string): string {
+function requireTrimmedValue(
+  value: string | undefined,
+  fieldName: string,
+  t: TFunction<'translation', undefined>
+): string {
   const normalized = value?.trim() || ''
   if (!normalized) {
-    throw new Error(`${fieldName} required`)
+    throw new Error(t('runs.batchIntake.validation.fieldRequired', { fieldName }))
   }
   return normalized
 }
 
-function buildPoolBatchCreatePayload(values: BatchIntakeFormValues, poolId: string): PoolBatchCreatePayload {
+function buildPoolBatchCreatePayload(
+  values: BatchIntakeFormValues,
+  poolId: string,
+  t: TFunction<'translation', undefined>
+): PoolBatchCreatePayload {
   const payloadBase = {
     pool_id: poolId,
     source_type: 'schema_template_upload' as const,
-    schema_template_id: requireTrimmedValue(values.schema_template_id, 'schema_template_id'),
+    schema_template_id: requireTrimmedValue(values.schema_template_id, 'schema_template_id', t),
     period_start: values.period_start,
     period_end: values.period_end?.trim() || null,
     source_reference: values.source_reference?.trim() || '',
@@ -125,8 +141,8 @@ function buildPoolBatchCreatePayload(values: BatchIntakeFormValues, poolId: stri
 
   if (values.batch_kind === 'receipt') {
     const receiptScope = {
-      pool_workflow_binding_id: requireTrimmedValue(values.pool_workflow_binding_id, 'pool_workflow_binding_id'),
-      start_organization_id: requireTrimmedValue(values.start_organization_id, 'start_organization_id'),
+      pool_workflow_binding_id: requireTrimmedValue(values.pool_workflow_binding_id, 'pool_workflow_binding_id', t),
+      start_organization_id: requireTrimmedValue(values.start_organization_id, 'start_organization_id', t),
     }
     if (xlsxBase64) {
       return {
@@ -138,13 +154,13 @@ function buildPoolBatchCreatePayload(values: BatchIntakeFormValues, poolId: stri
     }
     const rawPayloadJson = values.source_payload_json?.trim() || ''
     if (!rawPayloadJson) {
-      throw new Error('source_payload required')
+      throw new Error(t('runs.batchIntake.validation.sourcePayloadRequired'))
     }
     return {
       ...payloadBase,
       ...receiptScope,
       batch_kind: 'receipt',
-      json_payload: parseBatchPayloadJson(rawPayloadJson),
+      json_payload: parseBatchPayloadJson(rawPayloadJson, t),
     }
   }
 
@@ -158,12 +174,12 @@ function buildPoolBatchCreatePayload(values: BatchIntakeFormValues, poolId: stri
 
   const rawPayloadJson = values.source_payload_json?.trim() || ''
   if (!rawPayloadJson) {
-    throw new Error('source_payload required')
+    throw new Error(t('runs.batchIntake.validation.sourcePayloadRequired'))
   }
   return {
     ...payloadBase,
     batch_kind: 'sale',
-    json_payload: parseBatchPayloadJson(rawPayloadJson),
+    json_payload: parseBatchPayloadJson(rawPayloadJson, t),
   }
 }
 
@@ -180,6 +196,7 @@ export function PoolBatchIntakeDrawer({
   onCreated,
 }: PoolBatchIntakeDrawerProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [form] = Form.useForm<BatchIntakeFormValues>()
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -214,24 +231,24 @@ export function PoolBatchIntakeDrawer({
         uploaded_file_name: file.name,
         raw_payload_ref: form.getFieldValue('raw_payload_ref') || file.name,
       })
-      message.success(`Loaded JSON payload from ${file.name}`)
+      message.success(t('runs.batchIntake.messages.loadedJsonPayload', { fileName: file.name }))
       return false
     }
 
-    const xlsxBase64 = await readFileAsBase64(file)
+    const xlsxBase64 = await readFileAsBase64(file, t)
     form.setFieldsValue({
       xlsx_base64: xlsxBase64,
       source_payload_json: '',
       uploaded_file_name: file.name,
       raw_payload_ref: form.getFieldValue('raw_payload_ref') || file.name,
     })
-    message.success(`Loaded binary payload from ${file.name}`)
+    message.success(t('runs.batchIntake.messages.loadedBinaryPayload', { fileName: file.name }))
     return false
   }
 
   const handleSubmit = async () => {
     if (!poolId) {
-      setSubmitError('Select a pool before creating a canonical batch.')
+      setSubmitError(t('runs.batchIntake.messages.selectPoolBeforeCreate'))
       return
     }
 
@@ -245,7 +262,7 @@ export function PoolBatchIntakeDrawer({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const payload = buildPoolBatchCreatePayload(values, poolId)
+      const payload = buildPoolBatchCreatePayload(values, poolId, t)
       const response = await createPoolBatch(payload)
       await onCreated(response, {
         batchKind: values.batch_kind,
@@ -256,11 +273,11 @@ export function PoolBatchIntakeDrawer({
       })
       message.success(
         values.batch_kind === 'receipt'
-          ? 'Receipt batch accepted and linked run opened'
-          : 'Sale batch accepted and closing workflow queued',
+          ? t('runs.batchIntake.messages.receiptAccepted')
+          : t('runs.batchIntake.messages.saleAccepted')
       )
     } catch (error) {
-      const resolved = resolveApiError(error, 'Failed to create canonical pool batch.')
+      const resolved = resolveApiError(error, t('runs.batchIntake.messages.failedToCreate'))
       setSubmitError(resolved.message)
     } finally {
       setSubmitting(false)
@@ -272,9 +289,9 @@ export function PoolBatchIntakeDrawer({
       open={open}
       onClose={onClose}
       onSubmit={() => handleSubmit()}
-      title="Create canonical pool batch"
-      subtitle={`Pool context: ${poolLabel}`}
-      submitText="Create batch"
+      title={t('runs.batchIntake.title')}
+      subtitle={t('runs.batchIntake.subtitle', { poolLabel })}
+      submitText={t('runs.batchIntake.submit')}
       confirmLoading={submitting}
       submitButtonTestId="pool-runs-batch-intake-submit"
       drawerTestId="pool-runs-batch-intake-drawer"
@@ -285,40 +302,40 @@ export function PoolBatchIntakeDrawer({
           <Alert
             type="error"
             showIcon
-            message="Batch intake failed"
+            message={t('runs.batchIntake.alerts.failedTitle')}
             description={submitError}
           />
         ) : null}
         <Alert
           type="info"
           showIcon
-          message="Fail-closed canonical intake"
-          description="This drawer creates canonical receipt/sale batches through the shipped schema-template path only. Unsupported source classes are rejected on the public boundary."
+          message={t('runs.batchIntake.alerts.failClosedTitle')}
+          description={t('runs.batchIntake.alerts.failClosedDescription')}
         />
         <Form form={form} layout="vertical">
-          <Form.Item name="batch_kind" label="Batch kind" rules={[{ required: true }]}>
+          <Form.Item name="batch_kind" label={t('runs.batchIntake.fields.batchKind')} rules={[{ required: true }]}>
             <Radio.Group data-testid="pool-runs-batch-intake-kind" optionType="button" buttonStyle="solid">
-              <Radio.Button value="receipt">receipt</Radio.Button>
-              <Radio.Button value="sale">sale</Radio.Button>
+              <Radio.Button value="receipt">{t('runs.batchIntake.options.receipt')}</Radio.Button>
+              <Radio.Button value="sale">{t('runs.batchIntake.options.sale')}</Radio.Button>
             </Radio.Group>
           </Form.Item>
           <Space size={12} wrap style={{ width: '100%' }}>
             <Form.Item
               name="period_start"
-              label="Period start"
-              rules={[{ required: true, message: 'period_start required' }]}
+              label={t('runs.create.fields.periodStart')}
+              rules={[{ required: true, message: t('runs.batchIntake.validation.periodStartRequired') }]}
               style={{ minWidth: 180 }}
             >
               <Input type="date" />
             </Form.Item>
-            <Form.Item name="period_end" label="Period end" style={{ minWidth: 180 }}>
+            <Form.Item name="period_end" label={t('runs.create.fields.periodEnd')} style={{ minWidth: 180 }}>
               <Input type="date" />
             </Form.Item>
           </Space>
           <Form.Item
             name="schema_template_id"
-            label="Schema template"
-            rules={[{ required: true, message: 'schema_template_id required' }]}
+            label={t('runs.create.fields.schemaTemplate')}
+            rules={[{ required: true, message: t('runs.batchIntake.validation.schemaTemplateRequired') }]}
           >
             <Select
               data-testid="pool-runs-batch-intake-schema-template"
@@ -327,45 +344,45 @@ export function PoolBatchIntakeDrawer({
                 value: item.id,
                 label: `${item.code} - ${item.name}`,
               }))}
-              placeholder="Select schema template"
+              placeholder={t('runs.batchIntake.placeholders.selectSchemaTemplate')}
             />
           </Form.Item>
           {batchKind === 'receipt' ? (
             <Space direction="vertical" size={0} style={{ width: '100%' }}>
               <Form.Item
                 name="pool_workflow_binding_id"
-                label="Workflow binding"
-                rules={[{ required: true, message: 'pool_workflow_binding_id required' }]}
+                label={t('runs.create.fields.workflowBinding')}
+                rules={[{ required: true, message: t('runs.batchIntake.validation.workflowBindingRequired') }]}
               >
                 <Select
                   data-testid="pool-runs-batch-intake-binding"
                   options={workflowBindingOptions}
-                  placeholder="Select workflow binding"
+                  placeholder={t('runs.create.placeholders.selectBinding')}
                 />
               </Form.Item>
               <Form.Item
                 name="start_organization_id"
-                label="Start organization"
-                rules={[{ required: true, message: 'start_organization_id required' }]}
+                label={t('runs.create.fields.startOrganization')}
+                rules={[{ required: true, message: t('runs.batchIntake.validation.startOrganizationRequired') }]}
               >
                 <Select
                   data-testid="pool-runs-batch-intake-start-organization"
                   options={startOrganizationOptions}
-                  placeholder="Select start organization"
+                  placeholder={t('runs.create.placeholders.selectStartOrganization')}
                 />
               </Form.Item>
             </Space>
           ) : null}
-          <Form.Item name="source_reference" label="Source reference">
-            <Input data-testid="pool-runs-batch-intake-source-reference" placeholder="receipt-q1 / sale-q1 / partner registry id" />
+          <Form.Item name="source_reference" label={t('runs.batchIntake.fields.sourceReference')}>
+            <Input data-testid="pool-runs-batch-intake-source-reference" placeholder={t('runs.batchIntake.placeholders.sourceReference')} />
           </Form.Item>
-          <Form.Item name="raw_payload_ref" label="Raw payload reference">
-            <Input placeholder="files/receipt-q1.json" />
+          <Form.Item name="raw_payload_ref" label={t('runs.batchIntake.fields.rawPayloadReference')}>
+            <Input placeholder={t('runs.batchIntake.placeholders.rawPayloadReference')} />
           </Form.Item>
           <Form.Item
             name="source_payload_json"
-            label="Source payload JSON"
-            extra="Leave JSON empty if you upload XLSX/CSV-compatible binary payload instead."
+            label={t('runs.batchIntake.fields.sourcePayloadJson')}
+            extra={t('runs.batchIntake.fields.sourcePayloadExtra')}
           >
             <TextArea
               data-testid="pool-runs-batch-intake-source-payload"
@@ -388,9 +405,9 @@ export function PoolBatchIntakeDrawer({
                 return false
               }}
             >
-              <Button icon={<UploadOutlined />}>Load payload file</Button>
+              <Button icon={<UploadOutlined />}>{t('runs.batchIntake.actions.loadPayloadFile')}</Button>
             </Upload>
-            {uploadedFileName ? <Text type="secondary">Loaded file: {uploadedFileName}</Text> : null}
+            {uploadedFileName ? <Text type="secondary">{t('runs.batchIntake.fields.loadedFile', { fileName: uploadedFileName })}</Text> : null}
           </Space>
         </Form>
       </Space>

@@ -945,7 +945,7 @@ describe('PoolCatalogPage', () => {
     )
     expect(
       await screen.findByText(
-        'Топология уже была изменена другим оператором. Обновите граф и повторите сохранение.'
+        'Topology was changed by another operator. Refresh the graph and try saving again.'
       )
     ).toBeInTheDocument()
     expect(screen.getAllByText('Org One (730000000001)').length).toBeGreaterThan(0)
@@ -981,7 +981,7 @@ describe('PoolCatalogPage', () => {
 
     await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
-    expect(await screen.findByText('Выбранная база уже привязана к другой организации.')).toBeInTheDocument()
+    expect(await screen.findByText('The selected database is already linked to another organization.')).toBeInTheDocument()
     expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000111')
     expect(drawerQueries.getByLabelText('Name')).toHaveValue('Mapped Error Org')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
@@ -1028,7 +1028,7 @@ describe('PoolCatalogPage', () => {
     expect(
       await screen.findByText('Pool graph must have exactly one root node, got 2.')
     ).toBeInTheDocument()
-    expect(screen.queryByText('Проверьте корректность данных.')).not.toBeInTheDocument()
+    expect(screen.queryByText('Check the entered data.')).not.toBeInTheDocument()
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
   it('shows problem items for topology metadata reference errors', async () => {
@@ -1083,7 +1083,7 @@ describe('PoolCatalogPage', () => {
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
     expect(
-      await screen.findByText(/Document policy содержит ссылки на отсутствующие metadata поля\./)
+      await screen.findByText(/Document policy references metadata fields that do not exist\./)
     ).toBeInTheDocument()
     expect(
       await screen.findByText(
@@ -1171,7 +1171,7 @@ describe('PoolCatalogPage', () => {
     await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
     await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
-    expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
+    expect(await screen.findByText('Check the highlighted fields.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
     expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000001')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
@@ -1208,7 +1208,7 @@ describe('PoolCatalogPage', () => {
     await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
     await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
-    expect(await screen.findByText('Проверьте корректность данных.')).toBeInTheDocument()
+    expect(await screen.findByText('Check the entered data.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
     expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000001')
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
@@ -1227,7 +1227,7 @@ describe('PoolCatalogPage', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Run sync' }))
 
-    expect(await screen.findByText('Строка 1: поле inn обязательно.')).toBeInTheDocument()
+    expect(await screen.findByText('Row 1: inn is required.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
   }, EXTENDED_UI_TEST_TIMEOUT_MS)
 
@@ -1252,7 +1252,7 @@ describe('PoolCatalogPage', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Run sync' }))
 
-    expect(await screen.findByText('Превышен лимит batch: максимум 1000 строк.')).toBeInTheDocument()
+    expect(await screen.findByText('Batch limit exceeded: maximum 1000 rows.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
   }, SYNC_MODAL_TIMEOUT_MS)
 
@@ -1281,7 +1281,7 @@ describe('PoolCatalogPage', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Run sync' }))
 
-    expect(await screen.findByText('Проверьте корректность заполнения полей.')).toBeInTheDocument()
+    expect(await screen.findByText('Check the highlighted fields.')).toBeInTheDocument()
     expect(await screen.findByText('rows: Некорректный формат строки')).toBeInTheDocument()
   }, SYNC_MODAL_TIMEOUT_MS)
 

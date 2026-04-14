@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
+import { changeLanguage, ensureNamespaces } from '../../../../i18n/runtime'
 import { OperationsFilters } from '../OperationsFilters'
 
 describe('OperationsFilters a11y', () => {
+  beforeEach(async () => {
+    await changeLanguage('en')
+    await ensureNamespaces('en', 'operations')
+  })
+
   it('provides accessible names for filter inputs', () => {
     render(
       <OperationsFilters
@@ -12,9 +18,8 @@ describe('OperationsFilters a11y', () => {
       />,
     )
 
-    expect(screen.getByLabelText('Operation ID filter')).toBeInTheDocument()
-    expect(screen.getByLabelText('Workflow execution ID filter')).toBeInTheDocument()
-    expect(screen.getByLabelText('Node ID filter')).toBeInTheDocument()
+    expect(screen.getByLabelText('Operation ID')).toBeInTheDocument()
+    expect(screen.getByLabelText('Workflow')).toBeInTheDocument()
+    expect(screen.getByLabelText('Node:')).toBeInTheDocument()
   })
 })
-

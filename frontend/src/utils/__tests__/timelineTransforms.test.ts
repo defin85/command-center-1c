@@ -347,7 +347,7 @@ describe('timelineTransforms', () => {
 
       // Result depends on locale, but should include hours, minutes, seconds, milliseconds
       expect(result).toMatch(/\d{2}:\d{2}:\d{2}/)
-      expect(result).toContain(',') // Russian locale uses comma for milliseconds separator
+      expect(result).toMatch(/[.,]\d{3}(?:\s?[AP]M)?$/i)
     })
 
     it('handles midnight correctly', () => {
@@ -364,9 +364,9 @@ describe('timelineTransforms', () => {
       const result1 = formatTimestamp(date1)
       const result2 = formatTimestamp(date2)
 
-      // Both should have 3-digit milliseconds
-      expect(result1).toMatch(/\d{2}:\d{2}:\d{2},\d{3}/)
-      expect(result2).toMatch(/\d{2}:\d{2}:\d{2},\d{3}/)
+      // Both should have 3-digit milliseconds regardless of locale decimal separator or AM/PM suffix
+      expect(result1).toMatch(/\d{2}:\d{2}:\d{2}[.,]\d{3}(?:\s?[AP]M)?/i)
+      expect(result2).toMatch(/\d{2}:\d{2}:\d{2}[.,]\d{3}(?:\s?[AP]M)?/i)
     })
 
     it('returns consistent format for same time', () => {

@@ -8,6 +8,7 @@ import {
   type PoolMasterBindingCatalogKind,
   type PoolMasterParty,
 } from '../../../api/intercompanyPools'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 
@@ -23,6 +24,7 @@ type PartyFormValues = {
 
 export function PartiesTab() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterParty[]>([])
   const [loading, setLoading] = useState(false)
   const [query, setQuery] = useState('')
@@ -43,12 +45,12 @@ export function PartiesTab() {
       })
       setRows(response.parties)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить Party.')
+      const resolved = resolveApiError(error, t('masterData.partiesTab.messages.failedToLoad'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [message, query, roleFilter])
+  }, [message, query, roleFilter, t])
 
   useEffect(() => {
     void loadRows()
@@ -85,7 +87,7 @@ export function PartiesTab() {
   const handleSubmit = async () => {
     const values = await form.validateFields()
     if (!values.is_our_organization && !values.is_counterparty) {
-      message.error('Party должен иметь минимум одну роль: organization или counterparty.')
+      message.error(t('masterData.partiesTab.messages.roleRequired'))
       return
     }
 
@@ -102,10 +104,14 @@ export function PartiesTab() {
         is_counterparty: values.is_counterparty,
       })
       setIsModalOpen(false)
-      message.success(editingParty ? 'Party обновлён.' : 'Party создан.')
+      message.success(
+        editingParty
+          ? t('masterData.partiesTab.messages.updated')
+          : t('masterData.partiesTab.messages.created')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить Party.')
+      const resolved = resolveApiError(error, t('masterData.partiesTab.messages.failedToSave'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields((
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors }))
@@ -118,33 +124,33 @@ export function PartiesTab() {
   }
 
   const columns: ColumnsType<PoolMasterParty> = [
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
+    { title: t('masterData.partiesTab.columns.canonicalId'), dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
+    { title: t('masterData.partiesTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
     {
-      title: 'Roles',
+      title: t('masterData.partiesTab.columns.roles'),
       key: 'roles',
       width: 220,
       render: (_, row) => (
         <Space>
-          {row.is_our_organization && <Tag color="blue">organization</Tag>}
-          {row.is_counterparty && <Tag color="green">counterparty</Tag>}
+          {row.is_our_organization && <Tag color="blue">{t('masterData.partiesTab.columns.organization')}</Tag>}
+          {row.is_counterparty && <Tag color="green">{t('masterData.partiesTab.columns.counterparty')}</Tag>}
         </Space>
       ),
     },
-    { title: 'INN', dataIndex: 'inn', key: 'inn', width: 140 },
-    { title: 'KPP', dataIndex: 'kpp', key: 'kpp', width: 140 },
+    { title: t('masterData.partiesTab.columns.inn'), dataIndex: 'inn', key: 'inn', width: 140 },
+    { title: t('masterData.partiesTab.columns.kpp'), dataIndex: 'kpp', key: 'kpp', width: 140 },
     {
-      title: 'Updated',
+      title: t('masterData.partiesTab.columns.updated'),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Actions',
+      title: t('masterData.partiesTab.columns.actions'),
       key: 'actions',
       width: 100,
-      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>Edit</Button>,
+      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>{t('common.edit')}</Button>,
     },
   ]
 
@@ -154,7 +160,7 @@ export function PartiesTab() {
         <Space wrap style={{ marginBottom: 16 }}>
           <Input
             allowClear
-            placeholder="Search canonical_id / name / INN"
+            placeholder={t('masterData.partiesTab.filters.searchPlaceholder')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onPressEnter={() => void loadRows()}
@@ -162,17 +168,17 @@ export function PartiesTab() {
           />
           <Select
             allowClear
-            placeholder="Role"
+            placeholder={t('masterData.partiesTab.filters.rolePlaceholder')}
             value={roleFilter}
             options={[
-              { value: 'organization', label: 'organization' },
-              { value: 'counterparty', label: 'counterparty' },
+              { value: 'organization', label: t('masterData.partiesTab.columns.organization') },
+              { value: 'counterparty', label: t('masterData.partiesTab.columns.counterparty') },
             ]}
             onChange={(value) => setRoleFilter(value)}
             style={{ width: 200 }}
           />
-          <Button onClick={() => void loadRows()} loading={loading}>Refresh</Button>
-          <Button type="primary" onClick={openCreateModal}>Add Party</Button>
+          <Button onClick={() => void loadRows()} loading={loading}>{t('catalog.actions.refresh')}</Button>
+          <Button type="primary" onClick={openCreateModal}>{t('masterData.partiesTab.actions.add')}</Button>
         </Space>
         <Table
           rowKey="id"
@@ -185,7 +191,7 @@ export function PartiesTab() {
       </Card>
 
       <Modal
-        title={editingParty ? 'Edit Party' : 'Create Party'}
+        title={editingParty ? t('masterData.partiesTab.modal.editTitle') : t('masterData.partiesTab.modal.createTitle')}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
@@ -193,26 +199,26 @@ export function PartiesTab() {
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.partiesTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('masterData.partiesTab.modal.fields.name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="full_name" label="Full Name">
+          <Form.Item name="full_name" label={t('masterData.partiesTab.modal.fields.fullName')}>
             <Input />
           </Form.Item>
-          <Form.Item name="inn" label="INN">
+          <Form.Item name="inn" label={t('masterData.partiesTab.modal.fields.inn')}>
             <Input />
           </Form.Item>
-          <Form.Item name="kpp" label="KPP">
+          <Form.Item name="kpp" label={t('masterData.partiesTab.modal.fields.kpp')}>
             <Input />
           </Form.Item>
           <Form.Item name="is_our_organization" valuePropName="checked">
-            <Checkbox>Role: organization</Checkbox>
+            <Checkbox>{t('masterData.partiesTab.modal.roles.organization')}</Checkbox>
           </Form.Item>
           <Form.Item name="is_counterparty" valuePropName="checked">
-            <Checkbox>Role: counterparty</Checkbox>
+            <Checkbox>{t('masterData.partiesTab.modal.roles.counterparty')}</Checkbox>
           </Form.Item>
         </Form>
       </Modal>

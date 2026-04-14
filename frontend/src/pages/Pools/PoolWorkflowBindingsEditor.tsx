@@ -6,7 +6,7 @@ import type {
   PoolWorkflowBindingResolvedProfile,
 } from '../../api/intercompanyPools'
 import { RouteButton } from '../../components/platform'
-import { usePoolsTranslation } from '../../i18n'
+import { i18n, usePoolsTranslation } from '../../i18n'
 import { POOL_EXECUTION_PACKS_ROUTE } from './routes'
 import {
   createEmptyWorkflowBindingFormValue,
@@ -32,6 +32,10 @@ import { describeExecutionPackTopologyCompatibility } from './executionPackTopol
 const { Text } = Typography
 const { useBreakpoint } = Grid
 
+const tPools = (key: string, options?: Record<string, unknown>) => (
+  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+)
+
 type PoolWorkflowBindingsEditorProps = {
   availableBindingProfiles?: BindingProfileSummary[]
   availableBindingProfileDetails?: Record<string, BindingProfileDetail>
@@ -42,12 +46,6 @@ type PoolWorkflowBindingsEditorProps = {
   topologyEdgeSelectors?: TopologyEdgeSelector[]
   disabled?: boolean
 }
-
-const STATUS_OPTIONS = [
-  { value: 'draft', label: 'draft' },
-  { value: 'active', label: 'active' },
-  { value: 'inactive', label: 'inactive' },
-]
 
 const toSyntheticBinding = (value: PoolWorkflowBindingFormValue | undefined): PoolWorkflowBindingPresentationValue | null => {
   if (!value) return null
@@ -147,7 +145,7 @@ const buildRevisionOptions = (
   return [
     {
       value: currentRevisionId,
-      label: `${resolvePoolWorkflowBindingProfileLabel(binding)} · r${binding?.binding_profile_revision_number ?? '?'} · current`,
+      label: `${resolvePoolWorkflowBindingProfileLabel(binding)} · r${binding?.binding_profile_revision_number ?? '?'} · ${tPools('catalog.bindingsEditor.currentRevision')}`,
       bindingProfileId: binding?.binding_profile_id ?? binding?.resolved_profile?.binding_profile_id,
       bindingProfileRevisionNumber: binding?.binding_profile_revision_number ?? binding?.resolved_profile?.binding_profile_revision_number,
       resolvedProfile: binding?.resolved_profile,
@@ -170,6 +168,11 @@ export function PoolWorkflowBindingsEditor({
   const { t } = usePoolsTranslation()
   const screens = useBreakpoint()
   const isNarrow = !screens.md
+  const statusOptions = [
+    { value: 'draft', label: t('catalog.bindingsEditor.statusOptions.draft') },
+    { value: 'active', label: t('catalog.bindingsEditor.statusOptions.active') },
+    { value: 'inactive', label: t('catalog.bindingsEditor.statusOptions.inactive') },
+  ]
   const wrappingTextStyle = {
     display: 'block',
     overflowWrap: 'anywhere',
@@ -181,22 +184,22 @@ export function PoolWorkflowBindingsEditor({
       <Alert
         type="info"
         showIcon
-        message="Workflow bindings are managed as pool-scoped attachments"
-        description="Attach an existing reusable execution-pack revision, edit only pool-local scope, and use /pools/execution-packs for workflow, slot, parameter, or role-mapping authoring."
+        message={t('catalog.bindingsEditor.attachmentsManagedTitle')}
+        description={t('catalog.bindingsEditor.attachmentsManagedDescription')}
       />
       {bindingProfilesLoadError ? (
         <Alert
           type="warning"
           showIcon
           message={bindingProfilesLoadError}
-          description="Existing pinned attachments remain visible, but attaching a new execution-pack revision requires the reusable execution-pack catalog."
+          description={t('catalog.bindingsEditor.loadErrorDescription')}
         />
       ) : null}
       <Form.List name="workflow_bindings">
         {(fields, { add, remove }) => (
           <Space direction="vertical" size="middle" style={{ width: '100%', minWidth: 0 }}>
             {fields.length === 0 ? (
-              <Text type="secondary">No workflow attachments configured for this pool yet.</Text>
+              <Text type="secondary">{t('catalog.bindingsEditor.emptyDescription')}</Text>
             ) : null}
             {fields.map((field) => (
               <Form.Item key={field.key} noStyle shouldUpdate>
@@ -235,7 +238,7 @@ export function PoolWorkflowBindingsEditor({
                     topologyEdgeSelectors,
                     buildTopologyCoverageContext({
                       bindingLabel: getWorkflowBindingCardTitle(binding, field.name + 1),
-                      detail: 'Coverage is evaluated against the resolved reusable execution-pack revision pinned by this attachment.',
+                      detail: t('catalog.bindingsEditor.coverageDetail'),
                       slotRefs,
                       source: 'selected',
                     }),
@@ -280,7 +283,7 @@ export function PoolWorkflowBindingsEditor({
                               disabled={disabled}
                               data-testid={`pool-catalog-workflow-binding-remove-${field.name}`}
                             >
-                              Remove
+                              {t('catalog.bindingsEditor.remove')}
                             </Button>
                           ) : null}
                         </Space>
@@ -293,7 +296,7 @@ export function PoolWorkflowBindingsEditor({
                           disabled={disabled}
                           data-testid={`pool-catalog-workflow-binding-remove-${field.name}`}
                         >
-                          Remove
+                          {t('catalog.bindingsEditor.remove')}
                         </Button>
                       )}
                       data-testid={`pool-catalog-workflow-binding-card-${field.name}`}
@@ -310,19 +313,19 @@ export function PoolWorkflowBindingsEditor({
 
                         <Card
                           size="small"
-                          title="Topology coverage"
+                          title={t('catalog.bindingsEditor.coverageTitle')}
                           data-testid={`pool-catalog-workflow-binding-coverage-${field.name}`}
                         >
                           {topologyEdgeSelectors.length === 0 ? (
-                            <Text type="secondary">No topology edges in the selected snapshot yet.</Text>
+                            <Text type="secondary">{t('catalog.bindingsEditor.noEdgesYet')}</Text>
                           ) : (
                             <Space direction="vertical" size="small" style={{ width: '100%' }}>
                               <Space size={[4, 4]} wrap>
-                                <Tag>edges: {coverageSummary.totalEdges}</Tag>
-                                <Tag color="success">resolved: {coverageSummary.counts.resolved}</Tag>
-                                <Tag color="error">missing slot: {coverageSummary.counts.missing_slot}</Tag>
-                                <Tag color="default">missing selector: {coverageSummary.counts.missing_selector}</Tag>
-                                <Tag color="warning">ambiguous: {coverageSummary.counts.ambiguous_slot}</Tag>
+                                <Tag>{t('common.topologyCoverage.totalEdges', { count: coverageSummary.totalEdges })}</Tag>
+                                <Tag color="success">{t('common.topologyCoverage.resolvedCount', { count: coverageSummary.counts.resolved })}</Tag>
+                                <Tag color="error">{t('common.topologyCoverage.missingSlotCount', { count: coverageSummary.counts.missing_slot })}</Tag>
+                                <Tag color="default">{t('common.topologyCoverage.missingSelectorCount', { count: coverageSummary.counts.missing_selector })}</Tag>
+                                <Tag color="warning">{t('common.topologyCoverage.ambiguousSlotCount', { count: coverageSummary.counts.ambiguous_slot })}</Tag>
                               </Space>
                               {slotCoverageItems.length > 0 ? (
                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -333,8 +336,8 @@ export function PoolWorkflowBindingsEditor({
                                         data-testid={`pool-catalog-workflow-binding-slot-coverage-${field.name}-${slotCoverage.slotIndex}`}
                                       >
                                         {slotCoverage.matchedEdges.length > 0
-                                          ? `edges: ${slotCoverage.matchedEdges.length}`
-                                          : 'unused by topology'}
+                                          ? t('executionPacks.workflowBindingSlots.coveredEdges', { count: slotCoverage.matchedEdges.length })
+                                          : t('executionPacks.workflowBindingSlots.unusedByTopology')}
                                       </Tag>
                                       <Text type="secondary">
                                         {slotCoverage.slotKey} · {slotCoverage.refLabel}
@@ -344,7 +347,7 @@ export function PoolWorkflowBindingsEditor({
                                 </Space>
                               ) : null}
                               {unresolvedCoverageItems.length === 0 ? (
-                                <Text type="secondary">All topology edges are covered by the pinned execution-pack revision.</Text>
+                                <Text type="secondary">{t('catalog.bindingsEditor.allEdgesCovered')}</Text>
                               ) : (
                                 <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                   {unresolvedCoverageItems.map((item, itemIndex) => (
@@ -353,7 +356,7 @@ export function PoolWorkflowBindingsEditor({
                                       type="secondary"
                                       data-testid={`pool-catalog-workflow-binding-coverage-item-${field.name}-${itemIndex}`}
                                     >
-                                      {`${item.edgeLabel} · ${item.slotKey || 'slot not set'} · ${item.coverage.label}`}
+                                      {`${item.edgeLabel} · ${item.slotKey || t('common.topologyCoverage.slotNotSet')} · ${item.coverage.label}`}
                                     </Text>
                                   ))}
                                 </Space>
@@ -364,19 +367,19 @@ export function PoolWorkflowBindingsEditor({
 
                         <Row gutter={[12, 12]}>
                           <Col xs={24} md={12}>
-                            <Form.Item name={[field.name, 'binding_id']} label="pool_workflow_binding_id">
+                            <Form.Item name={[field.name, 'binding_id']} label={t('catalog.bindingsEditor.fields.bindingId')}>
                               <Input
                                 allowClear
-                                placeholder="optional existing attachment id"
+                                placeholder={t('catalog.bindingsEditor.placeholders.bindingId')}
                                 disabled={disabled}
                                 data-testid={`pool-catalog-workflow-binding-id-${field.name}`}
                               />
                             </Form.Item>
                           </Col>
                           <Col xs={24} md={12}>
-                            <Form.Item name={[field.name, 'status']} label="status">
+                            <Form.Item name={[field.name, 'status']} label={t('catalog.bindingsEditor.fields.status')}>
                               <Select
-                                options={STATUS_OPTIONS}
+                                options={statusOptions}
                                 disabled={disabled}
                                 data-testid={`pool-catalog-workflow-binding-status-${field.name}`}
                               />
@@ -388,7 +391,7 @@ export function PoolWorkflowBindingsEditor({
                           <Col xs={24} md={18}>
                             <Form.Item
                               name={[field.name, 'binding_profile_revision_id']}
-                              label="binding_profile_revision_id"
+                              label={t('catalog.bindingsEditor.fields.bindingProfileRevisionId')}
                             >
                               <Select
                                 showSearch
@@ -396,7 +399,7 @@ export function PoolWorkflowBindingsEditor({
                                 loading={bindingProfilesLoading || bindingProfileDetailsLoading}
                                 options={revisionOptions}
                                 disabled={disabled}
-                                placeholder="Select reusable execution-pack revision"
+                                placeholder={t('catalog.bindingsEditor.placeholders.bindingProfileRevisionId')}
                                 data-testid={`pool-catalog-workflow-binding-profile-revision-${field.name}`}
                                 onOpenChange={(open) => {
                                   if (open) {
@@ -426,14 +429,14 @@ export function PoolWorkflowBindingsEditor({
                               style={{ marginTop: isNarrow ? 0 : 30, whiteSpace: 'normal', height: 'auto' }}
                               data-testid={`pool-catalog-workflow-binding-handoff-${field.name}`}
                             >
-                              Edit in execution-pack catalog
+                              {t('catalog.bindingsEditor.editInExecutionPackCatalog')}
                             </RouteButton>
                           </Col>
                         </Row>
 
                         <Card
                           size="small"
-                          title="Resolved profile summary"
+                          title={t('catalog.bindingsEditor.resolvedProfileSummary')}
                           data-testid={`pool-catalog-workflow-binding-profile-summary-${field.name}`}
                         >
                           <Space direction="vertical" size={4} style={{ width: '100%' }}>
@@ -447,7 +450,7 @@ export function PoolWorkflowBindingsEditor({
                               data-testid={`pool-catalog-workflow-binding-profile-status-${field.name}`}
                               style={wrappingTextStyle}
                             >
-                              {resolvePoolWorkflowBindingProfileStatus(syntheticBinding) ?? 'not resolved'}
+                              {resolvePoolWorkflowBindingProfileStatus(syntheticBinding) ?? t('catalog.bindingsEditor.notResolved')}
                             </Text>
                             <Text
                               data-testid={`pool-catalog-workflow-binding-workflow-name-${field.name}`}
@@ -484,13 +487,17 @@ export function PoolWorkflowBindingsEditor({
                             description={(
                               <Space direction="vertical" size={4} style={{ width: '100%' }}>
                                 <Text data-testid={`pool-catalog-workflow-binding-topology-status-${field.name}`}>
-                                  Status: {topologyCompatibility.statusText}
+                                  {t('catalog.bindingsEditor.topologyCompatibilityStatus', {
+                                    value: topologyCompatibility.statusText,
+                                  })}
                                 </Text>
                                 <Text
                                   type="secondary"
                                   data-testid={`pool-catalog-workflow-binding-topology-covered-slots-${field.name}`}
                                 >
-                                  Covered slots: {topologyCompatibility.coveredSlotsText}
+                                  {t('catalog.bindingsEditor.topologyCompatibilityCoveredSlots', {
+                                    value: topologyCompatibility.coveredSlotsText,
+                                  })}
                                 </Text>
                                 {topologyCompatibility.diagnostics.map((diagnostic, diagnosticIndex) => (
                                   <Text
@@ -508,7 +515,7 @@ export function PoolWorkflowBindingsEditor({
 
                         <Row gutter={[12, 12]}>
                           <Col xs={24} md={12}>
-                            <Form.Item name={[field.name, 'effective_from']} label="effective_from">
+                            <Form.Item name={[field.name, 'effective_from']} label={t('catalog.bindingsEditor.fields.effectiveFrom')}>
                               <Input
                                 type="date"
                                 disabled={disabled}
@@ -517,7 +524,7 @@ export function PoolWorkflowBindingsEditor({
                             </Form.Item>
                           </Col>
                           <Col xs={24} md={12}>
-                            <Form.Item name={[field.name, 'effective_to']} label="effective_to">
+                            <Form.Item name={[field.name, 'effective_to']} label={t('catalog.bindingsEditor.fields.effectiveTo')}>
                               <Input
                                 type="date"
                                 disabled={disabled}
@@ -529,30 +536,30 @@ export function PoolWorkflowBindingsEditor({
 
                         <Row gutter={[12, 12]}>
                           <Col xs={24} md={8}>
-                            <Form.Item name={[field.name, 'selector', 'direction']} label="selector.direction">
+                            <Form.Item name={[field.name, 'selector', 'direction']} label={t('catalog.bindingsEditor.fields.selectorDirection')}>
                               <Input
                                 allowClear
-                                placeholder="top_down"
+                                placeholder={t('catalog.bindingsEditor.placeholders.selectorDirection')}
                                 disabled={disabled}
                                 data-testid={`pool-catalog-workflow-binding-selector-direction-${field.name}`}
                               />
                             </Form.Item>
                           </Col>
                           <Col xs={24} md={8}>
-                            <Form.Item name={[field.name, 'selector', 'mode']} label="selector.mode">
+                            <Form.Item name={[field.name, 'selector', 'mode']} label={t('catalog.bindingsEditor.fields.selectorMode')}>
                               <Input
                                 allowClear
-                                placeholder="safe"
+                                placeholder={t('catalog.bindingsEditor.placeholders.selectorMode')}
                                 disabled={disabled}
                                 data-testid={`pool-catalog-workflow-binding-selector-mode-${field.name}`}
                               />
                             </Form.Item>
                           </Col>
                           <Col xs={24} md={8}>
-                            <Form.Item name={[field.name, 'selector', 'tags_csv']} label="selector.tags">
+                            <Form.Item name={[field.name, 'selector', 'tags_csv']} label={t('catalog.bindingsEditor.fields.selectorTags')}>
                               <Input
                                 allowClear
-                                placeholder="baseline, monthly"
+                                placeholder={t('catalog.bindingsEditor.placeholders.selectorTags')}
                                 disabled={disabled}
                                 data-testid={`pool-catalog-workflow-binding-selector-tags-${field.name}`}
                               />
@@ -576,7 +583,7 @@ export function PoolWorkflowBindingsEditor({
               }
               data-testid="pool-catalog-workflow-binding-add"
             >
-              Attach profile revision
+              {t('catalog.bindingsEditor.attachProfileRevision')}
             </Button>
           </Space>
         )}

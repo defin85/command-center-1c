@@ -1171,7 +1171,7 @@ describe('PoolMasterDataPage', () => {
     await user.click(screen.getByRole('button', { name: 'OK' }))
 
     expect(
-      await screen.findByText('Party должен иметь минимум одну роль: organization или counterparty.')
+      await screen.findByText('Party must have at least one role: organization or counterparty.')
     ).toBeInTheDocument()
     expect(mockUpsertMasterDataParty).not.toHaveBeenCalled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
@@ -2433,7 +2433,7 @@ describe('PoolMasterDataPage', () => {
     const detail = within(currentCollectionCard as HTMLElement)
 
     expect(await detail.findByText('Target Mode')).toBeInTheDocument()
-    expect(detail.getByText('database_set')).toBeInTheDocument()
+    expect(detail.getByText('Selected databases')).toBeInTheDocument()
     expect(detail.getByText('Replica DB · Main Cluster, Main DB · Main Cluster')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 

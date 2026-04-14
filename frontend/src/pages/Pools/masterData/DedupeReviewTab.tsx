@@ -17,18 +17,12 @@ import {
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
 import { JsonBlock } from '../../../components/platform'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { getDedupeEntityOptions, getRegistryEntityLabel } from './registry'
 
 const { Text } = Typography
-
-const REVIEW_STATUS_OPTIONS: Array<{ value: PoolMasterDataDedupeReviewStatus; label: string }> = [
-  { value: 'pending_review', label: 'pending_review' },
-  { value: 'resolved_auto', label: 'resolved_auto' },
-  { value: 'resolved_manual', label: 'resolved_manual' },
-  { value: 'superseded', label: 'superseded' },
-]
 
 const REVIEW_STATUS_COLORS: Record<PoolMasterDataDedupeReviewStatus, string> = {
   pending_review: 'warning',
@@ -41,14 +35,9 @@ type DedupeReviewTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
 
-const dedupeReviewActionLabels: Record<'accept_merge' | 'choose_survivor' | 'mark_distinct', string> = {
-  accept_merge: 'accept merge',
-  choose_survivor: 'choose survivor',
-  mark_distinct: 'mark distinct',
-}
-
 export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [databaseId, setDatabaseId] = useState<string | undefined>(searchParams.get('databaseId')?.trim() || undefined)
@@ -68,6 +57,23 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
   const entityTypeOptions = useMemo(
     () => getDedupeEntityOptions(registryEntries),
     [registryEntries]
+  )
+  const reviewStatusOptions = useMemo<Array<{ value: PoolMasterDataDedupeReviewStatus; label: string }>>(
+    () => [
+      { value: 'pending_review', label: t('masterData.dedupeReviewTab.status.pendingReview') },
+      { value: 'resolved_auto', label: t('masterData.dedupeReviewTab.status.resolvedAuto') },
+      { value: 'resolved_manual', label: t('masterData.dedupeReviewTab.status.resolvedManual') },
+      { value: 'superseded', label: t('masterData.dedupeReviewTab.status.superseded') },
+    ],
+    [t]
+  )
+  const dedupeReviewActionLabels = useMemo<Record<'accept_merge' | 'choose_survivor' | 'mark_distinct', string>>(
+    () => ({
+      accept_merge: t('masterData.dedupeReviewTab.actions.acceptMerge'),
+      choose_survivor: t('masterData.dedupeReviewTab.actions.chooseSurvivor'),
+      mark_distinct: t('masterData.dedupeReviewTab.actions.markDistinct'),
+    }),
+    [t]
   )
 
   const databaseNameById = useMemo(() => {
@@ -142,10 +148,10 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       const rows = await listPoolTargetDatabases()
       setDatabases(rows)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить список баз для Dedupe Review.')
+      const resolved = resolveApiError(error, t('masterData.dedupeReviewTab.messages.failedToLoadDatabases'))
       message.error(resolved.message)
     }
-  }, [message])
+  }, [message, t])
 
   const loadReviewItems = useCallback(async () => {
     setLoading(true)
@@ -170,12 +176,12 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         return response.items[0]?.id ?? null
       })
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить dedupe review queue.')
+      const resolved = resolveApiError(error, t('masterData.dedupeReviewTab.messages.failedToLoadQueue'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [databaseId, entityType, message, reasonCode, reviewItemIdFromUrl, routeClusterId, status])
+  }, [databaseId, entityType, message, reasonCode, reviewItemIdFromUrl, routeClusterId, status, t])
 
   const loadReviewDetail = useCallback(async (reviewItemId: string, silent = false) => {
     if (!silent) {
@@ -186,7 +192,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       setSelectedReview(response.review_item)
     } catch (error) {
       if (!silent) {
-        const resolved = resolveApiError(error, 'Не удалось загрузить детали dedupe review item.')
+        const resolved = resolveApiError(error, t('masterData.dedupeReviewTab.messages.failedToLoadDetail'))
         message.error(resolved.message)
       }
     } finally {
@@ -194,7 +200,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         setLoadingDetail(false)
       }
     }
-  }, [message])
+  }, [message, t])
 
   useEffect(() => {
     void loadDatabases()
@@ -240,7 +246,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       return
     }
     if (action === 'choose_survivor' && !selectedSourceRecordId) {
-      message.error('Выберите source record для survivor resolution.')
+      message.error(t('masterData.dedupeReviewTab.messages.selectSourceRecord'))
       return
     }
     setActionName(action)
@@ -248,40 +254,42 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
       const response = await applyPoolMasterDataDedupeReviewAction(selectedReview.id, {
         action,
         source_record_id: action === 'choose_survivor' ? selectedSourceRecordId : undefined,
-        note: `Manual ${dedupeReviewActionLabels[action]} from Dedupe Review UI`,
+        note: t('masterData.dedupeReviewTab.messages.actionNote', { action: dedupeReviewActionLabels[action].toLowerCase() }),
         metadata: { source: 'ui' },
       })
       setSelectedReview(response.review_item)
-      message.success(`Action ${dedupeReviewActionLabels[action]} выполнен.`)
+      message.success(t('masterData.dedupeReviewTab.messages.actionCompleted', { action: dedupeReviewActionLabels[action] }))
       await loadReviewItems()
       await loadReviewDetail(selectedReview.id, true)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось выполнить dedupe review action.')
+      const resolved = resolveApiError(error, t('masterData.dedupeReviewTab.messages.failedToRunAction'))
       message.error(resolved.message)
     } finally {
       setActionName(null)
     }
-  }, [loadReviewDetail, loadReviewItems, message, selectedReview, selectedSourceRecordId])
+  }, [dedupeReviewActionLabels, loadReviewDetail, loadReviewItems, message, selectedReview, selectedSourceRecordId, t])
 
   const queueColumns: ColumnsType<PoolMasterDataDedupeReviewItem> = [
     {
-      title: 'Status',
+      title: t('masterData.dedupeReviewTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 140,
       render: (value: PoolMasterDataDedupeReviewStatus) => (
-        <Tag color={REVIEW_STATUS_COLORS[value] || 'default'}>{value}</Tag>
+        <Tag color={REVIEW_STATUS_COLORS[value] || 'default'}>
+          {reviewStatusOptions.find((option) => option.value === value)?.label || value}
+        </Tag>
       ),
     },
     {
-      title: 'Entity',
+      title: t('masterData.dedupeReviewTab.columns.entity'),
       dataIndex: 'entity_type',
       key: 'entity_type',
       width: 160,
       render: (value: string) => getRegistryEntityLabel(registryEntries, value),
     },
     {
-      title: 'Databases',
+      title: t('masterData.dedupeReviewTab.columns.databases'),
       key: 'databases',
       width: 260,
       render: (_value, row) => {
@@ -290,18 +298,18 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
             .map((item) => item.source_database_name || databaseNameById.get(item.source_database_id || '') || '')
             .filter((item) => item.length > 0)
         )]
-        return names.length > 0 ? names.join(', ') : '-'
+        return names.length > 0 ? names.join(', ') : t('common.noValue')
       },
     },
     {
-      title: 'Reason',
+      title: t('masterData.dedupeReviewTab.columns.reason'),
       dataIndex: 'reason_code',
       key: 'reason_code',
       width: 220,
       render: (value: string) => <Tag color="gold">{value}</Tag>,
     },
     {
-      title: 'Updated',
+      title: t('masterData.dedupeReviewTab.columns.updated'),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 220,
@@ -311,7 +319,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
 
   const sourceColumns: ColumnsType<PoolMasterDataSourceRecord> = [
     {
-      title: 'Survivor',
+      title: t('masterData.dedupeReviewTab.columns.survivor'),
       key: 'survivor',
       width: 90,
       render: (_value, row) => (
@@ -320,38 +328,38 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           name="dedupe-survivor"
           checked={selectedSourceRecordId === row.id}
           onChange={() => setSelectedSourceRecordId(row.id)}
-          aria-label={`Use ${row.source_ref} as survivor`}
+          aria-label={t('masterData.dedupeReviewTab.actions.useSourceAsSurvivor', { sourceRef: row.source_ref })}
         />
       ),
     },
     {
-      title: 'Database',
+      title: t('masterData.dedupeReviewTab.columns.database'),
       key: 'source_database_name',
       width: 220,
-      render: (_value, row) => row.source_database_name || databaseNameById.get(row.source_database_id || '') || '-',
+      render: (_value, row) => row.source_database_name || databaseNameById.get(row.source_database_id || '') || t('common.noValue'),
     },
-    { title: 'Source Ref', dataIndex: 'source_ref', key: 'source_ref', width: 200 },
-    { title: 'Source Canonical ID', dataIndex: 'source_canonical_id', key: 'source_canonical_id', width: 180 },
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 180 },
+    { title: t('masterData.dedupeReviewTab.columns.sourceRef'), dataIndex: 'source_ref', key: 'source_ref', width: 200 },
+    { title: t('masterData.dedupeReviewTab.columns.sourceCanonicalId'), dataIndex: 'source_canonical_id', key: 'source_canonical_id', width: 180 },
+    { title: t('masterData.dedupeReviewTab.columns.canonicalId'), dataIndex: 'canonical_id', key: 'canonical_id', width: 180 },
     {
-      title: 'Resolution',
+      title: t('masterData.dedupeReviewTab.columns.resolution'),
       dataIndex: 'resolution_status',
       key: 'resolution_status',
       width: 160,
       render: (value: string) => <Tag>{value}</Tag>,
     },
     {
-      title: 'Origin',
+      title: t('masterData.dedupeReviewTab.columns.origin'),
       key: 'origin',
       width: 220,
-      render: (_value, row) => `${row.origin_kind || '-'}:${row.origin_ref || '-'}`,
+      render: (_value, row) => `${row.origin_kind || t('common.noValue')}:${row.origin_ref || t('common.noValue')}`,
     },
   ]
   const bindingColumns: ColumnsType<PoolMasterDataDedupeAffectedBinding> = [
-    { title: 'Database', dataIndex: 'database_name', key: 'database_name', width: 220 },
-    { title: 'IB Ref', dataIndex: 'ib_ref_key', key: 'ib_ref_key', width: 200 },
+    { title: t('masterData.dedupeReviewTab.columns.database'), dataIndex: 'database_name', key: 'database_name', width: 220 },
+    { title: t('masterData.dedupeReviewTab.columns.ibRef'), dataIndex: 'ib_ref_key', key: 'ib_ref_key', width: 200 },
     {
-      title: 'Scope',
+      title: t('masterData.dedupeReviewTab.columns.scope'),
       key: 'scope',
       width: 280,
       render: (_value, row) => {
@@ -364,26 +372,26 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         if (row.chart_identity) {
           return row.chart_identity
         }
-        return '-'
+        return t('common.noValue')
       },
     },
     {
-      title: 'Sync Status',
+      title: t('masterData.dedupeReviewTab.columns.syncStatus'),
       dataIndex: 'sync_status',
       key: 'sync_status',
       width: 140,
-      render: (value: string) => <Tag>{value || '-'}</Tag>,
+      render: (value: string) => <Tag>{value || t('common.noValue')}</Tag>,
     },
   ]
   const runtimeBlockerColumns: ColumnsType<PoolMasterDataDedupeRuntimeBlocker> = [
     {
-      title: 'Blocker',
+      title: t('masterData.dedupeReviewTab.columns.blocker'),
       dataIndex: 'label',
       key: 'label',
       width: 220,
       render: (value: string, row) => <Tag color="warning">{value || row.code}</Tag>,
     },
-    { title: 'Detail', dataIndex: 'detail', key: 'detail' },
+    { title: t('masterData.dedupeReviewTab.columns.detail'), dataIndex: 'detail', key: 'detail' },
   ]
 
   const detailExtra = selectedReview ? (
@@ -393,14 +401,14 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         loading={actionName === 'accept_merge'}
         disabled={selectedReview.status !== 'pending_review'}
       >
-        Accept Merge
+        {t('masterData.dedupeReviewTab.actions.acceptMerge')}
       </Button>
       <Button
         onClick={() => void runAction('choose_survivor')}
         loading={actionName === 'choose_survivor'}
         disabled={selectedReview.status !== 'pending_review' || !selectedSourceRecordId}
       >
-        Choose Survivor
+        {t('masterData.dedupeReviewTab.actions.chooseSurvivor')}
       </Button>
       <Button
         danger
@@ -408,7 +416,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         loading={actionName === 'mark_distinct'}
         disabled={selectedReview.status !== 'pending_review'}
       >
-        Mark Distinct
+        {t('masterData.dedupeReviewTab.actions.markDistinct')}
       </Button>
     </Space>
   ) : null
@@ -419,7 +427,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         <Space wrap style={{ marginBottom: 16 }}>
           <Select
             allowClear
-            placeholder="Database"
+            placeholder={t('masterData.dedupeReviewTab.filters.databasePlaceholder')}
             data-testid="dedupe-review-database-filter"
             value={databaseId}
             options={databases.map((database) => ({ value: database.id, label: database.name }))}
@@ -428,7 +436,7 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           />
           <Select
             allowClear
-            placeholder="Entity type"
+            placeholder={t('masterData.dedupeReviewTab.filters.entityTypePlaceholder')}
             data-testid="dedupe-review-entity-filter"
             value={entityType}
             options={entityTypeOptions}
@@ -437,16 +445,16 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
           />
           <Select
             allowClear
-            placeholder="Status"
+            placeholder={t('masterData.dedupeReviewTab.filters.statusPlaceholder')}
             data-testid="dedupe-review-status-filter"
             value={status}
-            options={REVIEW_STATUS_OPTIONS}
+            options={reviewStatusOptions}
             onChange={(value) => setStatus(value)}
             style={{ width: 180 }}
           />
           <Input
             allowClear
-            placeholder="Reason code"
+            placeholder={t('masterData.dedupeReviewTab.filters.reasonCodePlaceholder')}
             data-testid="dedupe-review-reason-filter"
             value={reasonCode}
             onChange={(event) => {
@@ -456,15 +464,15 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
             style={{ width: 220 }}
           />
           <Button onClick={() => void loadReviewItems()} loading={loading}>
-            Refresh
+            {t('catalog.actions.refresh')}
           </Button>
         </Space>
         <Text type="secondary">
-          Review unresolved cross-infobase matches, inspect provenance, and resolve canonical survivor decisions without leaving the master-data workspace.
+          {t('masterData.dedupeReviewTab.page.subtitle')}
         </Text>
       </Card>
 
-      <Card title="Review Queue">
+      <Card title={t('masterData.dedupeReviewTab.page.queueTitle')}>
         <Table
           rowKey="id"
           loading={loading}
@@ -479,44 +487,46 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
         />
       </Card>
 
-      <Card title="Review Detail" extra={detailExtra}>
+      <Card title={t('masterData.dedupeReviewTab.page.detailTitle')} extra={detailExtra}>
         {!selectedReview ? (
-          <Empty description="No dedupe review item selected." />
+          <Empty description={t('masterData.dedupeReviewTab.page.emptyDescription')} />
         ) : (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             {selectedReview.status === 'pending_review' ? (
               <Alert
                 type="warning"
                 showIcon
-                message="Rollout and publication are blocked until this review is resolved."
-                description={selectedReview.cluster.reason_detail || selectedReviewDetailText || 'Operator review is required.'}
+                message={t('masterData.dedupeReviewTab.alerts.blockedTitle')}
+                description={selectedReview.cluster.reason_detail || selectedReviewDetailText || t('masterData.dedupeReviewTab.alerts.blockedFallback')}
               />
             ) : null}
 
             <Descriptions size="small" bordered column={3}>
-              <Descriptions.Item label="Entity">
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.entity')}>
                 {getRegistryEntityLabel(registryEntries, selectedReview.entity_type)}
               </Descriptions.Item>
-              <Descriptions.Item label="Review Status">
-                <Tag color={REVIEW_STATUS_COLORS[selectedReview.status] || 'default'}>{selectedReview.status}</Tag>
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.reviewStatus')}>
+                <Tag color={REVIEW_STATUS_COLORS[selectedReview.status] || 'default'}>
+                  {reviewStatusOptions.find((option) => option.value === selectedReview.status)?.label || selectedReview.status}
+                </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Cluster Status">
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.clusterStatus')}>
                 <Tag>{selectedReview.cluster.status}</Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="Canonical ID">
-                {selectedReview.cluster.canonical_id || <Text type="secondary">-</Text>}
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.canonicalId')}>
+                {selectedReview.cluster.canonical_id || <Text type="secondary">{t('common.noValue')}</Text>}
               </Descriptions.Item>
-              <Descriptions.Item label="Reason Code">
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.reasonCode')}>
                 <Text code>{selectedReview.reason_code}</Text>
               </Descriptions.Item>
-              <Descriptions.Item label="Conflicting Fields">
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.conflictingFields')}>
                 {selectedReview.conflicting_fields.length > 0
                   ? selectedReview.conflicting_fields.join(', ')
-                  : <Text type="secondary">-</Text>}
+                  : <Text type="secondary">{t('common.noValue')}</Text>}
               </Descriptions.Item>
-              <Descriptions.Item label="Review Item ID">{selectedReview.id}</Descriptions.Item>
-              <Descriptions.Item label="Cluster ID">{selectedReview.cluster_id}</Descriptions.Item>
-              <Descriptions.Item label="Resolved At">{formatDateTime(selectedReview.resolved_at)}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.reviewItemId')}>{selectedReview.id}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.clusterId')}>{selectedReview.cluster_id}</Descriptions.Item>
+              <Descriptions.Item label={t('masterData.dedupeReviewTab.details.resolvedAt')}>{formatDateTime(selectedReview.resolved_at)}</Descriptions.Item>
             </Descriptions>
 
             <Table
@@ -532,37 +542,37 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
               })}
             />
 
-            <Card title="Affected Bindings" size="small">
+            <Card title={t('masterData.dedupeReviewTab.page.affectedBindingsTitle')} size="small">
               <Table
                 rowKey="id"
                 size="small"
                 pagination={false}
                 columns={bindingColumns}
                 dataSource={selectedReview.affected_bindings ?? []}
-                locale={{ emptyText: 'No affected bindings.' }}
+                locale={{ emptyText: t('masterData.dedupeReviewTab.page.noAffectedBindings') }}
                 scroll={{ x: 900 }}
               />
             </Card>
 
-            <Card title="Runtime Blockers" size="small">
+            <Card title={t('masterData.dedupeReviewTab.page.runtimeBlockersTitle')} size="small">
               <Table
                 rowKey="code"
                 size="small"
                 pagination={false}
                 columns={runtimeBlockerColumns}
                 dataSource={selectedReview.runtime_blockers ?? []}
-                locale={{ emptyText: 'No runtime blockers.' }}
+                locale={{ emptyText: t('masterData.dedupeReviewTab.page.noRuntimeBlockers') }}
               />
             </Card>
 
-            <JsonBlock title="Cluster Signals" value={selectedReview.cluster.normalized_signals ?? {}} />
-            <JsonBlock title="Review Metadata" value={selectedReview.metadata ?? {}} />
+            <JsonBlock title={t('masterData.dedupeReviewTab.page.clusterSignalsTitle')} value={selectedReview.cluster.normalized_signals ?? {}} />
+            <JsonBlock title={t('masterData.dedupeReviewTab.page.reviewMetadataTitle')} value={selectedReview.metadata ?? {}} />
             <JsonBlock
-              title="Selected Source Signals"
+              title={t('masterData.dedupeReviewTab.page.selectedSourceSignalsTitle')}
               value={selectedSourceRecord?.normalized_signals ?? {}}
             />
             <JsonBlock
-              title="Selected Source Payload"
+              title={t('masterData.dedupeReviewTab.page.selectedSourcePayloadTitle')}
               value={selectedSourceRecord?.payload_snapshot ?? {}}
             />
           </Space>

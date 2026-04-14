@@ -9,6 +9,7 @@ import {
   type PoolMasterContract,
   type PoolMasterParty,
 } from '../../../api/intercompanyPools'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 
@@ -22,6 +23,7 @@ type ContractFormValues = {
 
 export function ContractsTab() {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [rows, setRows] = useState<PoolMasterContract[]>([])
   const [counterparties, setCounterparties] = useState<PoolMasterParty[]>([])
   const [loading, setLoading] = useState(false)
@@ -37,10 +39,10 @@ export function ContractsTab() {
       const response = await listMasterDataParties({ role: 'counterparty', limit: 200, offset: 0 })
       setCounterparties(response.parties)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить список counterparties.')
+      const resolved = resolveApiError(error, t('masterData.contractsTab.messages.failedToLoadCounterparties'))
       message.error(resolved.message)
     }
-  }, [message])
+  }, [message, t])
 
   const loadRows = useCallback(async () => {
     setLoading(true)
@@ -53,12 +55,12 @@ export function ContractsTab() {
       })
       setRows(response.contracts)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить Contract.')
+      const resolved = resolveApiError(error, t('masterData.contractsTab.messages.failedToLoad'))
       message.error(resolved.message)
     } finally {
       setLoading(false)
     }
-  }, [message, ownerFilter, query])
+  }, [message, ownerFilter, query, t])
 
   useEffect(() => {
     void loadRows()
@@ -96,7 +98,7 @@ export function ContractsTab() {
   const handleSubmit = async () => {
     const values = await form.validateFields()
     if (!values.owner_counterparty_id) {
-      message.error('Выберите owner counterparty.')
+      message.error(t('masterData.contractsTab.messages.ownerRequired'))
       return
     }
 
@@ -111,10 +113,14 @@ export function ContractsTab() {
         date: values.date.trim() || null,
       })
       setIsModalOpen(false)
-      message.success(editingContract ? 'Contract обновлён.' : 'Contract создан.')
+      message.success(
+        editingContract
+          ? t('masterData.contractsTab.messages.updated')
+          : t('masterData.contractsTab.messages.created')
+      )
       await loadRows()
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось сохранить Contract.')
+      const resolved = resolveApiError(error, t('masterData.contractsTab.messages.failedToSave'))
       if (Object.keys(resolved.fieldErrors).length > 0) {
         form.setFields((
           Object.entries(resolved.fieldErrors).map(([name, errors]) => ({ name, errors }))
@@ -132,28 +138,28 @@ export function ContractsTab() {
   }))
 
   const columns: ColumnsType<PoolMasterContract> = [
-    { title: 'Canonical ID', dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 220 },
+    { title: t('masterData.contractsTab.columns.canonicalId'), dataIndex: 'canonical_id', key: 'canonical_id', width: 220 },
+    { title: t('masterData.contractsTab.columns.name'), dataIndex: 'name', key: 'name', width: 220 },
     {
-      title: 'Owner Counterparty',
+      title: t('masterData.contractsTab.columns.ownerCounterparty'),
       dataIndex: 'owner_counterparty_canonical_id',
       key: 'owner_counterparty_canonical_id',
       width: 220,
     },
-    { title: 'Number', dataIndex: 'number', key: 'number', width: 160 },
-    { title: 'Date', dataIndex: 'date', key: 'date', width: 140, render: (value: string | null) => value || '—' },
+    { title: t('masterData.contractsTab.columns.number'), dataIndex: 'number', key: 'number', width: 160 },
+    { title: t('masterData.contractsTab.columns.date'), dataIndex: 'date', key: 'date', width: 140, render: (value: string | null) => value || '—' },
     {
-      title: 'Updated',
+      title: t('masterData.contractsTab.columns.updated'),
       dataIndex: 'updated_at',
       key: 'updated_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Actions',
+      title: t('masterData.contractsTab.columns.actions'),
       key: 'actions',
       width: 100,
-      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>Edit</Button>,
+      render: (_, row) => <Button size="small" onClick={() => openEditModal(row)}>{t('common.edit')}</Button>,
     },
   ]
 
@@ -163,7 +169,7 @@ export function ContractsTab() {
         <Space wrap style={{ marginBottom: 16 }}>
           <Input
             allowClear
-            placeholder="Search canonical_id / name / number"
+            placeholder={t('masterData.contractsTab.filters.searchPlaceholder')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onPressEnter={() => void loadRows()}
@@ -172,7 +178,7 @@ export function ContractsTab() {
           <Select
             allowClear
             showSearch
-            placeholder="Owner counterparty"
+            placeholder={t('masterData.contractsTab.filters.ownerPlaceholder')}
             value={ownerFilter || undefined}
             options={counterparties.map((party) => ({
               value: party.canonical_id,
@@ -181,8 +187,8 @@ export function ContractsTab() {
             onChange={(value) => setOwnerFilter(value || '')}
             style={{ width: 320 }}
           />
-          <Button onClick={() => void loadRows()} loading={loading}>Refresh</Button>
-          <Button type="primary" onClick={openCreateModal}>Add Contract</Button>
+          <Button onClick={() => void loadRows()} loading={loading}>{t('catalog.actions.refresh')}</Button>
+          <Button type="primary" onClick={openCreateModal}>{t('masterData.contractsTab.actions.add')}</Button>
         </Space>
         <Table
           rowKey="id"
@@ -195,7 +201,7 @@ export function ContractsTab() {
       </Card>
 
       <Modal
-        title={editingContract ? 'Edit Contract' : 'Create Contract'}
+        title={editingContract ? t('masterData.contractsTab.modal.editTitle') : t('masterData.contractsTab.modal.createTitle')}
         open={isModalOpen}
         onCancel={() => setIsModalOpen(false)}
         onOk={() => void handleSubmit()}
@@ -203,25 +209,29 @@ export function ContractsTab() {
         forceRender
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="canonical_id" label="Canonical ID" rules={[{ required: true }]}>
+          <Form.Item name="canonical_id" label={t('masterData.contractsTab.modal.fields.canonicalId')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="name" label="Name" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('masterData.contractsTab.modal.fields.name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="owner_counterparty_id" label="Owner Counterparty" rules={[{ required: true }]}>
+          <Form.Item
+            name="owner_counterparty_id"
+            label={t('masterData.contractsTab.modal.fields.ownerCounterparty')}
+            rules={[{ required: true }]}
+          >
             <Select
               showSearch
               options={ownerOptions}
-              placeholder="Select counterparty"
+              placeholder={t('masterData.contractsTab.modal.selectCounterparty')}
             />
           </Form.Item>
-          <Form.Item name="number" label="Number">
+          <Form.Item name="number" label={t('masterData.contractsTab.modal.fields.number')}>
             <Input />
           </Form.Item>
           <Form.Item
             name="date"
-            label="Date (YYYY-MM-DD)"
+            label={t('masterData.contractsTab.modal.fields.date')}
             rules={[
               {
                 validator: (_, value: string) => {
@@ -230,12 +240,12 @@ export function ContractsTab() {
                   }
                   return /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
                     ? Promise.resolve()
-                    : Promise.reject(new Error('Expected YYYY-MM-DD'))
+                    : Promise.reject(new Error(t('masterData.contractsTab.messages.expectedDateFormat')))
                 },
               },
             ]}
           >
-            <Input placeholder="2026-02-28" />
+            <Input placeholder={t('masterData.contractsTab.modal.datePlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>

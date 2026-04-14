@@ -1,4 +1,5 @@
 import type { PoolWorkflowBinding } from '../../api/intercompanyPools'
+import { i18n } from '../../i18n'
 import {
   resolvePoolWorkflowBindingDecisionRefs,
   resolvePoolWorkflowBindingWorkflow,
@@ -47,7 +48,11 @@ export const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding
     String(binding.selector?.mode || '').trim(),
   ].filter((item) => item)
   const scope = selectorParts.join(' · ')
-  return [bindingId || workflowName || 'binding', workflowName && workflowName !== bindingId ? workflowName : '', scope]
+  return [
+    bindingId || workflowName || i18n.t('common.topologyCoverage.bindingFallback', { ns: 'pools' }),
+    workflowName && workflowName !== bindingId ? workflowName : '',
+    scope,
+  ]
     .filter((item) => item)
     .join(' · ')
 }
@@ -93,7 +98,7 @@ export const resolveTopologyCoverageContext = (
       const bindingLabel = describePoolWorkflowBindingCoverage(selectedBinding)
       return buildTopologyCoverageContext({
         bindingLabel,
-        detail: `Coverage uses selected binding ${bindingLabel}.`,
+        detail: i18n.t('common.topologyCoverage.selectedBinding', { ns: 'pools', bindingLabel }),
         slotRefs: buildSlotRefsFromBinding(selectedBinding),
         source: 'selected',
       })
@@ -101,7 +106,7 @@ export const resolveTopologyCoverageContext = (
     return {
       status: 'unavailable',
       bindingLabel: null,
-      detail: 'Selected binding context is unavailable. Refresh bindings and choose an active binding again.',
+      detail: i18n.t('common.topologyCoverage.selectedBindingUnavailable', { ns: 'pools' }),
       source: null,
       slotRefs: [],
     }
@@ -111,7 +116,7 @@ export const resolveTopologyCoverageContext = (
     const bindingLabel = describePoolWorkflowBindingCoverage(activeBinding)
     return buildTopologyCoverageContext({
       bindingLabel,
-      detail: `Coverage auto-resolved to ${bindingLabel}.`,
+      detail: i18n.t('common.topologyCoverage.autoResolved', { ns: 'pools', bindingLabel }),
       slotRefs: buildSlotRefsFromBinding(activeBinding),
       source: 'auto',
     })
@@ -120,7 +125,7 @@ export const resolveTopologyCoverageContext = (
     return {
       status: 'unavailable',
       bindingLabel: null,
-      detail: 'Coverage unavailable: no active bindings are pinned for this pool.',
+      detail: i18n.t('common.topologyCoverage.noActiveBindings', { ns: 'pools' }),
       source: null,
       slotRefs: [],
     }
@@ -128,7 +133,7 @@ export const resolveTopologyCoverageContext = (
   return {
     status: 'ambiguous',
     bindingLabel: null,
-    detail: 'Coverage context is ambiguous: select one active binding to inspect slot coverage.',
+    detail: i18n.t('common.topologyCoverage.ambiguousContext', { ns: 'pools' }),
     source: null,
     slotRefs: [],
   }
@@ -143,15 +148,15 @@ export const resolveTopologySlotCoverage = (
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING',
       status: 'missing_selector',
-      label: 'Slot required',
-      detail: 'Set document_policy_key to verify publication slot coverage.',
+      label: i18n.t('common.topologyCoverage.slotRequired', { ns: 'pools' }),
+      detail: i18n.t('common.topologyCoverage.slotRequiredDetail', { ns: 'pools' }),
     }
   }
   if (context.status === 'ambiguous') {
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_context',
-      label: 'Coverage unavailable',
+      label: i18n.t('common.topologyCoverage.coverageUnavailable', { ns: 'pools' }),
       detail: context.detail,
     }
   }
@@ -159,7 +164,7 @@ export const resolveTopologySlotCoverage = (
     return {
       code: null,
       status: 'unavailable_context',
-      label: 'Coverage unavailable',
+      label: i18n.t('common.topologyCoverage.coverageUnavailable', { ns: 'pools' }),
       detail: context.detail,
     }
   }
@@ -168,23 +173,36 @@ export const resolveTopologySlotCoverage = (
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND',
       status: 'missing_slot',
-      label: 'Slot missing',
-      detail: `${context.bindingLabel} does not pin slot ${normalizedSlotKey}.`,
+      label: i18n.t('common.topologyCoverage.slotMissing', { ns: 'pools' }),
+      detail: i18n.t('common.topologyCoverage.slotMissingDetail', {
+        ns: 'pools',
+        bindingLabel: context.bindingLabel,
+        slotKey: normalizedSlotKey,
+      }),
     }
   }
   if (matches.length > 1) {
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_slot',
-      label: 'Ambiguous slot',
-      detail: `${context.bindingLabel} contains ${matches.length} refs for slot ${normalizedSlotKey}.`,
+      label: i18n.t('common.topologyCoverage.ambiguousSlot', { ns: 'pools' }),
+      detail: i18n.t('common.topologyCoverage.ambiguousSlotDetail', {
+        ns: 'pools',
+        bindingLabel: context.bindingLabel,
+        count: matches.length,
+        slotKey: normalizedSlotKey,
+      }),
     }
   }
   return {
     code: null,
     status: 'resolved',
-    label: 'Resolved',
-    detail: `${context.bindingLabel} -> ${matches[0]?.refLabel || normalizedSlotKey}`,
+    label: i18n.t('common.topologyCoverage.resolved', { ns: 'pools' }),
+    detail: i18n.t('common.topologyCoverage.resolvedDetail', {
+      ns: 'pools',
+      bindingLabel: context.bindingLabel,
+      refLabel: matches[0]?.refLabel || normalizedSlotKey,
+    }),
   }
 }
 

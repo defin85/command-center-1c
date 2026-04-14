@@ -4643,7 +4643,7 @@ test('Runtime contract: /clusters hands off to /databases without replaying shel
   await page.getByRole('button', { name: 'Открыть базы' }).click()
 
   await expect(page).toHaveURL(/\/databases\?cluster=cluster-1(?:&.*)?$/)
-  await expect(page.getByRole('heading', { name: 'Databases', level: 2 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: 'Базы', level: 2 })).toBeVisible({
     timeout: ROUTE_MOUNT_TIMEOUT_MS,
   })
   await expect(counts.bootstrap).toBe(1)
@@ -5703,8 +5703,26 @@ test('Runtime contract: /pools/catalog creates a reusable topology template thro
 
   await page.getByTestId('pool-catalog-open-topology-template-workspace').click()
 
-  await expect(page).toHaveURL(/\/pools\/topology-templates\?compose=create&return_pool_id=pool-1&return_tab=topology&return_date=2026-01-01$/)
+  await expect(page).toHaveURL(/\/pools\/topology-templates\?/)
+  await expect.poll(() => {
+    const url = new URL(page.url())
+    return {
+      return_pool_id: url.searchParams.get('return_pool_id'),
+      return_tab: url.searchParams.get('return_tab'),
+      return_date: url.searchParams.get('return_date'),
+      template: url.searchParams.get('template'),
+      compose: url.searchParams.get('compose'),
+    }
+  }).toEqual({
+    return_pool_id: 'pool-1',
+    return_tab: 'topology',
+    return_date: '2026-01-01',
+    template: 'template-top-down',
+    compose: null,
+  })
   await expect(page.getByRole('heading', { name: 'Topology Templates', level: 2 })).toBeVisible()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Create template' }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
 
   const createRequestPromise = page.waitForRequest((request) => (
@@ -6289,7 +6307,7 @@ test('UI platform: /pools/execution-packs keeps fallback stream labels and deact
   await expect(streamStatusButton).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Where this execution pack is used', level: 3 })).toBeVisible()
   await expect(page.getByTestId('pool-binding-profiles-selected-code')).toHaveText('legacy-archive')
-  await expect(deactivatedStatusBadge).toContainText('deactivated')
+  await expect(deactivatedStatusBadge).toContainText('Deactivated')
 
   await expectContrastAtLeast(streamStatusButton.locator('.ant-tag'), 4.5)
   await expectContrastAtLeast(deactivatedStatusBadge, 4.5)

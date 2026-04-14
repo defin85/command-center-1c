@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { PoolWorkflowBinding } from '../../../api/intercompanyPools'
+import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import {
   buildWorkflowBindingsFromForm,
   workflowBindingsToFormValues,
@@ -63,6 +64,16 @@ function buildBinding(overrides: Partial<PoolWorkflowBinding> = {}): PoolWorkflo
 }
 
 describe('poolWorkflowBindingsForm', () => {
+  beforeEach(async () => {
+    await ensureNamespaces('en', 'pools')
+    await ensureNamespaces('ru', 'pools')
+    await changeLanguage('en')
+  })
+
+  afterEach(async () => {
+    await changeLanguage('ru')
+  })
+
   it('preserves revision when existing bindings round-trip through form values', () => {
     const binding = buildBinding()
 
@@ -104,7 +115,7 @@ describe('poolWorkflowBindingsForm', () => {
 
     expect(prepared.bindings).toEqual([])
     expect(prepared.errors).toContain(
-      'Attachment #1: revision обязателен для обновления существующего attachment.'
+      'Attachment #1: revision is required to update an existing attachment.'
     )
   })
 
@@ -117,7 +128,7 @@ describe('poolWorkflowBindingsForm', () => {
 
     expect(prepared.bindings).toEqual([])
     expect(prepared.errors).toContain(
-      'Attachment #1: effective_to не может быть раньше effective_from.'
+      'Attachment #1: effective_to cannot be earlier than effective_from.'
     )
   })
 })

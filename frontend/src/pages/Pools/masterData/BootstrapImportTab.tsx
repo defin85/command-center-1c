@@ -42,6 +42,7 @@ import {
   type SimpleClusterRef,
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { getBootstrapEntityOptions, getDefaultBootstrapScope } from './registry'
@@ -133,6 +134,7 @@ type BootstrapImportTabProps = {
 
 export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps) {
   const { message } = AntApp.useApp()
+  const { t } = usePoolsTranslation()
   const [form] = Form.useForm<BootstrapScopeFormValues>()
   const [launcherMode, setLauncherMode] = useState<BootstrapLauncherMode>('single')
   const [clusters, setClusters] = useState<SimpleClusterRef[]>([])
@@ -226,12 +228,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       setClusters(clustersResponse)
       setDatabases(databasesResponse)
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить кластеры и базы для bootstrap import.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToLoadTargets'))
       message.error(resolved.message)
     } finally {
       setLoadingTargets(false)
     }
-  }, [message])
+  }, [message, t])
 
   const loadJobs = useCallback(
     async (databaseId?: string) => {
@@ -247,13 +249,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
           setSelectedJobId(response.jobs[0].id)
         }
       } catch (error) {
-        const resolved = resolveApiError(error, 'Не удалось загрузить bootstrap jobs.')
+        const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToLoadJobs'))
         message.error(resolved.message)
       } finally {
         setLoadingJobs(false)
       }
     },
-    [message, selectedJobId]
+    [message, selectedJobId, t]
   )
 
   const loadCollections = useCallback(async () => {
@@ -268,12 +270,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         setSelectedCollectionId(response.collections[0].id)
       }
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось загрузить batch collection requests.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToLoadCollections'))
       message.error(resolved.message)
     } finally {
       setLoadingCollections(false)
     }
-  }, [message, selectedCollectionId])
+  }, [message, selectedCollectionId, t])
 
   const loadJobDetail = useCallback(
     async (jobId: string, silent = false) => {
@@ -285,7 +287,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         setSelectedJob(response.job)
       } catch (error) {
         if (!silent) {
-          const resolved = resolveApiError(error, 'Не удалось загрузить детали bootstrap job.')
+          const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToLoadJobDetail'))
           message.error(resolved.message)
         }
       } finally {
@@ -294,7 +296,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         }
       }
     },
-    [message]
+    [message, t]
   )
 
   const loadCollectionDetail = useCallback(
@@ -307,7 +309,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         setSelectedCollection(response.collection)
       } catch (error) {
         if (!silent) {
-          const resolved = resolveApiError(error, 'Не удалось загрузить детали batch collection.')
+          const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToLoadCollectionDetail'))
           message.error(resolved.message)
         }
       } finally {
@@ -316,7 +318,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         }
       }
     },
-    [message]
+    [message, t]
   )
 
   useEffect(() => {
@@ -447,7 +449,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     const targetMode = values.target_mode as 'cluster_all' | 'database_set'
     if (targetMode === 'cluster_all') {
       if (!values.cluster_id) {
-        form.setFields([{ name: 'cluster_id', errors: ['Выберите cluster.'] }] as never)
+        form.setFields([{ name: 'cluster_id', errors: [t('masterData.bootstrapImportTab.validation.selectCluster')] }] as never)
         throw new Error('VALIDATION_ERROR')
       }
       return {
@@ -458,7 +460,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     }
     const databaseIds = (values.database_ids as string[] | undefined) ?? []
     if (databaseIds.length === 0) {
-      form.setFields([{ name: 'database_ids', errors: ['Выберите минимум одну базу.'] }] as never)
+      form.setFields([{ name: 'database_ids', errors: [t('masterData.bootstrapImportTab.validation.selectAtLeastOneDatabase')] }] as never)
       throw new Error('VALIDATION_ERROR')
     }
     return {
@@ -482,7 +484,11 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         const response = await runPoolMasterDataBootstrapImportPreflight(payload)
         setPreflightState({ kind: 'single', result: response.preflight })
         setDryRunState(null)
-        message.success(response.preflight.ok ? 'Preflight успешно пройден.' : 'Preflight завершён с ошибками.')
+        message.success(
+          response.preflight.ok
+            ? t('masterData.bootstrapImportTab.messages.preflightPassed')
+            : t('masterData.bootstrapImportTab.messages.preflightFailed')
+        )
         return
       }
 
@@ -495,14 +501,14 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       await loadCollections()
       message.success(
         response.preflight.ok
-          ? `Aggregate preflight успешно пройден для ${response.preflight.database_count} ИБ.`
-          : 'Aggregate preflight завершён с ошибками.'
+          ? t('masterData.bootstrapImportTab.messages.aggregatePreflightPassed', { count: response.preflight.database_count })
+          : t('masterData.bootstrapImportTab.messages.aggregatePreflightFailed')
       )
     } catch (error) {
       if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
         return
       }
-      const resolved = resolveApiError(error, 'Не удалось выполнить preflight.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToRunPreflight'))
       setFieldErrorsFromProblem(resolved.fieldErrors)
       setActionError(resolved.message)
       message.error(resolved.message)
@@ -513,11 +519,11 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
 
   const handleCreateDryRun = async () => {
     if (launcherMode === 'single' && !singlePreflightResult?.ok) {
-      message.error('Сначала выполните успешный preflight.')
+      message.error(t('masterData.bootstrapImportTab.messages.runSinglePreflightFirst'))
       return
     }
     if (launcherMode === 'batch' && !effectiveBatchPreflightResult?.ok) {
-      message.error('Сначала выполните успешный aggregate preflight.')
+      message.error(t('masterData.bootstrapImportTab.messages.runAggregatePreflightFirst'))
       return
     }
 
@@ -533,13 +539,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         setDryRunState({ kind: 'single', summary: response.job.dry_run_summary || {} })
         setSelectedJobId(response.job.id)
         await refreshJobsForCurrentDatabase()
-        message.success('Dry-run завершён.')
+        message.success(t('masterData.bootstrapImportTab.messages.dryRunCompleted'))
         return
       }
 
       const payload = await resolveBatchScopePayload()
       if (!selectedCollection?.id) {
-        message.error('Сначала выполните aggregate preflight.')
+        message.error(t('masterData.bootstrapImportTab.messages.runAggregatePreflightFirst'))
         return
       }
       const response = await createPoolMasterDataBootstrapCollection({
@@ -554,12 +560,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       setSelectedCollectionId(response.collection.id)
       setSelectedCollection(response.collection)
       await loadCollections()
-      message.success('Batch dry-run завершён.')
+      message.success(t('masterData.bootstrapImportTab.messages.batchDryRunCompleted'))
     } catch (error) {
       if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
         return
       }
-      const resolved = resolveApiError(error, 'Не удалось выполнить dry-run.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToRunDryRun'))
       setFieldErrorsFromProblem(resolved.fieldErrors)
       setActionError(resolved.message)
       message.error(resolved.message)
@@ -572,8 +578,8 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
     if (!executeAllowed) {
       message.error(
         launcherMode === 'single'
-          ? 'Execute доступен только после успешных preflight и dry-run.'
-          : 'Batch execute доступен только после успешных preflight и dry-run.'
+          ? t('masterData.bootstrapImportTab.messages.singleExecuteRequiresPreflightAndDryRun')
+          : t('masterData.bootstrapImportTab.messages.batchExecuteRequiresPreflightAndDryRun')
       )
       return
     }
@@ -589,13 +595,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         })
         setSelectedJobId(response.job.id)
         await refreshJobsForCurrentDatabase()
-        message.success('Execute запущен.')
+        message.success(t('masterData.bootstrapImportTab.messages.executeStarted'))
         return
       }
 
       const payload = await resolveBatchScopePayload()
       if (!selectedCollection?.id) {
-        message.error('Сначала выполните успешный batch dry-run.')
+        message.error(t('masterData.bootstrapImportTab.messages.runBatchDryRunFirst'))
         return
       }
       const response = await createPoolMasterDataBootstrapCollection({
@@ -606,12 +612,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       setSelectedCollectionId(response.collection.id)
       setSelectedCollection(response.collection)
       await loadCollections()
-      message.success('Batch execute запущен.')
+      message.success(t('masterData.bootstrapImportTab.messages.batchExecuteStarted'))
     } catch (error) {
       if (error instanceof Error && error.message === 'VALIDATION_ERROR') {
         return
       }
-      const resolved = resolveApiError(error, 'Не удалось запустить execute.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToStartExecute'))
       setFieldErrorsFromProblem(resolved.fieldErrors)
       setActionError(resolved.message)
       message.error(resolved.message)
@@ -633,9 +639,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
           : await retryFailedPoolMasterDataBootstrapImportChunks(selectedJob.id)
       setSelectedJob(response.job)
       await refreshJobsForCurrentDatabase()
-      message.success(action === 'cancel' ? 'Job отменён.' : 'Retry failed chunks выполнен.')
+      message.success(
+        action === 'cancel'
+          ? t('masterData.bootstrapImportTab.messages.jobCanceled')
+          : t('masterData.bootstrapImportTab.messages.retryFailedChunksCompleted')
+      )
     } catch (error) {
-      const resolved = resolveApiError(error, 'Не удалось выполнить действие над bootstrap job.')
+      const resolved = resolveApiError(error, t('masterData.bootstrapImportTab.messages.failedToRunJobAction'))
       setActionError(resolved.message)
       message.error(resolved.message)
     } finally {
@@ -680,33 +690,33 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
 
   const jobColumns: ColumnsType<PoolMasterDataBootstrapImportJob> = [
     {
-      title: 'Created',
+      title: t('masterData.bootstrapImportTab.columns.created'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Status',
+      title: t('masterData.bootstrapImportTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 170,
       render: (value: string) => <Tag color={STATUS_COLOR[value] || 'default'}>{value}</Tag>,
     },
     {
-      title: 'Scope',
+      title: t('masterData.bootstrapImportTab.columns.scope'),
       key: 'scope',
       width: 280,
       render: (_, row) => row.entity_scope.join(', '),
     },
     {
-      title: 'Rows',
+      title: t('masterData.bootstrapImportTab.columns.rows'),
       key: 'rows',
       width: 100,
       render: (_, row) => Number(row.dry_run_summary?.rows_total || 0),
     },
     {
-      title: 'Failed',
+      title: t('masterData.bootstrapImportTab.columns.failed'),
       key: 'failed',
       width: 110,
       render: (_, row) => row.report.failed_count + row.report.deferred_count,
@@ -714,68 +724,73 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
   ]
 
   const chunkColumns: ColumnsType<PoolMasterDataBootstrapImportChunk> = [
-    { title: 'Entity', dataIndex: 'entity_type', key: 'entity_type', width: 120 },
-    { title: 'Chunk', dataIndex: 'chunk_index', key: 'chunk_index', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.entity'), dataIndex: 'entity_type', key: 'entity_type', width: 120 },
+    { title: t('masterData.bootstrapImportTab.columns.chunk'), dataIndex: 'chunk_index', key: 'chunk_index', width: 90 },
     {
-      title: 'Status',
+      title: t('masterData.bootstrapImportTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 130,
       render: (value: string) => <Tag color={STATUS_COLOR[value] || 'default'}>{value}</Tag>,
     },
-    { title: 'Attempt', dataIndex: 'attempt_count', key: 'attempt_count', width: 90 },
-    { title: 'Created', dataIndex: 'records_created', key: 'records_created', width: 90 },
-    { title: 'Updated', dataIndex: 'records_updated', key: 'records_updated', width: 90 },
-    { title: 'Skipped', dataIndex: 'records_skipped', key: 'records_skipped', width: 90 },
-    { title: 'Failed', dataIndex: 'records_failed', key: 'records_failed', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.attempt'), dataIndex: 'attempt_count', key: 'attempt_count', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.created'), dataIndex: 'records_created', key: 'records_created', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.updated'), dataIndex: 'records_updated', key: 'records_updated', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.skipped'), dataIndex: 'records_skipped', key: 'records_skipped', width: 90 },
+    { title: t('masterData.bootstrapImportTab.columns.failed'), dataIndex: 'records_failed', key: 'records_failed', width: 90 },
     {
-      title: 'Error',
+      title: t('masterData.bootstrapImportTab.columns.error'),
       dataIndex: 'last_error_code',
       key: 'last_error_code',
       width: 240,
-      render: (value: string) => (value ? <Tag color="error">{value}</Tag> : <Text type="secondary">-</Text>),
+      render: (value: string) => (value ? <Tag color="error">{value}</Tag> : <Text type="secondary">{t('common.noValue')}</Text>),
     },
   ]
 
   const collectionColumns: ColumnsType<PoolMasterDataBootstrapCollection> = [
     {
-      title: 'Created',
+      title: t('masterData.bootstrapImportTab.columns.created'),
       dataIndex: 'created_at',
       key: 'created_at',
       width: 220,
       render: (value: string) => formatDateTime(value),
     },
     {
-      title: 'Status',
+      title: t('masterData.bootstrapImportTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 170,
       render: (value: string) => <Tag color={COLLECTION_STATUS_COLOR[value] || 'default'}>{value}</Tag>,
     },
     {
-      title: 'Mode',
+      title: t('masterData.bootstrapImportTab.columns.mode'),
       dataIndex: 'target_mode',
       key: 'target_mode',
       width: 150,
+      render: (value: 'cluster_all' | 'database_set') => (
+        value === 'cluster_all'
+          ? t('masterData.bootstrapImportTab.targetMode.clusterAll')
+          : t('masterData.bootstrapImportTab.targetMode.databaseSet')
+      ),
     },
     {
-      title: 'Targets',
+      title: t('masterData.bootstrapImportTab.columns.targets'),
       key: 'targets',
       width: 280,
       render: (_, row) =>
         formatCollectionSnapshot(row) ||
         (row.target_mode === 'cluster_all'
-          ? clusterNameById.get(row.cluster_id || '') || `Cluster ${row.cluster_id || '-'}`
-          : `${row.database_ids.length} databases`),
+          ? clusterNameById.get(row.cluster_id || '') || t('masterData.bootstrapImportTab.columns.clusterFallback', { clusterId: row.cluster_id || t('common.noValue') })
+          : t('masterData.bootstrapImportTab.columns.databaseCount', { count: row.database_ids.length })),
     },
     {
-      title: 'Scope',
+      title: t('masterData.bootstrapImportTab.columns.scope'),
       key: 'scope',
       width: 260,
       render: (_, row) => row.entity_scope.join(', '),
     },
     {
-      title: 'Outcomes',
+      title: t('masterData.bootstrapImportTab.columns.outcomes'),
       key: 'outcomes',
       width: 220,
       render: (_, row) =>
@@ -785,7 +800,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
 
   const collectionItemColumns: ColumnsType<PoolMasterDataBootstrapCollectionItem> = [
     {
-      title: 'Database',
+      title: t('masterData.bootstrapImportTab.columns.database'),
       dataIndex: 'database_name',
       key: 'database_name',
       width: 260,
@@ -795,7 +810,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       },
     },
     {
-      title: 'Status',
+      title: t('masterData.bootstrapImportTab.columns.status'),
       dataIndex: 'status',
       key: 'status',
       width: 140,
@@ -804,13 +819,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       ),
     },
     {
-      title: 'Rows',
+      title: t('masterData.bootstrapImportTab.columns.rows'),
       key: 'rows',
       width: 90,
       render: (_, row) => Number(row.dry_run_summary?.rows_total || 0),
     },
     {
-      title: 'Child Job',
+      title: t('masterData.bootstrapImportTab.columns.childJob'),
       key: 'child_job_id',
       width: 180,
       render: (_, row) =>
@@ -823,18 +838,18 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               openChildJob(row.child_job_id as string)
             }}
           >
-            Open Job
+            {t('masterData.bootstrapImportTab.actions.openJob')}
           </Button>
         ) : (
-          <Text type="secondary">-</Text>
+          <Text type="secondary">{t('common.noValue')}</Text>
         ),
     },
     {
-      title: 'Reason',
+      title: t('masterData.bootstrapImportTab.columns.reason'),
       key: 'reason_code',
       width: 280,
       render: (_, row) =>
-        row.reason_code ? <Tag color="error">{row.reason_code}</Tag> : <Text type="secondary">-</Text>,
+        row.reason_code ? <Tag color="error">{row.reason_code}</Tag> : <Text type="secondary">{t('common.noValue')}</Text>,
     },
   ]
 
@@ -863,6 +878,22 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       })),
     [clusters]
   )
+  const launcherModeOptions = useMemo(
+    () => [
+      { label: t('masterData.bootstrapImportTab.modes.single'), value: 'single' as const },
+      { label: t('masterData.bootstrapImportTab.modes.batch'), value: 'batch' as const },
+    ],
+    [t]
+  )
+  const stepItems = useMemo(
+    () => [
+      { title: t('masterData.bootstrapImportTab.steps.scope') },
+      { title: t('masterData.bootstrapImportTab.steps.preflight') },
+      { title: t('masterData.bootstrapImportTab.steps.dryRun') },
+      { title: t('masterData.bootstrapImportTab.steps.execute') },
+    ],
+    [t]
+  )
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -870,21 +901,13 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Segmented<BootstrapLauncherMode>
             value={launcherMode}
-            options={[
-              { label: 'Single Database', value: 'single' },
-              { label: 'Batch Collection', value: 'batch' },
-            ]}
+            options={launcherModeOptions}
             onChange={(value) => setLauncherMode(value)}
           />
 
           <Steps
             current={currentWizardStep}
-            items={[
-              { title: 'Scope' },
-              { title: 'Preflight' },
-              { title: 'Dry-run' },
-              { title: 'Execute' },
-            ]}
+            items={stepItems}
           />
 
           <Form
@@ -896,28 +919,28 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               <Space wrap align="start">
                 <Form.Item
                   name="database_id"
-                  label="Database"
-                  rules={[{ required: true, message: 'Выберите базу.' }]}
+                  label={t('masterData.bootstrapImportTab.fields.database')}
+                  rules={[{ required: true, message: t('masterData.bootstrapImportTab.validation.selectDatabase') }]}
                   style={{ minWidth: 320, marginBottom: 8 }}
                 >
                   <Select
                     data-testid="bootstrap-import-database-select"
                     loading={loadingTargets}
-                    placeholder="Select database"
+                    placeholder={t('masterData.bootstrapImportTab.placeholders.selectDatabase')}
                     options={singleDatabaseOptions}
                   />
                 </Form.Item>
                 <Form.Item
                   name="entity_scope"
-                  label="Entity scope"
-                  rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну сущность.' }]}
+                  label={t('masterData.bootstrapImportTab.fields.entityScope')}
+                  rules={[{ required: true, type: 'array', min: 1, message: t('masterData.bootstrapImportTab.validation.selectAtLeastOneEntity') }]}
                   style={{ minWidth: 360, marginBottom: 8 }}
                 >
                   <Select
                     data-testid="bootstrap-import-entity-scope-select"
                     mode="multiple"
                     allowClear
-                    placeholder="Select entities"
+                    placeholder={t('masterData.bootstrapImportTab.placeholders.selectEntities')}
                     options={entityScopeOptions}
                   />
                 </Form.Item>
@@ -926,37 +949,37 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               <Space wrap align="start">
                 <Form.Item
                   name="target_mode"
-                  label="Target mode"
-                  rules={[{ required: true, message: 'Выберите target mode.' }]}
+                  label={t('masterData.bootstrapImportTab.fields.targetMode')}
+                  rules={[{ required: true, message: t('masterData.bootstrapImportTab.validation.selectTargetMode') }]}
                   style={{ minWidth: 220, marginBottom: 8 }}
                 >
                   <Select
                     data-testid="bootstrap-collection-target-mode-select"
                     options={[
-                      { value: 'cluster_all', label: 'All databases in cluster' },
-                      { value: 'database_set', label: 'Selected databases' },
+                      { value: 'cluster_all', label: t('masterData.bootstrapImportTab.targetMode.clusterAll') },
+                      { value: 'database_set', label: t('masterData.bootstrapImportTab.targetMode.databaseSet') },
                     ]}
                   />
                 </Form.Item>
                 {currentTargetMode === 'cluster_all' ? (
                   <Form.Item
                     name="cluster_id"
-                    label="Cluster"
-                    rules={[{ required: true, message: 'Выберите cluster.' }]}
+                    label={t('masterData.bootstrapImportTab.fields.cluster')}
+                    rules={[{ required: true, message: t('masterData.bootstrapImportTab.validation.selectCluster') }]}
                     style={{ minWidth: 320, marginBottom: 8 }}
                   >
                     <Select
                       data-testid="bootstrap-collection-cluster-select"
                       loading={loadingTargets}
-                      placeholder="Select cluster"
+                      placeholder={t('masterData.bootstrapImportTab.placeholders.selectCluster')}
                       options={clusterOptions}
                     />
                   </Form.Item>
                 ) : (
                   <Form.Item
                     name="database_ids"
-                    label="Databases"
-                    rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну базу.' }]}
+                    label={t('masterData.bootstrapImportTab.fields.databases')}
+                    rules={[{ required: true, type: 'array', min: 1, message: t('masterData.bootstrapImportTab.validation.selectAtLeastOneDatabase') }]}
                     style={{ minWidth: 420, marginBottom: 8 }}
                   >
                     <Select
@@ -964,22 +987,22 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                       mode="multiple"
                       allowClear
                       loading={loadingTargets}
-                      placeholder="Select databases"
+                      placeholder={t('masterData.bootstrapImportTab.placeholders.selectDatabases')}
                       options={batchDatabaseOptions}
                     />
                   </Form.Item>
                 )}
                 <Form.Item
                   name="entity_scope"
-                  label="Entity scope"
-                  rules={[{ required: true, type: 'array', min: 1, message: 'Выберите минимум одну сущность.' }]}
+                  label={t('masterData.bootstrapImportTab.fields.entityScope')}
+                  rules={[{ required: true, type: 'array', min: 1, message: t('masterData.bootstrapImportTab.validation.selectAtLeastOneEntity') }]}
                   style={{ minWidth: 360, marginBottom: 8 }}
                 >
                   <Select
                     data-testid="bootstrap-collection-entity-scope-select"
                     mode="multiple"
                     allowClear
-                    placeholder="Select entities"
+                    placeholder={t('masterData.bootstrapImportTab.placeholders.selectEntities')}
                     options={entityScopeOptions}
                   />
                 </Form.Item>
@@ -993,7 +1016,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               onClick={() => void handleRunPreflight()}
               loading={runningPreflight}
             >
-              Run Preflight
+              {t('masterData.bootstrapImportTab.actions.runPreflight')}
             </Button>
             <Button
               data-testid={launcherMode === 'single' ? 'bootstrap-import-run-dry-run' : 'bootstrap-collection-run-dry-run'}
@@ -1001,7 +1024,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               loading={runningDryRun}
               disabled={launcherMode === 'single' ? !singlePreflightResult?.ok : !effectiveBatchPreflightResult?.ok}
             >
-              Run Dry-run
+              {t('masterData.bootstrapImportTab.actions.runDryRun')}
             </Button>
             <Button
               data-testid={launcherMode === 'single' ? 'bootstrap-import-run-execute' : 'bootstrap-collection-run-execute'}
@@ -1010,7 +1033,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               loading={runningExecute}
               disabled={!executeAllowed}
             >
-              Execute
+              {t('masterData.bootstrapImportTab.actions.execute')}
             </Button>
             <Button
               data-testid={launcherMode === 'single' ? 'bootstrap-import-refresh' : 'bootstrap-collection-refresh'}
@@ -1019,7 +1042,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
               }
               loading={launcherMode === 'single' ? loadingJobs : loadingCollections}
             >
-              Refresh
+              {t('catalog.actions.refresh')}
             </Button>
           </Space>
 
@@ -1035,11 +1058,11 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
             <Alert
               type={singlePreflightResult.ok ? 'success' : 'warning'}
               showIcon
-              message={singlePreflightResult.ok ? 'Preflight passed.' : 'Preflight failed.'}
+              message={singlePreflightResult.ok ? t('masterData.bootstrapImportTab.alerts.preflightPassed') : t('masterData.bootstrapImportTab.alerts.preflightFailed')}
               description={
                 singlePreflightResult.errors.length > 0
                   ? singlePreflightResult.errors.map((item) => item.detail || item.code).join('; ')
-                  : 'Source and coverage checks are valid.'
+                  : t('masterData.bootstrapImportTab.alerts.preflightValidDescription')
               }
             />
           )}
@@ -1048,12 +1071,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
             <Alert
               type={effectiveBatchPreflightResult.ok ? 'success' : 'warning'}
               showIcon
-              message={effectiveBatchPreflightResult.ok ? 'Aggregate preflight passed.' : 'Aggregate preflight failed.'}
+              message={effectiveBatchPreflightResult.ok ? t('masterData.bootstrapImportTab.alerts.aggregatePreflightPassed') : t('masterData.bootstrapImportTab.alerts.aggregatePreflightFailed')}
               description={
                 effectiveBatchPreflightResult.ok
-                  ? `${effectiveBatchPreflightResult.database_count} databases are ready for bootstrap collection.`
+                  ? t('masterData.bootstrapImportTab.alerts.aggregateReadyDescription', { count: effectiveBatchPreflightResult.database_count })
                   : effectiveBatchPreflightResult.errors
-                      .map((item) => String(item.detail || item.code || 'Preflight failed'))
+                      .map((item) => String(item.detail || item.code || t('masterData.bootstrapImportTab.alerts.preflightFailed')))
                       .join('; ')
               }
             />
@@ -1064,7 +1087,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
       {launcherMode === 'single' ? (
         <>
           <Card
-            title="Current Job"
+            title={t('masterData.bootstrapImportTab.page.currentJobTitle')}
             extra={
               <Space>
                 <Button
@@ -1073,7 +1096,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                   loading={runningJobAction}
                   disabled={!selectedJob || TERMINAL_JOB_STATUSES.has(selectedJob.status)}
                 >
-                  Cancel
+                  {t('masterData.bootstrapImportTab.actions.cancel')}
                 </Button>
                 <Button
                   data-testid="bootstrap-import-retry-failed"
@@ -1083,23 +1106,23 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                     !selectedJob || (selectedJob.report.failed_count + selectedJob.report.deferred_count) === 0
                   }
                 >
-                  Retry Failed Chunks
+                  {t('masterData.bootstrapImportTab.actions.retryFailedChunks')}
                 </Button>
               </Space>
             }
           >
             {!selectedJob ? (
-              <Empty description="No bootstrap job selected." />
+              <Empty description={t('masterData.bootstrapImportTab.page.noBootstrapJob')} />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 {buildBootstrapDedupeReviewHref(selectedJob) ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message="Bootstrap import encountered unresolved cross-infobase dedupe."
+                    message={t('masterData.bootstrapImportTab.alerts.unresolvedDedupe')}
                     action={(
                       <Button type="link" href={buildBootstrapDedupeReviewHref(selectedJob) || undefined}>
-                        Open Review
+                        {t('masterData.syncStatusTab.actions.openReview')}
                       </Button>
                     )}
                   />
@@ -1107,8 +1130,8 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
 
                 <Space>
                   <Tag color={STATUS_COLOR[selectedJob.status] || 'default'}>{selectedJob.status}</Tag>
-                  <Text type="secondary">Started: {formatDateTime(selectedJob.started_at)}</Text>
-                  <Text type="secondary">Finished: {formatDateTime(selectedJob.finished_at)}</Text>
+                  <Text type="secondary">{t('masterData.bootstrapImportTab.page.startedAt', { value: formatDateTime(selectedJob.started_at) })}</Text>
+                  <Text type="secondary">{t('masterData.bootstrapImportTab.page.finishedAt', { value: formatDateTime(selectedJob.finished_at) })}</Text>
                 </Space>
 
                 <Progress
@@ -1118,12 +1141,12 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                 />
 
                 <Descriptions size="small" bordered column={3}>
-                  <Descriptions.Item label="Rows (dry-run)">{currentSingleRowsTotal}</Descriptions.Item>
-                  <Descriptions.Item label="Created">{selectedJob.report.created_count}</Descriptions.Item>
-                  <Descriptions.Item label="Updated">{selectedJob.report.updated_count}</Descriptions.Item>
-                  <Descriptions.Item label="Skipped">{selectedJob.report.skipped_count}</Descriptions.Item>
-                  <Descriptions.Item label="Failed">{selectedJob.report.failed_count}</Descriptions.Item>
-                  <Descriptions.Item label="Deferred">{selectedJob.report.deferred_count}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.rowsDryRun')}>{currentSingleRowsTotal}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.created')}>{selectedJob.report.created_count}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.updated')}>{selectedJob.report.updated_count}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.skipped')}>{selectedJob.report.skipped_count}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.failed')}>{selectedJob.report.failed_count}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.deferred')}>{selectedJob.report.deferred_count}</Descriptions.Item>
                 </Descriptions>
 
                 <Table
@@ -1139,7 +1162,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
             )}
           </Card>
 
-          <Card title="Recent Jobs">
+          <Card title={t('masterData.bootstrapImportTab.page.recentJobsTitle')}>
             <Table
               rowKey="id"
               loading={loadingJobs}
@@ -1156,17 +1179,17 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
         </>
       ) : (
         <>
-          <Card title="Current Collection">
+          <Card title={t('masterData.bootstrapImportTab.page.currentCollectionTitle')}>
             {!selectedCollection ? (
-              <Empty description="No batch collection selected." />
+              <Empty description={t('masterData.bootstrapImportTab.page.noBatchCollection')} />
             ) : (
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 {selectedCollection.mode === 'preflight' && selectedCollection.status === 'failed' ? (
                   <Alert
                     type="warning"
                     showIcon
-                    message="Aggregate preflight contains failed databases."
-                    description="Dry-run remains blocked until the selected target snapshot completes preflight without failed items."
+                    message={t('masterData.bootstrapImportTab.alerts.aggregatePreflightContainsFailed')}
+                    description={t('masterData.bootstrapImportTab.alerts.aggregatePreflightBlockedDescription')}
                   />
                 ) : null}
                 {selectedCollection.mode === 'dry_run' &&
@@ -1174,8 +1197,8 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                   <Alert
                     type="warning"
                     showIcon
-                    message="Batch dry-run contains failed databases."
-                    description="Execute remains blocked until the selected target snapshot completes dry-run without failed items."
+                    message={t('masterData.bootstrapImportTab.alerts.batchDryRunContainsFailed')}
+                    description={t('masterData.bootstrapImportTab.alerts.batchDryRunBlockedDescription')}
                   />
                 ) : null}
                 {selectedCollection.mode === 'dry_run' &&
@@ -1183,8 +1206,8 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                   <Alert
                     type="info"
                     showIcon
-                    message="Batch dry-run is running."
-                    description="The aggregate preview is processed asynchronously. Refresh or wait for the collection detail to update."
+                    message={t('masterData.bootstrapImportTab.alerts.batchDryRunRunning')}
+                    description={t('masterData.bootstrapImportTab.alerts.batchDryRunRunningDescription')}
                   />
                 ) : null}
 
@@ -1193,9 +1216,11 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                     {selectedCollection.status}
                   </Tag>
                   <Text type="secondary">
-                    Requested by: {selectedCollection.requested_by_username || selectedCollection.requested_by_id || '-'}
+                    {t('masterData.bootstrapImportTab.page.requestedBy', {
+                      value: selectedCollection.requested_by_username || selectedCollection.requested_by_id || t('common.noValue'),
+                    })}
                   </Text>
-                  <Text type="secondary">Created: {formatDateTime(selectedCollection.created_at)}</Text>
+                  <Text type="secondary">{t('masterData.bootstrapImportTab.page.createdAt', { value: formatDateTime(selectedCollection.created_at) })}</Text>
                 </Space>
 
                 <Progress
@@ -1205,29 +1230,33 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
                 />
 
                 <Descriptions size="small" bordered column={3}>
-                  <Descriptions.Item label="Target Mode">{selectedCollection.target_mode}</Descriptions.Item>
-                  <Descriptions.Item label="Cluster">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.targetMode')}>
+                    {selectedCollection.target_mode === 'cluster_all'
+                      ? t('masterData.bootstrapImportTab.targetMode.clusterAll')
+                      : t('masterData.bootstrapImportTab.targetMode.databaseSet')}
+                  </Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.cluster')}>
                     {selectedCollection.cluster_id
                       ? clusterNameById.get(selectedCollection.cluster_id) || selectedCollection.cluster_id
-                      : '-'}
+                      : t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Target Snapshot">
-                    {formatCollectionSnapshot(selectedCollection) || '-'}
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.targetSnapshot')}>
+                    {formatCollectionSnapshot(selectedCollection) || t('common.noValue')}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Rows (dry-run)">{currentCollectionRowsTotal}</Descriptions.Item>
-                  <Descriptions.Item label="Scheduled">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.rowsDryRun')}>{currentCollectionRowsTotal}</Descriptions.Item>
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.scheduled')}>
                     {selectedCollection.aggregate_counters.scheduled || 0}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Coalesced">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.coalesced')}>
                     {selectedCollection.aggregate_counters.coalesced || 0}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Completed">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.completed')}>
                     {selectedCollection.aggregate_counters.completed || 0}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Failed">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.failed')}>
                     {selectedCollection.aggregate_counters.failed || 0}
                   </Descriptions.Item>
-                  <Descriptions.Item label="Skipped">
+                  <Descriptions.Item label={t('masterData.bootstrapImportTab.details.skipped')}>
                     {selectedCollection.aggregate_counters.skipped || 0}
                   </Descriptions.Item>
                 </Descriptions>
@@ -1245,7 +1274,7 @@ export function BootstrapImportTab({ registryEntries }: BootstrapImportTabProps)
             )}
           </Card>
 
-          <Card title="Recent Collections">
+          <Card title={t('masterData.bootstrapImportTab.page.recentCollectionsTitle')}>
             <Table
               rowKey="id"
               loading={loadingCollections}

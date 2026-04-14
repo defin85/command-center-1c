@@ -9,6 +9,7 @@ import {
   type SimpleDatabaseRef,
 } from '../../../api/intercompanyPools'
 import { DrawerFormShell } from '../../../components/platform'
+import { usePoolsTranslation } from '../../../i18n'
 import { resolveApiError } from './errorUtils'
 import { getSyncEntityOptions } from './registry'
 
@@ -38,17 +39,6 @@ type ClusterEligibilitySummary = {
   unconfigured: SimpleDatabaseRef[]
 }
 
-const LAUNCH_MODE_OPTIONS: Array<{ value: PoolMasterDataSyncLaunchMode; label: string }> = [
-  { value: 'inbound', label: 'Inbound' },
-  { value: 'outbound', label: 'Outbound' },
-  { value: 'reconcile', label: 'Reconcile' },
-]
-
-const LAUNCH_TARGET_MODE_OPTIONS: Array<{ value: 'cluster_all' | 'database_set'; label: string }> = [
-  { value: 'cluster_all', label: 'Cluster All' },
-  { value: 'database_set', label: 'Database Set' },
-]
-
 export function SyncLaunchDrawer({
   open,
   clusters,
@@ -60,6 +50,7 @@ export function SyncLaunchDrawer({
   onOpenEligibilityContext,
   onSubmit,
 }: SyncLaunchDrawerProps) {
+  const { t } = usePoolsTranslation()
   const [form] = Form.useForm<SyncLauncherFormValues>()
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -80,6 +71,21 @@ export function SyncLaunchDrawer({
   const launchEntityTypeOptions = useMemo(
     () => getSyncEntityOptions(registryEntries, launchMode ?? 'inbound'),
     [launchMode, registryEntries]
+  )
+  const launchModeOptions = useMemo<Array<{ value: PoolMasterDataSyncLaunchMode; label: string }>>(
+    () => [
+      { value: 'inbound', label: t('masterData.syncLaunchDrawer.mode.inbound') },
+      { value: 'outbound', label: t('masterData.syncLaunchDrawer.mode.outbound') },
+      { value: 'reconcile', label: t('masterData.syncLaunchDrawer.mode.reconcile') },
+    ],
+    [t]
+  )
+  const launchTargetModeOptions = useMemo<Array<{ value: 'cluster_all' | 'database_set'; label: string }>>(
+    () => [
+      { value: 'cluster_all', label: t('masterData.syncLaunchDrawer.targetMode.clusterAll') },
+      { value: 'database_set', label: t('masterData.syncLaunchDrawer.targetMode.databaseSet') },
+    ],
+    [t]
   )
 
   const selectedClusterDatabases = useMemo(
@@ -163,7 +169,7 @@ export function SyncLaunchDrawer({
     try {
       setSubmitError('')
       if (clusterAllBlocked) {
-        setSubmitError('Resolve cluster_all eligibility in /databases before launch.')
+        setSubmitError(t('masterData.syncLaunchDrawer.messages.resolveEligibilityBeforeLaunch'))
         return
       }
       const values = await form.validateFields()
@@ -179,7 +185,7 @@ export function SyncLaunchDrawer({
       if (typeof error === 'object' && error !== null && 'errorFields' in error) {
         return
       }
-      const resolved = resolveApiError(error, 'Не удалось создать manual sync launch.')
+      const resolved = resolveApiError(error, t('masterData.syncLaunchDrawer.messages.failedToCreate'))
       setFieldErrorsFromProblem(resolved.fieldErrors)
       setSubmitError(resolved.message)
     } finally {
@@ -192,9 +198,9 @@ export function SyncLaunchDrawer({
       open={open}
       onClose={onClose}
       onSubmit={handleSubmit}
-      title="Launch Sync"
-      subtitle="Create a cluster-wide or database-scoped manual sync launch request."
-      submitText="Launch"
+      title={t('masterData.syncLaunchDrawer.title')}
+      subtitle={t('masterData.syncLaunchDrawer.subtitle')}
+      submitText={t('masterData.syncLaunchDrawer.submit')}
       confirmLoading={submitting}
       submitDisabled={submitting || clusterAllBlocked}
       drawerTestId="sync-launch-drawer"
@@ -210,33 +216,33 @@ export function SyncLaunchDrawer({
         }}
       >
         <Form.Item
-          label="Mode"
+          label={t('masterData.syncLaunchDrawer.fields.mode')}
           name="mode"
-          rules={[{ required: true, message: 'Select sync mode.' }]}
+          rules={[{ required: true, message: t('masterData.syncLaunchDrawer.validation.selectSyncMode') }]}
         >
           <Select
             data-testid="sync-launch-mode"
-            options={LAUNCH_MODE_OPTIONS}
+            options={launchModeOptions}
           />
         </Form.Item>
 
         <Form.Item
-          label="Target Mode"
+          label={t('masterData.syncLaunchDrawer.fields.targetMode')}
           name="target_mode"
-          rules={[{ required: true, message: 'Select target mode.' }]}
+          rules={[{ required: true, message: t('masterData.syncLaunchDrawer.validation.selectTargetMode') }]}
         >
           <Select
             data-testid="sync-launch-target-mode"
-            options={LAUNCH_TARGET_MODE_OPTIONS}
+            options={launchTargetModeOptions}
           />
         </Form.Item>
 
         {launchTargetMode === 'cluster_all' ? (
           <>
             <Form.Item
-              label="Cluster"
+              label={t('masterData.syncLaunchDrawer.fields.cluster')}
               name="cluster_id"
-              rules={[{ required: true, message: 'Select cluster.' }]}
+              rules={[{ required: true, message: t('masterData.syncLaunchDrawer.validation.selectCluster') }]}
             >
               <Select
                 data-testid="sync-launch-cluster"
@@ -253,25 +259,33 @@ export function SyncLaunchDrawer({
                 type={clusterAllBlocked ? 'error' : 'info'}
                 showIcon
                 data-testid="sync-launch-cluster-all-summary"
-                message={`Cluster summary: ${clusterEligibilitySummary.eligibleCount} eligible, ${clusterEligibilitySummary.excluded.length} excluded, ${clusterEligibilitySummary.unconfigured.length} unconfigured.`}
+                message={t('masterData.syncLaunchDrawer.clusterAll.summary', {
+                  eligibleCount: clusterEligibilitySummary.eligibleCount,
+                  excludedCount: clusterEligibilitySummary.excluded.length,
+                  unconfiguredCount: clusterEligibilitySummary.unconfigured.length,
+                })}
                 description={(
                   <Space direction="vertical" size={4}>
                     <Typography.Text>
-                      Eligible databases will be included in cluster_all.
+                      {t('masterData.syncLaunchDrawer.clusterAll.eligibleIncluded')}
                     </Typography.Text>
                     {clusterEligibilitySummary.excluded.length > 0 ? (
                       <Typography.Text>
-                        Excluded from cluster_all: {clusterEligibilitySummary.excluded.map((database) => database.name).join(', ')}.
+                        {t('masterData.syncLaunchDrawer.clusterAll.excluded', {
+                          databases: clusterEligibilitySummary.excluded.map((database) => database.name).join(', '),
+                        })}
                       </Typography.Text>
                     ) : null}
                     {clusterEligibilitySummary.unconfigured.length > 0 ? (
                       <Typography.Text>
-                        Resolve eligibility in /databases before launch for: {clusterEligibilitySummary.unconfigured.map((database) => database.name).join(', ')}.
+                        {t('masterData.syncLaunchDrawer.clusterAll.resolveEligibility', {
+                          databases: clusterEligibilitySummary.unconfigured.map((database) => database.name).join(', '),
+                        })}
                       </Typography.Text>
                     ) : null}
                     {clusterEligibilitySummary.excluded.length > 0 ? (
                       <Typography.Text>
-                        Use Database Set for one-off launches that must include excluded databases.
+                        {t('masterData.syncLaunchDrawer.clusterAll.useDatabaseSet')}
                       </Typography.Text>
                     ) : null}
                   </Space>
@@ -287,7 +301,7 @@ export function SyncLaunchDrawer({
                     }}
                     data-testid="sync-launch-open-eligibility-handoff"
                   >
-                    Open /databases
+                    {t('masterData.syncLaunchDrawer.clusterAll.openDatabases')}
                   </Button>
                 ) : undefined}
               />
@@ -297,9 +311,9 @@ export function SyncLaunchDrawer({
 
         {launchTargetMode === 'database_set' ? (
           <Form.Item
-            label="Databases"
+            label={t('masterData.syncLaunchDrawer.fields.databases')}
             name="database_ids"
-            rules={[{ required: true, message: 'Select at least one database.' }]}
+            rules={[{ required: true, message: t('masterData.syncLaunchDrawer.validation.selectAtLeastOneDatabase') }]}
           >
             <Select
               data-testid="sync-launch-database-set"
@@ -316,9 +330,9 @@ export function SyncLaunchDrawer({
         ) : null}
 
         <Form.Item
-          label="Entity Scope"
+          label={t('masterData.syncLaunchDrawer.fields.entityScope')}
           name="entity_scope"
-          rules={[{ required: true, message: 'Select at least one entity type.' }]}
+          rules={[{ required: true, message: t('masterData.syncLaunchDrawer.validation.selectAtLeastOneEntityType') }]}
         >
           <Select
             data-testid="sync-launch-entity-scope"

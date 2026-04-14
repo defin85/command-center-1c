@@ -32,4 +32,21 @@ describe('locale formatters', () => {
     expect(formatters.list([], { fallback: 'empty' })).toBe('empty')
     expect(formatters.relativeTime(undefined, 'second')).toBe('—')
   })
+
+  it('supports granular Intl date-time fields without mixing them with preset styles', () => {
+    const formatters = createLocaleFormatters('en')
+
+    expect(formatters.time(TIMESTAMP, {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'UTC',
+      fallback: 'n/a',
+    })).toBe(
+      new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'UTC',
+      }).format(new Date(TIMESTAMP)),
+    )
+  })
 })

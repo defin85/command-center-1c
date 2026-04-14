@@ -12,6 +12,11 @@ import {
   resolvePoolWorkflowBindingProfileRevisionNumber,
   resolvePoolWorkflowBindingWorkflow,
 } from './poolWorkflowBindingPresentation'
+import { i18n } from '../../i18n'
+
+const tPools = (key: string, options?: Record<string, unknown>) => (
+  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+)
 
 export type PoolWorkflowBindingSelectorFormValue = {
   direction?: string
@@ -69,7 +74,7 @@ const formatWorkflowBindingScope = (
   if (tags.length > 0) {
     parts.push(`tags=${tags.join(', ')}`)
   }
-  return parts.length > 0 ? parts.join(' · ') : 'unscoped'
+  return parts.length > 0 ? parts.join(' · ') : tPools('catalog.bindingsEditor.summary.unscoped')
 }
 
 const formatWorkflowBindingPeriod = (
@@ -79,9 +84,11 @@ const formatWorkflowBindingPeriod = (
   const normalizedFrom = String(effectiveFrom ?? '').trim()
   const normalizedTo = String(effectiveTo ?? '').trim()
   if (!normalizedFrom) {
-    return 'period not set'
+    return tPools('catalog.bindingsEditor.summary.periodNotSet')
   }
-  return normalizedTo ? `${normalizedFrom}..${normalizedTo}` : `${normalizedFrom}..open`
+  return normalizedTo
+    ? `${normalizedFrom}..${normalizedTo}`
+    : tPools('catalog.bindingsEditor.summary.openEndedPeriod', { from: normalizedFrom })
 }
 
 export const getWorkflowBindingCardTitle = (
@@ -103,14 +110,14 @@ export const getWorkflowBindingCardTitle = (
   const revisionNumber = String(value?.binding_profile_revision_number ?? '').trim()
   if (profileLabel !== '-') {
     return revisionNumber
-      ? `Attachment #${index}: ${profileLabel} · r${revisionNumber}`
-      : `Attachment #${index}: ${profileLabel}`
+      ? tPools('catalog.bindingsEditor.summary.attachmentWithRevision', { index, profileLabel, revision: revisionNumber })
+      : tPools('catalog.bindingsEditor.summary.attachmentWithProfile', { index, profileLabel })
   }
   const bindingId = String(value?.binding_id ?? '').trim()
   if (bindingId) {
-    return `Attachment #${index}: ${bindingId}`
+    return tPools('catalog.bindingsEditor.summary.attachmentWithBindingId', { index, bindingId })
   }
-  return `Attachment #${index}`
+  return tPools('catalog.bindingsEditor.summary.attachmentOnly', { index })
 }
 
 export const getWorkflowBindingCardSummary = (
@@ -120,7 +127,7 @@ export const getWorkflowBindingCardSummary = (
   const revisionNumber = String(value?.binding_profile_revision_number ?? '').trim()
   return [
     status,
-    revisionNumber ? `profile r${revisionNumber}` : null,
+    revisionNumber ? tPools('catalog.bindingsEditor.summary.profileRevision', { revision: revisionNumber }) : null,
     formatWorkflowBindingScope(value?.selector),
     formatWorkflowBindingPeriod(value?.effective_from, value?.effective_to),
   ]
@@ -187,7 +194,7 @@ export const summarizeWorkflowBindings = (
 ): { primary: string; secondary: string | null } => {
   const bindings = extractWorkflowBindingsFromPool(pool)
   if (bindings.length === 0) {
-    return { primary: '0 bindings', secondary: null }
+    return { primary: tPools('catalog.bindingsEditor.summary.bindingCount', { count: 0 }), secondary: null }
   }
 
   const activeCount = bindings.filter((binding) => binding.status === 'active').length
@@ -199,11 +206,11 @@ export const summarizeWorkflowBindings = (
   })
 
   return {
-    primary: `${bindings.length} ${bindings.length === 1 ? 'binding' : 'bindings'}`,
+    primary: tPools('catalog.bindingsEditor.summary.bindingCount', { count: bindings.length }),
     secondary: [
       workflow?.workflow_definition_key || workflow?.workflow_name || '',
-      profileRevisionNumber ? `profile r${profileRevisionNumber}` : null,
-      activeCount > 0 ? `${activeCount} active` : null,
+      profileRevisionNumber ? tPools('catalog.bindingsEditor.summary.profileRevision', { revision: profileRevisionNumber }) : null,
+      activeCount > 0 ? tPools('catalog.bindingsEditor.summary.activeCount', { count: activeCount }) : null,
     ]
       .filter((item): item is string => Boolean(item))
       .join(' · ') || null,
@@ -218,7 +225,7 @@ export const buildWorkflowBindingsFromForm = (
   const normalized: PoolWorkflowBindingInput[] = []
 
   bindings.forEach((binding, index) => {
-    const bindingLabel = `Attachment #${index + 1}`
+    const bindingLabel = tPools('catalog.bindingsEditor.summary.attachmentOnly', { index: index + 1 })
     const bindingProfileRevisionId = String(binding?.binding_profile_revision_id ?? '').trim()
     const revisionRaw = String(binding?.revision ?? '').trim()
     const effectiveFrom = String(binding?.effective_from ?? '').trim()
@@ -226,21 +233,21 @@ export const buildWorkflowBindingsFromForm = (
     const bindingId = String(binding?.binding_id ?? '').trim()
 
     if (!bindingProfileRevisionId) {
-      errors.push(`${bindingLabel}: binding_profile_revision_id обязателен.`)
+      errors.push(tPools('catalog.bindingsEditor.validation.bindingProfileRevisionRequired', { bindingLabel }))
     }
     if (!effectiveFrom) {
-      errors.push(`${bindingLabel}: effective_from обязателен.`)
+      errors.push(tPools('catalog.bindingsEditor.validation.effectiveFromRequired', { bindingLabel }))
     }
     if (bindingId && !revisionRaw) {
-      errors.push(`${bindingLabel}: revision обязателен для обновления существующего attachment.`)
+      errors.push(tPools('catalog.bindingsEditor.validation.revisionRequiredForExistingAttachment', { bindingLabel }))
     }
     if (effectiveTo && effectiveFrom && effectiveTo < effectiveFrom) {
-      errors.push(`${bindingLabel}: effective_to не может быть раньше effective_from.`)
+      errors.push(tPools('catalog.bindingsEditor.validation.effectiveToBeforeEffectiveFrom', { bindingLabel }))
     }
 
     const revision = Number(revisionRaw)
     if (revisionRaw && (!Number.isInteger(revision) || revision <= 0)) {
-      errors.push(`${bindingLabel}: revision должен быть положительным integer.`)
+      errors.push(tPools('catalog.bindingsEditor.validation.revisionPositiveInteger', { bindingLabel }))
     }
 
     if (errors.length > 0) {
