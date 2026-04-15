@@ -25,6 +25,21 @@ class DeployServerConfigContractTests(unittest.TestCase):
         self.assertIn("logrotate.timer.d/override.conf", script_text)
         self.assertIn("cc1c-logging.xml", script_text)
 
+    def test_clickhouse_logging_override_caps_system_log_retention(self) -> None:
+        config_text = (
+            ROOT / "scripts/deploy/server-config/clickhouse-server/config.d/cc1c-logging.xml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("<logger>", config_text)
+        self.assertIn("<level>information</level>", config_text)
+        self.assertIn("<text_log>", config_text)
+        self.assertIn("<trace_log>", config_text)
+        self.assertIn("<metric_log>", config_text)
+        self.assertIn("<part_log>", config_text)
+        self.assertIn("<asynchronous_metric_log>", config_text)
+        self.assertIn("<partition_by>toMonday(event_date)</partition_by>", config_text)
+        self.assertIn("<ttl>event_date + INTERVAL 7 DAY DELETE</ttl>", config_text)
+
     def test_native_settings_disable_tls_redirect_but_keep_production_base(self) -> None:
         settings_text = (ROOT / "orchestrator/config/settings/native.py").read_text(encoding="utf-8")
 
