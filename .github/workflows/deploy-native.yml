@@ -18,7 +18,7 @@ jobs:
 
     env:
       RELEASE_ID: ${{ github.sha }}
-      RELEASE_ARCHIVE: /tmp/cc1c-release-${{ github.sha }}.tar.gz
+      RELEASE_ARCHIVE: /var/tmp/cc1c-release-${{ github.sha }}.tar.gz
 
     steps:
       - name: Checkout
@@ -124,6 +124,12 @@ jobs:
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "${DEPLOY_PORT}" -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Cleanup stale remote release archives
+        run: |
+          set -euo pipefail
+          ssh -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "find /tmp /var/tmp -maxdepth 1 -type f -name 'cc1c-release-*.tar.gz' -delete 2>/dev/null || true"
 
       - name: Upload release to server
         run: |
