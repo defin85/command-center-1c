@@ -109,7 +109,9 @@ jobs:
             --exclude '.pytest_cache' \
             orchestrator/ release/orchestrator/
           rsync -a --delete build/wheelhouse/ release/orchestrator/wheelhouse/
-          rsync -a --delete frontend/dist/ release/frontend/dist/
+          rsync -a --delete \
+            --exclude '*.map' \
+            frontend/dist/ release/frontend/dist/
           rsync -a --delete scripts/ release/scripts/
           rsync -a --delete infrastructure/monitoring/ release/infrastructure/monitoring/
           tar -C release -czf release.tar.gz .
