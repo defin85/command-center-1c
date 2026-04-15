@@ -5,6 +5,7 @@ import { FALLBACK_APP_LOCALE } from './constants'
 import { useLocaleState } from './I18nProvider'
 import { ensureNamespaces } from './runtime'
 import { defaultNamespace, type TranslationNamespace } from './resources'
+import { translateNamespace } from './stringTranslation'
 
 const normalizeNamespace = (value?: TranslationNamespace) => value ?? defaultNamespace
 type ResolvedNamespace<Namespace extends TranslationNamespace | undefined> = (
@@ -26,6 +27,9 @@ const useNamespaceTranslation = <Namespace extends TranslationNamespace | undefi
   )
   const { locale } = useLocaleState()
   const translation = useTranslation<ResolvedNamespace<Namespace>>(namespace, { useSuspense: false })
+  type TranslationKey = Parameters<typeof translation.t>[0]
+  type TranslationOptions = Parameters<typeof translation.t>[1]
+  type AppTranslationFunction = typeof translation.t & ((key: string, options?: Record<string, unknown>) => string)
   const [namespacesReady, setNamespacesReady] = useState(() => (
     hasNamespaceResources(translation.i18n, locale, namespace)
   ))
@@ -45,8 +49,26 @@ const useNamespaceTranslation = <Namespace extends TranslationNamespace | undefi
     }
   }, [locale, namespace, translation.i18n])
 
+  const t = useMemo(() => {
+    const translate = (
+      key: string | TranslationKey,
+      options?: TranslationOptions | Record<string, unknown>,
+    ) => {
+      if (typeof key === 'string') {
+        const stringOptions = options && typeof options === 'object'
+          ? options as Record<string, unknown>
+          : undefined
+        return translateNamespace(namespace, key, stringOptions)
+      }
+      return translation.t(key as TranslationKey, options as TranslationOptions)
+    }
+
+    return translate as AppTranslationFunction
+  }, [namespace, translation.i18n, translation.t])
+
   return {
     ...translation,
+    t,
     locale,
     ready: namespacesReady,
   }

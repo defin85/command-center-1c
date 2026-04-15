@@ -1,5 +1,5 @@
 import type { PoolWorkflowBinding } from '../../api/intercompanyPools'
-import { i18n } from '../../i18n'
+import { translateNamespace } from '../../i18n'
 import {
   resolvePoolWorkflowBindingDecisionRefs,
   resolvePoolWorkflowBindingWorkflow,
@@ -49,7 +49,7 @@ export const describePoolWorkflowBindingCoverage = (binding: PoolWorkflowBinding
   ].filter((item) => item)
   const scope = selectorParts.join(' · ')
   return [
-    bindingId || workflowName || i18n.t('common.topologyCoverage.bindingFallback', { ns: 'pools' }),
+    bindingId || workflowName || translateNamespace('pools', 'common.topologyCoverage.bindingFallback'),
     workflowName && workflowName !== bindingId ? workflowName : '',
     scope,
   ]
@@ -98,7 +98,7 @@ export const resolveTopologyCoverageContext = (
       const bindingLabel = describePoolWorkflowBindingCoverage(selectedBinding)
       return buildTopologyCoverageContext({
         bindingLabel,
-        detail: i18n.t('common.topologyCoverage.selectedBinding', { ns: 'pools', bindingLabel }),
+        detail: translateNamespace('pools', 'common.topologyCoverage.selectedBinding', { bindingLabel }),
         slotRefs: buildSlotRefsFromBinding(selectedBinding),
         source: 'selected',
       })
@@ -106,7 +106,7 @@ export const resolveTopologyCoverageContext = (
     return {
       status: 'unavailable',
       bindingLabel: null,
-      detail: i18n.t('common.topologyCoverage.selectedBindingUnavailable', { ns: 'pools' }),
+      detail: translateNamespace('pools', 'common.topologyCoverage.selectedBindingUnavailable'),
       source: null,
       slotRefs: [],
     }
@@ -116,7 +116,7 @@ export const resolveTopologyCoverageContext = (
     const bindingLabel = describePoolWorkflowBindingCoverage(activeBinding)
     return buildTopologyCoverageContext({
       bindingLabel,
-      detail: i18n.t('common.topologyCoverage.autoResolved', { ns: 'pools', bindingLabel }),
+      detail: translateNamespace('pools', 'common.topologyCoverage.autoResolved', { bindingLabel }),
       slotRefs: buildSlotRefsFromBinding(activeBinding),
       source: 'auto',
     })
@@ -125,7 +125,7 @@ export const resolveTopologyCoverageContext = (
     return {
       status: 'unavailable',
       bindingLabel: null,
-      detail: i18n.t('common.topologyCoverage.noActiveBindings', { ns: 'pools' }),
+      detail: translateNamespace('pools', 'common.topologyCoverage.noActiveBindings'),
       source: null,
       slotRefs: [],
     }
@@ -133,7 +133,7 @@ export const resolveTopologyCoverageContext = (
   return {
     status: 'ambiguous',
     bindingLabel: null,
-    detail: i18n.t('common.topologyCoverage.ambiguousContext', { ns: 'pools' }),
+    detail: translateNamespace('pools', 'common.topologyCoverage.ambiguousContext'),
     source: null,
     slotRefs: [],
   }
@@ -148,15 +148,15 @@ export const resolveTopologySlotCoverage = (
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_SELECTOR_MISSING',
       status: 'missing_selector',
-      label: i18n.t('common.topologyCoverage.slotRequired', { ns: 'pools' }),
-      detail: i18n.t('common.topologyCoverage.slotRequiredDetail', { ns: 'pools' }),
+      label: translateNamespace('pools', 'common.topologyCoverage.slotRequired'),
+      detail: translateNamespace('pools', 'common.topologyCoverage.slotRequiredDetail'),
     }
   }
   if (context.status === 'ambiguous') {
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_context',
-      label: i18n.t('common.topologyCoverage.coverageUnavailable', { ns: 'pools' }),
+      label: translateNamespace('pools', 'common.topologyCoverage.coverageUnavailable'),
       detail: context.detail,
     }
   }
@@ -164,7 +164,7 @@ export const resolveTopologySlotCoverage = (
     return {
       code: null,
       status: 'unavailable_context',
-      label: i18n.t('common.topologyCoverage.coverageUnavailable', { ns: 'pools' }),
+      label: translateNamespace('pools', 'common.topologyCoverage.coverageUnavailable'),
       detail: context.detail,
     }
   }
@@ -173,9 +173,8 @@ export const resolveTopologySlotCoverage = (
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_NOT_BOUND',
       status: 'missing_slot',
-      label: i18n.t('common.topologyCoverage.slotMissing', { ns: 'pools' }),
-      detail: i18n.t('common.topologyCoverage.slotMissingDetail', {
-        ns: 'pools',
+      label: translateNamespace('pools', 'common.topologyCoverage.slotMissing'),
+      detail: translateNamespace('pools', 'common.topologyCoverage.slotMissingDetail', {
         bindingLabel: context.bindingLabel,
         slotKey: normalizedSlotKey,
       }),
@@ -185,9 +184,8 @@ export const resolveTopologySlotCoverage = (
     return {
       code: 'POOL_DOCUMENT_POLICY_SLOT_COVERAGE_AMBIGUOUS',
       status: 'ambiguous_slot',
-      label: i18n.t('common.topologyCoverage.ambiguousSlot', { ns: 'pools' }),
-      detail: i18n.t('common.topologyCoverage.ambiguousSlotDetail', {
-        ns: 'pools',
+      label: translateNamespace('pools', 'common.topologyCoverage.ambiguousSlot'),
+      detail: translateNamespace('pools', 'common.topologyCoverage.ambiguousSlotDetail', {
         bindingLabel: context.bindingLabel,
         count: matches.length,
         slotKey: normalizedSlotKey,
@@ -197,9 +195,8 @@ export const resolveTopologySlotCoverage = (
   return {
     code: null,
     status: 'resolved',
-    label: i18n.t('common.topologyCoverage.resolved', { ns: 'pools' }),
-    detail: i18n.t('common.topologyCoverage.resolvedDetail', {
-      ns: 'pools',
+    label: translateNamespace('pools', 'common.topologyCoverage.resolved'),
+    detail: translateNamespace('pools', 'common.topologyCoverage.resolvedDetail', {
       bindingLabel: context.bindingLabel,
       refLabel: matches[0]?.refLabel || normalizedSlotKey,
     }),

@@ -1,4 +1,4 @@
-import type { TFunction } from 'i18next'
+import type { AppStringTranslator } from '../../i18n'
 
 export type PoolFactualReviewReason = 'unattributed' | 'late_correction'
 export type PoolFactualReviewStatus = 'pending' | 'attributed' | 'reconciled' | 'resolved_without_change'
@@ -23,7 +23,7 @@ export function getPoolFactualReviewStatusTone(row: PoolFactualReviewRow): strin
 }
 
 export function getPoolFactualReviewReasonLabel(
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   reason: PoolFactualReviewReason,
 ): string {
   return reason === 'late_correction'
@@ -32,7 +32,7 @@ export function getPoolFactualReviewReasonLabel(
 }
 
 export function getPoolFactualReviewStatusLabel(
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   status: PoolFactualReviewStatus,
 ): string {
   switch (status) {
@@ -48,7 +48,7 @@ export function getPoolFactualReviewStatusLabel(
 }
 
 export function getPoolFactualReviewActionLabel(
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   action: PoolFactualReviewAction,
 ): string {
   switch (action) {

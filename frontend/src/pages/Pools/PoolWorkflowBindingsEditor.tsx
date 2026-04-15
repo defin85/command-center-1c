@@ -6,7 +6,7 @@ import type {
   PoolWorkflowBindingResolvedProfile,
 } from '../../api/intercompanyPools'
 import { RouteButton } from '../../components/platform'
-import { i18n, usePoolsTranslation } from '../../i18n'
+import { translateNamespace, usePoolsTranslation } from '../../i18n'
 import { POOL_EXECUTION_PACKS_ROUTE } from './routes'
 import {
   createEmptyWorkflowBindingFormValue,
@@ -33,7 +33,7 @@ const { Text } = Typography
 const { useBreakpoint } = Grid
 
 const tPools = (key: string, options?: Record<string, unknown>) => (
-  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+  translateNamespace('pools', key, options)
 )
 
 type PoolWorkflowBindingsEditorProps = {

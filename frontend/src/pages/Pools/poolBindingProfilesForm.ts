@@ -5,7 +5,7 @@ import type {
 } from '../../api/poolBindingProfiles'
 import type { BindingProfileRevisionWriteRoleMapping } from '../../api/generated/model/bindingProfileRevisionWriteRoleMapping'
 import type { PoolWorkflowBindingDecisionRef } from '../../api/intercompanyPools'
-import { i18n } from '../../i18n'
+import { translateNamespace } from '../../i18n'
 
 export type BindingProfileEditorMode = 'create' | 'revise'
 
@@ -39,7 +39,7 @@ type FormError = {
 const DEFAULT_OBJECT_JSON = '{}'
 
 const tPools = (key: string, options?: Record<string, unknown>) => (
-  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+  translateNamespace('pools', key, options)
 )
 
 export function buildBindingProfileEditorInitialValues(

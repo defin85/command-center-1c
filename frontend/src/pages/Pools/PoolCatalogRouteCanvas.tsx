@@ -70,7 +70,7 @@ import type {
   PoolODataMetadataCatalogDocument,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
-import { createLocaleFormatters, getCurrentAppLocale, i18n, usePoolsTranslation } from '../../i18n'
+import { createLocaleFormatters, getCurrentAppLocale, translateNamespace, usePoolsTranslation } from '../../i18n'
 import { withQueryPolicy } from '../../lib/queryRuntime'
 import {
   DrawerFormShell,
@@ -122,7 +122,7 @@ import {
 const { Text } = Typography
 
 const tPools = (key: string, options?: Record<string, unknown>) => (
-  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+  translateNamespace('pools', key, options)
 )
 const { TextArea } = Input
 

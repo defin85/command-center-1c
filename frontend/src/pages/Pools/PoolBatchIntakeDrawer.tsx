@@ -10,7 +10,6 @@ import {
   type PoolSchemaTemplate,
 } from '../../api/intercompanyPools'
 import { DrawerFormShell } from '../../components/platform/DrawerFormShell'
-import type { TFunction } from 'i18next'
 import { usePoolsTranslation } from '../../i18n'
 import { resolveApiError } from './masterData/errorUtils'
 
@@ -36,6 +35,8 @@ type BatchIntakeFormValues = {
   xlsx_base64?: string
   uploaded_file_name?: string
 }
+
+type PoolsTranslate = ReturnType<typeof usePoolsTranslation>['t']
 
 type PoolBatchIntakeDrawerProps = {
   open: boolean
@@ -73,7 +74,7 @@ const DEFAULT_JSON_PAYLOAD = JSON.stringify(
 
 function parseBatchPayloadJson(
   raw: string,
-  t: TFunction<'translation', undefined>
+  t: PoolsTranslate
 ): Record<string, unknown> | Array<Record<string, unknown>> {
   let parsed: unknown
   try {
@@ -97,7 +98,7 @@ function parseBatchPayloadJson(
 
 async function readFileAsBase64(
   file: File,
-  t: TFunction<'translation', undefined>
+  t: PoolsTranslate
 ): Promise<string> {
   return await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -114,7 +115,7 @@ async function readFileAsBase64(
 function requireTrimmedValue(
   value: string | undefined,
   fieldName: string,
-  t: TFunction<'translation', undefined>
+  t: PoolsTranslate
 ): string {
   const normalized = value?.trim() || ''
   if (!normalized) {
@@ -126,7 +127,7 @@ function requireTrimmedValue(
 function buildPoolBatchCreatePayload(
   values: BatchIntakeFormValues,
   poolId: string,
-  t: TFunction<'translation', undefined>
+  t: PoolsTranslate
 ): PoolBatchCreatePayload {
   const payloadBase = {
     pool_id: poolId,

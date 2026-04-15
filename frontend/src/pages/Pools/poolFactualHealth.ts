@@ -1,6 +1,5 @@
-import type { TFunction } from 'i18next'
-
 import type { PoolFactualSummary } from '../../api/intercompanyPools'
+import type { AppStringTranslator } from '../../i18n'
 
 export type PoolFactualVerdict = 'critical' | 'warning' | 'healthy' | 'unknown'
 export type PoolFactualPrioritySignal =
@@ -97,7 +96,7 @@ export const getPoolFactualVerdictTone = (verdict: PoolFactualVerdict) => {
 }
 
 export const getPoolFactualVerdictLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   verdict: PoolFactualVerdict,
 ) => {
   switch (verdict) {
@@ -113,7 +112,7 @@ export const getPoolFactualVerdictLabel = (
 }
 
 export const getPoolFactualPrimaryReason = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
@@ -151,7 +150,7 @@ export const getPoolFactualPrimaryReason = (
 }
 
 export const getPoolFactualCompactSummary = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
@@ -185,7 +184,7 @@ export const getPoolFactualCompactSummary = (
 }
 
 export const getPoolFactualPrimaryActionLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   summary: PoolFactualSummary | null | undefined
 ): string => {
   switch (resolvePoolFactualPrioritySignal(summary)) {
@@ -208,7 +207,7 @@ export const getPoolFactualPrimaryActionLabel = (
 }
 
 export const getPoolFactualSyncStatusLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   status: string | null | undefined,
 ): string => {
   switch (status?.trim()) {
@@ -230,7 +229,7 @@ export const getPoolFactualSyncStatusLabel = (
 }
 
 export const getPoolFactualFreshnessStatusLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   status: string | null | undefined,
 ): string => {
   switch (status?.trim()) {
@@ -244,7 +243,7 @@ export const getPoolFactualFreshnessStatusLabel = (
 }
 
 export const getPoolFactualAvailabilityLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   status: string | null | undefined,
 ): string => {
   switch (status?.trim()) {
@@ -258,7 +257,7 @@ export const getPoolFactualAvailabilityLabel = (
 }
 
 export const getPoolFactualSettlementStatusLabel = (
-  t: TFunction<'poolFactual', undefined>,
+  t: AppStringTranslator,
   status: string | null | undefined,
 ): string => {
   switch (status?.trim()) {

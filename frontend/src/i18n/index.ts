@@ -4,6 +4,7 @@ export { LOCALE_REQUEST_HEADER, type AppLocale, supportedAppLocales } from './co
 export { getCurrentAppLocale, getStoredLocaleOverride, normalizeAppLocale, setStoredLocaleOverride } from './localeStore'
 export { resolveLocalizedApiErrorMessage } from './errorMessages'
 export { ensureNamespaces, i18n } from './runtime'
+export { translateNamespace, type AppStringTranslator } from './stringTranslation'
 export {
   useAdminSupportTranslation,
   useAppTranslation,

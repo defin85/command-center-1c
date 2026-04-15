@@ -12,10 +12,10 @@ import {
   resolvePoolWorkflowBindingProfileRevisionNumber,
   resolvePoolWorkflowBindingWorkflow,
 } from './poolWorkflowBindingPresentation'
-import { i18n } from '../../i18n'
+import { translateNamespace } from '../../i18n'
 
 const tPools = (key: string, options?: Record<string, unknown>) => (
-  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+  translateNamespace('pools', key, options)
 )
 
 export type PoolWorkflowBindingSelectorFormValue = {

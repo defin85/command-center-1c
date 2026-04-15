@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Collapse, Progress, Space, Typography } from 'antd'
-import type { TFunction } from 'i18next'
 
 import {
   applyPoolFactualReviewAction as applyPoolFactualReviewActionRequest,
@@ -16,7 +15,7 @@ import {
   refreshPoolFactualWorkspace,
 } from '../../api/intercompanyPools'
 import { EntityTable, RouteButton, StatusBadge } from '../../components/platform'
-import { usePoolFactualTranslation } from '../../i18n'
+import { usePoolFactualTranslation, type AppStringTranslator } from '../../i18n'
 import { useLocaleFormatters } from '../../i18n/formatters'
 import {
   getPoolFactualReviewActionLabel,
@@ -84,7 +83,7 @@ type PoolFactualRefreshCardState = {
 const FACTUAL_WORKSPACE_POLL_INTERVAL_MS = 120_000
 const FACTUAL_REFRESH_STATE_POLL_INTERVAL_MS = 5_000
 
-type PoolFactualTranslation = TFunction<'poolFactual', undefined>
+type PoolFactualTranslation = AppStringTranslator
 type PoolFactualFormatters = {
   dateTime: (
     value: string | Date | null | undefined,

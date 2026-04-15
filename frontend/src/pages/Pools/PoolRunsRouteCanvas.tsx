@@ -88,7 +88,7 @@ import {
   RouteButton,
   WorkspacePage,
 } from '../../components/platform'
-import { createLocaleFormatters, getCurrentAppLocale, i18n, usePoolsTranslation } from '../../i18n'
+import { createLocaleFormatters, getCurrentAppLocale, translateNamespace, usePoolsTranslation } from '../../i18n'
 import { PoolBatchIntakeDrawer } from './PoolBatchIntakeDrawer'
 import { buildPoolFactualRoute, POOL_RUNS_ROUTE } from './routes'
 
@@ -170,7 +170,7 @@ const RETRY_FORM_INITIAL_VALUES: RetryFormValues = {
 }
 
 const tPools = (key: string, options?: Record<string, unknown>): string => (
-  i18n.t(key, { ns: 'pools', ...(options ?? {}) })
+  translateNamespace('pools', key, options)
 )
 
 const STATUS_COLORS: Record<string, string> = {
@@ -336,17 +336,17 @@ const parseBottomUpSourcePayload = (raw: string): Record<string, unknown> | Arra
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(i18n.t('runs.create.messages.invalidSourcePayloadJson', { ns: 'pools' }))
+    throw new Error(translateNamespace('pools', 'runs.create.messages.invalidSourcePayloadJson'))
   }
   if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
-    throw new Error(i18n.t('runs.create.messages.sourcePayloadObjectOrArrayExpected', { ns: 'pools' }))
+    throw new Error(translateNamespace('pools', 'runs.create.messages.sourcePayloadObjectOrArrayExpected'))
   }
   if (!Array.isArray(parsed)) {
     return parsed as Record<string, unknown>
   }
   return parsed.map((item) => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      throw new Error(i18n.t('runs.create.messages.sourcePayloadArrayItemsMustBeObjects', { ns: 'pools' }))
+      throw new Error(translateNamespace('pools', 'runs.create.messages.sourcePayloadArrayItemsMustBeObjects'))
     }
     return item as Record<string, unknown>
   })
