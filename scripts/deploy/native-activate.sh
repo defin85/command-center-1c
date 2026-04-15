@@ -102,7 +102,7 @@ fi
 install -d -o cc1c -g cc1c -m 755 "$BASE_DIR" "$RELEASES_DIR"
 install -d -o cc1c -g cc1c -m 755 "$SHARED_DIR" "$SHARED_VENVS_DIR"
 install -d -o cc1c -g cc1c -m 750 "$RELEASE_DIR"
-runuser -u cc1c -- tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
+tar -xzf "$ARCHIVE_PATH" -C "$RELEASE_DIR"
 
 for rel_path in "${REQUIRED_FILES[@]}"; do
   if [[ ! -e "$RELEASE_DIR/$rel_path" ]]; then
