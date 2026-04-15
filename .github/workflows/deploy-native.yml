@@ -81,12 +81,6 @@ jobs:
           npm run generate:api
           npm run build:assets
 
-      - name: Build Python wheelhouse
-        run: |
-          set -euo pipefail
-          mkdir -p build/wheelhouse
-          python -m pip download --only-binary=:all: -r orchestrator/requirements.txt -d build/wheelhouse
-
       - name: Build backend binaries
         run: |
           set -euo pipefail
@@ -100,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf release
-          mkdir -p release/bin release/frontend/dist release/infrastructure release/orchestrator/wheelhouse
+          mkdir -p release/bin release/frontend/dist release/infrastructure
           cp bin/cc1c-api-gateway release/bin/
           cp bin/cc1c-worker release/bin/
           rsync -a --delete \
@@ -108,7 +102,6 @@ jobs:
             --exclude '__pycache__' \
             --exclude '.pytest_cache' \
             orchestrator/ release/orchestrator/
-          rsync -a --delete build/wheelhouse/ release/orchestrator/wheelhouse/
           rsync -a --delete \
             --exclude '*.map' \
             frontend/dist/ release/frontend/dist/
