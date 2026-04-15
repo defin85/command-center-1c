@@ -8,6 +8,7 @@ Usage:
 
 Installs:
   - /usr/local/bin/cc1c-deploy (native activation script)
+  - /usr/local/bin/cc1c-upload-release (root-owned upload helper)
   - sudoers rule to allow passwordless run of cc1c-deploy for the SSH user
   - temporary no-domain Django setting in /etc/command-center-1c/env.production
 EOF
@@ -41,21 +42,31 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_ACTIVATE_SCRIPT="$SCRIPT_DIR/native-activate.sh"
+LOCAL_UPLOAD_SCRIPT="$SCRIPT_DIR/upload-release.sh"
 
 if [[ ! -f "$LOCAL_ACTIVATE_SCRIPT" ]]; then
   echo "File not found: $LOCAL_ACTIVATE_SCRIPT"
   exit 1
 fi
 
+if [[ ! -f "$LOCAL_UPLOAD_SCRIPT" ]]; then
+  echo "File not found: $LOCAL_UPLOAD_SCRIPT"
+  exit 1
+fi
+
 sshpass -p "$SSH_PASS" scp -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   "$LOCAL_ACTIVATE_SCRIPT" "$USER_NAME@$HOST:/tmp/cc1c-deploy"
+
+sshpass -p "$SSH_PASS" scp -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+  "$LOCAL_UPLOAD_SCRIPT" "$USER_NAME@$HOST:/tmp/cc1c-upload-release"
 
 sshpass -p "$SSH_PASS" ssh -p "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
   "$USER_NAME@$HOST" "bash -lc '
 set -euo pipefail
 printf \"%s\n\" \"$SSH_PASS\" | sudo -S -k install -o root -g root -m 750 /tmp/cc1c-deploy /usr/local/bin/cc1c-deploy
+printf \"%s\n\" \"$SSH_PASS\" | sudo -S -k install -o root -g root -m 750 /tmp/cc1c-upload-release /usr/local/bin/cc1c-upload-release
 printf \"%s\n\" \"$SSH_PASS\" | sudo -S sh -c \"cat > /etc/sudoers.d/cc1c-deploy <<SUDOERS
-$USER_NAME ALL=(root) NOPASSWD: /usr/local/bin/cc1c-deploy
+$USER_NAME ALL=(root) NOPASSWD: /usr/local/bin/cc1c-deploy, /usr/local/bin/cc1c-upload-release
 SUDOERS\"
 printf \"%s\n\" \"$SSH_PASS\" | sudo -S chmod 440 /etc/sudoers.d/cc1c-deploy
 printf \"%s\n\" \"$SSH_PASS\" | sudo -S visudo -cf /etc/sudoers.d/cc1c-deploy
@@ -63,6 +74,7 @@ if printf \"%s\n\" \"$SSH_PASS\" | sudo -S test -f /etc/command-center-1c/env.pr
   printf \"%s\n\" \"$SSH_PASS\" | sudo -S sed -i \"s/^DJANGO_SETTINGS_MODULE=.*/DJANGO_SETTINGS_MODULE=config.settings.development/\" /etc/command-center-1c/env.production || true
 fi
 rm -f /tmp/cc1c-deploy
+rm -f /tmp/cc1c-upload-release
 '"
 
 echo "Server deployer installed successfully."

@@ -127,8 +127,8 @@ jobs:
       - name: Upload release to server
         run: |
           set -euo pipefail
-          scp -P "${DEPLOY_PORT}" release.tar.gz \
-            "${DEPLOY_USER}@${DEPLOY_HOST}:${RELEASE_ARCHIVE}"
+          cat release.tar.gz | ssh -p "${DEPLOY_PORT}" "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "sudo /usr/local/bin/cc1c-upload-release '${RELEASE_ARCHIVE}'"
 
       - name: Activate release on server
         run: |
