@@ -27,6 +27,11 @@ SERVICES=(
   cc1c-worker-ops.service
   cc1c-worker-workflows.service
 )
+OPTIONAL_SERVICES=(
+  cc1c-event-subscriber.service
+  cc1c-pool-outbox-dispatcher.service
+)
+ACTIVE_SERVICES=()
 
 REQUIRED_FILES=(
   "bin/cc1c-api-gateway"
@@ -71,6 +76,14 @@ wait_for_service_active() {
   return 1
 }
 
+append_service_if_present() {
+  local unit="$1"
+
+  if systemctl cat "$unit" >/dev/null 2>&1; then
+    ACTIVE_SERVICES+=("$unit")
+  fi
+}
+
 if [[ $EUID -ne 0 ]]; then
   echo "This script must run as root."
   exit 1
@@ -98,6 +111,11 @@ else
   echo "System user cc1c does not exist."
   exit 1
 fi
+
+ACTIVE_SERVICES=("${SERVICES[@]}")
+for unit in "${OPTIONAL_SERVICES[@]}"; do
+  append_service_if_present "$unit"
+done
 
 install -d -o cc1c -g cc1c -m 755 "$BASE_DIR" "$RELEASES_DIR"
 install -d -o cc1c -g cc1c -m 755 "$SHARED_DIR" "$SHARED_VENVS_DIR"
@@ -166,9 +184,9 @@ nginx -t
 systemctl reload nginx
 
 systemctl daemon-reload
-systemctl enable "${SERVICES[@]}" >/dev/null
-systemctl restart "${SERVICES[@]}"
-for unit in "${SERVICES[@]}"; do
+systemctl enable "${ACTIVE_SERVICES[@]}" >/dev/null
+systemctl restart "${ACTIVE_SERVICES[@]}"
+for unit in "${ACTIVE_SERVICES[@]}"; do
   wait_for_service_active "$unit"
 done
 

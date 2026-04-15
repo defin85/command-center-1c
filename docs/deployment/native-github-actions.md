@@ -13,6 +13,8 @@ Install server-side deploy helper:
 This installs:
 
 - `/usr/local/bin/cc1c-deploy`
+- `/usr/local/bin/cc1c-upload-release`
+- repo-managed disk/log guard config for `journald`, `rsyslog`, `logrotate` and `clickhouse-server`
 - `/etc/sudoers.d/cc1c-deploy` (passwordless run of deploy helper for deploy user)
 
 ## 2. GitHub repository secrets
@@ -52,6 +54,6 @@ Separate workflow:
 
 ## 4. Notes
 
-- Current server mode is configured for no-domain/no-TLS startup.
+- Current server mode is configured for no-domain/no-TLS startup via `config.settings.native`.
 - When domain and TLS are ready, update Django settings in `/etc/command-center-1c/env.production`.
 - `cc1c-deploy` now prefers bundled `orchestrator/wheelhouse` and reuses a shared venv under `/opt/command-center-1c/shared/venvs/<requirements-hash>` when requirements do not change.

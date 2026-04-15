@@ -32,7 +32,14 @@
 Скрипт установит:
 
 - `/usr/local/bin/cc1c-deploy`
+- `/usr/local/bin/cc1c-upload-release`
+- repo-managed disk/log guard config:
+  - `/etc/systemd/journald.conf.d/99-cc1c-disk-guard.conf`
+  - `/etc/systemd/system/logrotate.timer.d/override.conf`
+  - `/etc/logrotate.d/rsyslog`
+  - `/etc/clickhouse-server/config.d/cc1c-logging.xml` when ClickHouse is installed
 - `/etc/sudoers.d/cc1c-deploy` (возможность вызывать `cc1c-deploy` без пароля для deploy user)
+- `DJANGO_SETTINGS_MODULE=config.settings.native` в `/etc/command-center-1c/env.production` для no-domain/no-TLS native contour
 
 ## 2) Настроить SSH-ключ для GitHub Actions
 
