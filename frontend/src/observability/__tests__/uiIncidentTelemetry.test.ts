@@ -17,6 +17,14 @@ import {
   setUiIncidentTelemetryEnabled,
 } from '../uiIncidentTelemetry'
 
+function getFetchRequestInit(fetchMock: ReturnType<typeof vi.fn>, callIndex = 0): RequestInit {
+  const call = fetchMock.mock.calls[callIndex]
+  expect(call).toBeDefined()
+  const request = call?.[1]
+  expect(request).toBeDefined()
+  return request as RequestInit
+}
+
 describe('uiIncidentTelemetry', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -97,7 +105,7 @@ describe('uiIncidentTelemetry', () => {
     await vi.advanceTimersByTimeAsync(__TESTING__.FLUSH_INTERVAL_MS)
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    const [, request] = fetchMock.mock.calls[0] ?? []
+    const request = getFetchRequestInit(fetchMock)
     const payload = JSON.parse(String(request?.body))
 
     expect(request?.keepalive).toBe(false)
@@ -155,12 +163,60 @@ describe('uiIncidentTelemetry', () => {
     await vi.runAllTimersAsync()
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    const [, request] = fetchMock.mock.calls[2] ?? []
+    const request = getFetchRequestInit(fetchMock, 2)
     const payload = JSON.parse(String(request?.body))
 
     expect(request?.keepalive).toBe(true)
     expect(payload.events.map((event: { event_type: string }) => event.event_type)).toEqual([
       'websocket.lifecycle',
     ])
+  })
+
+  it('omits steady-state websocket lifecycle noise from durable telemetry while keeping incident signals', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    captureUiRouteTransition({
+      pathname: '/service-mesh',
+      search: '?service=orchestrator',
+      hash: '',
+    })
+    recordUiWebSocketLifecycle({
+      owner: 'serviceMeshManager',
+      reuseKey: 'service-mesh:global',
+      channelKind: 'shared',
+      socketInstanceId: 'ws-10',
+      outcome: 'connect',
+    })
+    recordUiWebSocketLifecycle({
+      owner: 'serviceMeshManager',
+      reuseKey: 'service-mesh:global',
+      channelKind: 'shared',
+      socketInstanceId: 'ws-10',
+      outcome: 'close',
+      closeCode: 1000,
+    })
+    recordUiWebSocketLifecycle({
+      owner: 'serviceMeshManager',
+      reuseKey: 'service-mesh:global',
+      channelKind: 'shared',
+      socketInstanceId: 'ws-10',
+      outcome: 'reconnect',
+    })
+
+    await vi.advanceTimersByTimeAsync(__TESTING__.FLUSH_INTERVAL_MS)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const request = getFetchRequestInit(fetchMock)
+    const payload = JSON.parse(String(request?.body))
+
+    expect(payload.events.map((event: { event_type: string; outcome?: string }) => ({
+      event_type: event.event_type,
+      outcome: event.outcome,
+    }))).toEqual([
+      { event_type: 'route.transition', outcome: 'navigated' },
+      { event_type: 'websocket.lifecycle', outcome: 'reconnect' },
+    ])
+    expect(payload.dropped_events_count).toBe(0)
   })
 })

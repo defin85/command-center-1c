@@ -6,14 +6,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 const {
   mockCaptureUiRouteTransition,
+  mockRecordUiErrorBoundary,
   mockRecordUiUnhandledRejection,
   mockRecordUiWindowError,
   mockSetUiActionJournalEnabled,
+  mockSubscribeToUiActionJournal,
 } = vi.hoisted(() => ({
   mockCaptureUiRouteTransition: vi.fn(),
+  mockRecordUiErrorBoundary: vi.fn(),
   mockRecordUiUnhandledRejection: vi.fn(),
   mockRecordUiWindowError: vi.fn(),
   mockSetUiActionJournalEnabled: vi.fn(),
+  mockSubscribeToUiActionJournal: vi.fn(() => () => undefined),
 }))
 
 import App from './App'
@@ -39,9 +43,11 @@ vi.mock('./authz', () => ({
 
 vi.mock('./observability/uiActionJournal', () => ({
   captureUiRouteTransition: mockCaptureUiRouteTransition,
+  recordUiErrorBoundary: mockRecordUiErrorBoundary,
   recordUiUnhandledRejection: mockRecordUiUnhandledRejection,
   recordUiWindowError: mockRecordUiWindowError,
   setUiActionJournalEnabled: mockSetUiActionJournalEnabled,
+  subscribeToUiActionJournal: mockSubscribeToUiActionJournal,
 }))
 
 const mockUseShellBootstrap = vi.fn()
@@ -70,9 +76,12 @@ vi.mock('./pages/Pools/PoolBindingProfilesPage', () => ({
 describe('App pools binding profiles route', () => {
   beforeEach(() => {
     mockCaptureUiRouteTransition.mockReset()
+    mockRecordUiErrorBoundary.mockReset()
     mockRecordUiUnhandledRejection.mockReset()
     mockRecordUiWindowError.mockReset()
     mockSetUiActionJournalEnabled.mockReset()
+    mockSubscribeToUiActionJournal.mockReset()
+    mockSubscribeToUiActionJournal.mockReturnValue(() => undefined)
     mockUseShellBootstrap.mockReset()
     mockUseShellBootstrap.mockReturnValue({
       data: {

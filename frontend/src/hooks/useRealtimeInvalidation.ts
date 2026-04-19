@@ -19,35 +19,61 @@ import { useQueryClient } from '@tanstack/react-query'
 import { serviceMeshManager } from '../stores/serviceMeshManager'
 import { queryKeys } from '../api/queries/queryKeys'
 
+const INVALIDATION_WINDOW_MS = 1000
+
 export function useRealtimeInvalidation(enabled = true) {
   const queryClient = useQueryClient()
 
   useEffect(() => {
     if (!enabled) return
 
+    const pendingInvalidations = new Map<string, ReturnType<typeof setTimeout>>()
+    const scheduleInvalidate = (cacheKey: string, queryKey?: readonly unknown[]) => {
+      if (pendingInvalidations.has(cacheKey)) {
+        return
+      }
+
+      const timerId = setTimeout(() => {
+        pendingInvalidations.delete(cacheKey)
+        if (queryKey) {
+          void queryClient.invalidateQueries({ queryKey })
+          return
+        }
+        void queryClient.invalidateQueries()
+      }, INVALIDATION_WINDOW_MS)
+
+      pendingInvalidations.set(cacheKey, timerId)
+    }
+
+    const clearPendingInvalidations = () => {
+      pendingInvalidations.forEach((timerId) => clearTimeout(timerId))
+      pendingInvalidations.clear()
+    }
+
     serviceMeshManager.start()
     const unsubscribe = serviceMeshManager.subscribeInvalidation(({ scope }) => {
       switch (scope) {
         case 'operations':
-          queryClient.invalidateQueries({ queryKey: queryKeys.operations.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          // Dashboard already polls on its own cadence; invalidating it here turns
+          // noisy model updates into request storms on the home route.
+          scheduleInvalidate('operations', queryKeys.operations.all)
           break
         case 'databases':
-          queryClient.invalidateQueries({ queryKey: queryKeys.databases.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          scheduleInvalidate('databases', queryKeys.databases.all)
           break
         case 'clusters':
-          queryClient.invalidateQueries({ queryKey: queryKeys.clusters.all })
-          queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.stats })
+          scheduleInvalidate('clusters', queryKeys.clusters.all)
           break
         case 'all':
         default:
-          queryClient.invalidateQueries()
+          clearPendingInvalidations()
+          void queryClient.invalidateQueries()
           break
       }
     })
 
     return () => {
+      clearPendingInvalidations()
       unsubscribe()
       serviceMeshManager.stop()
     }

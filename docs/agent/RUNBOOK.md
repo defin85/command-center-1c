@@ -132,6 +132,7 @@ export CC1C_ACCESS_TOKEN=<jwt>
 Safety contract:
 - `incidents` и `timeline` — staff-only read path.
 - summary/timeline surfaces остаются redacted и bounded-retention.
+- volume-heavy telemetry остаётся bounded: durable upload включает semantic incidents/actions/routes, steady-state `websocket.lifecycle` connect/clean-close omission не считается incident signal, а overflow репортится через `dropped_events_count`.
 - `trace_id`, `request_id` и `ui_action_id` — primary correlation path к backend diagnostics; vendor UI scraping не является default mechanism.
 
 ## Repo Tooling Surfaces

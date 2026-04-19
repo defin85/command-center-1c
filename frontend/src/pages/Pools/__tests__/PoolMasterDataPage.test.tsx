@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { App as AntApp } from 'antd'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter } from 'react-router-dom'
 
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
@@ -61,6 +61,8 @@ const mockRetryFailedPoolMasterDataBootstrapImportChunks = vi.fn()
 const mockListPoolMasterDataDedupeReviewItems = vi.fn()
 const mockGetPoolMasterDataDedupeReviewItem = vi.fn()
 const mockApplyPoolMasterDataDedupeReviewAction = vi.fn()
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
+let setIntervalSpy: ReturnType<typeof vi.spyOn> | null = null
 
 const buildBootstrapJob = (overrides: Record<string, unknown> = {}) => ({
   id: 'job-1',
@@ -351,12 +353,478 @@ const buildDedupeReviewItem = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+
+  const renderTableCell = (
+    column: {
+      dataIndex?: string | string[]
+      key?: string
+      render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+      title?: ReactNode
+    },
+    row: Record<string, unknown>,
+    index: number,
+  ) => {
+    const dataIndex = column.dataIndex
+    const value = Array.isArray(dataIndex)
+      ? dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined
+      ), row)
+      : typeof dataIndex === 'string'
+        ? row[dataIndex]
+        : undefined
+
+    return column.render ? column.render(value, row, index) : (value as ReactNode)
+  }
+
+  const Card = ({
+    title,
+    extra,
+    loading,
+    children,
+    className,
+    ...props
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    loading?: boolean
+    children?: ReactNode
+    className?: string
+    [key: string]: unknown
+  }) => (
+    <section className={['ant-card', className].filter(Boolean).join(' ')} {...props}>
+      {(title || extra) ? (
+        <div className="ant-card-head">
+          {title ? <h3>{title}</h3> : null}
+          {extra}
+        </div>
+      ) : null}
+      <div className="ant-card-body">
+        {loading ? <div>Loading</div> : children}
+      </div>
+    </section>
+  )
+
+  const DescriptionsItem = ({
+    label,
+    children,
+  }: {
+    label?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div>
+      {label ? <span>{label}</span> : null}
+      {children}
+    </div>
+  )
+
+  const Descriptions = Object.assign(
+    ({ children }: { children?: ReactNode }) => <section>{children}</section>,
+    { Item: DescriptionsItem }
+  )
+
+  const Table = ({
+    dataSource,
+    columns,
+    rowKey,
+    onRow,
+    rowClassName,
+    loading,
+  }: {
+    dataSource?: Array<Record<string, unknown>>
+    columns?: Array<{
+      key?: string
+      title?: ReactNode
+      dataIndex?: string | string[]
+      render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+    }>
+    rowKey?: string | ((row: Record<string, unknown>) => string)
+    onRow?: (row: Record<string, unknown>, index?: number) => { onClick?: () => void }
+    rowClassName?: (row: Record<string, unknown>, index?: number) => string
+    loading?: boolean
+  }) => {
+    const rows = dataSource ?? []
+    if (loading) {
+      return <div>Loading</div>
+    }
+    return (
+      <table className="ant-table">
+        <thead>
+          <tr>
+            {(columns ?? []).map((column, index) => (
+              <th key={column.key ?? `${index}`}>{column.title}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, rowIndex) => {
+            const resolvedRowKey = typeof rowKey === 'function'
+              ? rowKey(row)
+              : typeof rowKey === 'string'
+                ? String(row[rowKey] ?? rowIndex)
+                : String(row.id ?? rowIndex)
+            const rowProps = onRow?.(row, rowIndex)
+            return (
+              <tr
+                key={resolvedRowKey}
+                className={rowClassName?.(row, rowIndex)}
+                onClick={rowProps?.onClick}
+              >
+                {(columns ?? []).map((column, columnIndex) => (
+                  <td key={column.key ?? `${resolvedRowKey}-${columnIndex}`}>
+                    {renderTableCell(column, row, rowIndex)}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
+
+  const Tag = ({
+    children,
+    ...props
+  }: {
+    children?: ReactNode
+    [key: string]: unknown
+  }) => <span {...props}>{children}</span>
+
+  return {
+    ...actual,
+    Card,
+    Descriptions,
+    Table,
+    Tag,
+  }
+})
+
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
 }))
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+
+  const renderTableCell = (
+    column: {
+      dataIndex?: string | string[]
+      key?: string
+      render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+      title?: ReactNode
+    },
+    row: Record<string, unknown>,
+    index: number,
+  ) => {
+    const dataIndex = column.dataIndex
+    const value = Array.isArray(dataIndex)
+      ? dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined
+      ), row)
+      : typeof dataIndex === 'string'
+        ? row[dataIndex]
+        : undefined
+
+    return column.render ? column.render(value, row, index) : (value as ReactNode)
+  }
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({ title, subtitle }: { title: ReactNode; subtitle?: ReactNode }) => (
+      <div>
+        <h2>{title}</h2>
+        {subtitle ? <p>{subtitle}</p> : null}
+      </div>
+    ),
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h3>{detailDrawerTitle}</h3> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityList: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      renderItem,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      renderItem: (item: Record<string, unknown>) => ReactNode
+    }) => (
+      <div>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {toolbar}
+        {error ? error : loading ? <div>Loading</div> : (dataSource?.length ?? 0) === 0 ? <div>{emptyDescription}</div> : (
+          (dataSource ?? []).map((item, index) => (
+            <div key={String(item.key ?? item.id ?? index)}>
+              {renderItem(item)}
+            </div>
+          ))
+        )}
+      </div>
+    ),
+    EntityDetails: ({
+      title,
+      extra,
+      error,
+      loading,
+      empty,
+      emptyDescription,
+      children,
+    }: {
+      title: ReactNode
+      extra?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      empty?: boolean
+      emptyDescription?: ReactNode
+      children?: ReactNode
+    }) => (
+      <div>
+        <h3>{title}</h3>
+        {extra}
+        {error ? error : loading ? <div>Loading</div> : empty ? emptyDescription : children}
+      </div>
+    ),
+    EntityTable: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      columns,
+      rowKey,
+      onRow,
+      rowClassName,
+    }: {
+      title: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource: Array<Record<string, unknown>>
+      columns: Array<{
+        title?: ReactNode
+        dataIndex?: string | string[]
+        key?: string
+        render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+      }>
+      rowKey: string | ((row: Record<string, unknown>) => string)
+      onRow?: (row: Record<string, unknown>, index?: number) => { onClick?: () => void }
+      rowClassName?: (row: Record<string, unknown>, index?: number) => string
+    }) => (
+      <section>
+        <div>
+          <h3>{title}</h3>
+          {extra}
+        </div>
+        {toolbar}
+        {error ? error : loading ? <div>Loading</div> : dataSource.length === 0 ? <div>{emptyDescription}</div> : (
+          <table>
+            <thead>
+              <tr>
+                {columns.map((column, index) => (
+                  <th key={String(column.key ?? column.dataIndex ?? index)}>{column.title}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataSource.map((row, rowIndex) => {
+                const resolvedRowKey = typeof rowKey === 'function'
+                  ? rowKey(row)
+                  : String(row[rowKey] ?? rowIndex)
+                const rowProps = onRow?.(row, rowIndex)
+                return (
+                  <tr
+                    key={resolvedRowKey}
+                    className={rowClassName?.(row, rowIndex)}
+                    onClick={rowProps?.onClick}
+                  >
+                    {columns.map((column, columnIndex) => (
+                      <td key={String(column.key ?? column.dataIndex ?? columnIndex)}>
+                        {renderTableCell(column, row, rowIndex)}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+    ),
+    StatusBadge: ({
+      status,
+      label,
+    }: {
+      status?: ReactNode
+      label?: ReactNode
+    }) => <span>{label ?? status}</span>,
+    JsonBlock: ({
+      title,
+      value,
+      dataTestId,
+    }: {
+      title?: ReactNode
+      value: unknown
+      dataTestId?: string
+    }) => (
+      <section>
+        {title ? <h4>{title}</h4> : null}
+        <pre data-testid={dataTestId}>{JSON.stringify(value ?? {}, null, 2)}</pre>
+      </section>
+    ),
+    ModalFormShell: ({
+      open,
+      onClose,
+      onSubmit,
+      title,
+      subtitle,
+      submitText,
+      cancelText,
+      confirmLoading,
+      submitDisabled,
+      footerStart,
+      children,
+      submitButtonTestId,
+    }: {
+      open: boolean
+      onClose: () => void
+      onSubmit?: () => void | Promise<void>
+      title?: ReactNode
+      subtitle?: ReactNode
+      submitText?: ReactNode
+      cancelText?: ReactNode
+      confirmLoading?: boolean
+      submitDisabled?: boolean
+      footerStart?: ReactNode
+      children: ReactNode
+      submitButtonTestId?: string
+    }) => (
+      open ? (
+        <section role="dialog">
+          {title ? <h4>{title}</h4> : null}
+          {subtitle ? <p>{subtitle}</p> : null}
+          {children}
+          {footerStart}
+          <button type="button" onClick={onClose}>
+            {cancelText ?? 'Cancel'}
+          </button>
+          {onSubmit ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onSubmit()
+              }}
+              disabled={Boolean(confirmLoading) || Boolean(submitDisabled)}
+              data-testid={submitButtonTestId}
+            >
+              {submitText ?? 'Save'}
+            </button>
+          ) : null}
+        </section>
+      ) : null
+    ),
+    DrawerFormShell: ({
+      open,
+      onClose,
+      onSubmit,
+      title,
+      subtitle,
+      submitText,
+      confirmLoading,
+      submitDisabled,
+      extra,
+      children,
+      submitButtonTestId,
+      drawerTestId,
+    }: {
+      open: boolean
+      onClose: () => void
+      onSubmit?: () => void | Promise<void>
+      title?: ReactNode
+      subtitle?: ReactNode
+      submitText?: ReactNode
+      confirmLoading?: boolean
+      submitDisabled?: boolean
+      extra?: ReactNode
+      children: ReactNode
+      submitButtonTestId?: string
+      drawerTestId?: string
+    }) => (
+      open ? (
+        <section data-testid={drawerTestId}>
+          {title ? <h4>{title}</h4> : null}
+          {subtitle ? <p>{subtitle}</p> : null}
+          {extra}
+          {children}
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+          {onSubmit ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onSubmit()
+              }}
+              disabled={Boolean(confirmLoading) || Boolean(submitDisabled)}
+              data-testid={submitButtonTestId}
+            >
+              {submitText ?? 'Save'}
+            </button>
+          ) : null}
+        </section>
+      ) : null
+    ),
+  }
+})
 
 vi.mock('../../../api/intercompanyPools', () => ({
   listMasterDataParties: (...args: unknown[]) => mockListMasterDataParties(...args),
@@ -409,10 +877,12 @@ vi.mock('../../../api/intercompanyPools', () => ({
 
 function renderPage(path = '/pools/master-data') {
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <AntApp>
-        <PoolMasterDataPage />
-      </AntApp>
+    <MemoryRouter initialEntries={[path]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+        <AntApp>
+          <PoolMasterDataPage />
+        </AntApp>
+      </ConfigProvider>
     </MemoryRouter>
   )
 }
@@ -484,6 +954,15 @@ describe('PoolMasterDataPage', () => {
     mockGetPoolMasterDataDedupeReviewItem.mockReset()
     mockApplyPoolMasterDataDedupeReviewAction.mockReset()
     mockNavigate.mockReset()
+    setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation(
+      () => 0 as unknown as ReturnType<typeof window.setInterval>
+    )
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const [firstArg] = args
+      if (typeof firstArg === 'string' && firstArg.includes('not wrapped in act')) {
+        return
+      }
+    })
 
     mockListMasterDataParties.mockResolvedValue({
       parties: [
@@ -977,8 +1456,14 @@ describe('PoolMasterDataPage', () => {
     })
   })
 
+  afterEach(() => {
+    setIntervalSpy?.mockRestore()
+    setIntervalSpy = null
+    consoleErrorSpy?.mockRestore()
+    consoleErrorSpy = null
+  })
+
   it('renders workspace zones and loads default Party zone list', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('Pool Master Data')).toBeInTheDocument()
@@ -990,20 +1475,19 @@ describe('PoolMasterDataPage', () => {
       offset: 0,
     })
 
-    await user.click(screen.getByRole('button', { name: 'Open Item zone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Item zone' }))
     await waitFor(() => expect(mockListMasterDataItems).toHaveBeenCalled())
 
-    await user.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders reusable account zones and loads GL Account / GL Account Set surfaces inside the same shell', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('Pool Master Data')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Open GL Account zone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open GL Account zone' }))
 
     await waitFor(() => expect(mockListMasterDataGlAccounts).toHaveBeenCalledWith({
       query: undefined,
@@ -1015,7 +1499,7 @@ describe('PoolMasterDataPage', () => {
     expect(await screen.findByTestId('pool-master-data-gl-account-selected-id')).toHaveTextContent('gl-account-1')
     expect(screen.getAllByText('ChartOfAccounts_Main').length).toBeGreaterThan(0)
 
-    await user.click(screen.getByRole('button', { name: 'Open GL Account Set zone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open GL Account Set zone' }))
 
     await waitFor(() => expect(mockListMasterDataGlAccountSets).toHaveBeenCalledWith({
       query: undefined,
@@ -1694,8 +2178,7 @@ describe('PoolMasterDataPage', () => {
 
   it('applies scheduling filters for sync status operator view', async () => {
     const user = userEvent.setup()
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Sync zone' }))
+    renderPage('/pools/master-data?tab=sync')
 
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     mockListMasterDataSyncStatus.mockClear()
@@ -1708,7 +2191,7 @@ describe('PoolMasterDataPage', () => {
     openSelectByTestId('sync-status-filter-deadline-state')
     await selectDropdownOption(/^missed$/)
 
-    await user.click(screen.getByTestId('sync-status-refresh'))
+    fireEvent.click(screen.getByTestId('sync-status-refresh'))
 
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     expect(mockListMasterDataSyncStatus).toHaveBeenLastCalledWith({
@@ -1846,7 +2329,6 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
-    const user = userEvent.setup()
     const dryRunJob = buildBootstrapJob({
       id: 'job-dry-run',
       status: 'execute_pending',
@@ -1909,13 +2391,12 @@ describe('PoolMasterDataPage', () => {
       jobs: [executeJob, dryRunJob],
     })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    renderPage('/pools/master-data?tab=bootstrap-import')
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
 
-    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-run-preflight'))
     await waitFor(() =>
       expect(mockRunPoolMasterDataBootstrapImportPreflight).toHaveBeenCalledWith({
         database_id: 'db-1',
@@ -1923,7 +2404,7 @@ describe('PoolMasterDataPage', () => {
       })
     )
 
-    await user.click(screen.getByTestId('bootstrap-import-run-dry-run'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-run-dry-run'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapImportJob).toHaveBeenNthCalledWith(1, {
         database_id: 'db-1',
@@ -1932,7 +2413,7 @@ describe('PoolMasterDataPage', () => {
       })
     )
 
-    await user.click(screen.getByTestId('bootstrap-import-run-execute'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-run-execute'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapImportJob).toHaveBeenNthCalledWith(2, {
         database_id: 'db-1',
@@ -1946,7 +2427,6 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps bootstrap form values after preflight error', async () => {
-    const user = userEvent.setup()
     mockRunPoolMasterDataBootstrapImportPreflight.mockRejectedValueOnce({
       response: {
         data: {
@@ -1959,13 +2439,12 @@ describe('PoolMasterDataPage', () => {
       },
     })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    renderPage('/pools/master-data?tab=bootstrap-import')
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
 
-    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-run-preflight'))
 
     expect((await screen.findAllByText('Preflight failed in source adapter.')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('bootstrap-import-database-select')).toHaveTextContent('Main DB')
@@ -1974,7 +2453,6 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs batch bootstrap collection preflight, dry-run, and execute', async () => {
-    const user = userEvent.setup()
     const preflightCollection = buildBootstrapCollection({
       id: 'collection-batch',
       status: 'preflight_completed',
@@ -2195,16 +2673,15 @@ describe('PoolMasterDataPage', () => {
       .mockResolvedValueOnce({ collection: dryRunCollection })
       .mockResolvedValueOnce({ collection: executeCollection })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
-    await user.click(screen.getByText('Batch Collection'))
+    renderPage('/pools/master-data?tab=bootstrap-import')
+    fireEvent.click(await screen.findByText('Batch Collection'))
 
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Main DB/)
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Replica DB/)
 
-    await user.click(screen.getByTestId('bootstrap-collection-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-preflight'))
     await waitFor(() =>
       expect(mockRunPoolMasterDataBootstrapCollectionPreflight).toHaveBeenCalledWith({
         target_mode: 'database_set',
@@ -2213,7 +2690,7 @@ describe('PoolMasterDataPage', () => {
       })
     )
 
-    await user.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenNthCalledWith(1, {
         collection_id: 'collection-batch',
@@ -2224,7 +2701,7 @@ describe('PoolMasterDataPage', () => {
       })
     )
 
-    await user.click(screen.getByTestId('bootstrap-collection-run-execute'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-execute'))
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenNthCalledWith(2, {
         collection_id: 'collection-batch',
@@ -2240,7 +2717,6 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('blocks batch execute when dry-run collection has failed items', async () => {
-    const user = userEvent.setup()
     const preflightCollection = buildBootstrapCollection({
       id: 'collection-failed',
       status: 'preflight_completed',
@@ -2349,17 +2825,16 @@ describe('PoolMasterDataPage', () => {
     })
     mockGetPoolMasterDataBootstrapCollection.mockResolvedValueOnce({ collection: failedDryRunCollection })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
-    await user.click(screen.getByText('Batch Collection'))
+    renderPage('/pools/master-data?tab=bootstrap-import')
+    fireEvent.click(await screen.findByText('Batch Collection'))
 
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Main DB/)
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Replica DB/)
 
-    await user.click(screen.getByTestId('bootstrap-collection-run-preflight'))
-    await user.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-dry-run'))
 
     await waitFor(() =>
       expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenCalledWith({
@@ -2372,12 +2847,11 @@ describe('PoolMasterDataPage', () => {
     )
 
     await waitFor(() => expect(screen.getByTestId('bootstrap-collection-run-execute')).toBeDisabled())
-    await user.click(screen.getByTestId('bootstrap-collection-run-execute'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-execute'))
     expect(mockCreatePoolMasterDataBootstrapCollection).toHaveBeenCalledTimes(1)
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows batch target mode and immutable target snapshot in collection detail', async () => {
-    const user = userEvent.setup()
     const batchCollection = buildBootstrapCollection({
       id: 'collection-targets',
       target_mode: 'database_set',
@@ -2424,9 +2898,8 @@ describe('PoolMasterDataPage', () => {
     })
     mockGetPoolMasterDataBootstrapCollection.mockResolvedValue({ collection: batchCollection })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
-    await user.click(screen.getByText('Batch Collection'))
+    renderPage('/pools/master-data?tab=bootstrap-import')
+    fireEvent.click(await screen.findByText('Batch Collection'))
 
     const currentCollectionCard = (await screen.findByText('Current Collection')).closest('.ant-card')
     expect(currentCollectionCard).not.toBeNull()
@@ -2438,7 +2911,6 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps batch bootstrap form values after preflight error', async () => {
-    const user = userEvent.setup()
     mockRunPoolMasterDataBootstrapCollectionPreflight.mockRejectedValueOnce({
       response: {
         data: {
@@ -2451,16 +2923,15 @@ describe('PoolMasterDataPage', () => {
       },
     })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
-    await user.click(screen.getByText('Batch Collection'))
+    renderPage('/pools/master-data?tab=bootstrap-import')
+    fireEvent.click(await screen.findByText('Batch Collection'))
 
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Main DB/)
     openSelectByTestId('bootstrap-collection-databases-select')
     await selectDropdownOption(/Replica DB/)
 
-    await user.click(screen.getByTestId('bootstrap-collection-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-collection-run-preflight'))
 
     expect((await screen.findAllByText('Aggregate preflight failed.')).length).toBeGreaterThan(0)
     expect(screen.getByTestId('bootstrap-collection-databases-select')).toHaveTextContent('Main DB')
@@ -2470,10 +2941,10 @@ describe('PoolMasterDataPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('allows GL Account in bootstrap scope without adding it to generic sync actions', async () => {
-    const user = userEvent.setup()
-
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    renderPage('/pools/master-data?tab=bootstrap-import')
+    await waitFor(() =>
+      expect(screen.getByTestId('bootstrap-import-entity-scope-select')).toHaveTextContent('Party')
+    )
 
     openSelectByTestId('bootstrap-import-entity-scope-select')
     await selectDropdownOption(/^GL Account$/)
@@ -2481,7 +2952,7 @@ describe('PoolMasterDataPage', () => {
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
-    await user.click(screen.getByTestId('bootstrap-import-run-preflight'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-run-preflight'))
 
     await waitFor(() =>
       expect(mockRunPoolMasterDataBootstrapImportPreflight).toHaveBeenCalledWith({
@@ -2490,13 +2961,12 @@ describe('PoolMasterDataPage', () => {
       })
     )
 
-    await user.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     expect(screen.queryByText('gl_account')).not.toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('runs retry failed chunks action for bootstrap job', async () => {
-    const user = userEvent.setup()
     const failedJob = buildBootstrapJob({
       id: 'job-failed',
       status: 'finalized',
@@ -2525,11 +2995,10 @@ describe('PoolMasterDataPage', () => {
       }),
     })
 
-    renderPage()
-    await user.click(await screen.findByRole('button', { name: 'Open Bootstrap Import zone' }))
+    renderPage('/pools/master-data?tab=bootstrap-import')
     expect(await screen.findByText('Current Job')).toBeInTheDocument()
 
-    await user.click(screen.getByTestId('bootstrap-import-retry-failed'))
+    fireEvent.click(screen.getByTestId('bootstrap-import-retry-failed'))
     await waitFor(() =>
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )

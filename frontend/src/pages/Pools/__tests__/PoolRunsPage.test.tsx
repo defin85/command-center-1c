@@ -1,8 +1,8 @@
 import { StrictMode, type ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { App as AntApp } from 'antd'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
@@ -11,6 +11,7 @@ import type {
   PoolRunReadinessBlocker,
   PoolRunReadinessChecklist,
   PoolRunReport,
+  PoolSchemaTemplate,
   PoolWorkflowBinding,
 } from '../../../api/intercompanyPools'
 import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
@@ -30,6 +31,7 @@ const mockPreviewPoolWorkflowBinding = vi.fn()
 const mockRetryPoolRunFailed = vi.fn()
 const mockConfirmPoolRunPublication = vi.fn()
 const mockAbortPoolRunPublication = vi.fn()
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -41,12 +43,328 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const React = await import('react')
+
+  const readValue = (record: Record<string, unknown>, dataIndex: unknown) => {
+    if (Array.isArray(dataIndex)) {
+      return dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[String(key)] : undefined
+      ), record)
+    }
+    if (typeof dataIndex === 'string') {
+      return record[dataIndex]
+    }
+    return undefined
+  }
+
+  const Card = ({
+    title,
+    extra,
+    loading,
+    children,
+    ...props
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    loading?: boolean
+    children?: ReactNode
+    [key: string]: unknown
+  }) => (
+    <section {...props}>
+      {title ? <h3>{title}</h3> : null}
+      {extra}
+      {loading ? <div>Loading</div> : children}
+    </section>
+  )
+
+  const Tag = ({
+    children,
+    ...props
+  }: {
+    children?: ReactNode
+    [key: string]: unknown
+  }) => <span {...props}>{children}</span>
+
+  const DescriptionsItem = ({
+    label,
+    children,
+  }: {
+    label?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div>
+      {label ? <span>{label}</span> : null}
+      {children}
+    </div>
+  )
+
+  const Descriptions = Object.assign(
+    ({ children }: { children?: ReactNode }) => <section>{children}</section>,
+    { Item: DescriptionsItem }
+  )
+
+  const Table = ({
+    dataSource,
+    columns,
+    rowKey,
+    loading,
+  }: {
+    dataSource?: Array<Record<string, unknown>>
+    columns?: Array<{
+      key?: string
+      title?: ReactNode
+      dataIndex?: unknown
+      render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode
+    }>
+    rowKey?: string | ((record: Record<string, unknown>) => string)
+    loading?: boolean
+  }) => {
+    const rows = dataSource ?? []
+    if (loading) {
+      return <div>Loading</div>
+    }
+    return (
+      <table>
+        <thead>
+          <tr>
+            {(columns ?? []).map((column, index) => (
+              <th key={column.key ?? `${index}`}>{column.title}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((record, index) => {
+            const resolvedRowKey = typeof rowKey === 'function'
+              ? rowKey(record)
+              : typeof rowKey === 'string'
+                ? String(record[rowKey] ?? index)
+                : String(record.id ?? index)
+            return (
+              <tr key={resolvedRowKey}>
+                {(columns ?? []).map((column, columnIndex) => {
+                  const value = readValue(record, column.dataIndex)
+                  const content = column.render
+                    ? column.render(value, record, index)
+                    : (
+                      value == null
+                        ? ''
+                        : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+                          ? String(value)
+                          : JSON.stringify(value)
+                    )
+                  return <td key={column.key ?? `${resolvedRowKey}-${columnIndex}`}>{content}</td>
+                })}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
+
+  const Collapse = ({
+    items,
+  }: {
+    items?: Array<{ key: string; label: ReactNode; children: ReactNode }>
+  }) => {
+    const [openKeys, setOpenKeys] = React.useState<Set<string>>(() => new Set())
+    return (
+      <div>
+        {(items ?? []).map((item) => {
+          const isOpen = openKeys.has(item.key)
+          return (
+            <section key={item.key}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenKeys((current) => {
+                    const next = new Set(current)
+                    if (next.has(item.key)) {
+                      next.delete(item.key)
+                    } else {
+                      next.add(item.key)
+                    }
+                    return next
+                  })
+                }}
+              >
+                {item.label}
+              </button>
+              {isOpen ? <div>{item.children}</div> : null}
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return {
+    ...actual,
+    Card,
+    Collapse,
+    Descriptions,
+    Table,
+    Tag,
+  }
+})
+
 vi.mock('reactflow', () => ({
   default: ({ children }: { children?: ReactNode }) => <div data-testid="mock-reactflow">{children}</div>,
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
 }))
+
+vi.mock('../../../components/platform', async () => {
+  const { useNavigate } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+
+  const readValue = (record: Record<string, unknown>, dataIndex: unknown) => {
+    if (Array.isArray(dataIndex)) {
+      return dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[String(key)] : undefined
+      ), record)
+    }
+    if (typeof dataIndex === 'string') {
+      return record[dataIndex]
+    }
+    return undefined
+  }
+
+  return {
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h2>{title}</h2>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    RouteButton: ({
+      to,
+      children,
+      disabled,
+    }: {
+      to: string
+      children: ReactNode
+      disabled?: boolean
+    }) => {
+      const navigate = useNavigate()
+
+      return (
+        <button type="button" data-to={to} disabled={disabled} onClick={() => navigate(to)}>
+          {children}
+        </button>
+      )
+    },
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h3>{detailDrawerTitle}</h3> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityTable: ({
+      title,
+      loading,
+      emptyDescription,
+      dataSource,
+      columns,
+      rowKey,
+      onRow,
+      rowClassName,
+    }: {
+      title?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      columns?: Array<{
+        key?: string
+        dataIndex?: unknown
+        render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode
+      }>
+      rowKey?: string | ((record: Record<string, unknown>) => string)
+      onRow?: (record: Record<string, unknown>) => { onClick?: () => void; style?: Record<string, unknown> }
+      rowClassName?: (record: Record<string, unknown>) => string
+    }) => {
+      const rows = dataSource ?? []
+      return (
+        <div>
+          {title ? <h3>{title}</h3> : null}
+          {loading ? <div>Loading</div> : null}
+          {!loading && rows.length === 0 ? <div>{emptyDescription}</div> : null}
+          {rows.map((record, index) => {
+            const resolvedRowKey = typeof rowKey === 'function'
+              ? rowKey(record)
+              : typeof rowKey === 'string'
+                ? String(record[rowKey])
+                : String(record.id ?? index)
+            const rowProps = onRow?.(record) ?? {}
+            return (
+              <div
+                key={resolvedRowKey}
+                data-testid={`entity-table-row-${resolvedRowKey}`}
+                className={rowClassName?.(record)}
+                onClick={rowProps.onClick}
+              >
+                {(columns ?? []).map((column, columnIndex) => {
+                  const value = readValue(record, column.dataIndex)
+                  const content = column.render
+                    ? column.render(value, record, index)
+                    : (
+                      value == null
+                        ? ''
+                        : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+                          ? String(value)
+                          : JSON.stringify(value)
+                    )
+                  return (
+                    <div key={column.key ?? `${resolvedRowKey}-${columnIndex}`}>
+                      {content}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )
+    },
+  }
+})
 
 vi.mock('../../../api/intercompanyPools', () => ({
   listOrganizationPools: (...args: unknown[]) => mockListOrganizationPools(...args),
@@ -62,6 +380,135 @@ vi.mock('../../../api/intercompanyPools', () => ({
   confirmPoolRunPublication: (...args: unknown[]) => mockConfirmPoolRunPublication(...args),
   abortPoolRunPublication: (...args: unknown[]) => mockAbortPoolRunPublication(...args),
 }))
+
+vi.mock('../PoolBatchIntakeDrawer', async () => {
+  const React = await import('react')
+  const { createPoolBatch } = await import('../../../api/intercompanyPools')
+
+  type MockPoolBatchIntakeDrawerProps = {
+    open: boolean
+    poolId: string | null
+    schemaTemplates: PoolSchemaTemplate[]
+    initialValues: {
+      batchKind: 'sale' | 'receipt'
+      periodStart: string
+      periodEnd?: string | null
+      poolWorkflowBindingId?: string | null
+      startOrganizationId?: string | null
+    }
+    onClose: () => void
+    onCreated: (
+      response: Awaited<ReturnType<typeof createPoolBatch>>,
+      context: {
+        batchKind: 'sale' | 'receipt'
+        periodStart: string
+        periodEnd: string | null
+        poolWorkflowBindingId: string | null
+        startOrganizationId: string | null
+      },
+    ) => Promise<void> | void
+  }
+
+  const PoolBatchIntakeDrawer = ({
+    open,
+    poolId,
+    schemaTemplates,
+    initialValues,
+    onClose,
+    onCreated,
+  }: MockPoolBatchIntakeDrawerProps) => {
+    const [schemaTemplateId, setSchemaTemplateId] = React.useState('')
+    const [sourceReference, setSourceReference] = React.useState('')
+    const [sourcePayloadJson, setSourcePayloadJson] = React.useState('[]')
+
+    React.useEffect(() => {
+      if (!open) {
+        return
+      }
+      setSchemaTemplateId(schemaTemplates[0]?.id ?? '')
+      setSourceReference('')
+      setSourcePayloadJson('[]')
+    }, [open, schemaTemplates])
+
+    if (!open) {
+      return null
+    }
+
+    const handleSubmit = async () => {
+      if (!poolId) {
+        return
+      }
+
+      const poolWorkflowBindingId = initialValues.poolWorkflowBindingId?.trim() || null
+      const startOrganizationId = initialValues.startOrganizationId?.trim() || null
+      const periodEnd = initialValues.periodEnd?.trim() || initialValues.periodEnd || null
+      const basePayload = {
+        pool_id: poolId,
+        source_type: 'schema_template_upload' as const,
+        schema_template_id: schemaTemplateId,
+        period_start: initialValues.periodStart,
+        period_end: periodEnd,
+        source_reference: sourceReference.trim(),
+        raw_payload_ref: '',
+        json_payload: JSON.parse(sourcePayloadJson),
+      }
+
+      const payload = initialValues.batchKind === 'receipt'
+        ? {
+            ...basePayload,
+            batch_kind: 'receipt' as const,
+            pool_workflow_binding_id: poolWorkflowBindingId ?? '',
+            start_organization_id: startOrganizationId ?? '',
+          }
+        : {
+            ...basePayload,
+            batch_kind: 'sale' as const,
+          }
+
+      const response = await createPoolBatch(payload)
+
+      await onCreated(response, {
+        batchKind: initialValues.batchKind,
+        periodStart: initialValues.periodStart,
+        periodEnd,
+        poolWorkflowBindingId,
+        startOrganizationId,
+      })
+      onClose()
+    }
+
+    return (
+      <div data-testid="pool-runs-batch-intake-drawer">
+        <select
+          data-testid="pool-runs-batch-intake-schema-template"
+          value={schemaTemplateId}
+          onChange={(event) => setSchemaTemplateId(event.target.value)}
+        >
+          {schemaTemplates.map((schemaTemplate) => (
+            <option key={schemaTemplate.id} value={schemaTemplate.id}>
+              {schemaTemplate.code} - {schemaTemplate.name}
+            </option>
+          ))}
+        </select>
+        <input
+          data-testid="pool-runs-batch-intake-source-reference"
+          value={sourceReference}
+          onChange={(event) => setSourceReference(event.target.value)}
+        />
+        <textarea
+          data-testid="pool-runs-batch-intake-source-payload"
+          value={sourcePayloadJson}
+          onChange={(event) => setSourcePayloadJson(event.target.value)}
+        />
+        <button type="button" data-testid="pool-runs-batch-intake-submit" onClick={() => void handleSubmit()}>
+          Submit
+        </button>
+      </div>
+    )
+  }
+
+  return { PoolBatchIntakeDrawer }
+})
 
 function buildRun(overrides: Partial<PoolRun> = {}): PoolRun {
   return {
@@ -510,10 +957,12 @@ function buildPoolGraph(slotKey = 'invoice_mode') {
 function renderPage(initialEntry = '/pools/runs', options?: { strict?: boolean }) {
   const tree = (
     <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <AntApp>
-        <PoolRunsPage />
-        <LocationProbe />
-      </AntApp>
+      <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+        <AntApp>
+          <PoolRunsPage />
+          <LocationProbe />
+        </AntApp>
+      </ConfigProvider>
     </MemoryRouter>
   )
 
@@ -525,25 +974,37 @@ function LocationProbe() {
   return <div data-testid="pool-runs-location">{`${location.pathname}${location.search}`}</div>
 }
 
-async function openRunsStage(user: ReturnType<typeof userEvent.setup>, stage: 'Create' | 'Inspect' | 'Safe Actions' | 'Retry Failed') {
-  await user.click(screen.getByRole('tab', { name: stage }))
+async function openRunsStage(
+  stage: 'Create' | 'Inspect' | 'Safe Actions' | 'Retry Failed'
+) {
+  fireEvent.click(screen.getByRole('tab', { name: stage }))
 }
 
 async function selectOption(testId: string, label: string) {
   const select = await screen.findByTestId(testId)
+  if (select instanceof HTMLSelectElement) {
+    const option = Array.from(select.options).find((item) => item.text === label)
+    expect(option).toBeTruthy()
+    fireEvent.change(select, { target: { value: option?.value } })
+    return
+  }
   const selector = select.querySelector('.ant-select-selector')
   expect(selector).toBeTruthy()
   fireEvent.mouseDown(selector as Element)
   fireEvent.click(await screen.findByText(label))
 }
 
-async function openInspectDiagnostics(user: ReturnType<typeof userEvent.setup>) {
-  await openRunsStage(user, 'Inspect')
-  await user.click(screen.getByText('Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)'))
+async function userClick(target: Element) {
+  await userEvent.setup().click(target)
+}
+
+async function openInspectDiagnostics() {
+  await openRunsStage('Inspect')
+  await userClick(await screen.findByText('Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)'))
 }
 
 describe('PoolRunsPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'pools')
   })
@@ -659,9 +1120,20 @@ describe('PoolRunsPage', () => {
       result: 'accepted',
       replayed: false,
     })
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const [firstArg] = args
+      if (typeof firstArg === 'string' && firstArg.includes('not wrapped in act')) {
+        return
+      }
+    })
   })
 
-  afterEach(async () => {
+  afterEach(() => {
+    consoleErrorSpy?.mockRestore()
+    consoleErrorSpy = null
+  })
+
+  afterAll(async () => {
     await ensureNamespaces('ru', 'pools')
     await changeLanguage('ru')
   })
@@ -678,10 +1150,9 @@ describe('PoolRunsPage', () => {
   })
 
   it('renders unified provenance and safe status details', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openInspectDiagnostics(user)
+    await openInspectDiagnostics()
     expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent(
       '22222222-2222-2222-2222-222222222222'
     )
@@ -697,13 +1168,12 @@ describe('PoolRunsPage', () => {
     expect((screen.getByTestId('pool-runs-run-input') as HTMLTextAreaElement).value).toContain(
       '"source_payload"'
     )
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows run lineage as primary operator context and keeps workflow diagnostics secondary', async () => {
-    const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph('unexpected_slot'))
     const workflowBinding = buildWorkflowBinding({
       revision: 7,
@@ -861,7 +1331,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('Run Lineage')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-lineage-pool')).toHaveTextContent('pool-code')
     expect(screen.getByTestId('pool-runs-lineage-binding-id')).toHaveTextContent('binding-top-down')
@@ -877,7 +1347,7 @@ describe('PoolRunsPage', () => {
       '"invoice_mode"'
     )
     const diagnosticsButton = screen.getByRole('button', { name: 'Open Workflow Diagnostics' })
-    await user.click(diagnosticsButton)
+    await userClick(diagnosticsButton)
     expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
       '/workflows/executions/22222222-2222-2222-2222-222222222222'
     )
@@ -930,7 +1400,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps selected run and active stage in the URL when the operator switches lifecycle stages', async () => {
-    const user = userEvent.setup()
     const firstRun = buildRun()
     const secondRun = buildRun({
       id: 'aaaaaaaa-1111-1111-1111-111111111111',
@@ -957,7 +1426,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await user.click(await screen.findByRole('tab', { name: 'Retry Failed' }))
+    fireEvent.click(await screen.findByRole('tab', { name: 'Retry Failed' }))
 
     await waitFor(() => {
       const location = screen.getByTestId('pool-runs-location').textContent || ''
@@ -967,8 +1436,8 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('detail=1')
     })
 
-    await user.click(screen.getByRole('tab', { name: 'Inspect' }))
-    await user.click(await screen.findByRole('button', { name: `Open run ${secondRun.id}` }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Inspect' }))
+    await userClick(await screen.findByRole('button', { name: `Open run ${secondRun.id}` }))
 
     await waitFor(() => {
       const location = screen.getByTestId('pool-runs-location').textContent || ''
@@ -977,7 +1446,7 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('detail=1')
     })
 
-    await user.click(screen.getByRole('tab', { name: 'Retry Failed' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Retry Failed' }))
 
     await waitFor(() => {
       const location = screen.getByTestId('pool-runs-location').textContent || ''
@@ -988,7 +1457,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
-    const user = userEvent.setup()
     const preparingRun = buildRun({
       status_reason: 'preparing',
       approval_state: 'preparing',
@@ -1000,7 +1468,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     expect(await screen.findByText('Pre-publish is still running')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
@@ -1018,13 +1486,12 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('sends confirm-publication with generated idempotency key', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     const confirmButton = await screen.findByTestId('pool-runs-safe-confirm')
     await waitFor(() => expect(confirmButton).toBeEnabled())
-    await user.click(confirmButton)
+    await userClick(confirmButton)
 
     await waitFor(() => expect(mockConfirmPoolRunPublication).toHaveBeenCalledTimes(1))
     expect(mockConfirmPoolRunPublication).toHaveBeenCalledWith(
@@ -1036,7 +1503,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps create-run problem+json VALIDATION_ERROR to form field and user-facing message', async () => {
-    const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
         data: {
@@ -1052,7 +1518,7 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Check the run parameters and try again.')).toBeInTheDocument()
@@ -1060,7 +1526,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps create-run topology alias errors to a localized message', async () => {
-    const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
         data: {
@@ -1076,7 +1541,7 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(
@@ -1087,7 +1552,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('shows raw validation detail when create-run VALIDATION_ERROR is not mapped to a specific field', async () => {
-    const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
         data: {
@@ -1103,7 +1567,7 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('“wf-top-down-execution-v1” is not a valid UUID.')).toBeInTheDocument()
@@ -1111,7 +1575,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps missing binding create-run error to workflow binding field and localized message', async () => {
-    const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
         data: {
@@ -1126,9 +1589,9 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Select a workflow binding before proceeding.')).toHaveLength(2)
@@ -1136,7 +1599,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps missing binding preview error to workflow binding field and localized message', async () => {
-    const user = userEvent.setup()
     mockPreviewPoolWorkflowBinding.mockRejectedValueOnce({
       response: {
         data: {
@@ -1151,8 +1613,8 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByTestId('pool-runs-create-preview'))
 
     await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(await screen.findAllByText('Select a workflow binding before proceeding.')).toHaveLength(2)
@@ -1175,7 +1637,6 @@ describe('PoolRunsPage', () => {
   ])(
     'maps create-run problem+json %s to publication mapping message',
     async (errorCode: string, expectedMessage: string) => {
-      const user = userEvent.setup()
       mockCreatePoolRun.mockRejectedValueOnce({
         response: {
           data: {
@@ -1191,7 +1652,7 @@ describe('PoolRunsPage', () => {
       renderPage()
 
       const submitButton = await screen.findByTestId('pool-runs-create-submit')
-      await user.click(submitButton)
+      await userClick(submitButton)
 
       await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
       expect(await screen.findByText(expectedMessage)).toBeInTheDocument()
@@ -1200,7 +1661,6 @@ describe('PoolRunsPage', () => {
   )
 
   it('renders explicit actor mapping remediation when backend detail includes actor_username and target database ids', async () => {
-    const user = userEvent.setup()
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
         data: {
@@ -1219,7 +1679,7 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(
@@ -1230,13 +1690,12 @@ describe('PoolRunsPage', () => {
   })
 
   it('sends abort-publication with generated idempotency key', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     const abortButton = await screen.findByTestId('pool-runs-safe-abort')
     await waitFor(() => expect(abortButton).toBeEnabled())
-    await user.click(abortButton)
+    await userClick(abortButton)
 
     await waitFor(() => expect(mockAbortPoolRunPublication).toHaveBeenCalledTimes(1))
     expect(mockAbortPoolRunPublication).toHaveBeenCalledWith(
@@ -1248,13 +1707,12 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('sends retry-failed payload with parsed documents and generated idempotency key', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Retry Failed')
+    await openRunsStage('Retry Failed')
     const retryButton = await screen.findByRole('button', { name: 'Retry Failed' })
     await waitFor(() => expect(retryButton).toBeEnabled())
-    await user.click(retryButton)
+    await userClick(retryButton)
 
     await waitFor(() => expect(mockRetryPoolRunFailed).toHaveBeenCalledTimes(1))
     expect(mockRetryPoolRunFailed).toHaveBeenCalledWith(
@@ -1274,7 +1732,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders legacy run with canonical diagnostics payload fields', async () => {
-    const user = userEvent.setup()
     const legacyRun = buildRun({
       mode: 'unsafe',
       run_input: null,
@@ -1304,7 +1761,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openInspectDiagnostics(user)
+    await openInspectDiagnostics()
     expect(await screen.findByTestId('pool-runs-provenance-workflow-id')).toHaveTextContent('-')
     expect(screen.getByTestId('pool-runs-provenance-root-operation-id')).toHaveTextContent('-')
     expect(screen.getByTestId('pool-runs-provenance-execution-consumer')).toHaveTextContent('-')
@@ -1316,7 +1773,6 @@ describe('PoolRunsPage', () => {
   })
 
   it('shows remediation hint for publication mapping errors in attempts table', async () => {
-    const user = userEvent.setup()
     const run = buildRun()
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(
@@ -1328,13 +1784,12 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('ODATA_MAPPING_NOT_CONFIGURED')).toBeInTheDocument()
     expect(screen.getByText('Remediation: /rbac - Infobase Users')).toBeInTheDocument()
   })
 
   it('renders master data gate remediation hint and diagnostic context', async () => {
-    const user = userEvent.setup()
     const run = buildRun({
       master_data_gate: {
         status: 'failed',
@@ -1362,7 +1817,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('status: failed')).toBeInTheDocument()
     expect(screen.getByText('mode: resolve_upsert')).toBeInTheDocument()
     expect(screen.getByText('targets: 2')).toBeInTheDocument()
@@ -1384,21 +1839,19 @@ describe('PoolRunsPage', () => {
   })
 
   it('renders historical master data gate placeholder when gate payload is missing', async () => {
-    const user = userEvent.setup()
     const run = buildRun({ master_data_gate: null })
     mockListPoolRuns.mockResolvedValue([run])
     mockGetPoolRunReport.mockResolvedValue(buildReport(run))
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(
       await screen.findByText('Historical run or gate step was not captured in this execution context.')
     ).toBeInTheDocument()
   })
 
   it('renders readiness blockers and verification mismatch summary', async () => {
-    const user = userEvent.setup()
     const readinessBlockers: PoolRunReadinessBlocker[] = [
       {
         code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
@@ -1434,7 +1887,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('Readiness Checklist')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-readiness-status')).toHaveTextContent('status: not_ready')
     expect(screen.getByText('POOL_DOCUMENT_POLICY_MAPPING_INVALID')).toBeInTheDocument()
@@ -1449,13 +1902,12 @@ describe('PoolRunsPage', () => {
     expect(screen.getByText('targets: 1')).toBeInTheDocument()
     expect(screen.getByText('documents: 1')).toBeInTheDocument()
     expect(screen.getByText('mismatches: 1')).toBeInTheDocument()
-    await user.click(screen.getByText('Mismatches (1)'))
+    fireEvent.click(screen.getByText('Mismatches (1)'))
     expect(screen.getByText('sales-doc-1')).toBeInTheDocument()
     expect(screen.getByText('missing_table_part')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders remediation transitions for master-data readiness blockers', async () => {
-    const user = userEvent.setup()
     const bindingBlocker: PoolRunReadinessBlocker = {
       code: 'MASTER_DATA_ORGANIZATION_PARTY_BINDING_MISSING',
       detail: 'Bindings are missing for some organizations.',
@@ -1511,9 +1963,9 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     const bindingsLink = await screen.findByRole('button', { name: 'Open Bindings workspace' }, { timeout: 10000 })
-    await user.click(bindingsLink)
+    await userClick(bindingsLink)
     await waitFor(() => {
       expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
         '/pools/master-data?tab=bindings&entityType=party&canonicalId=party-1&databaseId=db-1&role=organization'
@@ -1522,7 +1974,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('routes unresolved dedupe blocker to the Dedupe Review workspace', async () => {
-    const user = userEvent.setup()
     const dedupeBlocker = {
       code: 'MASTER_DATA_DEDUPE_REVIEW_REQUIRED',
       detail: 'Canonical party is blocked by unresolved cross-infobase dedupe review.',
@@ -1546,9 +1997,9 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     const reviewLink = await screen.findByRole('button', { name: 'Open Dedupe Review' }, { timeout: 10000 })
-    await user.click(reviewLink)
+    await userClick(reviewLink)
     await waitFor(() => {
       expect(screen.getByTestId('pool-runs-location')).toHaveTextContent(
         '/pools/master-data?tab=dedupe-review&entityType=party&canonicalId=party-1&databaseId=db-1&clusterId=cluster-review-1&reviewItemId=review-1'
@@ -1557,7 +2008,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders topology-aware readiness blockers with edge context and remediation routing', async () => {
-    const user = userEvent.setup()
     const roleMissingBlocker = {
       code: 'MASTER_DATA_PARTY_ROLE_MISSING',
       detail: 'Bound master party is missing the required counterparty role.',
@@ -1593,7 +2043,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('Organization->Party bindings')).toBeInTheDocument()
     expect(screen.getByText('Policy completeness')).toBeInTheDocument()
     expect(screen.getByText('MASTER_DATA_PARTY_ROLE_MISSING')).toBeInTheDocument()
@@ -1609,14 +2059,13 @@ describe('PoolRunsPage', () => {
       )
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Open Bindings workspace' }))
+    await userClick(screen.getByRole('button', { name: 'Open Bindings workspace' }))
     await waitFor(() => {
       expect(screen.getByTestId('pool-runs-location')).toHaveTextContent('role=counterparty')
     })
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('disables confirm when readiness blockers are present', async () => {
-    const user = userEvent.setup()
     const readinessBlockers: PoolRunReadinessBlocker[] = [
       {
         code: 'POOL_DOCUMENT_POLICY_MAPPING_INVALID',
@@ -1635,13 +2084,12 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     expect(await screen.findByText('Readiness blockers detected')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
   })
 
   it('renders machine-readable readiness checklist for ready safe run', async () => {
-    const user = userEvent.setup()
     const run = buildRun({
       readiness_blockers: [],
       readiness_checklist: buildReadinessChecklist({ status: 'ready' }),
@@ -1651,7 +2099,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByText('Readiness Checklist')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-readiness-status')).toHaveTextContent('status: ready')
     expect(screen.getByText('Master data coverage')).toBeInTheDocument()
@@ -1661,7 +2109,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps readiness Problem Details from confirm-publication to blocker-specific message', async () => {
-    const user = userEvent.setup()
     mockConfirmPoolRunPublication.mockRejectedValueOnce({
       response: {
         data: {
@@ -1682,10 +2129,10 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     const confirmButton = await screen.findByTestId('pool-runs-safe-confirm')
     await waitFor(() => expect(confirmButton).toBeEnabled())
-    await user.click(confirmButton)
+    await userClick(confirmButton)
 
     await waitFor(() => expect(mockConfirmPoolRunPublication).toHaveBeenCalledTimes(1))
     expect(
@@ -1696,10 +2143,9 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders publication credentials source hint in create run form', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     expect(await screen.findByText('Pool publication OData credentials source: /rbac')).toBeInTheDocument()
     expect(
       screen.getByText(
@@ -1709,7 +2155,6 @@ describe('PoolRunsPage', () => {
   })
 
   it('shows ambiguous binding context before preview until operator selects a binding', async () => {
-    const user = userEvent.setup()
     const run = buildRun()
     mockListOrganizationPools.mockResolvedValue([
       {
@@ -1753,7 +2198,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     expect(await screen.findByTestId('pool-runs-create-binding-ambiguity')).toBeInTheDocument()
     expect(screen.getByTestId('pool-runs-create-preview')).toBeDisabled()
 
@@ -1761,7 +2206,7 @@ describe('PoolRunsPage', () => {
     const bindingSelector = bindingSelect.querySelector('.ant-select-selector')
     expect(bindingSelector).toBeTruthy()
     fireEvent.mouseDown(bindingSelector as Element)
-    fireEvent.click(await screen.findByText(/services_publication_alt/i))
+    await userClick(await screen.findByText(/services_publication_alt/i))
 
     await waitFor(() => {
       expect(screen.queryByTestId('pool-runs-create-binding-ambiguity')).not.toBeInTheDocument()
@@ -1775,7 +2220,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('surfaces blocking workflow binding read diagnostics instead of generic empty binding state', async () => {
-    const user = userEvent.setup()
     mockListOrganizationPools.mockResolvedValue([
       {
         id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -1796,7 +2240,7 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     expect(await screen.findByTestId('pool-runs-create-binding-read-error')).toHaveTextContent(
       'POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING'
     )
@@ -1808,12 +2252,11 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits top_down create-run payload with run_input and without source_hash', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
@@ -1824,15 +2267,13 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('preserves a user-entered starting amount in top_down create-run payload', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     const startingAmountInput = await screen.findByRole('spinbutton', { name: /starting amount/i })
-    await user.clear(startingAmountInput)
-    await user.type(startingAmountInput, '55555.55')
+    fireEvent.change(startingAmountInput, { target: { value: '55555.55' } })
 
-    await user.click(screen.getByTestId('pool-runs-create-submit'))
+    await userClick(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
@@ -1840,16 +2281,15 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits batch-backed top_down create-run payload with explicit batch and start organization', async () => {
-    const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    fireEvent.click(await screen.findByText('receipt batch'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByText('receipt batch'))
     await selectOption('pool-runs-create-batch-id', 'receipt-q1 · 2026-01-01')
     await selectOption('pool-runs-create-start-organization', 'Root Org')
 
-    await user.click(screen.getByTestId('pool-runs-create-submit'))
+    await userClick(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
@@ -1862,7 +2302,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('maps batch-backed top_down validation errors to batch and start organization fields', async () => {
-    const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
@@ -1877,12 +2316,12 @@ describe('PoolRunsPage', () => {
     })
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    fireEvent.click(await screen.findByText('receipt batch'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByText('receipt batch'))
     await selectOption('pool-runs-create-batch-id', 'receipt-q1 · 2026-01-01')
     await selectOption('pool-runs-create-start-organization', 'Root Org')
 
-    await user.click(screen.getByTestId('pool-runs-create-submit'))
+    await userClick(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Check the run parameters and try again.')).toBeInTheDocument()
@@ -1890,7 +2329,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('creates a receipt batch from the default operator path without manual UUID entry and opens the linked run context', async () => {
-    const user = userEvent.setup()
     const run = buildRun({
       id: 'aaaaaaaa-1111-2222-3333-batchrun000001',
       direction: 'top_down',
@@ -1915,21 +2353,23 @@ describe('PoolRunsPage', () => {
     mockListPoolRuns.mockResolvedValueOnce([buildRun()]).mockResolvedValueOnce([run])
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    fireEvent.click(await screen.findByText('receipt batch'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByText('receipt batch'))
     await selectOption('pool-runs-create-start-organization', 'Root Org')
-    await user.click(await screen.findByTestId('pool-runs-open-batch-intake'))
+    await userClick(await screen.findByTestId('pool-runs-open-batch-intake'))
 
     await screen.findByTestId('pool-runs-batch-intake-drawer')
     await selectOption('pool-runs-batch-intake-schema-template', 'json-template - JSON Template')
-    await user.type(screen.getByTestId('pool-runs-batch-intake-source-reference'), 'receipt-apr')
+    fireEvent.change(screen.getByTestId('pool-runs-batch-intake-source-reference'), {
+      target: { value: 'receipt-apr' },
+    })
     fireEvent.change(screen.getByTestId('pool-runs-batch-intake-source-payload'), {
       target: {
         value: '[{"inn":"730000000001","amount":"125.50","external_id":"receipt-apr-001"}]',
       },
     })
 
-    await user.click(screen.getByTestId('pool-runs-batch-intake-submit'))
+    await userClick(screen.getByTestId('pool-runs-batch-intake-submit'))
 
     await waitFor(() => expect(mockCreatePoolBatch).toHaveBeenCalledTimes(1))
     expect(mockCreatePoolBatch).toHaveBeenCalledWith({
@@ -1959,12 +2399,11 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('previews effective workflow binding before run start', async () => {
-    const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph())
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByTestId('pool-runs-create-preview'))
 
     await waitFor(() => expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledTimes(1))
     expect(mockPreviewPoolWorkflowBinding).toHaveBeenCalledWith(
@@ -1990,7 +2429,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('uses backend slot coverage summary for binding preview instead of recomputing it from graph', async () => {
-    const user = userEvent.setup()
     mockGetPoolGraph.mockResolvedValueOnce(buildPoolGraph('unexpected_slot'))
     mockPreviewPoolWorkflowBinding.mockResolvedValueOnce(buildWorkflowBindingPreview({
       slot_coverage_summary: {
@@ -2021,8 +2459,8 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Create')
-    await user.click(await screen.findByTestId('pool-runs-create-preview'))
+    await openRunsStage('Create')
+    await userClick(await screen.findByTestId('pool-runs-create-preview'))
 
     expect(await screen.findByTestId('pool-runs-binding-preview-slot-coverage')).toHaveTextContent('resolved: 1')
     expect(screen.getByText('All topology edges are covered by this binding preview.')).toBeInTheDocument()
@@ -2030,14 +2468,13 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('submits bottom_up create-run payload with source_payload and selected schema template', async () => {
-    const user = userEvent.setup()
     renderPage()
 
-    await openRunsStage(user, 'Create')
+    await openRunsStage('Create')
     const bottomUpRadio = await screen.findByRole('radio', { name: 'bottom_up' })
     const bottomUpLabel = bottomUpRadio.closest('label')
     expect(bottomUpLabel).toBeTruthy()
-    fireEvent.click(bottomUpLabel as Element)
+    await userClick(bottomUpLabel as Element)
 
     await waitFor(() => {
       expect(screen.getByRole('radio', { name: 'bottom_up' })).toBeChecked()
@@ -2048,7 +2485,7 @@ describe('PoolRunsPage', () => {
     const schemaSelector = schemaSelect.querySelector('.ant-select-selector')
     expect(schemaSelector).toBeTruthy()
     fireEvent.mouseDown(schemaSelector as Element)
-    fireEvent.click(await screen.findByText('json-template - JSON Template'))
+    await userClick(await screen.findByText('json-template - JSON Template'))
     await waitFor(() => {
       expect(schemaSelect).toHaveTextContent('json-template - JSON Template')
     })
@@ -2057,7 +2494,7 @@ describe('PoolRunsPage', () => {
       target: { value: '[{"inn":"730000000111","amount":"55.00"}]' },
     })
 
-    await user.click(screen.getByTestId('pool-runs-create-submit'))
+    await userClick(screen.getByTestId('pool-runs-create-submit'))
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     const payload = mockCreatePoolRun.mock.calls[0][0] as Record<string, unknown>
@@ -2071,7 +2508,6 @@ describe('PoolRunsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('ignores stale listPoolRuns response after create and keeps latest awaiting_approval run selected', async () => {
-    const user = userEvent.setup()
     const staleRun = buildRun({
       id: '99999999-9999-9999-9999-999999999999',
       status_reason: 'preparing',
@@ -2100,21 +2536,20 @@ describe('PoolRunsPage', () => {
     renderPage()
 
     const submitButton = await screen.findByTestId('pool-runs-create-submit')
-    await user.click(submitButton)
+    await userClick(submitButton)
 
     await waitFor(() => expect(mockCreatePoolRun).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(mockListPoolRuns.mock.calls.length).toBeGreaterThanOrEqual(2))
 
     firstRunsRequest.resolve([staleRun])
 
-    await openRunsStage(user, 'Safe Actions')
+    await openRunsStage('Safe Actions')
     await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
     expect(screen.queryByText('Pre-publish is still running')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('refreshes current run report when Refresh Data is clicked', async () => {
-    const user = userEvent.setup()
     const initialRun = buildRun({
       status: 'validated',
       status_reason: 'awaiting_approval',
@@ -2153,10 +2588,10 @@ describe('PoolRunsPage', () => {
 
     renderPage()
 
-    await openRunsStage(user, 'Inspect')
+    await openRunsStage('Inspect')
     expect(await screen.findByTestId('pool-runs-verification-status')).toHaveTextContent('status: not_verified')
 
-    await user.click(screen.getByRole('button', { name: 'Refresh Data' }))
+    await userClick(screen.getByRole('button', { name: 'Refresh Data' }))
 
     await waitFor(() => expect(mockGetPoolRunReport).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: passed'))

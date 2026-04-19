@@ -1,0 +1,14 @@
+type: object
+properties:
+  timeline:
+    type: array
+    items:
+      $ref: ./UiIncidentTimelineEvent.yaml
+  count:
+    type: integer
+  total:
+    type: integer
+required:
+  - count
+  - timeline
+  - total

@@ -1,0 +1,22 @@
+type: object
+properties:
+  batch_id:
+    type: string
+  accepted_events:
+    type: integer
+  duplicate_events:
+    type: integer
+  dropped_events:
+    type: integer
+  duplicate:
+    type: boolean
+  retention_cutoff:
+    type: string
+    format: date-time
+required:
+  - accepted_events
+  - batch_id
+  - dropped_events
+  - duplicate
+  - duplicate_events
+  - retention_cutoff

@@ -151,6 +151,7 @@ Canonical sequence для agent-debug без browser console copy/paste:
 Ограничения и safety:
 - `./debug/query-ui-incidents.sh` и `./debug/query-ui-timeline.sh` требуют staff JWT и tenant context.
 - Response surface остаётся redaction-first: raw secrets, cookies, auth headers и password-like input fragments не возвращаются.
+- Volume control fail-close: durable telemetry хранит semantic incidents/actions/routes, steady-state `websocket.lifecycle` connect/clean-close omission допустим как low-value noise, а overflow отражается через `dropped_events_count`.
 - Отсутствие session replay не считается blocker: canonical path опирается на actions/errors/traces, `request_id`, `ui_action_id` и `trace_id`.
 
 ## Проверенный live-цикл: `pool run -> dom_lesa`

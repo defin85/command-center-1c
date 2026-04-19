@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { App as AntApp } from 'antd'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
 
 import type { BindingProfileDetail } from '../../../api/generated/model/bindingProfileDetail'
 import type { BindingProfileRevision } from '../../../api/generated/model/bindingProfileRevision'
@@ -32,6 +32,266 @@ vi.mock('../../../api/queries/poolBindingProfiles', () => ({
 vi.mock('../../../api/queries/authoringReferences', () => ({
   useAuthoringReferences: (...args: unknown[]) => mockUseAuthoringReferences(...args),
 }))
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+  const { useNavigate } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+
+  const readValue = (record: Record<string, unknown>, dataIndex: unknown) => {
+    if (Array.isArray(dataIndex)) {
+      return dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[String(key)] : undefined
+      ), record)
+    }
+    if (typeof dataIndex === 'string') {
+      return record[dataIndex]
+    }
+    return undefined
+  }
+
+  const formatStatus = (value: ReactNode) => {
+    if (typeof value !== 'string') {
+      return value
+    }
+    return value
+      .split('_')
+      .map((part) => part ? `${part[0].toUpperCase()}${part.slice(1)}` : part)
+      .join(' ')
+  }
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h2>{detailDrawerTitle}</h2> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityDetails: ({
+      title,
+      extra,
+      error,
+      loading,
+      empty,
+      emptyDescription,
+      children,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      empty?: boolean
+      emptyDescription?: ReactNode
+      children?: ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {error}
+        {loading ? <div>Loading</div> : null}
+        {empty ? emptyDescription : children}
+      </section>
+    ),
+    EntityTable: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      columns,
+      rowKey,
+      onRow,
+      rowClassName,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      columns?: Array<{
+        title?: ReactNode
+        key?: string
+        dataIndex?: unknown
+        render?: (value: unknown, record: Record<string, unknown>, index: number) => ReactNode
+      }>
+      rowKey?: string | ((record: Record<string, unknown>) => string)
+      onRow?: (record: Record<string, unknown>) => { onClick?: () => void; style?: Record<string, unknown> }
+      rowClassName?: (record: Record<string, unknown>) => string
+    }) => {
+      const rows = dataSource ?? []
+      return (
+        <section>
+          {title ? <h3>{title}</h3> : null}
+          {extra}
+          {toolbar}
+          {error}
+          {loading ? <div>Loading</div> : null}
+          {!loading && rows.length === 0 ? <div>{emptyDescription}</div> : null}
+          {rows.length > 0 ? (
+            <table>
+              <thead>
+                <tr>
+                  {(columns ?? []).map((column, columnIndex) => (
+                    <th key={column.key ?? `header-${columnIndex}`}>{column.title}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((record, rowIndex) => {
+                  const resolvedRowKey = typeof rowKey === 'function'
+                    ? rowKey(record)
+                    : typeof rowKey === 'string'
+                      ? String(record[rowKey])
+                      : String(record.id ?? rowIndex)
+                  const rowProps = onRow?.(record) ?? {}
+                  return (
+                    <tr
+                      key={resolvedRowKey}
+                      data-testid={`entity-table-row-${resolvedRowKey}`}
+                      className={rowClassName?.(record)}
+                      onClick={rowProps.onClick}
+                    >
+                      {(columns ?? []).map((column, columnIndex) => {
+                        const value = readValue(record, column.dataIndex)
+                        const content = column.render
+                          ? column.render(value, record, rowIndex)
+                          : (
+                            value == null
+                              ? ''
+                              : typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+                                ? String(value)
+                                : JSON.stringify(value)
+                          )
+                        return <td key={column.key ?? `${resolvedRowKey}-${columnIndex}`}>{content}</td>
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          ) : null}
+        </section>
+      )
+    },
+    StatusBadge: ({
+      status,
+      label,
+    }: {
+      status?: ReactNode
+      label?: ReactNode
+    }) => <span>{label ?? formatStatus(status ?? '')}</span>,
+    RouteButton: ({
+      to,
+      children,
+      disabled,
+    }: {
+      to: string
+      children: ReactNode
+      disabled?: boolean
+    }) => {
+      const navigate = useNavigate()
+      return (
+        <button type="button" disabled={disabled} onClick={() => navigate(to)}>
+          {children}
+        </button>
+      )
+    },
+    ModalFormShell: ({
+      open,
+      title,
+      onClose,
+      onSubmit,
+      submitText,
+      confirmLoading,
+      submitButtonTestId,
+      children,
+    }: {
+      open: boolean
+      title?: ReactNode
+      onClose?: () => void
+      onSubmit?: () => void
+      submitText?: ReactNode
+      confirmLoading?: boolean
+      submitButtonTestId?: string
+      children?: ReactNode
+    }) => (
+      open ? (
+        <section>
+          {title ? <h2>{title}</h2> : null}
+          {children}
+          {onClose ? (
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          ) : null}
+          {onSubmit ? (
+            <button
+              type="button"
+              data-testid={submitButtonTestId}
+              disabled={confirmLoading}
+              onClick={onSubmit}
+            >
+              {submitText}
+            </button>
+          ) : null}
+        </section>
+      ) : null
+    ),
+    JsonBlock: ({ title, value }: { title?: ReactNode; value: unknown }) => (
+      <section>
+        {title ? <h4>{title}</h4> : null}
+        <pre>{JSON.stringify(value, null, 2)}</pre>
+      </section>
+    ),
+  }
+})
 
 const ROUTER_FUTURE = {
   v7_startTransition: true,
@@ -245,9 +505,11 @@ function renderPage(path = '/pools/execution-packs') {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
-        <AntApp>
-          <PoolBindingProfilesPage />
-        </AntApp>
+        <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+          <AntApp>
+            <PoolBindingProfilesPage />
+          </AntApp>
+        </ConfigProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -269,19 +531,21 @@ function renderPageWithRoutes(path = '/pools/execution-packs') {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
-        <AntApp>
-          <Routes>
-            <Route path="/pools/execution-packs" element={<PoolBindingProfilesPage />} />
-            <Route path="/pools/catalog" element={<LocationProbe />} />
-          </Routes>
-        </AntApp>
+        <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+          <AntApp>
+            <Routes>
+              <Route path="/pools/execution-packs" element={<PoolBindingProfilesPage />} />
+              <Route path="/pools/catalog" element={<LocationProbe />} />
+            </Routes>
+          </AntApp>
+        </ConfigProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
 describe('PoolBindingProfilesPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'pools')
   })
@@ -332,13 +596,12 @@ describe('PoolBindingProfilesPage', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'pools')
     await changeLanguage('ru')
   })
 
   it('renders a dedicated reusable profile catalog with list and detail states on a separate authoring surface', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByRole('heading', { name: 'Execution Packs' })).toBeInTheDocument()
@@ -354,7 +617,7 @@ describe('PoolBindingProfilesPage', () => {
     expect(screen.queryByText('Latest immutable revision')).not.toBeInTheDocument()
     expect(screen.queryByText('Workflow definition key')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /Advanced payload and immutable pins/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Advanced payload and immutable pins/i }))
     expect(await screen.findByText('Latest immutable revision')).toBeInTheDocument()
     expect(screen.getByTestId('pool-binding-profiles-latest-revision-id')).toHaveTextContent('bp-rev-services-r2')
     expect(screen.getByRole('columnheader', { name: 'Opaque pin' })).toBeInTheDocument()
@@ -650,7 +913,6 @@ describe('PoolBindingProfilesPage', () => {
   })
 
   it('navigates to the pool attachment workspace through the router when opening usage entries', async () => {
-    const user = userEvent.setup()
     mockUseBindingProfileDetail.mockImplementation((bindingProfileId?: string) => ({
       data: bindingProfileId ? {
         binding_profile: {
@@ -689,8 +951,8 @@ describe('PoolBindingProfilesPage', () => {
 
     renderPageWithRoutes('/pools/execution-packs?profile=bp-services&detail=1')
 
-    await user.click(await screen.findByRole('button', { name: 'Load attachment usage' }))
-    await user.click(await screen.findByRole('button', { name: 'Open pool attachment' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Load attachment usage' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open pool attachment' }))
 
     expect(await screen.findByTestId('location-probe')).toHaveTextContent('/pools/catalog?pool_id=pool-1&tab=bindings')
   })

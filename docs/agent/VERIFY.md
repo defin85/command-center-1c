@@ -48,18 +48,34 @@ openspec validate <change-id> --strict --no-interactive
 
 UI skill routing lives in [ui-skills.md](./ui-skills.md). Выбор shared UI skills не заменяет проверки ниже.
 
-Во время итераций предпочитай focused/shard `vitest` прогоны вместо repo-wide `cd frontend && npm run test:run`, если change локален и не затрагивает несколько тяжёлых route-level suites.
+Во время итераций предпочитай project-aware focused/shard `vitest` прогоны вместо repo-wide `cd frontend && npm run test:run`, если change локален и не затрагивает несколько тяжёлых route-level suites.
+
+Checked-in heavy `vitest` perimeter deliberately runs its heavy projects последовательно, чтобы не разгонять CPU contention на low-core local contour.
 
 Перед handoff/landing frontend change полный `cd frontend && npm run test:run` остаётся обязательным, если не согласовано явное исключение.
 
 ```bash
 cd frontend && npm run generate:api
+cd frontend && npm run generate:api:if-needed
 cd frontend && npm run lint
+cd frontend && npm run test:run:changed
+cd frontend && npm run test:run:fast -- <path>
+cd frontend && npm run test:run:heavy -- <path>
+cd frontend && npm run test:run:related -- <source-file...>
+cd frontend && npm run test:run:pools-heavy
+cd frontend && npm run test:run:decisions-heavy
 cd frontend && npm run test:run -- <path>
 cd frontend && npx vitest run <path...>
+cd frontend && npm run validate:ui-platform:iter
 cd frontend && npm run test:browser:ui-platform
 cd frontend && npm run validate:ui-platform
 ```
+
+`generate:api:if-needed` предназначен для локальной итерации: он пропускает `orval`, если inputs/generator hooks не менялись, и fail-closed останавливается на dirty generated tree вместо тихого overwrite.
+
+`test:run:changed` использует builtin `vitest --changed`; при изменении `package.json` или `vitest.config.ts` runner сам расширяет прогон до полного scope. `test:run:related -- <source-file...>` полезен, когда нужно явно прогнать тесты, статически связанные с конкретными source files.
+
+`validate:ui-platform:iter` — это быстрый локальный iteration gate без browser contract. Перед handoff он не заменяет обязательные `npm run test:browser:ui-platform` и `npm run validate:ui-platform`.
 
 ### Orchestrator
 

@@ -2,7 +2,6 @@ import { StrictMode, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
@@ -50,6 +49,14 @@ vi.mock('reactflow', () => ({
   Controls: () => null,
   MiniMap: () => null,
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolCatalogAntdTestDouble } = await import('./poolCatalogAntdTestDouble')
+  return createPoolCatalogAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => import('./poolCatalogPlatformTestDouble'))
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -480,17 +487,14 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
-async function openWorkspaceTab(
-  user: ReturnType<typeof userEvent.setup>,
-  tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor'
-) {
+async function openWorkspaceTab(tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor') {
   await initialCatalogLoadPromise
   await waitFor(() => {
     expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
   })
   const tab = screen.getByRole('tab', { name: tabLabel })
   if (tab.getAttribute('aria-selected') !== 'true') {
-    await user.click(tab)
+    fireEvent.click(tab)
   }
   if (tabLabel === 'Organizations') {
     await waitFor(() => {
@@ -837,7 +841,6 @@ describe('PoolCatalogPage', () => {
 
   it('renders existing workflow attachments in isolated workspace and keeps pool drawer focused on pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListOrganizationPools.mockResolvedValueOnce([
       {
@@ -888,7 +891,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
 
     expect(screen.queryByLabelText('Workflow bindings JSON')).not.toBeInTheDocument()
     await waitFor(() => {
@@ -913,8 +916,8 @@ describe('PoolCatalogPage', () => {
       'tags=cutover, monthly'
     )
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab('Pools')
+    fireEvent.click(screen.getByTestId('pool-catalog-edit-pool'))
 
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
@@ -925,7 +928,6 @@ describe('PoolCatalogPage', () => {
 
   it('removes deleted workflow bindings through first-class binding API', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListOrganizationPools.mockResolvedValueOnce([
       {
@@ -946,9 +948,9 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-remove-0'))
-    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+    await openWorkspaceTab('Bindings')
+    fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-remove-0'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
@@ -963,7 +965,6 @@ describe('PoolCatalogPage', () => {
 
   it('does not sync workflow bindings when saving only pool fields', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     const existingBinding = buildPoolWorkflowBinding({
       binding_id: 'binding-existing',
@@ -990,9 +991,9 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
-    await user.click(screen.getByTestId('pool-catalog-save-pool'))
+    await openWorkspaceTab('Pools')
+    fireEvent.click(screen.getByTestId('pool-catalog-edit-pool'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockSyncPoolWorkflowBindings).not.toHaveBeenCalled()
@@ -1001,7 +1002,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows stale collection conflict without clearing edited workflow attachment form', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     const existingBinding = buildPoolWorkflowBinding({
       binding_id: 'binding-existing',
@@ -1039,7 +1039,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
     await waitFor(() => {
       expect(mockListPoolWorkflowBindings).toHaveBeenCalledWith('44444444-4444-4444-4444-444444444444')
     })
@@ -1053,7 +1053,7 @@ describe('PoolCatalogPage', () => {
       target: { value: 'baseline, conflicted' },
     })
 
-    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1), { timeout: 2000 })
@@ -1081,13 +1081,12 @@ describe('PoolCatalogPage', () => {
 
   it('submits workflow attachments from isolated workspace via profile revision selection', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    await openWorkspaceTab('Bindings')
+    fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
     await selectDropdownOption('services-publication-profile · Services Publication Profile · r2 · active')
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
@@ -1105,7 +1104,7 @@ describe('PoolCatalogPage', () => {
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-selector-tags-0'), {
       target: { value: 'baseline, monthly' },
     })
-    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(mockUpsertOrganizationPool).not.toHaveBeenCalled()
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
@@ -1130,7 +1129,6 @@ describe('PoolCatalogPage', () => {
 
   it('lists reusable profile revisions from dedicated catalog and offers handoff for reusable logic edits', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     try {
@@ -1178,8 +1176,8 @@ describe('PoolCatalogPage', () => {
       renderPage()
       await initialCatalogLoadPromise
 
-      await openWorkspaceTab(user, 'Bindings')
-      await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+      await openWorkspaceTab('Bindings')
+      fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
       openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
       expect(await screen.findByText('services-publication-profile · Services Publication Profile · r2 · active')).toBeInTheDocument()
       expect(screen.getByText('legacy-archive-profile · Legacy Archive Profile · r1 · deactivated')).toBeInTheDocument()
@@ -1201,7 +1199,6 @@ describe('PoolCatalogPage', () => {
 
   it('does not prefetch every binding profile detail before the operator opens a revision selector', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUseBindingProfiles.mockReturnValue({
       data: {
@@ -1223,10 +1220,10 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
     expect(mockGetBindingProfileDetail).not.toHaveBeenCalled()
 
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
 
     await waitFor(() => expect(mockGetBindingProfileDetail).toHaveBeenCalledTimes(2))
@@ -1234,7 +1231,6 @@ describe('PoolCatalogPage', () => {
 
   it('allows attaching an explicit non-latest profile revision from catalog detail', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUseBindingProfiles.mockReturnValue({
       data: {
@@ -1288,8 +1284,8 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    await openWorkspaceTab('Bindings')
+    fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     openSelectByTestId('pool-catalog-workflow-binding-profile-revision-0')
     expect(await screen.findByText('services-publication-profile · Services Publication Profile · r1 · active')).toBeInTheDocument()
 
@@ -1297,7 +1293,7 @@ describe('PoolCatalogPage', () => {
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
       target: { value: '2026-01-01' },
     })
-    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     await waitFor(() => expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledTimes(1))
     expect(mockSyncPoolWorkflowBindings).toHaveBeenCalledWith({
@@ -1313,7 +1309,6 @@ describe('PoolCatalogPage', () => {
 
   it('keeps pinned reusable profile visible even when it is no longer the catalog latest revision', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     const existingBinding = buildPoolWorkflowBinding({
       binding_profile_id: 'bp-legacy',
@@ -1367,7 +1362,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
     expect(await screen.findByTestId('pool-catalog-workflow-binding-profile-summary-0')).toHaveTextContent(
       'legacy-archive-profile'
     )
@@ -1378,7 +1373,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows topology slot coverage summary in bindings workspace', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListPoolWorkflowBindings.mockResolvedValueOnce(
       buildPoolWorkflowBindingCollection([
@@ -1453,7 +1447,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-workflow-binding-profile-summary-0')).toBeInTheDocument()
     }, { timeout: 3000 })
@@ -1473,7 +1467,6 @@ describe('PoolCatalogPage', () => {
 
   it('fails closed when first-class workflow bindings load fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListOrganizationPools.mockResolvedValueOnce([
       {
@@ -1492,7 +1485,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
 
     expect(await screen.findByText('binding read failed')).toBeInTheDocument()
     expect(screen.getByTestId('pool-catalog-save-bindings')).toBeDisabled()
@@ -1502,7 +1495,6 @@ describe('PoolCatalogPage', () => {
 
   it('enters blocking remediation state when canonical collection is empty but legacy metadata is present', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListOrganizationPools.mockResolvedValueOnce([
       {
@@ -1528,7 +1520,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
 
     expect(await screen.findByText('Legacy workflow bindings remediation required')).toBeInTheDocument()
     expect(
@@ -1539,7 +1531,6 @@ describe('PoolCatalogPage', () => {
 
   it('surfaces execution-pack topology remediation with diagnostics and canonical handoff', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListPoolWorkflowBindings.mockResolvedValueOnce(buildPoolWorkflowBindingCollection([], {
       collection_etag: 'sha256:template-remediation',
@@ -1563,7 +1554,7 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
 
     expect(await screen.findByText('Execution pack remediation required')).toBeInTheDocument()
     expect(screen.getByText('Pinned execution pack still uses concrete participant refs.')).toBeInTheDocument()
@@ -1574,18 +1565,17 @@ describe('PoolCatalogPage', () => {
 
   it('blocks save when workflow attachment is missing binding_profile_revision_id', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Bindings')
-    await user.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
+    await openWorkspaceTab('Bindings')
+    fireEvent.click(screen.getByTestId('pool-catalog-workflow-binding-add'))
     fireEvent.change(screen.getByTestId('pool-catalog-workflow-binding-effective-from-0'), {
       target: { value: '2026-01-01' },
     })
 
-    await user.click(screen.getByTestId('pool-catalog-save-bindings'))
+    fireEvent.click(screen.getByTestId('pool-catalog-save-bindings'))
 
     expect(
       await screen.findByText('Attachment #1: binding_profile_revision_id is required.')

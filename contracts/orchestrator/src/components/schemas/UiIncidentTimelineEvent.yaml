@@ -1,0 +1,41 @@
+type: object
+properties:
+  batch_id:
+    type: string
+  event_id:
+    type: string
+  event_type:
+    type: string
+  occurred_at:
+    type: string
+    format: date-time
+  actor_username:
+    type: string
+    nullable: true
+  user_id:
+    type: integer
+    nullable: true
+  session_id:
+    type: string
+    nullable: true
+  request_id:
+    type: string
+    nullable: true
+  ui_action_id:
+    type: string
+    nullable: true
+  trace_id:
+    type: string
+    nullable: true
+  release:
+    $ref: ./UiIncidentRelease.yaml
+  route: {}
+  payload: {}
+required:
+  - batch_id
+  - event_id
+  - event_type
+  - occurred_at
+  - payload
+  - release
+  - route

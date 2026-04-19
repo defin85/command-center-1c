@@ -1,0 +1,14 @@
+type: object
+properties:
+  app:
+    type: string
+    nullable: true
+  fingerprint:
+    type: string
+    nullable: true
+  mode:
+    type: string
+    nullable: true
+  origin:
+    type: string
+    nullable: true

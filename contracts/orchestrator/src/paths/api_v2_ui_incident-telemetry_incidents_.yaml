@@ -1,0 +1,99 @@
+get:
+  operationId: v2_ui_incident_telemetry_incidents
+  summary: List recent UI incident summaries
+  parameters:
+    - in: query
+      name: actor_username
+      schema:
+        type: string
+    - in: query
+      name: end
+      schema:
+        type: string
+    - in: query
+      name: limit
+      schema:
+        type: integer
+    - in: query
+      name: offset
+      schema:
+        type: integer
+    - in: query
+      name: request_id
+      schema:
+        type: string
+    - in: query
+      name: route_path
+      schema:
+        type: string
+    - in: query
+      name: session_id
+      schema:
+        type: string
+    - in: query
+      name: start
+      schema:
+        type: string
+    - in: query
+      name: trace_id
+      schema:
+        type: string
+    - in: query
+      name: ui_action_id
+      schema:
+        type: string
+    - in: query
+      name: user_id
+      schema:
+        type: integer
+    - name: X-CC1C-Tenant-ID
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: >-
+        Required tenant context selector for UI incident telemetry ingest and
+        staff diagnostics queries.
+    - name: X-CC1C-Locale
+      in: header
+      required: false
+      schema:
+        type: string
+        enum:
+          - ru
+          - en
+      description: >-
+        Optional operator locale override. If omitted, locale is resolved from
+        browser language signal and then falls back to the deployment default.
+  tags:
+    - v2
+  security:
+    - bearerAuth: []
+  responses:
+    '200':
+      description: ''
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/UiIncidentSummaryListResponse.yaml
+    '400':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '401':
+      description: Unauthorized
+    '403':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml
+    '404':
+      description: ''
+      content:
+        application/problem+json:
+          schema:
+            $ref: ../components/schemas/ProblemDetailsError.yaml

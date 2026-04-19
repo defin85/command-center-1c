@@ -58,16 +58,31 @@ export type CommandSchemasEditorView = {
 }
 
 export type CommandSchemasEditorMode = 'guided' | 'raw'
+const commandSchemasEditorViewInflight = new Map<string, Promise<CommandSchemasEditorView>>()
 
 export async function getCommandSchemasEditorView(
   driver: CommandSchemaDriver,
   mode?: CommandSchemasEditorMode
 ): Promise<CommandSchemasEditorView> {
-  const response = await apiClient.get<CommandSchemasEditorView>(
+  const cacheKey = `${driver}:${mode ?? 'guided'}`
+  const existingRequest = commandSchemasEditorViewInflight.get(cacheKey)
+  if (existingRequest) {
+    return existingRequest
+  }
+
+  const request = apiClient.get<CommandSchemasEditorView>(
     '/api/v2/settings/command-schemas/editor/',
     { params: { driver, ...(mode ? { mode } : {}) } }
   )
-  return response.data
+    .then((response) => response.data)
+    .finally(() => {
+      if (commandSchemasEditorViewInflight.get(cacheKey) === request) {
+        commandSchemasEditorViewInflight.delete(cacheKey)
+      }
+    })
+
+  commandSchemasEditorViewInflight.set(cacheKey, request)
+  return request
 }
 
 export type CommandSchemaArtifactType = 'base' | 'overrides'

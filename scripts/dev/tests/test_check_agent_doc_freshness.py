@@ -143,12 +143,26 @@ class CheckTaskRoutingSemanticsTests(unittest.TestCase):
         ]
         self.task_routing = """# Task Routing
 
+## Вопросы про продукт и домен
+
+- Минимум для старта:
+  - [DOMAIN_MAP.md](./DOMAIN_MAP.md)
+  - [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md)
+- Подключай дополнительно, если:
+  - [INDEX.md](./INDEX.md) нужен cold-start map
+- Эскалация:
+  - ответ затрагивает runtime boundary
+
 ## Frontend work
 
+- Минимум для старта:
+  - [frontend/AGENTS.md](../../frontend/AGENTS.md)
+- Подключай дополнительно, если:
+  - [INDEX.md](./INDEX.md) нужен cold-start onboarding map
 - Первые code entry points:
   - [frontend/src/main.tsx](../../frontend/src/main.tsx)
   - [frontend/src/App.tsx](../../frontend/src/App.tsx)
-- Первые проверки:
+- Проверка:
   - `cd frontend && npm run generate:api`
   - `cd frontend && npm run lint`
   - `cd frontend && npm run test:run -- <path>`
@@ -156,57 +170,91 @@ class CheckTaskRoutingSemanticsTests(unittest.TestCase):
 - Machine-readable surfaces:
   - [frontend/package.json](../../frontend/package.json)
   - `./debug/runtime-inventory.sh --json`
+- Эскалация:
+  - нужна broader browser/runtime verification
 
 ## Orchestrator work
 
+- Минимум для старта:
+  - [orchestrator/AGENTS.md](../../orchestrator/AGENTS.md)
+- Подключай дополнительно, если:
+  - [INDEX.md](./INDEX.md) нужен полный map guidance layers
 - Первые code entry points:
   - [orchestrator/config/asgi.py](../../orchestrator/config/asgi.py)
-- Первые проверки:
+- Проверка:
   - `./scripts/dev/lint.sh --python`
   - `./scripts/dev/pytest.sh -q <path>`
 - Machine-readable surfaces:
   - `./debug/runtime-inventory.sh --json`
+- Эскалация:
+  - change начинает пересекать frontend/go-services boundaries
 
 ## Go services work
 
+- Минимум для старта:
+  - [go-services/AGENTS.md](../../go-services/AGENTS.md)
+- Подключай дополнительно, если:
+  - [INDEX.md](./INDEX.md) нужен полный map guidance layers
 - Первые code entry points:
   - [go-services/api-gateway/cmd/main.go](../../go-services/api-gateway/cmd/main.go)
   - [go-services/worker/cmd/main.go](../../go-services/worker/cmd/main.go)
-- Первые проверки:
+- Проверка:
   - `./scripts/dev/lint.sh --go`
   - `cd go-services/api-gateway && go test ./...`
   - `cd go-services/worker && go test ./...`
 - Machine-readable surfaces:
   - `./debug/runtime-inventory.sh --json`
+- Эскалация:
+  - нужен live debug path, а не только code/doc edit
 
 ## Contracts и OpenSpec work
 
-- Первые проверки:
+- Минимум для старта:
+  - [openspec/AGENTS.md](../../openspec/AGENTS.md)
+- Подключай дополнительно, если:
+  - [PLANS.md](./PLANS.md) нужен execution plan
+- Проверка:
   - `openspec validate <change-id> --strict --no-interactive`
   - `./scripts/dev/check-agent-doc-freshness.sh`
 - Machine-readable surfaces:
   - `openspec list`
   - `openspec list --specs`
   - `bd ready`
+- Эскалация:
+  - change затрагивает несколько capabilities
 
 ## Runtime-debug и live verification
 
-- Первые проверки:
+- Минимум для старта:
+  - [RUNBOOK.md](./RUNBOOK.md)
+- Подключай дополнительно, если:
+  - [VERIFY.md](./VERIFY.md) нужен validation-aware escalation path
+- Проверка:
   - `./debug/runtime-inventory.sh --json`
   - `./scripts/dev/health-check.sh`
   - `./debug/probe.sh all`
 - Machine-readable surfaces:
   - `./debug/restart-runtime.sh <runtime>`
+- Эскалация:
+  - нужен restart/live probe
 
 ## Agent docs и guidance work
 
-- Первые проверки:
+- Минимум для старта:
+  - [AGENTS.md](../../AGENTS.md)
+  - [INDEX.md](./INDEX.md)
+- Подключай дополнительно, если:
+  - [MEMORY.md](./MEMORY.md) меняется manual Hindsight workflow
+- Проверка:
   - `./scripts/dev/check-agent-doc-freshness.sh`
   - `openspec validate <change-id> --strict --no-interactive`
 - Machine-readable surfaces:
   - [frontend/package.json](../../frontend/package.json)
   - `./debug/runtime-inventory.sh --json`
   - [.codex/config.toml](../../.codex/config.toml)
+  - [MEMORY.md](./MEMORY.md)
+- Эскалация:
+  - конфликтует source-of-truth ownership между root, routed и scoped guidance
 """
 
     def test_accepts_matching_task_routing_sections(self) -> None:

@@ -1,8 +1,8 @@
-import { StrictMode } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode, type ReactNode } from 'react'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { App as AntApp } from 'antd'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import type {
@@ -62,6 +62,307 @@ vi.mock('../../../api/intercompanyPools', async () => {
     getPoolFactualWorkspace: (...args: unknown[]) => mockGetPoolFactualWorkspace(...args),
     refreshPoolFactualWorkspace: (...args: unknown[]) => mockRefreshPoolFactualWorkspace(...args),
     applyPoolFactualReviewAction: (...args: unknown[]) => mockApplyPoolFactualReviewAction(...args),
+  }
+})
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+  const router = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+
+  const renderTableCell = (
+    column: {
+      dataIndex?: string | string[]
+      key?: string
+      render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+      title?: ReactNode
+    },
+    row: Record<string, unknown>,
+    index: number,
+  ) => {
+    const dataIndex = column.dataIndex
+    const value = Array.isArray(dataIndex)
+      ? dataIndex.reduce<unknown>((current, key) => (
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined
+      ), row)
+      : typeof dataIndex === 'string'
+        ? row[dataIndex]
+        : undefined
+
+    return column.render ? column.render(value, row, index) : (value as ReactNode)
+  }
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h2>{detailDrawerTitle}</h2> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    RouteButton: ({
+      to,
+      onClick,
+      children,
+      type,
+      ...props
+    }: {
+      to?: string
+      onClick?: (event: { preventDefault: () => void; defaultPrevented: boolean }) => void
+      children?: ReactNode
+      type?: string
+      [key: string]: unknown
+    }) => {
+      const navigate = router.useNavigate()
+      return (
+        <button
+          type="button"
+          data-variant={type}
+          onClick={() => {
+            let defaultPrevented = false
+            onClick?.({
+              preventDefault: () => {
+                defaultPrevented = true
+              },
+              get defaultPrevented() {
+                return defaultPrevented
+              },
+            })
+            if (!defaultPrevented && typeof to === 'string') {
+              navigate(to)
+            }
+          }}
+          {...props}
+        >
+          {children}
+        </button>
+      )
+    },
+    EntityList: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      renderItem,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      renderItem: (item: Record<string, unknown>) => ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {toolbar}
+        {error ? error : loading ? <div>Loading</div> : (dataSource?.length ?? 0) === 0 ? <div>{emptyDescription}</div> : (
+          (dataSource ?? []).map((item, index) => (
+            <div key={String(item.key ?? item.id ?? index)}>
+              {renderItem(item)}
+            </div>
+          ))
+        )}
+      </section>
+    ),
+    EntityDetails: ({
+      title,
+      extra,
+      error,
+      loading,
+      empty,
+      emptyDescription,
+      children,
+    }: {
+      title: ReactNode
+      extra?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      empty?: boolean
+      emptyDescription?: ReactNode
+      children?: ReactNode
+    }) => (
+      <section>
+        <h3>{title}</h3>
+        {extra}
+        {error ? error : loading ? <div>Loading</div> : empty ? emptyDescription : children}
+      </section>
+    ),
+    EntityTable: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      columns,
+      rowKey,
+      onRow,
+      rowClassName,
+    }: {
+      title: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource: Array<Record<string, unknown>>
+      columns: Array<{
+        title?: ReactNode
+        dataIndex?: string | string[]
+        key?: string
+        render?: (value: unknown, row: Record<string, unknown>, index: number) => ReactNode
+      }>
+      rowKey: string | ((row: Record<string, unknown>) => string)
+      onRow?: (row: Record<string, unknown>, index?: number) => { onClick?: () => void }
+      rowClassName?: (row: Record<string, unknown>, index?: number) => string
+    }) => (
+      <section>
+        <div>
+          <h3>{title}</h3>
+          {extra}
+        </div>
+        {toolbar}
+        {error ? error : loading ? <div>Loading</div> : dataSource.length === 0 ? <div>{emptyDescription}</div> : (
+          <table>
+            <thead>
+              <tr>
+                {columns.map((column, index) => (
+                  <th key={String(column.key ?? column.dataIndex ?? index)}>{column.title}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataSource.map((row, rowIndex) => {
+                const resolvedRowKey = typeof rowKey === 'function'
+                  ? rowKey(row)
+                  : String(row[rowKey] ?? rowIndex)
+                const rowProps = onRow?.(row, rowIndex)
+                return (
+                  <tr
+                    key={resolvedRowKey}
+                    className={rowClassName?.(row, rowIndex)}
+                    onClick={rowProps?.onClick}
+                  >
+                    {columns.map((column, columnIndex) => (
+                      <td key={String(column.key ?? column.dataIndex ?? columnIndex)}>
+                        {renderTableCell(column, row, rowIndex)}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+    ),
+    StatusBadge: ({
+      status,
+      label,
+    }: {
+      status?: ReactNode
+      label?: ReactNode
+    }) => <span>{label ?? status}</span>,
+    ModalFormShell: ({
+      open,
+      onClose,
+      onSubmit,
+      title,
+      subtitle,
+      submitText,
+      cancelText,
+      confirmLoading,
+      submitDisabled,
+      footerStart,
+      children,
+      submitButtonTestId,
+    }: {
+      open: boolean
+      onClose: () => void
+      onSubmit?: () => void | Promise<void>
+      title?: ReactNode
+      subtitle?: ReactNode
+      submitText?: ReactNode
+      cancelText?: ReactNode
+      confirmLoading?: boolean
+      submitDisabled?: boolean
+      footerStart?: ReactNode
+      children: ReactNode
+      submitButtonTestId?: string
+    }) => (
+      open ? (
+        <section role="dialog">
+          {title ? <h4>{title}</h4> : null}
+          {subtitle ? <p>{subtitle}</p> : null}
+          {children}
+          {footerStart}
+          <button type="button" onClick={onClose}>
+            {cancelText ?? 'Cancel'}
+          </button>
+          {onSubmit ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onSubmit()
+              }}
+              disabled={Boolean(confirmLoading) || Boolean(submitDisabled)}
+              data-testid={submitButtonTestId}
+            >
+              {submitText ?? 'Save'}
+            </button>
+          ) : null}
+        </section>
+      ) : null
+    ),
   }
 })
 
@@ -383,10 +684,12 @@ function buildRefreshResponse(
 function renderPage(initialEntry = '/pools/factual', options?: { strict?: boolean }) {
   const tree = (
     <MemoryRouter initialEntries={[initialEntry]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <AntApp>
-        <PoolFactualPage />
-        <LocationProbe />
-      </AntApp>
+      <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+        <AntApp>
+          <PoolFactualPage />
+          <LocationProbe />
+        </AntApp>
+      </ConfigProvider>
     </MemoryRouter>
   )
 
@@ -415,7 +718,12 @@ function LocationProbe() {
 }
 
 describe('PoolFactualPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
+    await ensureNamespaces('en', 'poolFactual')
+    await changeLanguage('en')
+  })
+
+  beforeEach(() => {
     resetQueryClient()
     mockListPoolFactualOverview.mockReset()
     mockGetPoolFactualWorkspace.mockReset()
@@ -427,13 +735,14 @@ describe('PoolFactualPage', () => {
         return
       }
     })
-    await ensureNamespaces('en', 'poolFactual')
-    await changeLanguage('en')
   })
 
-  afterEach(async () => {
+  afterEach(() => {
     consoleErrorSpy?.mockRestore()
     consoleErrorSpy = null
+  })
+
+  afterAll(async () => {
     await changeLanguage('ru')
   })
 

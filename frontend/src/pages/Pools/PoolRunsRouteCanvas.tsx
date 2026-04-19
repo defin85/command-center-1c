@@ -120,6 +120,11 @@ type RetryFormValues = {
 
 type PoolRunsStage = 'create' | 'inspect' | 'safe' | 'retry'
 
+type InFlightLoad<T> = {
+  key: string
+  promise: Promise<T>
+}
+
 type MasterDataRemediationTarget = {
   label: string
   href: string
@@ -1497,6 +1502,9 @@ export function PoolRunsPage() {
   const selectedRunIdRef = useRef<string | null>(selectedRunId)
   const loadRunsRequestRef = useRef(0)
   const loadReportRequestRef = useRef(0)
+  const loadGraphInFlightRef = useRef<InFlightLoad<PoolGraph> | null>(null)
+  const loadRunsInFlightRef = useRef<InFlightLoad<PoolRun[]> | null>(null)
+  const loadReportInFlightRef = useRef<InFlightLoad<PoolRunReport> | null>(null)
 
   selectedPoolIdRef.current = selectedPoolId
   selectedRunIdRef.current = selectedRunId
@@ -1663,23 +1671,43 @@ export function PoolRunsPage() {
     }
   }, [selectedPoolId, t])
 
-  const loadGraph = useCallback(async () => {
+  const loadGraph = useCallback(async (options?: { force?: boolean }) => {
     if (!selectedPoolId) {
       setGraph(null)
       return
     }
+    const requestKey = `${selectedPoolId}:${graphDate || ''}`
+    const currentGraphLoad = loadGraphInFlightRef.current
+    const shouldReuseInFlight = !options?.force && currentGraphLoad?.key === requestKey
+    const graphPromise = shouldReuseInFlight
+      ? currentGraphLoad.promise
+      : getPoolGraph(selectedPoolId, graphDate || undefined)
+
+    if (!shouldReuseInFlight) {
+      loadGraphInFlightRef.current = {
+        key: requestKey,
+        promise: graphPromise,
+      }
+    }
+
     setLoadingGraph(true)
     try {
-      const data = await getPoolGraph(selectedPoolId, graphDate || undefined)
+      const data = await graphPromise
       setGraph(data)
     } catch {
       setError(t('runs.page.messages.failedToLoadGraph'))
     } finally {
+      if (
+        loadGraphInFlightRef.current?.key === requestKey
+        && loadGraphInFlightRef.current.promise === graphPromise
+      ) {
+        loadGraphInFlightRef.current = null
+      }
       setLoadingGraph(false)
     }
   }, [graphDate, selectedPoolId, t])
 
-  const loadRuns = useCallback(async (options?: { preferredRunId?: string | null }) => {
+  const loadRuns = useCallback(async (options?: { preferredRunId?: string | null, force?: boolean }) => {
     const poolId = selectedPoolId
     if (!poolId) {
       setRuns([])
@@ -1688,9 +1716,27 @@ export function PoolRunsPage() {
     }
     const requestId = loadRunsRequestRef.current + 1
     loadRunsRequestRef.current = requestId
+    const requestKey = poolId
+    const currentRunsLoad = loadRunsInFlightRef.current
+    const shouldReuseInFlight = (
+      !options?.force
+      && !options?.preferredRunId
+      && currentRunsLoad?.key === requestKey
+    )
+    const runsPromise = shouldReuseInFlight
+      ? currentRunsLoad.promise
+      : listPoolRuns({ poolId, limit: 100 })
+
+    if (!shouldReuseInFlight) {
+      loadRunsInFlightRef.current = {
+        key: requestKey,
+        promise: runsPromise,
+      }
+    }
+
     setLoadingRuns(true)
     try {
-      const data = await listPoolRuns({ poolId, limit: 100 })
+      const data = await runsPromise
       if (loadRunsRequestRef.current !== requestId || selectedPoolIdRef.current !== poolId) {
         return
       }
@@ -1711,13 +1757,19 @@ export function PoolRunsPage() {
         setError(t('runs.page.messages.failedToLoadRuns'))
       }
     } finally {
+      if (
+        loadRunsInFlightRef.current?.key === requestKey
+        && loadRunsInFlightRef.current.promise === runsPromise
+      ) {
+        loadRunsInFlightRef.current = null
+      }
       if (loadRunsRequestRef.current === requestId) {
         setLoadingRuns(false)
       }
     }
   }, [selectedPoolId, t])
 
-  const loadReport = useCallback(async () => {
+  const loadReport = useCallback(async (options?: { force?: boolean }) => {
     const runId = selectedRunId
     if (!runId) {
       setReport(null)
@@ -1725,10 +1777,24 @@ export function PoolRunsPage() {
     }
     const requestId = loadReportRequestRef.current + 1
     loadReportRequestRef.current = requestId
+    const requestKey = runId
+    const currentReportLoad = loadReportInFlightRef.current
+    const shouldReuseInFlight = !options?.force && currentReportLoad?.key === requestKey
+    const reportPromise = shouldReuseInFlight
+      ? currentReportLoad.promise
+      : getPoolRunReport(runId)
+
+    if (!shouldReuseInFlight) {
+      loadReportInFlightRef.current = {
+        key: requestKey,
+        promise: reportPromise,
+      }
+    }
+
     setLoadingReport(true)
     setReport((currentReport) => (currentReport?.run?.id === runId ? currentReport : null))
     try {
-      const data = await getPoolRunReport(runId)
+      const data = await reportPromise
       if (loadReportRequestRef.current !== requestId || selectedRunIdRef.current !== runId) {
         return
       }
@@ -1738,6 +1804,12 @@ export function PoolRunsPage() {
         setError(t('runs.page.messages.failedToLoadReport'))
       }
     } finally {
+      if (
+        loadReportInFlightRef.current?.key === requestKey
+        && loadReportInFlightRef.current.promise === reportPromise
+      ) {
+        loadReportInFlightRef.current = null
+      }
       if (loadReportRequestRef.current === requestId) {
         setLoadingReport(false)
       }
@@ -1984,7 +2056,7 @@ export function PoolRunsPage() {
       const payload = await createPoolRun(requestPayload)
       message.success(payload.created ? t('runs.create.messages.runCreated') : t('runs.create.messages.runReused'))
       setBindingPreview(null)
-      await loadRuns({ preferredRunId: payload.run.id })
+      await loadRuns({ preferredRunId: payload.run.id, force: true })
     } catch (err) {
       const problem = parseProblemDetails(err)
       if (problem) {
@@ -2137,8 +2209,8 @@ export function PoolRunsPage() {
       } else {
         message.warning(t('runs.retry.messages.notAccepted'))
       }
-      await loadRuns()
-      await loadReport()
+      await loadRuns({ force: true })
+      await loadReport({ force: true })
     } catch (err) {
       const conflict = parseSafeCommandConflict(err)
       if (conflict) {
@@ -2181,8 +2253,8 @@ export function PoolRunsPage() {
             : t('runs.safe.messages.abortReplay')
         )
       }
-      await loadRuns({ preferredRunId: response.run.id })
-      await loadReport()
+      await loadRuns({ preferredRunId: response.run.id, force: true })
+      await loadReport({ force: true })
     } catch (err) {
       const conflict = parseSafeCommandConflict(err)
       if (conflict) {
@@ -2224,10 +2296,10 @@ export function PoolRunsPage() {
   }, [])
 
   const handleRefreshData = useCallback(() => {
-    void loadGraph()
+    void loadGraph({ force: true })
     void loadReceiptBatches()
-    void loadRuns()
-    void loadReport()
+    void loadRuns({ force: true })
+    void loadReport({ force: true })
   }, [loadGraph, loadReceiptBatches, loadReport, loadRuns])
 
   const handleBatchCreated = useCallback(async (
@@ -2267,7 +2339,7 @@ export function PoolRunsPage() {
         setActiveStageTab('inspect')
         setIsRunDetailOpen(true)
         setSelectedRunId(response.run.id)
-        await loadRuns({ preferredRunId: response.run.id })
+        await loadRuns({ preferredRunId: response.run.id, force: true })
         return
       }
     }
@@ -2743,6 +2815,7 @@ export function PoolRunsPage() {
 
       <Tabs
         activeKey={activeStageTab}
+        destroyOnHidden
         onChange={(key) => handleSelectStage(key as PoolRunsStage)}
         data-testid="pool-runs-stage-tabs"
         items={[

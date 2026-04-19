@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import yaml
 from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -11,6 +13,15 @@ from rest_framework.test import APIClient
 from apps.monitoring.models import UiIncidentTelemetryBatch, UiIncidentTelemetryEvent
 from apps.monitoring.ui_incident_telemetry import cleanup_expired_ui_incident_telemetry
 from apps.tenancy.models import Tenant, TenantMember
+
+
+def _load_openapi_contract() -> dict:
+    contract_path = (
+        Path(__file__).resolve().parents[4] / "contracts" / "orchestrator" / "openapi.yaml"
+    )
+    payload = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    return payload
 
 
 @pytest.fixture
@@ -415,3 +426,34 @@ def test_cleanup_expired_ui_incident_telemetry_removes_old_batches(
     assert UiIncidentTelemetryBatch.objects.filter(batch_id="batch-old").exists() is False
     assert UiIncidentTelemetryEvent.objects.filter(event_id="evt-old").exists() is False
     assert UiIncidentTelemetryBatch.objects.filter(batch_id="batch-fresh").exists() is True
+
+
+def test_generated_openapi_marks_tenant_header_required_for_ui_incident_telemetry_paths() -> None:
+    contract = _load_openapi_contract()
+    paths = contract.get("paths")
+    assert isinstance(paths, dict)
+
+    for path, method in (
+        ("/api/v2/ui/incident-telemetry/ingest/", "post"),
+        ("/api/v2/ui/incident-telemetry/incidents/", "get"),
+        ("/api/v2/ui/incident-telemetry/timeline/", "get"),
+    ):
+        path_item = paths.get(path)
+        assert isinstance(path_item, dict), f"path not found: {path}"
+        operation = path_item.get(method)
+        assert isinstance(operation, dict), f"operation not found: {method} {path}"
+
+        parameters = operation.get("parameters")
+        assert isinstance(parameters, list), f"parameters missing: {method} {path}"
+        tenant_headers = [
+            item
+            for item in parameters
+            if isinstance(item, dict)
+            and item.get("name") == "X-CC1C-Tenant-ID"
+            and item.get("in") == "header"
+        ]
+        assert len(tenant_headers) == 1, f"unexpected tenant header count for {method} {path}"
+        assert tenant_headers[0]["required"] is True
+        assert tenant_headers[0]["description"] == (
+            "Required tenant context selector for UI incident telemetry ingest and staff diagnostics queries."
+        )

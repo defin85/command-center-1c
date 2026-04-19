@@ -35,6 +35,7 @@ export function useCommandSchemasState() {
     return raw === 'cli' ? 'cli' : 'ibcmd'
   })()
   const routeCommandId = (searchParams.get('command') || '').trim()
+  const failedLoadCommandSchemasText = t(($) => $.commandSchemas.actions.failedLoadCommandSchemas)
 
   const [mode, setMode] = useState<CommandSchemasMode>(() => routeMode)
 
@@ -114,16 +115,6 @@ export function useCommandSchemasState() {
       setDriverSchemaText(JSON.stringify(safeOverridesDriverSchema(normalizedServer), null, 2))
       setDriverSchemaTextError(null)
 
-      const effectiveCommands = safeCommandsById(data.catalogs?.effective?.catalog)
-      const firstId = Object.keys(effectiveCommands).sort()[0] ?? ''
-      const requestedCommandId = routeCommandId
-      setSelectedCommandId((prev) => {
-        if (requestedCommandId && effectiveCommands[requestedCommandId]) {
-          return requestedCommandId
-        }
-        return prev && effectiveCommands[prev] ? prev : firstId
-      })
-
       setActiveEditorTab('basics')
       setActiveSideTab('preview')
       setPreviewConnectionText('{}')
@@ -139,12 +130,12 @@ export function useCommandSchemasState() {
       setValidateError(null)
       setValidateSummary(null)
     } catch (err) {
-      const text = err instanceof Error ? err.message : t(($) => $.commandSchemas.actions.failedLoadCommandSchemas)
+      const text = err instanceof Error ? err.message : failedLoadCommandSchemasText
       setError(text)
     } finally {
       setLoading(false)
     }
-  }, [activeDriver, mode, routeCommandId, t])
+  }, [activeDriver, failedLoadCommandSchemasText, mode])
 
   useEffect(() => {
     void fetchView()
@@ -162,12 +153,24 @@ export function useCommandSchemasState() {
     }
   }, [activeDriver, routeDriver])
 
+  const routeEffectiveCommandsById = useMemo(
+    () => safeCommandsById(view?.catalogs?.effective?.catalog),
+    [view],
+  )
+  const routeEffectiveCommandIds = useMemo(
+    () => Object.keys(routeEffectiveCommandsById).sort(),
+    [routeEffectiveCommandsById],
+  )
+
   useEffect(() => {
-    if (routeCommandId === selectedCommandId) {
-      return
-    }
-    setSelectedCommandId(routeCommandId)
-  }, [routeCommandId, selectedCommandId])
+    const firstId = routeEffectiveCommandIds[0] ?? ''
+    setSelectedCommandId((prev) => {
+      if (routeCommandId && routeEffectiveCommandsById[routeCommandId]) {
+        return routeCommandId
+      }
+      return prev && routeEffectiveCommandsById[prev] ? prev : firstId
+    })
+  }, [routeCommandId, routeEffectiveCommandIds, routeEffectiveCommandsById])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)

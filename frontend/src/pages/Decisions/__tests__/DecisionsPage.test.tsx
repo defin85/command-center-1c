@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { App as AntApp } from 'antd'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { changeLanguage } from '@/i18n/runtime'
 
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
@@ -15,6 +15,7 @@ const mockGetPoolGraph = vi.fn()
 const mockMigratePoolEdgeDocumentPolicy = vi.fn()
 const mockUseDatabases = vi.fn()
 const mockUseDatabaseMetadataManagement = vi.fn()
+let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -34,6 +35,163 @@ vi.mock('../../../api/intercompanyPools', () => ({
   getPoolGraph: (...args: unknown[]) => mockGetPoolGraph(...args),
   migratePoolEdgeDocumentPolicy: (...args: unknown[]) => mockMigratePoolEdgeDocumentPolicy(...args),
 }))
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+  const { useNavigate } = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    RouteButton: ({
+      to,
+      children,
+      disabled,
+    }: {
+      to: string
+      children: ReactNode
+      disabled?: boolean
+    }) => {
+      const navigate = useNavigate()
+      return (
+        <button type="button" disabled={disabled} onClick={() => navigate(to)}>
+          {children}
+        </button>
+      )
+    },
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h2>{detailDrawerTitle}</h2> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityList: ({
+      title,
+      toolbar,
+      emptyDescription,
+      dataSource,
+      renderItem,
+    }: {
+      title?: ReactNode
+      toolbar?: ReactNode
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      renderItem: (item: Record<string, unknown>) => ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {toolbar}
+        {(dataSource?.length ?? 0) === 0 ? <div>{emptyDescription}</div> : null}
+        {(dataSource ?? []).map((item, index) => (
+          <div key={String(item.key ?? item.id ?? index)}>
+            {renderItem(item)}
+          </div>
+        ))}
+      </section>
+    ),
+    EntityDetails: ({
+      title,
+      extra,
+      error,
+      loading,
+      empty,
+      emptyDescription,
+      children,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      empty?: boolean
+      emptyDescription?: ReactNode
+      children?: ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {error}
+        {loading ? <div>Loading</div> : null}
+        {empty ? emptyDescription : children}
+      </section>
+    ),
+    EmptyState: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
+    StatusBadge: ({
+      status,
+      label,
+    }: {
+      status?: ReactNode
+      label?: ReactNode
+    }) => <span>{label ?? status}</span>,
+    DrawerFormShell: ({
+      open,
+      title,
+      subtitle,
+      onClose,
+      children,
+    }: {
+      open: boolean
+      title?: ReactNode
+      subtitle?: ReactNode
+      onClose?: () => void
+      children?: ReactNode
+    }) => (
+      open ? (
+        <section>
+          {title ? <h2>{title}</h2> : null}
+          {subtitle ? <p>{subtitle}</p> : null}
+          {onClose ? (
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          ) : null}
+          {children}
+        </section>
+      ) : null
+    ),
+  }
+})
 
 vi.mock('../../../components/code/LazyJsonCodeEditor', () => ({
   LazyJsonCodeEditor: ({ value }: { value?: string }) => (
@@ -275,28 +433,45 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
+async function waitForEnabledActionButton(name: string) {
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name })).toBeEnabled()
+  })
+}
+
 const { DecisionsPage } = await import('../DecisionsPage')
 
 function renderPage(path = '/decisions') {
   return render(
     <MemoryRouter initialEntries={[path]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <Routes>
-        <Route
-          path="/decisions"
-          element={(
-            <AntApp>
-              <DecisionsPage />
-            </AntApp>
-          )}
-        />
-      </Routes>
+      <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+        <Routes>
+          <Route
+            path="/decisions"
+            element={(
+              <AntApp>
+                <DecisionsPage />
+              </AntApp>
+            )}
+          />
+        </Routes>
+      </ConfigProvider>
     </MemoryRouter>
   )
 }
 
 describe('DecisionsPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
+  })
+
+  beforeEach(() => {
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => {
+      const [firstArg] = args
+      if (typeof firstArg === 'string' && firstArg.includes('not wrapped in act')) {
+        return
+      }
+    })
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()
     mockPostDecisionsCollection.mockReset()
@@ -373,20 +548,29 @@ describe('DecisionsPage', () => {
     })
   })
 
-  afterEach(async () => {
+  afterEach(() => {
+    cleanup()
+    consoleErrorSpy?.mockRestore()
+    consoleErrorSpy = null
+  })
+
+  afterAll(async () => {
     await changeLanguage('ru')
   })
 
   it('renders localized page chrome in Russian when the locale switches to ru', async () => {
     await changeLanguage('ru')
-    renderPage()
+    try {
+      renderPage()
 
-    expect(await screen.findByText('Политики решений')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Целевая база' })).toBeInTheDocument()
+      expect(await screen.findByText('Политики решений')).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: 'Целевая база' })).toBeInTheDocument()
+    } finally {
+      await changeLanguage('en')
+    }
   })
 
   it('renders decision lifecycle list with metadata context and selected detail', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
@@ -405,7 +589,7 @@ describe('DecisionsPage', () => {
     expect(screen.getByText('Amount')).toBeInTheDocument()
     expect(screen.getByText('allocation.amount')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /Target metadata context/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Target metadata context/i }))
 
     expect(await screen.findByText('shared_scope')).toBeInTheDocument()
     expect(screen.getByText('snapshot-1')).toBeInTheDocument()
@@ -568,13 +752,12 @@ describe('DecisionsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('imports a legacy edge policy through the pool migration API on /decisions', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
     expect(mockListOrganizationPools).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: /Import and migration tools/i }))
-    await user.click(screen.getByRole('button', { name: 'Import legacy edge' }))
+    fireEvent.click(screen.getByRole('button', { name: /Import and migration tools/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import legacy edge' }))
 
     expect(await screen.findByText('Import legacy edge policy')).toBeInTheDocument()
     await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
@@ -590,7 +773,7 @@ describe('DecisionsPage', () => {
     fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Imported policy' } })
     fireEvent.change(screen.getByLabelText('Decision description'), { target: { value: 'Imported from legacy edge' } })
 
-    await user.click(screen.getByRole('button', { name: 'Import to /decisions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import to /decisions' }))
 
     await waitFor(() => {
       expect(mockMigratePoolEdgeDocumentPolicy).toHaveBeenCalledWith(
@@ -687,12 +870,12 @@ describe('DecisionsPage', () => {
   })
 
   it('supports viewing and editing existing decisions through a new revision flow', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
+    await waitForEnabledActionButton('Edit selected decision')
 
-    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit selected decision' }))
 
     expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
     expect(screen.getByLabelText('Decision table ID')).toHaveValue('services-publication-policy')
@@ -706,7 +889,7 @@ describe('DecisionsPage', () => {
     fireEvent.change(screen.getByLabelText('Chain 1 document 1 field mapping 1 source'), {
       target: { value: 'allocation.total_amount' },
     })
-    await user.click(screen.getByRole('button', { name: 'Save decision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
@@ -743,7 +926,6 @@ describe('DecisionsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('offers known metadata and draft-backed choices across the structured decision builder', async () => {
-    const user = userEvent.setup()
     const metadataContext = {
       ...defaultMetadataContext,
       documents: [
@@ -835,7 +1017,8 @@ describe('DecisionsPage', () => {
     renderPage()
 
     await screen.findByText('Decision Policy Library')
-    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+    await waitForEnabledActionButton('Edit selected decision')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit selected decision' }))
 
     expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Chain 1 ID' })).toHaveValue('sale_chain')
@@ -868,7 +1051,6 @@ describe('DecisionsPage', () => {
   })
 
   it('keeps unbound non-document_policy revisions out of the default selection and edit flow', async () => {
-    const user = userEvent.setup()
     const unsupportedDecision = {
       ...defaultDecision,
       id: 'decision-version-route',
@@ -915,14 +1097,14 @@ describe('DecisionsPage', () => {
     expect(screen.queryByText('Route documents policy')).not.toBeInTheDocument()
     expect(screen.getAllByText('Services publication policy').length).toBeGreaterThan(0)
 
-    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+    await waitForEnabledActionButton('Edit selected decision')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit selected decision' }))
 
     expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
     expect(screen.queryByText('decision_key должен быть "document_policy".')).not.toBeInTheDocument()
   })
 
   it('keeps binding-pinned legacy decisions visible but read-only', async () => {
-    const user = userEvent.setup()
     const legacyBoundDecision = {
       ...defaultDecision,
       id: 'decision-version-sale-only',
@@ -994,13 +1176,13 @@ describe('DecisionsPage', () => {
       )
     })
 
-    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all revisions' }))
 
     await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalledTimes(1))
     expect(await screen.findByText('Sale only policy')).toBeInTheDocument()
     expect(screen.getByText('Pinned in binding')).toBeInTheDocument()
 
-    await user.click(screen.getByText('Sale only policy'))
+    fireEvent.click(screen.getByText('Sale only policy'))
 
     await waitFor(() => {
       expect(mockGetDecisionsDetail).toHaveBeenCalledWith(
@@ -1016,7 +1198,6 @@ describe('DecisionsPage', () => {
   })
 
   it('supports guided rollover from a revision outside the default compatible selection', async () => {
-    const user = userEvent.setup()
     const previousReleaseDecision = {
       ...defaultDecision,
       id: 'decision-version-previous-release',
@@ -1046,16 +1227,17 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all revisions' }))
     expect(await screen.findByText('Previous release policy')).toBeInTheDocument()
 
-    await user.click(screen.getByText('Previous release policy'))
+    fireEvent.click(screen.getByText('Previous release policy'))
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Edit selected decision' })).toBeDisabled()
     })
 
-    await user.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
+    await waitForEnabledActionButton('Rollover selected revision')
+    fireEvent.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
 
     expect(await screen.findByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
     expect(screen.getByText('Source revision')).toBeInTheDocument()
@@ -1069,7 +1251,7 @@ describe('DecisionsPage', () => {
     fireEvent.change(screen.getByLabelText('Decision name'), {
       target: { value: 'Previous release policy for Target DB' },
     })
-    await user.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
@@ -1086,12 +1268,12 @@ describe('DecisionsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('supports cloning a selected revision into an independent decision resource', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
+    await waitForEnabledActionButton('Clone selected revision')
 
-    await user.click(screen.getByRole('button', { name: 'Clone selected revision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clone selected revision' }))
 
     expect(await screen.findByRole('heading', { name: 'Clone selected revision' })).toBeInTheDocument()
     expect(screen.getByText('Source revision')).toBeInTheDocument()
@@ -1106,7 +1288,7 @@ describe('DecisionsPage', () => {
     fireEvent.change(screen.getByLabelText('Decision name'), {
       target: { value: 'Services publication policy clone' },
     })
-    await user.click(screen.getByRole('button', { name: 'Publish cloned decision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Publish cloned decision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
@@ -1127,7 +1309,6 @@ describe('DecisionsPage', () => {
   })
 
   it('allows clearing the selected database without auto-restoring the first option', async () => {
-    const user = userEvent.setup()
     mockGetDecisionsCollection.mockReset()
     mockGetDecisionsDetail.mockReset()
     mockGetDecisionsCollection
@@ -1158,7 +1339,8 @@ describe('DecisionsPage', () => {
     )
 
     clearSelect('decisions-database-select')
-    await user.click(document.body)
+    fireEvent.mouseDown(document.body)
+    fireEvent.click(document.body)
 
     await waitFor(() => {
       expect(mockGetDecisionsCollection).toHaveBeenCalledWith(
@@ -1254,7 +1436,6 @@ describe('DecisionsPage', () => {
   })
 
   it('resets diagnostics mode back to matching configuration when the selected database changes', async () => {
-    const user = userEvent.setup()
     const incompatibleDecision = {
       ...defaultDecision,
       id: 'decision-version-3',
@@ -1307,7 +1488,7 @@ describe('DecisionsPage', () => {
     renderPage()
 
     expect(await screen.findByText('Decision Policy Library')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show all revisions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show all revisions' }))
 
     expect(await screen.findByText('Showing all 2 revisions for diagnostics. 1 revision is outside the selected configuration and not pinned in workflow bindings.')).toBeInTheDocument()
     expect(screen.getByText('Transfer publication policy')).toBeInTheDocument()
@@ -1374,7 +1555,6 @@ describe('DecisionsPage', () => {
   })
 
   it('keeps legacy non-default rule_id decisions editable in builder mode', async () => {
-    const user = userEvent.setup()
     const legacyRuleDecision = {
       ...defaultDecision,
       rules: [
@@ -1398,7 +1578,8 @@ describe('DecisionsPage', () => {
     renderPage()
 
     await screen.findByText('Decision Policy Library')
-    await user.click(screen.getByRole('button', { name: 'Edit selected decision' }))
+    await waitForEnabledActionButton('Edit selected decision')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit selected decision' }))
 
     expect(await screen.findByRole('heading', { name: 'Edit selected decision' })).toBeInTheDocument()
     expect(screen.getByLabelText('Decision table ID')).toHaveValue('services-publication-policy')
@@ -1408,22 +1589,21 @@ describe('DecisionsPage', () => {
   })
 
   it('supports raw JSON compatibility import through decision revisions', async () => {
-    const user = userEvent.setup()
     renderPage()
 
     await screen.findByText('Decision Policy Library')
 
-    await user.click(screen.getByRole('button', { name: /Import and migration tools/i }))
-    await user.click(screen.getByRole('button', { name: 'Import raw JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: /Import and migration tools/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Import raw JSON' }))
     fireEvent.change(screen.getByLabelText('Decision table ID'), { target: { value: 'policy-imported' } })
     fireEvent.change(screen.getByLabelText('Decision name'), { target: { value: 'Imported policy' } })
-    await user.click(screen.getByRole('tab', { name: 'Raw JSON' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw JSON' }))
     fireEvent.change(screen.getByLabelText('document-policy-json'), {
       target: {
         value: '{"version":"document_policy.v1","chains":[{"chain_id":"imported","documents":[{"document_id":"sale","entity_name":"Document_Sales","document_role":"base","field_mapping":{"Amount":"allocation.amount"},"table_parts_mapping":{},"link_rules":{}}]}]}',
       },
     })
-    await user.click(screen.getByRole('button', { name: 'Save decision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save decision' }))
 
     await waitFor(() => {
       expect(mockPostDecisionsCollection).toHaveBeenCalledWith(
@@ -1459,7 +1639,6 @@ describe('DecisionsPage', () => {
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('keeps guided rollover fail-closed when target metadata validation rejects publish', async () => {
-    const user = userEvent.setup()
     mockPostDecisionsCollection.mockRejectedValueOnce(
       makeApiError(
         'Document policy references are invalid for the selected target metadata snapshot.',
@@ -1471,10 +1650,11 @@ describe('DecisionsPage', () => {
     renderPage()
 
     await screen.findByText('Decision Policy Library')
-    await user.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
+    await waitForEnabledActionButton('Rollover selected revision')
+    fireEvent.click(screen.getByRole('button', { name: 'Rollover selected revision' }))
 
     expect(await screen.findByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Publish rollover revision' }))
 
     expect(await screen.findByText('Document policy references are invalid for the selected target metadata snapshot.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Rollover selected revision' })).toBeInTheDocument()

@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { App as AntApp } from 'antd'
+import { App as AntApp, ConfigProvider } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
 
 import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import type { PoolTopologyTemplate } from '../../../api/intercompanyPools'
@@ -18,6 +18,194 @@ vi.mock('../../../api/queries/poolTopologyTemplates', () => ({
   useCreatePoolTopologyTemplate: (...args: unknown[]) => mockUseCreatePoolTopologyTemplate(...args),
   useRevisePoolTopologyTemplate: (...args: unknown[]) => mockUseRevisePoolTopologyTemplate(...args),
 }))
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+
+  const formatStatus = (value: ReactNode) => {
+    if (typeof value !== 'string') {
+      return value
+    }
+    return value
+      .split('_')
+      .map((part) => (part ? `${part[0].toUpperCase()}${part.slice(1)}` : part))
+      .join(' ')
+  }
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h1>{title}</h1>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h2>{detailDrawerTitle}</h2> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityList: ({
+      title,
+      extra,
+      toolbar,
+      error,
+      loading,
+      emptyDescription,
+      dataSource,
+      renderItem,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      renderItem: (item: Record<string, unknown>) => ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {toolbar}
+        {error ? error : loading ? <div>Loading</div> : (dataSource?.length ?? 0) === 0 ? <div>{emptyDescription}</div> : (
+          (dataSource ?? []).map((item, index) => (
+            <div key={String(item.key ?? item.id ?? index)}>
+              {renderItem(item)}
+            </div>
+          ))
+        )}
+      </section>
+    ),
+    EntityDetails: ({
+      title,
+      extra,
+      error,
+      loading,
+      empty,
+      emptyDescription,
+      children,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      error?: ReactNode
+      loading?: boolean
+      empty?: boolean
+      emptyDescription?: ReactNode
+      children?: ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {error ? error : loading ? <div>Loading</div> : empty ? emptyDescription : children}
+      </section>
+    ),
+    StatusBadge: ({
+      status,
+      label,
+    }: {
+      status?: ReactNode
+      label?: ReactNode
+    }) => <span>{label ?? formatStatus(status ?? '')}</span>,
+    JsonBlock: ({ title, value }: { title?: ReactNode; value: unknown }) => (
+      <section>
+        {title ? <h4>{title}</h4> : null}
+        <pre>{JSON.stringify(value, null, 2)}</pre>
+      </section>
+    ),
+    DrawerFormShell: ({
+      open,
+      onSubmit,
+      title,
+      subtitle,
+      onClose,
+      submitText,
+      confirmLoading,
+      submitDisabled,
+      extra,
+      submitButtonTestId,
+      drawerTestId,
+      children,
+    }: {
+      open: boolean
+      onSubmit?: () => void | Promise<void>
+      title?: ReactNode
+      subtitle?: ReactNode
+      onClose?: () => void
+      submitText?: ReactNode
+      confirmLoading?: boolean
+      submitDisabled?: boolean
+      extra?: ReactNode
+      submitButtonTestId?: string
+      drawerTestId?: string
+      children?: ReactNode
+    }) => (
+      open ? (
+        <section data-testid={drawerTestId}>
+          {title ? <h2>{title}</h2> : null}
+          {subtitle ? <p>{subtitle}</p> : null}
+          {extra}
+          {onSubmit ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onSubmit()
+              }}
+              disabled={Boolean(confirmLoading) || Boolean(submitDisabled)}
+              data-testid={submitButtonTestId}
+            >
+              {submitText ?? 'Save'}
+            </button>
+          ) : null}
+          {onClose ? (
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          ) : null}
+          {children}
+        </section>
+      ) : null
+    ),
+  }
+})
 
 const ROUTER_FUTURE = {
   v7_startTransition: true,
@@ -152,9 +340,11 @@ function renderPage(path = '/pools/topology-templates') {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
-        <AntApp>
-          <PoolTopologyTemplatesPage />
-        </AntApp>
+        <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+          <AntApp>
+            <PoolTopologyTemplatesPage />
+          </AntApp>
+        </ConfigProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -176,19 +366,21 @@ function renderPageWithRoutes(path = '/pools/topology-templates') {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]} future={ROUTER_FUTURE}>
-        <AntApp>
-          <Routes>
-            <Route path="/pools/topology-templates" element={<PoolTopologyTemplatesPage />} />
-            <Route path="/pools/catalog" element={<LocationProbe />} />
-          </Routes>
-        </AntApp>
+        <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
+          <AntApp>
+            <Routes>
+              <Route path="/pools/topology-templates" element={<PoolTopologyTemplatesPage />} />
+              <Route path="/pools/catalog" element={<LocationProbe />} />
+            </Routes>
+          </AntApp>
+        </ConfigProvider>
       </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
 describe('PoolTopologyTemplatesPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'pools')
   })
@@ -222,7 +414,7 @@ describe('PoolTopologyTemplatesPage', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'pools')
     await changeLanguage('ru')
   })
@@ -460,10 +652,9 @@ describe('PoolTopologyTemplatesPage', () => {
   })
 
   it('returns to the originating pool topology context without losing the selected pool', async () => {
-    const user = userEvent.setup()
     renderPageWithRoutes('/pools/topology-templates?template=template-1&detail=1&return_pool_id=pool-1&return_tab=topology&return_date=2026-03-23')
 
-    await user.click(await screen.findByRole('button', { name: 'Return to pool topology' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Return to pool topology' }))
 
     expect(await screen.findByTestId('location-probe')).toHaveTextContent(
       '/pools/catalog?pool_id=pool-1&tab=topology&date=2026-03-23'

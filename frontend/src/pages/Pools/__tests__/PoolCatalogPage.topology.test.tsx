@@ -51,6 +51,14 @@ vi.mock('reactflow', () => ({
   MiniMap: () => null,
 }))
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolCatalogAntdTestDouble } = await import('./poolCatalogAntdTestDouble')
+  return createPoolCatalogAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => import('./poolCatalogPlatformTestDouble'))
+
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
     getDecisionsCollection: (...args: unknown[]) => mockGetDecisionsCollection(...args),

@@ -1,0 +1,41 @@
+type: object
+properties:
+  action_kind:
+    type: string
+    nullable: true
+  action_name:
+    type: string
+    nullable: true
+  error_code:
+    type: string
+    nullable: true
+  error_title:
+    type: string
+    nullable: true
+  error_name:
+    type: string
+    nullable: true
+  error_message:
+    type: string
+    nullable: true
+  outcome:
+    type: string
+    nullable: true
+  status:
+    type: integer
+    nullable: true
+  latency_ms:
+    type: integer
+    nullable: true
+  method:
+    type: string
+    nullable: true
+  path:
+    type: string
+    nullable: true
+  owner:
+    type: string
+    nullable: true
+  reuse_key:
+    type: string
+    nullable: true

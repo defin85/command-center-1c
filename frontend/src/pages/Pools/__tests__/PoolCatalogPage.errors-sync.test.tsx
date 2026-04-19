@@ -2,7 +2,6 @@ import { StrictMode, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
@@ -49,6 +48,14 @@ vi.mock('reactflow', () => ({
   Controls: () => null,
   MiniMap: () => null,
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolCatalogAntdTestDouble } = await import('./poolCatalogAntdTestDouble')
+  return createPoolCatalogAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => import('./poolCatalogPlatformTestDouble'))
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -419,11 +426,21 @@ function buildMinimalDocumentPolicy() {
 }
 
 async function waitForInitialCatalogLoad() {
-  await waitFor(() => expect(mockListOrganizations).toHaveBeenCalled())
-  await waitFor(() => expect(mockGetOrganization).toHaveBeenCalled())
-  await waitFor(() => expect(mockListOrganizationPools).toHaveBeenCalled())
-  await waitFor(() => expect(mockGetPoolGraph).toHaveBeenCalled())
-  await waitFor(() => expect(mockListPoolTopologySnapshots).toHaveBeenCalled())
+  await waitFor(() => {
+    expect(mockListOrganizations).toHaveBeenCalled()
+    expect(mockGetOrganization).toHaveBeenCalled()
+    expect(mockListOrganizationPools).toHaveBeenCalled()
+    expect(mockGetPoolGraph).toHaveBeenCalled()
+    expect(mockListPoolTopologySnapshots).toHaveBeenCalled()
+  })
+}
+
+async function waitForOrganizationsCatalogLoad() {
+  await waitFor(() => {
+    expect(mockListOrganizations).toHaveBeenCalled()
+    expect(mockGetOrganization).toHaveBeenCalled()
+    expect(mockListOrganizationPools).toHaveBeenCalled()
+  })
 }
 
 function renderPage(initialEntry = '/pools/catalog?tab=organizations', options?: { strict?: boolean }) {
@@ -485,22 +502,15 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
-async function openWorkspaceTab(
-  user: ReturnType<typeof userEvent.setup>,
-  tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor'
-) {
+async function openWorkspaceTab(tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor') {
   await initialCatalogLoadPromise
-  await waitFor(() => {
-    expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
-  })
+  expect(await screen.findByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
   const tab = screen.getByRole('tab', { name: tabLabel })
   if (tab.getAttribute('aria-selected') !== 'true') {
-    await user.click(tab)
+    fireEvent.click(tab)
   }
   if (tabLabel === 'Organizations') {
-    await waitFor(() => {
-      expect(screen.getByTestId('pool-catalog-add-org')).toBeInTheDocument()
-    })
+    await screen.findByTestId('pool-catalog-add-org')
     return
   }
   if (tabLabel === 'Pools') {
@@ -510,25 +520,26 @@ async function openWorkspaceTab(
   if (tabLabel === 'Bindings') {
     await screen.findByText('Workflow attachment workspace')
     if (!screen.queryByTestId('pool-catalog-bindings-drawer')) {
-      await waitFor(() => {
-        expect(screen.getByTestId('pool-catalog-open-bindings-workspace')).toBeEnabled()
-      })
+      expect(await screen.findByTestId('pool-catalog-open-bindings-workspace')).toBeEnabled()
       fireEvent.click(screen.getByTestId('pool-catalog-open-bindings-workspace'))
-      await waitFor(() => {
-        expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=bindings')
-      })
       await screen.findByTestId('pool-catalog-bindings-drawer', undefined, { timeout: 5000 })
     }
     return
   }
-  await screen.findByText('Topology snapshots by date')
-  await waitFor(() => {
-    expect(screen.getByTestId('pool-catalog-topology-save')).toBeInTheDocument()
-  })
+  await screen.findByTestId('pool-catalog-topology-save')
 }
 
-async function findDialogByName(name: string | RegExp) {
-  return screen.findByRole('dialog', { name })
+async function openOrganizationsWorkspace() {
+  await waitForOrganizationsCatalogLoad()
+  const tab = screen.getByRole('tab', { name: 'Organizations' })
+  if (tab.getAttribute('aria-selected') !== 'true') {
+    fireEvent.click(tab)
+  }
+  await screen.findByTestId('pool-catalog-add-org')
+}
+
+async function findOrganizationDrawer() {
+  return screen.findByTestId('pool-catalog-organization-drawer')
 }
 
 const EXTENDED_UI_TEST_TIMEOUT_MS = 60000
@@ -846,7 +857,6 @@ describe('PoolCatalogPage', () => {
 
   it('enters topology blocking remediation state when graph still contains legacy document_policy payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockListOrganizations.mockResolvedValue([baseOrganization, secondOrganization])
     mockGetPoolGraph.mockResolvedValue({
@@ -890,7 +900,7 @@ describe('PoolCatalogPage', () => {
     renderPage('/pools/catalog?tab=topology&date=2026-01-01')
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Topology Editor')
+    await openWorkspaceTab('Topology Editor')
 
     expect((await screen.findAllByText('Legacy topology remediation required')).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/legacy document_policy payload/i).length).toBeGreaterThan(0)
@@ -899,7 +909,6 @@ describe('PoolCatalogPage', () => {
 
   it('sends topology version token and shows conflict error without clearing form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUpsertPoolTopologySnapshot.mockRejectedValueOnce({
       response: {
@@ -916,10 +925,10 @@ describe('PoolCatalogPage', () => {
     renderPage('/pools/catalog?tab=topology&date=2026-01-01')
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Topology Editor')
+    await openWorkspaceTab('Topology Editor')
     openSelectByTestId('pool-catalog-topology-authoring-mode')
     await selectDropdownOption('Manual snapshot editor')
-    await user.click(screen.getByTestId('pool-catalog-topology-add-node'))
+    fireEvent.click(screen.getByTestId('pool-catalog-topology-add-node'))
 
     const topologyCard = screen.getByText('Topology snapshot editor').closest('.ant-card')
     expect(topologyCard).toBeTruthy()
@@ -934,7 +943,7 @@ describe('PoolCatalogPage', () => {
     expect(rootSwitch).toBeTruthy()
     fireEvent.click(rootSwitch as Element)
 
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+    fireEvent.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
     expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledWith(
@@ -953,7 +962,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows mapped backend domain error for organization upsert and keeps form data', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUpsertOrganization.mockRejectedValueOnce({
       response: {
@@ -969,17 +977,15 @@ describe('PoolCatalogPage', () => {
 
     renderPage('/pools/catalog?tab=topology&date=2026-01-01')
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-add-org'))
-    const drawer = await findDialogByName('Add organization')
+    fireEvent.click(screen.getByTestId('pool-catalog-add-org'))
+    const drawer = await findOrganizationDrawer()
     const drawerQueries = within(drawer)
-    await user.clear(drawerQueries.getByLabelText('INN'))
-    await user.type(drawerQueries.getByLabelText('INN'), '730000000111')
-    await user.clear(drawerQueries.getByLabelText('Name'))
-    await user.type(drawerQueries.getByLabelText('Name'), 'Mapped Error Org')
+    fireEvent.change(drawerQueries.getByLabelText('INN'), { target: { value: '730000000111' } })
+    fireEvent.change(drawerQueries.getByLabelText('Name'), { target: { value: 'Mapped Error Org' } })
 
-    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
+    fireEvent.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('The selected database is already linked to another organization.')).toBeInTheDocument()
     expect(drawerQueries.getByLabelText('INN')).toHaveValue('730000000111')
@@ -988,7 +994,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows problem detail for topology validation error without field-level payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
@@ -1021,8 +1026,8 @@ describe('PoolCatalogPage', () => {
     renderPage('/pools/catalog?tab=topology&date=2026-01-01')
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Topology Editor')
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+    await openWorkspaceTab('Topology Editor')
+    fireEvent.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
     expect(
@@ -1033,7 +1038,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows problem items for topology metadata reference errors', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
@@ -1078,8 +1082,8 @@ describe('PoolCatalogPage', () => {
     renderPage('/pools/catalog?tab=topology&date=2026-01-01')
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Topology Editor')
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+    await openWorkspaceTab('Topology Editor')
+    fireEvent.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
     expect(
@@ -1099,7 +1103,6 @@ describe('PoolCatalogPage', () => {
 
   it('adds /databases remediation when topology save is blocked by missing metadata context', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockGetPoolGraph.mockResolvedValue({
       pool_id: '44444444-4444-4444-4444-444444444444',
@@ -1132,8 +1135,8 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Topology Editor')
-    await user.click(screen.getByTestId('pool-catalog-topology-save'))
+    await openWorkspaceTab('Topology Editor')
+    fireEvent.click(screen.getByTestId('pool-catalog-topology-save'))
 
     await waitFor(() => expect(mockUpsertPoolTopologySnapshot).toHaveBeenCalledTimes(1))
     expect(
@@ -1145,7 +1148,6 @@ describe('PoolCatalogPage', () => {
 
   it('applies field-level serializer errors to form fields on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUpsertOrganization.mockRejectedValueOnce({
       response: {
@@ -1160,16 +1162,14 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-add-org'))
-    const drawer = await findDialogByName('Add organization')
+    fireEvent.click(screen.getByTestId('pool-catalog-add-org'))
+    const drawer = await findOrganizationDrawer()
     const drawerQueries = within(drawer)
-    await user.clear(drawerQueries.getByLabelText('INN'))
-    await user.type(drawerQueries.getByLabelText('INN'), '730000000001')
-    await user.clear(drawerQueries.getByLabelText('Name'))
-    await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
-    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
+    fireEvent.change(drawerQueries.getByLabelText('INN'), { target: { value: '730000000001' } })
+    fireEvent.change(drawerQueries.getByLabelText('Name'), { target: { value: 'Duplicate Org' } })
+    fireEvent.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Check the highlighted fields.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
@@ -1178,7 +1178,6 @@ describe('PoolCatalogPage', () => {
 
   it('applies field-level validation errors from problem+json payload on upsert', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUpsertOrganization.mockRejectedValueOnce({
       response: {
@@ -1197,16 +1196,14 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-add-org'))
-    const drawer = await findDialogByName('Add organization')
+    fireEvent.click(screen.getByTestId('pool-catalog-add-org'))
+    const drawer = await findOrganizationDrawer()
     const drawerQueries = within(drawer)
-    await user.clear(drawerQueries.getByLabelText('INN'))
-    await user.type(drawerQueries.getByLabelText('INN'), '730000000001')
-    await user.clear(drawerQueries.getByLabelText('Name'))
-    await user.type(drawerQueries.getByLabelText('Name'), 'Duplicate Org')
-    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
+    fireEvent.change(drawerQueries.getByLabelText('INN'), { target: { value: '730000000001' } })
+    fireEvent.change(drawerQueries.getByLabelText('Name'), { target: { value: 'Duplicate Org' } })
+    fireEvent.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('Check the entered data.')).toBeInTheDocument()
     expect(await screen.findByText('ИНН уже существует')).toBeInTheDocument()
@@ -1215,17 +1212,16 @@ describe('PoolCatalogPage', () => {
 
   it('blocks sync submit when preflight validation fails', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
       target: { value: '{"rows":[{"name":"No inn"}]}' },
     })
-    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run sync' }))
 
     expect(await screen.findByText('Row 1: inn is required.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
@@ -1233,7 +1229,6 @@ describe('PoolCatalogPage', () => {
 
   it('blocks sync submit when payload exceeds 1000 rows', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     const payload = JSON.stringify({
       rows: Array.from({ length: 1001 }, (_, index) => ({
@@ -1244,13 +1239,13 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
       target: { value: payload },
     })
-    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run sync' }))
 
     expect(await screen.findByText('Batch limit exceeded: maximum 1000 rows.')).toBeInTheDocument()
     expect(mockSyncOrganizationsCatalog).not.toHaveBeenCalled()
@@ -1258,7 +1253,6 @@ describe('PoolCatalogPage', () => {
 
   it('shows field-level backend validation errors in sync modal', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockSyncOrganizationsCatalog.mockRejectedValueOnce({
       response: {
@@ -1273,13 +1267,13 @@ describe('PoolCatalogPage', () => {
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
       target: { value: '{"rows":[{"inn":"730000000123","name":"Org"}]}' },
     })
-    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run sync' }))
 
     expect(await screen.findByText('Check the highlighted fields.')).toBeInTheDocument()
     expect(await screen.findByText('rows: Некорректный формат строки')).toBeInTheDocument()
@@ -1287,17 +1281,16 @@ describe('PoolCatalogPage', () => {
 
   it('runs sync with valid payload and shows stats', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openOrganizationsWorkspace()
 
-    await user.click(screen.getByTestId('pool-catalog-sync-orgs'))
+    fireEvent.click(screen.getByTestId('pool-catalog-sync-orgs'))
     fireEvent.change(screen.getByTestId('pool-catalog-sync-input'), {
       target: { value: '{"rows":[{"inn":"730000000123","name":"Synced Org","status":"ACTIVE"}]}' },
     })
-    await user.click(screen.getByRole('button', { name: 'Run sync' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Run sync' }))
 
     await waitFor(() => expect(mockSyncOrganizationsCatalog).toHaveBeenCalledTimes(1))
     expect(mockSyncOrganizationsCatalog).toHaveBeenCalledWith({

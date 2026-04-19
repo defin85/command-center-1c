@@ -544,6 +544,12 @@ paths:
     $ref: paths/api_v2_tenants_set-active_.yaml
   /api/v2/ui/execution-plan/preview/:
     $ref: paths/api_v2_ui_execution-plan_preview_.yaml
+  /api/v2/ui/incident-telemetry/ingest/:
+    $ref: paths/api_v2_ui_incident-telemetry_ingest_.yaml
+  /api/v2/ui/incident-telemetry/incidents/:
+    $ref: paths/api_v2_ui_incident-telemetry_incidents_.yaml
+  /api/v2/ui/incident-telemetry/timeline/:
+    $ref: paths/api_v2_ui_incident-telemetry_timeline_.yaml
   /api/v2/ui/operation-exposures/editor-hints/:
     $ref: paths/api_v2_ui_operation-exposures_editor-hints_.yaml
   /api/v2/ui/table-metadata/:

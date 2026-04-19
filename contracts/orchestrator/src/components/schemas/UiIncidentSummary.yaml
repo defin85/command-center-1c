@@ -1,0 +1,52 @@
+type: object
+properties:
+  incident_id:
+    type: string
+  actor_username:
+    type: string
+    nullable: true
+  user_id:
+    type: integer
+    nullable: true
+  session_id:
+    type: string
+    nullable: true
+  request_id:
+    type: string
+    nullable: true
+  ui_action_id:
+    type: string
+    nullable: true
+  trace_id:
+    type: string
+    nullable: true
+  route_path:
+    type: string
+    nullable: true
+  release:
+    $ref: ./UiIncidentRelease.yaml
+  started_at:
+    type: string
+    format: date-time
+  ended_at:
+    type: string
+    format: date-time
+  signal_event_types:
+    type: array
+    items:
+      type: string
+  signal_count:
+    type: integer
+  last_event_type:
+    type: string
+  preview:
+    $ref: ./UiIncidentSummaryPreview.yaml
+required:
+  - ended_at
+  - incident_id
+  - last_event_type
+  - preview
+  - release
+  - signal_count
+  - signal_event_types
+  - started_at

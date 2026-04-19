@@ -103,8 +103,9 @@ export function useDashboardQuery(options: UseDashboardQueryOptions = {}) {
     enabled,
     // Keep previous data while refetching (prevents loading flicker)
     placeholderData: (previousData) => previousData,
-    // Retry failed requests
-    retry: 1,
+    // Dashboard already has interval polling and manual refresh.
+    // Avoid immediate retry storms when the backend is rate-limiting.
+    retry: false,
     // Don't refetch on window focus (we have interval)
     refetchOnWindowFocus: false,
   })

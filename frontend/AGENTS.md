@@ -22,9 +22,17 @@
   - prefer page composition through platform primitives, not raw page-level `antd` shells
   - checked-in UI governance inventory lives in `frontend/src/uiGovernanceInventory.js`; new route-entry modules and shell-backed authoring surfaces must be enrolled there before `npm run lint` can pass
 - Canonical validation commands:
+  - `cd frontend && npm run generate:api:if-needed`
   - `cd frontend && npm run lint`
-  - `cd frontend && npm run test:run -- <path>`
-  - during iteration, prefer focused `cd frontend && npx vitest run <path...>` or path-scoped `npm run test:run -- <path>` over full-suite reruns
+  - `cd frontend && npm run test:run:changed`
+  - `cd frontend && npm run test:run:fast -- <path>`
+  - `cd frontend && npm run test:run:heavy -- <path>`
+  - `cd frontend && npm run test:run:related -- <source-file...>`
+  - `cd frontend && npm run test:run:pools-heavy`
+  - `cd frontend && npm run test:run:decisions-heavy`
+  - checked-in heavy `vitest` projects are intentionally serialized to avoid low-core CPU contention; do not reintroduce ad hoc parallel `--maxWorkers` overrides
+  - during iteration, prefer `generate:api:if-needed`, `test:run:changed`, `test:run:related`, project-aware focused commands, or path-scoped `cd frontend && npm run test:run -- <path>` over full-suite reruns
+  - `cd frontend && npm run validate:ui-platform:iter` is a local iteration gate; it is not a replacement for the blocking landing gate
   - before landing frontend changes, rerun full `cd frontend && npm run test:run`
   - `cd frontend && npm run test:browser:ui-platform`
   - `cd frontend && npm run validate:ui-platform`

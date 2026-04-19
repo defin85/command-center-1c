@@ -2,7 +2,6 @@ import { StrictMode, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
@@ -50,6 +49,14 @@ vi.mock('reactflow', () => ({
   Controls: () => null,
   MiniMap: () => null,
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolCatalogAntdTestDouble } = await import('./poolCatalogAntdTestDouble')
+  return createPoolCatalogAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => import('./poolCatalogPlatformTestDouble'))
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
@@ -468,17 +475,14 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
-async function openWorkspaceTab(
-  user: ReturnType<typeof userEvent.setup>,
-  tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor'
-) {
+async function openWorkspaceTab(tabLabel: 'Organizations' | 'Pools' | 'Bindings' | 'Topology Editor') {
   await initialCatalogLoadPromise
   await waitFor(() => {
     expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
   })
   const tab = screen.getByRole('tab', { name: tabLabel })
   if (tab.getAttribute('aria-selected') !== 'true') {
-    await user.click(tab)
+    fireEvent.click(tab)
   }
   if (tabLabel === 'Organizations') {
     await waitFor(() => {
@@ -828,12 +832,11 @@ describe('PoolCatalogPage', () => {
 
   it('disables mutating controls for staff without active tenant', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
-    const user = userEvent.setup()
 
     renderPage()
 
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openWorkspaceTab('Organizations')
     expect(screen.getAllByText('Mutating actions are disabled').length).toBeGreaterThan(0)
     expect(screen.getByTestId('pool-catalog-add-org')).toBeDisabled()
     expect(screen.getByTestId('pool-catalog-edit-org')).toBeDisabled()
@@ -842,12 +845,11 @@ describe('PoolCatalogPage', () => {
 
   it('keeps mutating controls enabled for non-staff without active tenant', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: false }))
-    const user = userEvent.setup()
 
     renderPage()
 
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openWorkspaceTab('Organizations')
     expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
@@ -855,12 +857,11 @@ describe('PoolCatalogPage', () => {
   it('keeps mutating controls enabled for staff with tenant from shell local storage', async () => {
     mockUseAuthz.mockReturnValue(createAuthzValue({ isStaff: true }))
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
 
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openWorkspaceTab('Organizations')
     expect(screen.getByTestId('pool-catalog-add-org')).toBeEnabled()
     expect(screen.getByTestId('pool-catalog-sync-orgs')).toBeEnabled()
   })
@@ -886,7 +887,6 @@ describe('PoolCatalogPage', () => {
 
   it('creates organization via drawer and reloads catalog', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     mockUpsertOrganization.mockResolvedValueOnce({
       organization: {
@@ -912,17 +912,15 @@ describe('PoolCatalogPage', () => {
     renderPage()
 
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
-    await user.click(screen.getByTestId('pool-catalog-add-org'))
+    await openWorkspaceTab('Organizations')
+    fireEvent.click(screen.getByTestId('pool-catalog-add-org'))
     const drawer = await findDialogByName('Add organization')
     const drawerQueries = within(drawer)
 
-    await user.clear(drawerQueries.getByLabelText('INN'))
-    await user.type(drawerQueries.getByLabelText('INN'), '730000000999')
-    await user.clear(drawerQueries.getByLabelText('Name'))
-    await user.type(drawerQueries.getByLabelText('Name'), 'Created Org')
+    fireEvent.change(drawerQueries.getByLabelText('INN'), { target: { value: '730000000999' } })
+    fireEvent.change(drawerQueries.getByLabelText('Name'), { target: { value: 'Created Org' } })
 
-    await user.click(drawerQueries.getByRole('button', { name: 'Save' }))
+    fireEvent.click(drawerQueries.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganization).toHaveBeenCalledWith(
@@ -936,7 +934,6 @@ describe('PoolCatalogPage', () => {
 
   it('updates organization details after editing without page reload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
     const nextDatabaseId = '33333333-3333-3333-3333-333333333333'
     const updatedOrganization = {
       ...baseOrganization,
@@ -964,12 +961,12 @@ describe('PoolCatalogPage', () => {
     renderPage()
 
     await initialCatalogLoadPromise
-    await openWorkspaceTab(user, 'Organizations')
+    await openWorkspaceTab('Organizations')
     expect(await screen.findByText(baseOrganization.database_id as string)).toBeInTheDocument()
 
-    await user.click(screen.getByTestId('pool-catalog-edit-org'))
+    fireEvent.click(screen.getByTestId('pool-catalog-edit-org'))
     const drawer = await findDialogByName('Edit organization')
-    await user.click(within(drawer).getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockUpsertOrganization).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(nextDatabaseId)).toBeInTheDocument()
@@ -977,7 +974,6 @@ describe('PoolCatalogPage', () => {
 
   it('creates pool via drawer and reloads pools list', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
     const initialPools = [
       {
         id: '44444444-4444-4444-4444-444444444444',
@@ -1020,8 +1016,8 @@ describe('PoolCatalogPage', () => {
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-add-pool'))
+    await openWorkspaceTab('Pools')
+    fireEvent.click(screen.getByTestId('pool-catalog-add-pool'))
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
     })
@@ -1030,13 +1026,10 @@ describe('PoolCatalogPage', () => {
     const codeInput = drawerQueries.getByPlaceholderText('pool-main')
     const nameInput = drawerQueries.getByPlaceholderText('Main intercompany pool')
     const descriptionInput = drawerQueries.getByPlaceholderText('Optional')
-    await user.clear(codeInput)
-    await user.type(codeInput, 'pool-2')
-    await user.clear(nameInput)
-    await user.type(nameInput, 'Pool Two')
-    await user.clear(descriptionInput)
-    await user.type(descriptionInput, 'Second pool')
-    await user.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
+    fireEvent.change(codeInput, { target: { value: 'pool-2' } })
+    fireEvent.change(nameInput, { target: { value: 'Pool Two' } })
+    fireEvent.change(descriptionInput, { target: { value: 'Second pool' } })
+    fireEvent.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
@@ -1050,22 +1043,20 @@ describe('PoolCatalogPage', () => {
 
   it('edits selected pool via drawer and sends pool_id in upsert payload', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
 
-    await openWorkspaceTab(user, 'Pools')
-    await user.click(screen.getByTestId('pool-catalog-edit-pool'))
+    await openWorkspaceTab('Pools')
+    fireEvent.click(screen.getByTestId('pool-catalog-edit-pool'))
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-pool-drawer')).toBeVisible()
     })
     const drawer = screen.getByTestId('pool-catalog-pool-drawer')
     const drawerQueries = within(drawer)
     const nameInput = drawerQueries.getByPlaceholderText('Main intercompany pool')
-    await user.clear(nameInput)
-    await user.type(nameInput, 'Pool One Updated')
-    await user.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
+    fireEvent.change(nameInput, { target: { value: 'Pool One Updated' } })
+    fireEvent.click(drawerQueries.getByTestId('pool-catalog-save-pool'))
 
     await waitFor(() => expect(mockUpsertOrganizationPool).toHaveBeenCalledTimes(1))
     expect(mockUpsertOrganizationPool).toHaveBeenCalledWith(
@@ -1095,19 +1086,18 @@ describe('PoolCatalogPage', () => {
 
   it('keeps selected pool and active workspace tab in the URL when the operator switches tasks', async () => {
     localStorage.setItem('active_tenant_id', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-    const user = userEvent.setup()
 
     renderPage()
     await initialCatalogLoadPromise
     expect(screen.getByTestId('pool-catalog-context-pool')).toHaveTextContent('pool-1 - Pool One')
 
-    await openWorkspaceTab(user, 'Bindings')
+    await openWorkspaceTab('Bindings')
     await waitFor(() => {
       expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('pool_id=44444444-4444-4444-4444-444444444444')
     })
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=bindings')
 
-    await openWorkspaceTab(user, 'Topology Editor')
+    await openWorkspaceTab('Topology Editor')
     expect(screen.getByTestId('pool-catalog-location')).toHaveTextContent('tab=topology')
   }, TOPOLOGY_EDITOR_TIMEOUT_MS)
 

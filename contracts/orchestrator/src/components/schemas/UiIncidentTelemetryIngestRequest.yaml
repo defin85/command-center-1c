@@ -1,0 +1,40 @@
+type: object
+properties:
+  batch_id:
+    type: string
+    maxLength: 160
+  flush_reason:
+    type: string
+    enum:
+      - size_threshold
+      - time_threshold
+      - pagehide
+      - shutdown
+      - manual
+    description: |-
+      * `size_threshold` - size_threshold
+      * `time_threshold` - time_threshold
+      * `pagehide` - pagehide
+      * `shutdown` - shutdown
+      * `manual` - manual
+    x-spec-enum-id: 31f91e42fdaf2d94
+  session_id:
+    type: string
+    nullable: true
+  tenant_id:
+    type: string
+    nullable: true
+  actor: {}
+  release: {}
+  route: {}
+  dropped_events_count:
+    type: integer
+    minimum: 0
+    default: 0
+  events:
+    type: array
+    items: {}
+required:
+  - batch_id
+  - events
+  - flush_reason

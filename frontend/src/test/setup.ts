@@ -48,6 +48,15 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 } as unknown as typeof IntersectionObserver
 
+// Ant Design and rc-resize-observer probe layout aggressively in jsdom.
+// A no-op ResizeObserver keeps heavy route suites from paying for fake measurement churn.
+global.ResizeObserver = class ResizeObserver {
+  constructor() {}
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+} as unknown as typeof ResizeObserver
+
 // Ensure localStorage is available (some tests import API client at module init time)
 if (!window.localStorage || typeof window.localStorage.getItem !== 'function') {
   const store = new Map<string, string>()

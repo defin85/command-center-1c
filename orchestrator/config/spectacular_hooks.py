@@ -3,6 +3,39 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+_OPTIONAL_TENANT_HEADER = {
+    "name": "X-CC1C-Tenant-ID",
+    "in": "header",
+    "required": False,
+    "schema": {"type": "string", "format": "uuid"},
+    "description": (
+        "Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. "
+        "For staff users, omission may return cross-tenant results on some endpoints."
+    ),
+}
+_REQUIRED_UI_INCIDENT_TENANT_HEADER = {
+    "name": "X-CC1C-Tenant-ID",
+    "in": "header",
+    "required": True,
+    "schema": {"type": "string", "format": "uuid"},
+    "description": "Required tenant context selector for UI incident telemetry ingest and staff diagnostics queries.",
+}
+_LOCALE_HEADER = {
+    "name": "X-CC1C-Locale",
+    "in": "header",
+    "required": False,
+    "schema": {"type": "string", "enum": ["ru", "en"]},
+    "description": (
+        "Optional operator locale override. If omitted, locale is resolved from browser language signal "
+        "and then falls back to the deployment default."
+    ),
+}
+_REQUIRED_TENANT_HEADER_PATHS = {
+    "/api/v2/ui/incident-telemetry/ingest/",
+    "/api/v2/ui/incident-telemetry/incidents/",
+    "/api/v2/ui/incident-telemetry/timeline/",
+}
+
 
 def remove_nullable_oneof_nullenum(result: dict[str, Any], generator: Any, request: Any, public: bool):
     """
@@ -45,29 +78,6 @@ def add_tenant_header_parameter(result: dict[str, Any], generator: Any, request:
     Runtime behavior is implemented in apps.tenancy.authentication.TenantContextAuthentication.
     """
 
-    header_params = [
-        {
-            "name": "X-CC1C-Tenant-ID",
-            "in": "header",
-            "required": False,
-            "schema": {"type": "string", "format": "uuid"},
-            "description": (
-                "Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. "
-                "For staff users, omission may return cross-tenant results on some endpoints."
-            ),
-        },
-        {
-            "name": "X-CC1C-Locale",
-            "in": "header",
-            "required": False,
-            "schema": {"type": "string", "enum": ["ru", "en"]},
-            "description": (
-                "Optional operator locale override. If omitted, locale is resolved from browser language signal "
-                "and then falls back to the deployment default."
-            ),
-        },
-    ]
-
     paths = result.get("paths")
     if not isinstance(paths, dict):
         return result
@@ -85,12 +95,23 @@ def add_tenant_header_parameter(result: dict[str, Any], generator: Any, request:
             params = operation.setdefault("parameters", [])
             if not isinstance(params, list):
                 continue
-            for header_param in header_params:
-                if any(
-                    isinstance(p, dict) and p.get("in") == "header" and p.get("name") == header_param["name"]
-                    for p in params
-                ):
+            desired_headers = [
+                _REQUIRED_UI_INCIDENT_TENANT_HEADER
+                if path in _REQUIRED_TENANT_HEADER_PATHS
+                else _OPTIONAL_TENANT_HEADER,
+                _LOCALE_HEADER,
+            ]
+            for desired in desired_headers:
+                existing = next(
+                    (
+                        p for p in params
+                        if isinstance(p, dict) and p.get("in") == "header" and p.get("name") == desired["name"]
+                    ),
+                    None,
+                )
+                if existing is None:
+                    params.append(deepcopy(desired))
                     continue
-                params.append(deepcopy(header_param))
+                existing.update(deepcopy(desired))
 
     return result
