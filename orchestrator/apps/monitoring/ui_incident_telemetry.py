@@ -330,6 +330,7 @@ def _apply_filters(
     session_id: str = "",
     request_id: str = "",
     ui_action_id: str = "",
+    trace_id: str = "",
     route_path: str = "",
     started_at: timezone.datetime | None = None,
     ended_at: timezone.datetime | None = None,
@@ -344,6 +345,8 @@ def _apply_filters(
         queryset = queryset.filter(request_id=request_id)
     if ui_action_id:
         queryset = queryset.filter(ui_action_id=ui_action_id)
+    if trace_id:
+        queryset = queryset.filter(trace_id=trace_id)
     if route_path:
         queryset = queryset.filter(route_path=route_path)
     if started_at is not None:
@@ -377,6 +380,19 @@ def _build_summary_preview(event: UiIncidentTelemetryEvent) -> dict[str, Any]:
     }
 
 
+def _build_release_metadata(batch: UiIncidentTelemetryBatch) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "app": batch.release_app or None,
+            "fingerprint": batch.release_fingerprint or None,
+            "mode": batch.release_mode or None,
+            "origin": batch.release_origin or None,
+        }.items()
+        if value not in (None, "")
+    }
+
+
 def _derive_incident_key(event: UiIncidentTelemetryEvent) -> str:
     if event.request_id:
         return f"request:{event.request_id}"
@@ -395,6 +411,7 @@ def list_ui_incident_summaries(
     session_id: str = "",
     request_id: str = "",
     ui_action_id: str = "",
+    trace_id: str = "",
     route_path: str = "",
     started_at: timezone.datetime | None = None,
     ended_at: timezone.datetime | None = None,
@@ -409,6 +426,7 @@ def list_ui_incident_summaries(
         session_id=session_id,
         request_id=request_id,
         ui_action_id=ui_action_id,
+        trace_id=trace_id,
         route_path=route_path,
         started_at=started_at,
         ended_at=ended_at,
@@ -416,6 +434,7 @@ def list_ui_incident_summaries(
     signal_events = list(
         queryset
         .filter(event_type__in=_SIGNAL_EVENT_TYPES)
+        .select_related("batch")
         .order_by("-occurred_at", "-id")[: max(limit * 20, 200)]
     )
 
@@ -431,7 +450,9 @@ def list_ui_incident_summaries(
                 "session_id": event.session_id or None,
                 "request_id": event.request_id or None,
                 "ui_action_id": event.ui_action_id or None,
+                "trace_id": event.trace_id or None,
                 "route_path": event.route_path or None,
+                "release": _build_release_metadata(event.batch),
                 "started_at": event.occurred_at,
                 "ended_at": event.occurred_at,
                 "signal_event_types": [],
@@ -443,12 +464,17 @@ def list_ui_incident_summaries(
         item["signal_count"] += 1
         if event.event_type not in item["signal_event_types"]:
             item["signal_event_types"].append(event.event_type)
+        if event.trace_id and not item["trace_id"]:
+            item["trace_id"] = event.trace_id
         if event.occurred_at < item["started_at"]:
             item["started_at"] = event.occurred_at
         if event.occurred_at >= item["ended_at"]:
             item["ended_at"] = event.occurred_at
             item["last_event_type"] = event.event_type
             item["preview"] = _build_summary_preview(event)
+            if event.trace_id:
+                item["trace_id"] = event.trace_id
+            item["release"] = _build_release_metadata(event.batch)
 
     ordered = sorted(grouped.values(), key=lambda item: item["ended_at"], reverse=True)
     sliced = ordered[offset:offset + limit]
@@ -471,6 +497,7 @@ def _serialize_event(event: UiIncidentTelemetryEvent) -> dict[str, Any]:
         "request_id": event.request_id or None,
         "ui_action_id": event.ui_action_id or None,
         "trace_id": event.trace_id or None,
+        "release": _build_release_metadata(event.batch),
         "route": {
             "path": event.route_path,
             "search": event.route_search,
@@ -489,6 +516,7 @@ def get_ui_incident_timeline(
     session_id: str = "",
     request_id: str = "",
     ui_action_id: str = "",
+    trace_id: str = "",
     route_path: str = "",
     started_at: timezone.datetime | None = None,
     ended_at: timezone.datetime | None = None,
@@ -503,12 +531,13 @@ def get_ui_incident_timeline(
         session_id=session_id,
         request_id=request_id,
         ui_action_id=ui_action_id,
+        trace_id=trace_id,
         route_path=route_path,
         started_at=started_at,
         ended_at=ended_at,
     )
 
-    if not session_id and (request_id or ui_action_id):
+    if not session_id and (request_id or ui_action_id or trace_id):
         anchors = list(queryset.order_by("occurred_at", "id")[:200])
         if anchors:
             session_ids = sorted({event.session_id for event in anchors if event.session_id})

@@ -74,6 +74,13 @@ class UiIncidentTelemetryIngestResponseSerializer(serializers.Serializer):
     retention_cutoff = serializers.DateTimeField()
 
 
+class UiIncidentReleaseSerializer(serializers.Serializer):
+    app = serializers.CharField(required=False, allow_null=True)
+    fingerprint = serializers.CharField(required=False, allow_null=True)
+    mode = serializers.CharField(required=False, allow_null=True)
+    origin = serializers.CharField(required=False, allow_null=True)
+
+
 class UiIncidentSummaryPreviewSerializer(serializers.Serializer):
     action_kind = serializers.CharField(required=False, allow_null=True)
     action_name = serializers.CharField(required=False, allow_null=True)
@@ -97,7 +104,9 @@ class UiIncidentSummarySerializer(serializers.Serializer):
     session_id = serializers.CharField(required=False, allow_null=True)
     request_id = serializers.CharField(required=False, allow_null=True)
     ui_action_id = serializers.CharField(required=False, allow_null=True)
+    trace_id = serializers.CharField(required=False, allow_null=True)
     route_path = serializers.CharField(required=False, allow_null=True)
+    release = UiIncidentReleaseSerializer()
     started_at = serializers.DateTimeField()
     ended_at = serializers.DateTimeField()
     signal_event_types = serializers.ListField(child=serializers.CharField())
@@ -123,6 +132,7 @@ class UiIncidentTimelineEventSerializer(serializers.Serializer):
     request_id = serializers.CharField(required=False, allow_null=True)
     ui_action_id = serializers.CharField(required=False, allow_null=True)
     trace_id = serializers.CharField(required=False, allow_null=True)
+    release = UiIncidentReleaseSerializer()
     route = serializers.JSONField()
     payload = serializers.JSONField()
 
@@ -139,6 +149,7 @@ class UiIncidentQuerySerializer(serializers.Serializer):
     session_id = serializers.CharField(required=False, allow_blank=True)
     request_id = serializers.CharField(required=False, allow_blank=True)
     ui_action_id = serializers.CharField(required=False, allow_blank=True)
+    trace_id = serializers.CharField(required=False, allow_blank=True)
     route_path = serializers.CharField(required=False, allow_blank=True)
     start = serializers.DateTimeField(required=False)
     end = serializers.DateTimeField(required=False)
@@ -206,6 +217,7 @@ def ingest_ui_incident_telemetry(request):
         OpenApiParameter("session_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("request_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("ui_action_id", str, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("trace_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("route_path", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("start", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("end", str, OpenApiParameter.QUERY, required=False),
@@ -265,6 +277,7 @@ def list_recent_ui_incident_summaries(request):
         session_id=serializer.validated_data.get("session_id", ""),
         request_id=serializer.validated_data.get("request_id", ""),
         ui_action_id=serializer.validated_data.get("ui_action_id", ""),
+        trace_id=serializer.validated_data.get("trace_id", ""),
         route_path=serializer.validated_data.get("route_path", ""),
         started_at=serializer.validated_data.get("start"),
         ended_at=serializer.validated_data.get("end"),
@@ -284,6 +297,7 @@ def list_recent_ui_incident_summaries(request):
         OpenApiParameter("session_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("request_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("ui_action_id", str, OpenApiParameter.QUERY, required=False),
+        OpenApiParameter("trace_id", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("route_path", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("start", str, OpenApiParameter.QUERY, required=False),
         OpenApiParameter("end", str, OpenApiParameter.QUERY, required=False),
@@ -343,6 +357,7 @@ def get_recent_ui_incident_timeline(request):
         session_id=serializer.validated_data.get("session_id", ""),
         request_id=serializer.validated_data.get("request_id", ""),
         ui_action_id=serializer.validated_data.get("ui_action_id", ""),
+        trace_id=serializer.validated_data.get("trace_id", ""),
         route_path=serializer.validated_data.get("route_path", ""),
         started_at=serializer.validated_data.get("start"),
         ended_at=serializer.validated_data.get("end"),

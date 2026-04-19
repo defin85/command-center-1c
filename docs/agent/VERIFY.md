@@ -68,6 +68,26 @@ cd frontend && npm run validate:ui-platform
 ./scripts/dev/pytest.sh -q <path>
 ```
 
+### UI Observability / Agent Access
+
+```bash
+./scripts/dev/pytest.sh -q apps/api_v2/tests/test_ui_incident_telemetry.py
+./contracts/scripts/export-django-openapi.sh
+bash -n debug/_cc1c_api.sh debug/query-ui-incidents.sh debug/query-ui-timeline.sh debug/get-trace.sh
+./debug/query-ui-incidents.sh --help
+./debug/query-ui-timeline.sh --help
+./debug/get-trace.sh --help
+```
+
+Если change затрагивает live runtime wiring, добавь targeted smoke по canonical surfaces:
+
+```bash
+./debug/export-ui-journal.sh "<url-pattern>"
+./debug/query-ui-incidents.sh limit=5
+./debug/query-ui-timeline.sh request_id=<request-id>
+./debug/get-trace.sh <trace-id>
+```
+
 ### API Gateway
 
 ```bash

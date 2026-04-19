@@ -73,10 +73,39 @@ Canonical dump path для текущего UI observability bundle через e
 ./debug/export-ui-journal.sh "localhost:15173/service-mesh"
 ```
 
-10. `./debug/receiver.py --port 3333`
+10. `./debug/query-ui-incidents.sh [key=value ...]`
+Canonical prod/dev read-only summary query path для recent redacted UI incidents.
+
+Пример:
+
+```bash
+./debug/query-ui-incidents.sh limit=20 route_path=/pools/runs
+./debug/query-ui-incidents.sh trace_id=trace-abc123
+```
+
+11. `./debug/query-ui-timeline.sh [key=value ...]`
+Canonical ordered timeline query path для correlation по `request_id`, `ui_action_id`, `trace_id` или `session_id`.
+
+Пример:
+
+```bash
+./debug/query-ui-timeline.sh request_id=req-123
+./debug/query-ui-timeline.sh trace_id=trace-abc123
+```
+
+12. `./debug/get-trace.sh <trace-id>`
+Canonical backend trace lookup path через machine-readable API Gateway proxy, без screen scraping Jaeger UI.
+
+Пример:
+
+```bash
+./debug/get-trace.sh trace-abc123
+```
+
+13. `./debug/receiver.py --port 3333`
 Локальный HTTP receiver для sandbox-интеграций (эндпоинты: `GET /health`, `POST /log`).
 
-11. `./debug/start-dolt.sh`
+14. `./debug/start-dolt.sh`
 Переводит текущий Beads-репозиторий в shared Dolt server storage, запускает `systemd --user` сервис `beads-dolt.service` и валидирует доступ через `bd doctor --server`.
 
 Сервис общий для всех Beads-репозиториев и использует каталог:
@@ -87,6 +116,42 @@ Canonical dump path для текущего UI observability bundle через e
 - `metadata.json` должен содержать `dolt_mode: "server"`;
 - при первой миграции legacy Beads Dolt working state из `.beads/` архивируется в `~/.local/share/beads/dolt-backups/`;
 - пароль не хранится в репозитории, используется `BEADS_DOLT_PASSWORD`.
+
+## Canonical UI Incident Access
+
+Default agent monitoring path intentionally stays machine-readable and replay-free:
+- `dev/local`: `./debug/export-ui-journal.sh [url-pattern]`
+- `prod/dev recent incidents`: `./debug/query-ui-incidents.sh [key=value ...]`
+- incident expansion: `./debug/query-ui-timeline.sh [key=value ...]`
+- backend trace hop: `./debug/get-trace.sh <trace-id>`
+
+Минимальные env vars для authenticated prod queries:
+
+```bash
+export CC1C_BASE_URL=http://localhost:15173
+export CC1C_TENANT_ID=<tenant-uuid>
+export CC1C_ACCESS_TOKEN=<jwt>
+```
+
+Альтернатива вместо готового JWT:
+
+```bash
+export CC1C_UI_USER=admin
+export CC1C_UI_PASSWORD='...'
+```
+
+Canonical sequence для agent-debug без browser console copy/paste:
+
+```bash
+./debug/query-ui-incidents.sh limit=20 route_path=/pools/runs
+./debug/query-ui-timeline.sh request_id=req-123
+./debug/get-trace.sh trace-abc123
+```
+
+Ограничения и safety:
+- `./debug/query-ui-incidents.sh` и `./debug/query-ui-timeline.sh` требуют staff JWT и tenant context.
+- Response surface остаётся redaction-first: raw secrets, cookies, auth headers и password-like input fragments не возвращаются.
+- Отсутствие session replay не считается blocker: canonical path опирается на actions/errors/traces, `request_id`, `ui_action_id` и `trace_id`.
 
 ## Проверенный live-цикл: `pool run -> dom_lesa`
 

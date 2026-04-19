@@ -16707,6 +16707,10 @@ paths:
         schema:
           type: string
       - in: query
+        name: trace_id
+        schema:
+          type: string
+      - in: query
         name: ui_action_id
         schema:
           type: string
@@ -16860,6 +16864,10 @@ paths:
           type: string
       - in: query
         name: start
+        schema:
+          type: string
+      - in: query
+        name: trace_id
         schema:
           type: string
       - in: query
@@ -32128,6 +32136,21 @@ components:
       required:
       - error
       - request_id
+    UiIncidentRelease:
+      type: object
+      properties:
+        app:
+          type: string
+          nullable: true
+        fingerprint:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          nullable: true
+        origin:
+          type: string
+          nullable: true
     UiIncidentSummary:
       type: object
       properties:
@@ -32148,9 +32171,14 @@ components:
         ui_action_id:
           type: string
           nullable: true
+        trace_id:
+          type: string
+          nullable: true
         route_path:
           type: string
           nullable: true
+        release:
+          $ref: '#/components/schemas/UiIncidentRelease'
         started_at:
           type: string
           format: date-time
@@ -32172,6 +32200,7 @@ components:
       - incident_id
       - last_event_type
       - preview
+      - release
       - signal_count
       - signal_event_types
       - started_at
@@ -32326,6 +32355,8 @@ components:
         trace_id:
           type: string
           nullable: true
+        release:
+          $ref: '#/components/schemas/UiIncidentRelease'
         route: {}
         payload: {}
       required:
@@ -32334,6 +32365,7 @@ components:
       - event_type
       - occurred_at
       - payload
+      - release
       - route
     UiIncidentTimelineResponse:
       type: object

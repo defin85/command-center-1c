@@ -104,6 +104,35 @@ printf '%s\n' "http://localhost:15173/pools/factual?pool=<pool-uuid>&quarter_sta
 - Django eval: `./debug/eval-django.sh "<python code>"`
 - Frontend eval: `./debug/eval-frontend.sh "<js expression>"`
 - UI journal export: `./debug/export-ui-journal.sh [url-pattern]`
+- UI incident summaries: `./debug/query-ui-incidents.sh [key=value ...]`
+- UI incident timeline: `./debug/query-ui-timeline.sh [key=value ...]`
+- Backend trace lookup: `./debug/get-trace.sh <trace-id>`
+
+## UI Incident Access
+
+Canonical no-replay workflow for UI incidents:
+
+```bash
+./debug/export-ui-journal.sh "localhost:15173/pools/runs"
+./debug/query-ui-incidents.sh limit=20 route_path=/pools/runs
+./debug/query-ui-timeline.sh request_id=req-123
+./debug/get-trace.sh trace-abc123
+```
+
+Authenticated prod query prerequisites:
+
+```bash
+export CC1C_BASE_URL=http://localhost:15173
+export CC1C_TENANT_ID=<tenant-uuid>
+export CC1C_ACCESS_TOKEN=<jwt>
+```
+
+Если готового JWT нет, debug wrappers также умеют получить его через `CC1C_UI_USER` и `CC1C_UI_PASSWORD`.
+
+Safety contract:
+- `incidents` и `timeline` — staff-only read path.
+- summary/timeline surfaces остаются redacted и bounded-retention.
+- `trace_id`, `request_id` и `ui_action_id` — primary correlation path к backend diagnostics; vendor UI scraping не является default mechanism.
 
 ## Repo Tooling Surfaces
 

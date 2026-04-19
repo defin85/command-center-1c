@@ -212,6 +212,10 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
         batch_id="batch-summary",
         flush_reason="manual",
         session_id="session-summary",
+        release_app="commandcenter1c-frontend",
+        release_fingerprint="frontend@2026.04.19+42",
+        release_mode="prod",
+        release_origin="https://cc1c.example.test",
         accepted_event_count=1,
         last_occurred_at=occurred_at,
     )
@@ -228,6 +232,7 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
         route_path="/pools/runs",
         request_id="req-summary",
         ui_action_id="uia-summary",
+        trace_id="trace-summary",
         payload={"error_code": "POOL_RUN_FAILED"},
     )
 
@@ -241,7 +246,7 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
         "/api/v2/ui/incident-telemetry/incidents/",
         {
             "actor_username": member_user.username,
-            "request_id": "req-summary",
+            "trace_id": "trace-summary",
         },
         HTTP_X_CC1C_TENANT_ID=str(tenant.id),
     )
@@ -249,7 +254,9 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
     assert response.status_code == 200
     assert response.data["count"] == 1
     assert response.data["incidents"][0]["request_id"] == "req-summary"
+    assert response.data["incidents"][0]["trace_id"] == "trace-summary"
     assert response.data["incidents"][0]["actor_username"] == member_user.username
+    assert response.data["incidents"][0]["release"]["fingerprint"] == "frontend@2026.04.19+42"
     assert response.data["incidents"][0]["signal_event_types"] == ["http.request.failure"]
 
 
@@ -267,6 +274,9 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
         batch_id="batch-timeline",
         flush_reason="manual",
         session_id="session-timeline",
+        release_app="commandcenter1c-frontend",
+        release_fingerprint="frontend@2026.04.19+99",
+        release_mode="prod",
         accepted_event_count=4,
         first_occurred_at=started_at,
         last_occurred_at=started_at + timedelta(seconds=6),
@@ -295,6 +305,7 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
             occurred_at=started_at + timedelta(seconds=2),
             route_path="/pools/runs",
             ui_action_id="uia-timeline",
+            trace_id="trace-timeline",
             payload={"action_name": "Create pool run"},
         ),
         UiIncidentTelemetryEvent(
@@ -309,6 +320,7 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
             route_path="/pools/runs",
             request_id="req-timeline",
             ui_action_id="uia-timeline",
+            trace_id="trace-timeline",
             payload={"error_code": "POOL_RUN_FAILED"},
         ),
         UiIncidentTelemetryEvent(
@@ -322,13 +334,14 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
             occurred_at=started_at + timedelta(seconds=6),
             route_path="/pools/runs",
             ui_action_id="uia-timeline",
+            trace_id="trace-timeline",
             payload={"error_message": "render failed"},
         ),
     ])
 
     response = staff_client.get(
         "/api/v2/ui/incident-telemetry/timeline/",
-        {"request_id": "req-timeline"},
+        {"trace_id": "trace-timeline"},
         HTTP_X_CC1C_TENANT_ID=str(tenant.id),
     )
 
@@ -339,6 +352,8 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
         "evt-failure",
         "evt-error",
     ]
+    assert response.data["timeline"][1]["trace_id"] == "trace-timeline"
+    assert response.data["timeline"][1]["release"]["fingerprint"] == "frontend@2026.04.19+99"
 
 
 @pytest.mark.django_db
