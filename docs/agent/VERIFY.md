@@ -2,9 +2,33 @@
 
 Статус: authoritative agent-facing guidance.
 
+## Completion Profiles
+
+### `analysis/review`
+
+- Use when: нужен findings-first ответ, audit, review, архитектурный анализ или guidance-only результат.
+- Минимум evidence: выводы, assumptions, file/spec/doc references и явная зона неопределённости.
+- Проверка: read-only inspection и самый маленький релевантный command, если без него высок риск ошибиться.
+- Не является default expectation: Beads status changes, commit, push, delivery-grade rollout steps.
+
+### `local change`
+
+- Use when: нужен scoped checked-in change без explicit merge-ready/rollout handoff.
+- Минимум evidence: touched files, что изменено, какой минимальный automated check прогнан, какие residual risks остались.
+- Проверка: smallest relevant validation set для изменённой поверхности; расширяй scope только если change пересекает несколько subsystems или contracts.
+- Дополнительно: обнови routed docs/contracts, если change меняет workflow, source-of-truth reference или verification path.
+
+### `delivery`
+
+- Use when: approved OpenSpec execution, merge-ready handoff или change с explicit landing expectation.
+- Минимум evidence: `Requirement -> Code -> Test` для всех mandatory requirements/scenarios.
+- Проверка: полный релевантный gate для затронутых surfaces плюс alignment Beads/OpenSpec status.
+- Delivery actions: `git pull --rebase`, commit и `git push` после успешных checks.
+- Approved OpenSpec change implementation по умолчанию идёт как `delivery`.
+
 ## General Rule
 
-Сначала запускай минимальный релевантный набор проверок, затем расширяй прогон только если change пересекает несколько подсистем или меняет contracts/runtime behavior.
+Сначала запускай минимальный релевантный набор проверок, затем расширяй прогон только если change пересекает несколько подсистем, меняет contracts/runtime behavior или идёт как `delivery`.
 
 ## Canonical Validation By Change Type
 
@@ -113,9 +137,8 @@ Source of truth: `./debug/runtime-inventory.sh --json`
 | `worker-workflows` | `cd go-services/worker && go test ./...` |
 | `frontend` | `cd frontend && npm run test:run -- <path>` |
 
-## Review Before Handoff
+## Handoff Expectations
 
-- требование связано с конкретным кодом и проверкой
-- выбран минимальный валидный check set
-- нет silent fallback logic без явного согласования
-- итоговый отчёт содержит `Requirement -> Code -> Test`
+- `analysis/review`: findings или conclusion anchored to evidence, assumptions и residual uncertainty.
+- `local change`: touched files, minimal check set, unresolved risks и sync затронутых docs/contracts.
+- `delivery`: `Requirement -> Code -> Test`, актуальные Beads/OpenSpec statuses и выполненные delivery actions.

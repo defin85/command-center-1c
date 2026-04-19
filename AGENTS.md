@@ -25,55 +25,84 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Планы, спеки и описания change ведём на русском языке.
 - Общепринятые термины, названия сущностей, API/эндпоинты, ключи настроек и code identifiers можно оставлять на английском.
 
-## Repo-Local Overrides
+## Core Contract
 
-- Ниже перечисленные repo-local правила уточняют более общие user/global instructions и имеют приоритет внутри этого репозитория.
-- Global ASCII-default не запрещает кириллицу в русскоязычных plans/specs/change descriptions и agent-facing docs; для code/config edits по-прежнему предпочитай ASCII, если файл уже не использует Unicode.
+- Корневой `AGENTS.md` является компактным repo-wide invariant contract: здесь живут только общие инварианты, precedence, completion profiles и обязательные inline contracts.
+- Для cold start, неоднозначной задачи или быстрой карты guidance surfaces открывай `docs/agent/INDEX.md`.
+- Для bounded task route по подсистеме открывай `docs/agent/TASK_ROUTING.md`.
+- Для product/domain context используй `docs/agent/DOMAIN_MAP.md`.
+- Для validation profiles и canonical checks используй `docs/agent/VERIFY.md`.
+- Для runtime start/restart/eval используй `docs/agent/RUNBOOK.md` и `DEBUG.md`.
+- Для manual Hindsight workflow и note taxonomy используй `docs/agent/MEMORY.md`.
+- Machine-readable entry points: `.codex/config.toml`, `./debug/runtime-inventory.sh --json`, `frontend/package.json`, `scripts/dev/*`.
 
-## Canonical Agent Surface
+## Precedence Matrix
 
-- Первый checked-in onboarding path для агента: `docs/agent/INDEX.md`.
-- Authoritative agent guidance:
-  - `AGENTS.md`
-  - `docs/agent/*`
-  - `frontend/AGENTS.md`
-  - `orchestrator/AGENTS.md`
-  - `go-services/AGENTS.md`
-  - `openspec/project.md`
-- Supplemental docs:
-  - `README.md`
-  - `DEBUG.md`
-  - `scripts/dev/README.md`
-- Legacy/non-authoritative onboarding layers:
-  - `docs/START_HERE.md`
-  - `docs/INDEX.md`
-  - `docs/DEBUG_WITH_AI.md`
-  - `CLAUDE.md`
-  - `.claude/README.md`
-  - `.claude/rules/**`
+| Surface | Основная роль | Когда этот слой решает конфликт |
+|---|---|---|
+| `AGENTS.md` | repo-wide invariants, completion profiles, inline contracts | когда правило относится ко всему репозиторию |
+| `docs/agent/*` | routed workflow, verification, onboarding maps, memory policy | когда нужен procedural route или authoritative reference asset |
+| scoped `AGENTS.md` | subtree-local deltas | когда задача уже находится внутри `frontend/`, `orchestrator/`, `go-services/` |
+| `openspec/AGENTS.md` + `openspec/project.md` | OpenSpec/project conventions | когда работа идёт через spec/change lifecycle |
+| checked-in repo skills | повторяемые repo-local workflows | когда routed docs отправляют в конкретный `.agents/skills/*` |
+| shared user-level skills | user-level specialization | когда checked-in guidance явно маршрутизирует в shared skill или пользователь назвал его напрямую |
+
+Conflict rules:
+- Более специфичный checked-in слой имеет приоритет над более общим.
+- Для одинаковой конкретности checked-in repo guidance имеет приоритет над user-level/shared surfaces.
+- Если два checked-in слоя одного уровня противоречат друг другу, применяй fail-closed: выбирай более безопасное и более bounded указание и явно фиксируй конфликт в ответе.
+
+## Completion Profiles
+
+- `analysis/review`: findings, assumptions, evidence и минимально достаточные read-only checks; по умолчанию не требует Beads/commit/push.
+- `local change`: scoped checked-in edit плюс минимально релевантная автоматическая проверка и краткий handoff по touched paths; delivery-grade git actions не являются default expectation.
+- `delivery`: merge-ready или approved OpenSpec execution; требует релевантные checks, alignment Beads/OpenSpec и затем `git pull --rebase`, commit и `git push`.
+- Approved OpenSpec change implementation по умолчанию идёт как `delivery`.
+- Если класс задачи неочевиден, выбирай более строгий профиль или эскалируй ambiguity.
 
 ## Repo Snapshot
 
-- `frontend/`: React/Vite UI.
-- `orchestrator/`: Django orchestration and domain logic.
-- `go-services/`: API Gateway and Worker binaries.
-- `contracts/`: OpenAPI contracts and generated client sources.
-- `debug/`: runtime probes and eval helpers.
-- `scripts/dev/`: canonical local build, run, lint and test entry points.
-- `openspec/`: source of truth for intent and requirements.
-- `.beads/`: live execution graph for approved code changes.
+- `frontend/`: React/Vite UI и platform-owned page layer.
+- `orchestrator/`: Django orchestration и domain logic.
+- `go-services/`: API Gateway и Worker binaries.
+- `contracts/`: OpenAPI contracts и generated client sources.
+- `debug/`: runtime probes, eval helpers и inventory.
+- `scripts/dev/`: canonical local build/run/lint/test entry points.
+- `openspec/`: source of truth для intent и requirements.
+- `.beads/`: live execution graph для approved work.
 
-Open these docs for the first 10 minutes of a task:
-- `docs/agent/ARCHITECTURE_MAP.md`
-- `docs/agent/DOMAIN_MAP.md` — product purpose, domain entities и distinction between shipped, active-change and historical surfaces
-- `docs/agent/RUNBOOK.md`
-- `docs/agent/VERIFY.md`
-- `docs/agent/TASK_ROUTING.md` — bounded first route to docs, code entry points and validation paths
-- `docs/agent/ui-skills.md` when the task touches frontend/UI/UX/browser verification
-- `docs/agent/PLANS.md`
-- `docs/agent/code_review.md`
-- repo-local skill: `.agents/skills/<relevant>/SKILL.md` when the routed workflow matches a checked-in repo skill
-- shared skill: `/home/egor/.agents/skills/<relevant>/SKILL.md` when the routed workflow maps to the user-level shared skill catalog
+## OpenSpec -> Beads -> Code
+
+- OpenSpec intent живёт в `openspec/changes/<change-id>/`.
+- Явное одобрение для Stage 2/3: `Go!` или `/openspec-to-beads <change-id>`.
+- Для approved code changes создай или переиспользуй Beads graph и работай от `bd ready`.
+- Newly discovered work оформляй отдельным Beads issue с явной dependency.
+- Перед coding по OpenSpec change собери execution matrix `Requirement -> target files -> checks`.
+- Каждый mandatory requirement требует automated evidence или явно одобренное исключение.
+- Если mandatory requirement нельзя доставить, остановись и эскалируй blocker с вариантами.
+- Финальный delivery handoff обязан содержать `Requirement -> Code -> Test`.
+
+## Search Order
+
+1. `mcp__claude_context__search_code`
+2. `ast-index search "<query>"`
+3. `rg`
+4. `rg --files`
+
+Rules:
+- В этом репозитории semantic/indexed search имеет приоритет над text-search fallback.
+- Если semantic tooling недоступен, сразу переходи к `rg` / `rg --files` и фиксируй это при необходимости.
+- Confirm implementation facts как минимум в двух источниках: code + tests/spec/docs.
+- Treat `rlm-tools` as exploratory only; final facts подтверждай direct file evidence.
+
+## Machine-Readable Surfaces
+
+- Codex repo config: `.codex/config.toml`
+- Runtime inventory: `./debug/runtime-inventory.sh --json`
+- Local debug toolkit: `DEBUG.md`
+- Frontend validation entry points: `frontend/package.json`
+- Dev scripts: `scripts/dev/*`
+- OpenSpec project context: `openspec/project.md`
 
 ## UI Platform Contract
 
@@ -96,64 +125,3 @@ Open these docs for the first 10 minutes of a task:
 - Для `/decisions` и `/pools/binding-profiles` page-level композиция должна идти через platform layer; обход raw `antd` containers на уровне route-page считается нарушением governance и ловится линтером.
 - Blocking frontend gate для platform migrations: `npm run lint`, `npm run test:run`, `npm run test:browser:ui-platform`, затем production build.
 - Не вводить вторую primary design system (`shadcn/ui`, `MUI`, Radix-first page shells и т.п.) без отдельного одобренного OpenSpec change.
-
-## OpenSpec -> Beads -> Code
-
-- OpenSpec describes intent in `openspec/changes/<change-id>/`.
-- Explicit approval for Stage 2/3: `Go!` or `/openspec-to-beads <change-id>`.
-- For approved code changes, create or reuse the Beads graph, then work from `bd ready`.
-- Newly discovered work must become a separate Beads issue with an explicit dependency.
-- When implementation is complete, run `/openspec-apply <change-id>` and `/openspec-archive <change-id>`.
-
-## OpenSpec Delivery Contract
-
-- Before coding for an OpenSpec change, build an execution matrix `Requirement -> target files -> tests/checks`.
-- Every mandatory requirement or scenario needs automated evidence or an explicitly approved exception.
-- If a mandatory requirement cannot be delivered, stop and escalate with blockers and options.
-- Final delivery must include `Requirement -> Code -> Test` evidence with concrete file paths.
-
-## Search Order
-
-1. `mcp__claude-context__search_code`
-2. `ast-index search "<query>"`
-3. `rg`
-4. `rg --files`
-
-Rules:
-- Этот порядок является repo-local override для общего guidance "use `rg` first": в `command-center-1c` сначала используй semantic/indexed search, а `rg` оставляй как text-search fallback.
-- Если semantic tooling недоступен, не блокируй задачу: сразу переходи к `rg` / `rg --files` и зафиксируй это в ответе при необходимости.
-- Confirm implementation facts in at least two sources: code + tests/spec/docs.
-- Treat `rlm-tools` as exploratory only; confirm final facts via direct file evidence.
-- Use the canonical repo root `/home/egor/code/command-center-1c/` for semantic indexing tools.
-
-## Machine-Readable Surfaces
-
-- Codex repo config: `.codex/config.toml`
-- Runtime inventory: `./debug/runtime-inventory.sh --json`
-- Local debug toolkit: `DEBUG.md`
-- Frontend validation entry points: `frontend/package.json`
-- Dev scripts: `scripts/dev/*`
-
-## Verification And Done
-
-- Use the smallest relevant validation set first, then widen only as needed.
-- For frontend work, prefer focused `vitest` paths/shards during iteration; reserve full `cd frontend && npm run test:run` for final pre-landing verification or changes that cut across multiple route-level suites.
-- Canonical validation paths live in `docs/agent/VERIFY.md`.
-- UI skill selection does not replace frontend verification gates; после UI-задач всё равно прогоняй релевантные команды из `docs/agent/VERIFY.md`.
-- For docs and guidance changes, run `./scripts/dev/check-agent-doc-freshness.sh`.
-- For OpenSpec changes, run `openspec validate <change-id> --strict --no-interactive`.
-- Work is not complete until:
-  - relevant checks pass
-  - Beads statuses are updated
-  - `git pull --rebase` succeeds
-  - changes are committed and `git push` succeeds
-
-## Local Debug
-
-- Runtime commands and live-debug recipes: `docs/agent/RUNBOOK.md` and `DEBUG.md`
-- Quick references:
-  - `./debug/runtime-inventory.sh`
-  - `./debug/probe.sh all`
-  - `./debug/restart-runtime.sh <runtime>`
-  - `./debug/eval-django.sh "<python code>"`
-  - `./debug/eval-frontend.sh "<js expression>"`

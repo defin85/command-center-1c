@@ -2,45 +2,30 @@
 
 Статус: authoritative agent-facing guidance.
 
-Этот каталог является canonical onboarding surface для нового агента, который начинает работу из корня репозитория.
+Этот каталог является canonical onboarding surface для cold start, неоднозначных задач и проверки source-of-truth слоёв. Для bounded task сначала прочитай root `AGENTS.md`, затем открывай `TASK_ROUTING.md`.
 
-## Что читать первым
+## Core Vs Routed Contract
 
-1. [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md) — runtime topology, entry points и allowed call graph
-2. [DOMAIN_MAP.md](./DOMAIN_MAP.md) — product purpose, operator outcomes, ключевые сущности и shipped/active/historical surfaces
-3. [RUNBOOK.md](./RUNBOOK.md) — canonical start/restart/eval flows
-4. [VERIFY.md](./VERIFY.md) — minimal validation paths по типам задач
-5. [TASK_ROUTING.md](./TASK_ROUTING.md) — bounded matrix для быстрого выбора first docs/code/test route
-6. [ui-skills.md](./ui-skills.md) — routing для shared UI skills и их сочетания с repo verification
-7. [PLANS.md](./PLANS.md) — template для multi-step execution plans
-8. [code_review.md](./code_review.md) — acceptance/self-review checklist
+- `AGENTS.md` — компактный repo-wide invariant contract: precedence, completion profiles, repo snapshot, inline UI contract.
+- `TASK_ROUTING.md` — minimum-required route по task families и route-specific escalation points.
+- `VERIFY.md` — canonical validation paths и task-class completion profiles.
+- `RUNBOOK.md` — runtime start/restart/eval flows и debug entry points.
+- `MEMORY.md` — manual Hindsight policy, recall/retain triggers и note taxonomy.
+- `PLANS.md` и `code_review.md` — routed assets для multi-step execution и review/acceptance.
 
-## Вопросы первых 10 минут
+## Cold-Start Bundle
 
-- Что это за проект:
-  - control plane для массовых операций по 1С-базам через `frontend -> api-gateway -> orchestrator -> worker -> 1C`
-- Где product/domain context:
-  - см. [DOMAIN_MAP.md](./DOMAIN_MAP.md)
-- Где entry points:
-  - `frontend/src/main.tsx`
-  - `go-services/api-gateway/cmd/main.go`
-  - `go-services/worker/cmd/main.go`
-  - `orchestrator/config/asgi.py`
-- Как запускать и проверять:
-  - см. [RUNBOOK.md](./RUNBOOK.md)
-  - см. [VERIFY.md](./VERIFY.md)
-- Как выбрать первый рабочий маршрут для задачи:
-  - см. [TASK_ROUTING.md](./TASK_ROUTING.md)
-- Где policy для активного использования shared UI skills:
-  - см. [ui-skills.md](./ui-skills.md)
-- Где workflow intent:
-  - `openspec/`
-  - `openspec/project.md`
-- Где live task graph:
-  - `.beads/`
-  - `bd ready`
+1. [ARCHITECTURE_MAP.md](./ARCHITECTURE_MAP.md) — runtime topology, entry points и allowed call graph.
+2. [DOMAIN_MAP.md](./DOMAIN_MAP.md) — product purpose, operator outcomes и domain entities.
+3. [TASK_ROUTING.md](./TASK_ROUTING.md) — bounded route к docs/code/checks.
+4. [VERIFY.md](./VERIFY.md) — completion profiles и canonical validation paths.
+5. [RUNBOOK.md](./RUNBOOK.md) — start/restart/eval flows.
+6. [MEMORY.md](./MEMORY.md) — manual project memory policy.
+7. [ui-skills.md](./ui-skills.md) — только когда задача касается frontend/UI/UX/browser verification.
+8. [PLANS.md](./PLANS.md) — когда работа multi-step или неоднозначна.
+9. [code_review.md](./code_review.md) — когда нужен review/acceptance mindset.
 
-## Authoritative / Supplemental / Legacy
+## Guidance Layers
 
 ### Authoritative
 
@@ -66,7 +51,7 @@
 - `.claude/README.md`
 - `.claude/rules/**`
 
-Legacy documents могут сохранять полезный исторический контекст, но не являются canonical onboarding path. Если они конфликтуют с этой поверхностью, источником истины считается `docs/agent/*` и root `AGENTS.md`.
+Legacy documents могут сохранять полезный контекст, но не конкурируют с authoritative guidance. При конфликте источником истины остаются root `AGENTS.md`, `docs/agent/*` и scoped `AGENTS.md`.
 
 ## Machine-Readable Surfaces
 
@@ -123,4 +108,4 @@ Legacy documents могут сохранять полезный историче
 - OpenSpec intent: `openspec/changes/<change-id>/`
 - Active change list: `openspec list`
 - Existing specs: `openspec list --specs`
-- Execution graph: `bd ready`, `bd show <id>`
+- Execution graph: `.beads/`, `bd ready`, `bd show <id>`

@@ -26,6 +26,7 @@ AUTHORITATIVE_DOCS = [
     ROOT / "docs/agent/TASK_ROUTING.md",
     ROOT / "docs/agent/PLANS.md",
     ROOT / "docs/agent/code_review.md",
+    ROOT / "docs/agent/MEMORY.md",
 ]
 
 LEGACY_DOCS = [
@@ -376,6 +377,20 @@ def check_task_routing_semantics(
     contracts_section = extract_markdown_section(task_routing, "Contracts и OpenSpec work")
     runtime_debug_section = extract_markdown_section(task_routing, "Runtime-debug и live verification")
     docs_section = extract_markdown_section(task_routing, "Agent docs и guidance work")
+    product_section = extract_markdown_section(task_routing, "Вопросы про продукт и домен")
+
+    for section_name, section_text in (
+        ("Вопросы про продукт и домен", product_section),
+        ("Frontend work", frontend_section),
+        ("Orchestrator work", orchestrator_section),
+        ("Go services work", go_section),
+        ("Contracts и OpenSpec work", contracts_section),
+        ("Runtime-debug и live verification", runtime_debug_section),
+        ("Agent docs и guidance work", docs_section),
+    ):
+        require_section_contains(errors, section_text, task_routing_path, section_name, "Минимум для старта:")
+        require_section_contains(errors, section_text, task_routing_path, section_name, "Подключай дополнительно, если:")
+        require_section_contains(errors, section_text, task_routing_path, section_name, "Эскалация:")
 
     frontend_runtime = get_runtime(inventory, "frontend")
     orchestrator_runtime = get_runtime(inventory, "orchestrator")
@@ -419,6 +434,7 @@ def check_task_routing_semantics(
     require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "frontend/package.json")
     require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "./debug/runtime-inventory.sh --json")
     require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", ".codex/config.toml")
+    require_section_contains(errors, docs_section, task_routing_path, "Agent docs и guidance work", "MEMORY.md")
 
 
 def main() -> int:
@@ -447,6 +463,9 @@ def main() -> int:
     runbook = texts[ROOT / "docs/agent/RUNBOOK.md"]
     verify = texts[ROOT / "docs/agent/VERIFY.md"]
     task_routing = texts[ROOT / "docs/agent/TASK_ROUTING.md"]
+    plans_doc = texts[ROOT / "docs/agent/PLANS.md"]
+    code_review_doc = texts[ROOT / "docs/agent/code_review.md"]
+    memory_doc = texts[ROOT / "docs/agent/MEMORY.md"]
     readme = texts[ROOT / "README.md"]
     claude_readme = texts[ROOT / ".claude/README.md"]
     frontend_agents = texts[ROOT / "frontend/AGENTS.md"]
@@ -458,8 +477,15 @@ def main() -> int:
     require_contains(errors, root_agents, "docs/agent/RUNBOOK.md", ROOT / "AGENTS.md")
     require_contains(errors, root_agents, "docs/agent/VERIFY.md", ROOT / "AGENTS.md")
     require_contains(errors, root_agents, "docs/agent/TASK_ROUTING.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "docs/agent/MEMORY.md", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "openspec/project.md", ROOT / "AGENTS.md")
     require_contains(errors, root_agents, ".codex/config.toml", ROOT / "AGENTS.md")
     require_contains(errors, root_agents, "./debug/runtime-inventory.sh --json", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "analysis/review", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "local change", ROOT / "AGENTS.md")
+    require_contains(errors, root_agents, "delivery", ROOT / "AGENTS.md")
+    require_not_contains(errors, root_agents, "Open these docs for the first 10 minutes of a task:", ROOT / "AGENTS.md")
+    require_not_contains(errors, root_agents, "Work is not complete until:", ROOT / "AGENTS.md")
 
     require_contains(errors, project_context, "docs/agent/INDEX.md", ROOT / "openspec/project.md")
     require_not_contains(errors, project_context, ".claude/rules/setup.md", ROOT / "openspec/project.md")
@@ -472,6 +498,9 @@ def main() -> int:
     require_contains(errors, index_doc, ".beads/", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, "DOMAIN_MAP.md", ROOT / "docs/agent/INDEX.md")
     require_contains(errors, index_doc, "TASK_ROUTING.md", ROOT / "docs/agent/INDEX.md")
+    require_contains(errors, index_doc, "MEMORY.md", ROOT / "docs/agent/INDEX.md")
+    require_contains(errors, index_doc, "AGENTS.md", ROOT / "docs/agent/INDEX.md")
+    require_not_contains(errors, index_doc, "## Вопросы первых 10 минут", ROOT / "docs/agent/INDEX.md")
     require_not_contains(errors, readme, "[CLAUDE.md]", ROOT / "README.md")
     require_not_contains(errors, claude_readme, "CLAUDE.md", ROOT / ".claude/README.md")
 
@@ -495,6 +524,10 @@ def main() -> int:
     require_contains(errors, task_routing, "./debug/runtime-inventory.sh --json", ROOT / "docs/agent/TASK_ROUTING.md")
     require_contains(errors, task_routing, "./scripts/dev/check-agent-doc-freshness.sh", ROOT / "docs/agent/TASK_ROUTING.md")
     require_contains(errors, task_routing, "bd ready", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "Минимум для старта:", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "Подключай дополнительно, если:", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_contains(errors, task_routing, "Эскалация:", ROOT / "docs/agent/TASK_ROUTING.md")
+    require_not_contains(errors, task_routing, "Если ты ещё не прошёл canonical onboarding path, сначала открой [INDEX.md](./INDEX.md)", ROOT / "docs/agent/TASK_ROUTING.md")
 
     require_contains(errors, runbook, f"Go {versions['go']}", ROOT / "docs/agent/RUNBOOK.md")
     require_contains(errors, runbook, f"Python {versions['python']}", ROOT / "docs/agent/RUNBOOK.md")
@@ -526,6 +559,25 @@ def main() -> int:
             f"npm run {script_name}",
             ROOT / "docs/agent/VERIFY.md",
         )
+
+    for needle in ("analysis/review", "local change", "delivery"):
+        require_contains(errors, verify, needle, ROOT / "docs/agent/VERIFY.md")
+        require_contains(errors, plans_doc, needle, ROOT / "docs/agent/PLANS.md")
+        require_contains(errors, code_review_doc, needle, ROOT / "docs/agent/code_review.md")
+
+    for needle in (
+        "HINDSIGHT_BANK",
+        "repo-fact",
+        "gotcha",
+        "verified-fix",
+        "active-change-note",
+        "session-noise",
+        "recall",
+        "retain",
+        "reflect",
+        "codex::command-center-1c",
+    ):
+        require_contains(errors, memory_doc, needle, ROOT / "docs/agent/MEMORY.md")
 
     require_contains(errors, frontend_agents, "npm run lint", ROOT / "frontend/AGENTS.md")
     require_contains(errors, frontend_agents, "npm run test:run", ROOT / "frontend/AGENTS.md")
