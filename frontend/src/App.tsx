@@ -17,6 +17,7 @@ import {
   recordUiWindowError,
   setUiActionJournalEnabled,
 } from './observability/uiActionJournal'
+import { setUiIncidentTelemetryEnabled } from './observability/uiIncidentTelemetry'
 
 const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard').then((m) => ({ default: m.Dashboard })))
 const Operations = lazy(() => import('./pages/Operations/OperationsPage').then((m) => ({ default: m.OperationsPage })))
@@ -246,6 +247,7 @@ function UiObservabilityBridge({ enabled }: { enabled: boolean }) {
 
   useEffect(() => {
     setUiActionJournalEnabled(enabled)
+    setUiIncidentTelemetryEnabled(enabled)
   }, [enabled])
 
   useEffect(() => {

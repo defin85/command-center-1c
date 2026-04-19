@@ -1,5 +1,9 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+
+function resolveFirstExistingPath(...candidates) {
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]
+}
 
 const targetPath = resolve(process.cwd(), 'src/api/generated/v2/v2.ts')
 const retryRequestPath = resolve(process.cwd(), 'src/api/generated/model/poolRunRetryRequest.ts')
@@ -54,21 +58,39 @@ const streamConflictResponsePath = resolve(
   process.cwd(),
   'src/api/generated/model/databaseStreamConflictResponse.ts'
 )
-const bootstrapImportScopeEntityScopeItemPath = resolve(
-  process.cwd(),
-  'src/api/generated/model/poolMasterDataBootstrapImportScopeRequestEntityScopeItem.ts'
+const bootstrapImportScopeEntityScopeItemPath = resolveFirstExistingPath(
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/poolMasterDataBootstrapImportScopeRequestEntityScopeItem.ts'
+  ),
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/bootstrapImportScopeRequestEntityScopeItem.ts'
+  )
 )
-const bootstrapImportJobEntityScopeItemPath = resolve(
-  process.cwd(),
-  'src/api/generated/model/poolMasterDataBootstrapImportJobEntityScopeItem.ts'
+const bootstrapImportJobEntityScopeItemPath = resolveFirstExistingPath(
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/poolMasterDataBootstrapImportJobEntityScopeItem.ts'
+  ),
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/bootstrapImportJobEntityScopeItem.ts'
+  )
 )
 const factualSummaryPath = resolve(
   process.cwd(),
   'src/api/generated/model/poolFactualSummary.ts'
 )
-const bootstrapCollectionCreateRequestAllOfPath = resolve(
-  process.cwd(),
-  'src/api/generated/model/poolMasterDataBootstrapCollectionCreateRequestAllOf.ts'
+const bootstrapCollectionCreateRequestAllOfPath = resolveFirstExistingPath(
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/poolMasterDataBootstrapCollectionCreateRequestAllOf.ts'
+  ),
+  resolve(
+    process.cwd(),
+    'src/api/generated/model/bootstrapCollectionCreateRequest.ts'
+  )
 )
 
 const bodyImportRegex = /import type { BodyType } from ['"]\.\.\/\.\.\/mutator['"];?/
@@ -96,6 +118,9 @@ const generatedHeader =
   ' */\n'
 
 function ensureBootstrapImportGlAccountEnum(filePath) {
+  if (!existsSync(filePath)) {
+    return
+  }
   const enumMember = "  gl_account: 'gl_account',\n"
   let content = readFileSync(filePath, 'utf8')
   if (!content.includes(enumMember)) {
@@ -137,12 +162,23 @@ function ensurePoolFactualSummarySyncFields(filePath) {
 }
 
 function ensureBootstrapCollectionCreateRequestCollectionId(filePath) {
+  if (!existsSync(filePath)) {
+    return
+  }
   let content = readFileSync(filePath, 'utf8')
   if (!content.includes('  collection_id?: string;\n')) {
-    content = content.replace(
-      'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n',
-      'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n  collection_id?: string;\n'
-    )
+    if (content.includes('export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n')) {
+      content = content.replace(
+        'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n',
+        'export type PoolMasterDataBootstrapCollectionCreateRequestAllOf = {\n  collection_id?: string;\n'
+      )
+    }
+    if (content.includes('export interface BootstrapCollectionCreateRequest {\n')) {
+      content = content.replace(
+        'export interface BootstrapCollectionCreateRequest {\n',
+        'export interface BootstrapCollectionCreateRequest {\n  collection_id?: string;\n'
+      )
+    }
   }
   writeFileSync(filePath, content, 'utf8')
 }

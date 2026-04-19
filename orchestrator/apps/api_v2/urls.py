@@ -44,6 +44,7 @@ from .views import (
     intercompany_pools_master_data_dedupe,
     intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
+    ui_incident_telemetry,
 )
 
 app_name = 'api_v2'
@@ -99,6 +100,21 @@ urlpatterns = [
     path('ui/table-metadata/', ui.get_table_metadata, name='ui-table-metadata'),
     path('ui/operation-exposures/editor-hints/', ui.get_operation_exposure_editor_hints, name='ui-operation-exposure-editor-hints'),
     path('ui/execution-plan/preview/', ui.preview_execution_plan, name='ui-execution-plan-preview'),
+    path(
+        'ui/incident-telemetry/ingest/',
+        ui_incident_telemetry.ingest_ui_incident_telemetry,
+        name='ui-incident-telemetry-ingest',
+    ),
+    path(
+        'ui/incident-telemetry/incidents/',
+        ui_incident_telemetry.list_recent_ui_incident_summaries,
+        name='ui-incident-telemetry-incidents',
+    ),
+    path(
+        'ui/incident-telemetry/timeline/',
+        ui_incident_telemetry.get_recent_ui_incident_timeline,
+        name='ui-incident-telemetry-timeline',
+    ),
 
     # ========================================================================
     # Databases

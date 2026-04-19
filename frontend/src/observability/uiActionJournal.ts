@@ -6,7 +6,7 @@ type RouteLocationInput = {
   hash?: string
 }
 
-type RouteSnapshot = {
+export type RouteSnapshot = {
   path: string
   search: string
   hash: string
@@ -93,7 +93,8 @@ type WebSocketEvent = {
   reconnect_attempt?: number
 }
 
-type UiJournalEvent = RouteEvent | ActionEvent | HttpFailureEvent | UiErrorEvent | WebSocketEvent
+export type UiJournalEvent = RouteEvent | ActionEvent | HttpFailureEvent | UiErrorEvent | WebSocketEvent
+type UiJournalListener = (event: UiJournalEvent) => void
 
 type ActiveActionContext = {
   ui_action_id: string
@@ -431,6 +432,7 @@ class UiActionJournal {
   private enabled = false
   private sessionId: string | null = null
   private readonly events: UiJournalEvent[] = []
+  private readonly listeners = new Set<UiJournalListener>()
   private readonly activeRequests = new Map<string, ActiveHttpRequest>()
   private readonly activeWebSockets = new Map<string, ActiveWebSocket>()
   private readonly websocketChurnHistory = new Map<string, number[]>()
@@ -726,6 +728,13 @@ class UiActionJournal {
     }
   }
 
+  subscribe(listener: UiJournalListener) {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
   private startSession() {
     this.reset()
     this.sessionId = generateRuntimeId('session')
@@ -989,6 +998,9 @@ class UiActionJournal {
     if (this.events.length > JOURNAL_MAX_EVENTS) {
       this.events.splice(0, this.events.length - JOURNAL_MAX_EVENTS)
     }
+    for (const listener of this.listeners) {
+      listener(event)
+    }
   }
 
   private reset() {
@@ -1139,6 +1151,10 @@ export const recordUiUnhandledRejection = (reason: unknown) => {
 export const recordUiWebSocketLifecycle = (input: WebSocketLifecycleInput) => {
   uiActionJournal.recordWebSocketLifecycle(input)
 }
+
+export const subscribeToUiActionJournal = (listener: UiJournalListener) => (
+  uiActionJournal.subscribe(listener)
+)
 
 export const buildUiProblemCorrelation = (value: unknown): RequestProblemDetails | undefined => {
   if (!value || typeof value !== 'object') {
