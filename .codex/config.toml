@@ -1,17 +1,8 @@
-[mcp_servers.claude-context]
-command = "bash"
-args = [
-  "-lc",
-  "source \"$HOME/.nvm/nvm.sh\" >/dev/null 2>&1 && nvm exec --silent 20 claude-context-mcp-local || claude-context-mcp-local",
-]
-startup_timeout_sec = 60.0
-
-[mcp_servers.claude-context.env]
-EMBEDDING_MODEL = "nomic-embed-text-v2-moe"
-EMBEDDING_PROVIDER = "Ollama"
-MILVUS_ADDRESS = "127.0.0.1:20530"
-CUSTOM_EXTENSIONS = ".bsl"
-CUSTOM_IGNORE_PATTERNS = ".git/**,.venv/**,.beads/**,.agent-browser/**,.ruff_cache/**,frontend/node_modules/**,frontend/dist/**,frontend/test-results/**,orchestrator/.pytest_cache/**,orchestrator/__pycache__/**,orchestrator/htmlcov/**,logs/**,pids/**,bin/**,docs/archive/**,frontend/src/api/generated/**,generated/**,com._1c.v8.ibis.admin-1.6.7/**"
+# Claude Context comes from the shared user-level daemon configured in ~/.codex/config.toml.
+# Do not add a repo-local `mcp_servers.claude-context` command here.
+# Repo-owned Claude Context hints:
+#   customExtensions = [".bsl"]
+# Ignore patterns belong in committed .contextignore.
 
 [mcp_servers.chrome-devtools]
 command = "bash"

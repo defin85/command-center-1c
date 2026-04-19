@@ -1,0 +1,19 @@
+# Repo-specific Claude Context ignore patterns.
+.git/**
+.venv/**
+.beads/**
+.agent-browser/**
+.ruff_cache/**
+frontend/node_modules/**
+frontend/dist/**
+frontend/test-results/**
+orchestrator/.pytest_cache/**
+orchestrator/__pycache__/**
+orchestrator/htmlcov/**
+logs/**
+pids/**
+bin/**
+docs/archive/**
+frontend/src/api/generated/**
+generated/**
+com._1c.v8.ibis.admin-1.6.7/**
