@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 import type { ReactNode } from 'react'
 import type { Artifact, ArtifactVersion } from '../../../api/artifacts'
-import { changeLanguage } from '@/i18n/runtime'
+import { changeLanguage, i18n } from '@/i18n/runtime'
 
 const {
   mockUseArtifactVersions,
@@ -40,6 +40,12 @@ vi.mock('../../../observability/confirmWithTracking', () => ({
 vi.mock('../../../observability/uiActionJournal', () => ({
   trackUiAction: mockTrackUiAction,
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createArtifactDetailsDrawerAntdTestDouble } = await import('./artifactDetailsDrawerAntdTestDouble')
+  return createArtifactDetailsDrawerAntdTestDouble(actual)
+})
 
 vi.mock('../../../components/platform', () => ({
   DrawerSurfaceShell: ({
@@ -106,8 +112,18 @@ function renderDrawer() {
 }
 
 describe('ArtifactDetailsDrawer observability', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
+  })
+
+  afterAll(async () => {
+    await changeLanguage('ru')
+  })
+
+  beforeEach(async () => {
+    if (i18n.language !== 'en') {
+      await changeLanguage('en')
+    }
     mockConfirmWithTracking.mockClear()
     mockTrackUiAction.mockClear()
     mockAliasMutate.mockReset()
@@ -123,10 +139,6 @@ describe('ArtifactDetailsDrawer observability', () => {
       },
       isLoading: false,
     })
-  })
-
-  afterEach(async () => {
-    await changeLanguage('ru')
   })
 
   it('tracks stable/approved alias confirmation through confirmWithTracking', async () => {
