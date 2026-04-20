@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { App as AntApp } from 'antd'
@@ -37,6 +38,129 @@ vi.mock('../../../api/generated', async (importOriginal) => {
   }
 })
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createWorkflowListAntdTestDouble } = await import('./workflowListAntdTestDouble')
+  return createWorkflowListAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => ({
+  WorkspacePage: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div data-testid="workflow-list-workspace">
+      {header}
+      {children}
+    </div>
+  ),
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title?: ReactNode
+    subtitle?: ReactNode
+    actions?: ReactNode
+  }) => (
+    <header data-testid="workflow-list-header">
+      <h2>{title}</h2>
+      {subtitle ? <p>{subtitle}</p> : null}
+      <div>{actions}</div>
+    </header>
+  ),
+  MasterDetailShell: ({
+    list,
+    detail,
+  }: {
+    list?: ReactNode
+    detail?: ReactNode
+  }) => (
+    <div data-testid="workflow-list-shell">
+      <section>{list}</section>
+      <aside>{detail}</aside>
+    </div>
+  ),
+  EntityList: ({
+    title,
+    extra,
+    toolbar,
+    loading,
+    error,
+    emptyDescription,
+    dataSource,
+    renderItem,
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    toolbar?: ReactNode
+    loading?: boolean
+    error?: ReactNode
+    emptyDescription?: ReactNode
+    dataSource?: Array<unknown>
+    renderItem?: (item: never) => ReactNode
+  }) => (
+    <div data-testid="workflow-list-entity-list">
+      {title ? <h3>{title}</h3> : null}
+      {extra}
+      {toolbar}
+      {loading ? <div>loading</div> : null}
+      {error ? <div>{error}</div> : null}
+      {!loading && !error && (!dataSource || dataSource.length === 0) ? <div>{emptyDescription}</div> : null}
+      {dataSource?.map((item, index) => (
+        <div key={index}>{renderItem ? renderItem(item as never) : null}</div>
+      ))}
+    </div>
+  ),
+  EntityDetails: ({
+    title,
+    extra,
+    loading,
+    error,
+    empty,
+    emptyDescription,
+    children,
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    loading?: boolean
+    error?: ReactNode
+    empty?: boolean
+    emptyDescription?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div data-testid="workflow-list-entity-details">
+      {title ? <h3>{title}</h3> : null}
+      {extra}
+      {loading ? <div>loading</div> : null}
+      {error ? <div>{error}</div> : null}
+      {empty ? <div>{emptyDescription}</div> : children}
+    </div>
+  ),
+  JsonBlock: ({
+    title,
+    value,
+    dataTestId,
+  }: {
+    title?: ReactNode
+    value: unknown
+    dataTestId?: string
+  }) => (
+    <div>
+      {title ? <h4>{title}</h4> : null}
+      <pre data-testid={dataTestId}>{JSON.stringify(value, null, 2)}</pre>
+    </div>
+  ),
+  StatusBadge: ({
+    label,
+  }: {
+    label?: ReactNode
+  }) => <span>{label}</span>,
+}))
+
 function renderPage(initialEntry = '/workflows') {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -68,9 +192,12 @@ function WorkflowListLocationProbe() {
 }
 
 describe('WorkflowList', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'workflows')
+  })
+
+  beforeEach(() => {
     mockGetWorkflowsListWorkflows.mockReset()
     mockGetWorkflowsGetWorkflow.mockReset()
     mockNavigate.mockReset()
@@ -129,7 +256,7 @@ describe('WorkflowList', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'workflows')
     await changeLanguage('ru')
   })
