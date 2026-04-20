@@ -94,9 +94,58 @@ type SelectProps = {
   [key: string]: unknown
 }
 
+type SwitchProps = {
+  checked?: boolean
+  className?: string
+  defaultChecked?: boolean
+  disabled?: boolean
+  onChange?: (checked: boolean, event?: MouseEvent<HTMLButtonElement>) => void
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
 type SpaceProps = {
   children?: ReactNode
   className?: string
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type TabsItem = {
+  children?: ReactNode
+  disabled?: boolean
+  key: string
+  label?: ReactNode
+}
+
+type TabsProps = {
+  activeKey?: string
+  className?: string
+  defaultActiveKey?: string
+  items?: TabsItem[]
+  onChange?: (key: string) => void
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type TextProps = {
+  children?: ReactNode
+  code?: boolean
+  strong?: boolean
+  style?: CSSProperties
+  type?: 'secondary' | 'success' | 'warning' | 'danger'
+  'data-testid'?: string
+}
+
+type TitleProps = {
+  children?: ReactNode
+  level?: 1 | 2 | 3 | 4 | 5
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type ParagraphProps = {
+  children?: ReactNode
   style?: CSSProperties
   'data-testid'?: string
 }
@@ -465,6 +514,40 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
     </div>
   )
 
+  const MockSwitch = (props: SwitchProps) => {
+    const {
+      checked,
+      className,
+      defaultChecked = false,
+      disabled,
+      onChange,
+      style,
+      'data-testid': dataTestId,
+    } = props
+    const [internalChecked, setInternalChecked] = useState(defaultChecked)
+    const isControlled = Object.prototype.hasOwnProperty.call(props, 'checked')
+    const currentChecked = isControlled ? Boolean(checked) : internalChecked
+
+    return (
+      <button
+        type="button"
+        role="switch"
+        className={className}
+        aria-checked={currentChecked}
+        disabled={disabled}
+        style={style}
+        data-testid={dataTestId}
+        onClick={(event) => {
+          const nextChecked = !currentChecked
+          if (!isControlled) {
+            setInternalChecked(nextChecked)
+          }
+          onChange?.(nextChecked, event)
+        }}
+      />
+    )
+  }
+
   const MockInputNumber = (props: InputNumberProps) => {
     const {
       defaultValue,
@@ -632,6 +715,116 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
     )
   }
 
+  const MockTabs = (props: TabsProps) => {
+    const {
+      activeKey,
+      className,
+      defaultActiveKey,
+      items = [],
+      onChange,
+      style,
+      'data-testid': dataTestId,
+    } = props
+    const [internalActiveKey, setInternalActiveKey] = useState<string | undefined>(
+      defaultActiveKey ?? items[0]?.key
+    )
+    const isControlled = Object.prototype.hasOwnProperty.call(props, 'activeKey')
+    const currentActiveKey = (isControlled ? activeKey : internalActiveKey) ?? items[0]?.key
+    const activeItem = items.find((item) => item.key === currentActiveKey) ?? items[0] ?? null
+    const tabsId = useId()
+
+    return (
+      <div className={className} style={style} data-testid={dataTestId}>
+        <div role="tablist">
+          {items.map((item) => {
+            const selected = item.key === activeItem?.key
+            const tabId = `${tabsId}-tab-${item.key}`
+            const panelId = `${tabsId}-panel-${item.key}`
+            return (
+              <button
+                key={item.key}
+                id={tabId}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls={panelId}
+                disabled={item.disabled}
+                onClick={() => {
+                  if (item.disabled) {
+                    return
+                  }
+                  if (!isControlled) {
+                    setInternalActiveKey(item.key)
+                  }
+                  onChange?.(item.key)
+                }}
+              >
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+        {activeItem ? (
+          <div
+            id={`${tabsId}-panel-${activeItem.key}`}
+            role="tabpanel"
+            aria-labelledby={`${tabsId}-tab-${activeItem.key}`}
+          >
+            {activeItem.children}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  const MockText = ({
+    children,
+    code,
+    strong,
+    style,
+    type,
+    'data-testid': dataTestId,
+  }: TextProps) => {
+    if (code) {
+      return <code style={style} data-text-type={type} data-testid={dataTestId}>{children}</code>
+    }
+    if (strong) {
+      return <strong style={style} data-text-type={type} data-testid={dataTestId}>{children}</strong>
+    }
+    return <span style={style} data-text-type={type} data-testid={dataTestId}>{children}</span>
+  }
+
+  const MockTitle = ({
+    children,
+    level = 4,
+    style,
+    'data-testid': dataTestId,
+  }: TitleProps) => {
+    const titleByLevel = {
+      1: <h1 style={style} data-testid={dataTestId}>{children}</h1>,
+      2: <h2 style={style} data-testid={dataTestId}>{children}</h2>,
+      3: <h3 style={style} data-testid={dataTestId}>{children}</h3>,
+      4: <h4 style={style} data-testid={dataTestId}>{children}</h4>,
+      5: <h5 style={style} data-testid={dataTestId}>{children}</h5>,
+    } as const
+    return titleByLevel[level]
+  }
+
+  const MockParagraph = ({
+    children,
+    style,
+    'data-testid': dataTestId,
+  }: ParagraphProps) => <p style={style} data-testid={dataTestId}>{children}</p>
+
+  const MockTypography = Object.assign(
+    ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    {
+      Paragraph: MockParagraph,
+      Text: MockText,
+      Title: MockTitle,
+    }
+  )
+
   return {
     ...actual,
     Alert: MockAlert as unknown as AntdModule['Alert'],
@@ -645,7 +838,10 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
     Row: MockRow as unknown as AntdModule['Row'],
     Select: MockSelect as unknown as AntdModule['Select'],
     Space: MockSpace as unknown as AntdModule['Space'],
+    Switch: MockSwitch as unknown as AntdModule['Switch'],
     Table: MockTable as unknown as AntdModule['Table'],
     Tag: MockTag as unknown as AntdModule['Tag'],
+    Tabs: MockTabs as unknown as AntdModule['Tabs'],
+    Typography: MockTypography as unknown as AntdModule['Typography'],
   }
 }
