@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import type { ReactNode } from 'react'
+import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, Form } from 'antd'
@@ -24,6 +25,33 @@ vi.mock('../../../../api/queries/driverCommands', () => ({
     },
     isLoading: false,
   }),
+}))
+
+vi.mock('../../../../components/platform', () => ({
+  ModalFormShell: ({
+    children,
+    forceRender,
+    open,
+    submitText,
+    subtitle,
+    title,
+  }: {
+    children?: ReactNode
+    forceRender?: boolean
+    open?: boolean
+    submitText?: ReactNode
+    subtitle?: ReactNode
+    title?: ReactNode
+  }) => (
+    open || forceRender ? (
+      <section role="dialog" hidden={!open}>
+        {title ? <h2>{title}</h2> : null}
+        {subtitle ? <p>{subtitle}</p> : null}
+        {children}
+        <button type="button">{submitText ?? 'Save'}</button>
+      </section>
+    ) : null
+  ),
 }))
 
 const makeDb = (overrides: Partial<Database> = {}): Database =>
@@ -104,13 +132,16 @@ function requireForm(getForm: () => FormInstance | null): FormInstance {
 }
 
 describe('DatabaseIbcmdConnectionProfileModal', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'databases')
+  })
+
+  beforeEach(() => {
     mockOfflineKeys = {}
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'databases')
     await changeLanguage('ru')
   })

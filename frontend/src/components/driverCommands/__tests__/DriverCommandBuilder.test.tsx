@@ -4,6 +4,18 @@ import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
 
+const {
+  mockConfirmWithTracking,
+} = vi.hoisted(() => ({
+  mockConfirmWithTracking: vi.fn((_modal: unknown, config: { onOk?: () => unknown }) => config.onOk?.()),
+}))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createDriverCommandBuilderAntdTestDouble } = await import('./driverCommandBuilderAntdTestDouble')
+  return createDriverCommandBuilderAntdTestDouble(actual)
+})
+
 import type { DriverCommandsResponseV2 } from '../../../api/driverCommands'
 import { DriverCommandBuilder, type DriverCommandOperationConfig } from '../DriverCommandBuilder'
 
@@ -49,6 +61,22 @@ vi.mock('../../../authz/useAuthz', () => ({
   useAuthz: () => mockUseAuthz(),
 }))
 
+vi.mock('../../../observability/confirmWithTracking', () => ({
+  confirmWithTracking: mockConfirmWithTracking,
+}))
+
+vi.mock('../builder/IbcmdDerivedConnectionSummary', () => ({
+  IbcmdDerivedConnectionSummary: ({
+    selectedDatabaseIds,
+  }: {
+    selectedDatabaseIds: string[]
+  }) => (
+    <div data-testid="ibcmd-derived-connection-summary">
+      {selectedDatabaseIds.join(',')}
+    </div>
+  ),
+}))
+
 function renderBuilder({
   driver,
   initialConfig,
@@ -85,6 +113,8 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     mockUseDriverCommandShortcuts.mockReset()
     mockCreateShortcut.mockReset()
     mockDeleteShortcut.mockReset()
+    mockConfirmWithTracking.mockReset()
+    mockConfirmWithTracking.mockImplementation((_modal, config: { onOk?: () => unknown }) => config.onOk?.())
 
     mockUseAuthz.mockReturnValue({ isStaff: true })
     mockUseDriverCommandShortcuts.mockReturnValue({ data: { items: [] }, isLoading: false, isError: false, error: null })
@@ -462,10 +492,15 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     })
 
     await user.click(screen.getByRole('button', { name: 'Save shortcut' }))
-    const dialog = await screen.findByRole('dialog')
-    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(mockConfirmWithTracking).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        title: 'Save shortcut',
+        okText: 'Save',
+      }),
+    )
 
-    expect(mockCreateShortcut).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(mockCreateShortcut).toHaveBeenCalledTimes(1))
     const payload = mockCreateShortcut.mock.calls[0]?.[0]
     expect(payload).toMatchObject({
       driver: 'ibcmd',
