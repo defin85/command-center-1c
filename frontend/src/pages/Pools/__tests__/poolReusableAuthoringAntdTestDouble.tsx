@@ -63,6 +63,7 @@ type InputProps = {
 }
 
 type TextAreaProps = {
+  'aria-label'?: string
   autoSize?: unknown
   className?: string
   defaultValue?: string
@@ -332,6 +333,7 @@ export function createPoolReusableAuthoringAntdTestDouble(actual: AntdModule): A
   }
 
   const MockTextArea = ({
+    'aria-label': ariaLabel,
     className,
     defaultValue,
     disabled,
@@ -351,6 +353,7 @@ export function createPoolReusableAuthoringAntdTestDouble(actual: AntdModule): A
     return (
       <textarea
         id={id}
+        aria-label={ariaLabel}
         className={className}
         disabled={disabled}
         name={name}

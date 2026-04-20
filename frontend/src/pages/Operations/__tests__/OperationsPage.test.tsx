@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 
 import { OperationsPage } from '../OperationsPage'
@@ -96,6 +96,111 @@ vi.mock('../../../api/client', () => ({
 vi.mock('../../../api/runtimeSettings', () => ({
   getRuntimeSettings: (...args: unknown[]) => mockGetRuntimeSettings(...args),
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createOperationsAntdTestDouble } = await import('./operationsAntdTestDouble')
+  return createOperationsAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../components/platform')>(
+    '../../../components/platform'
+  )
+
+  return {
+    ...actual,
+    WorkspacePage: ({ header, children }: { header?: ReactNode; children: ReactNode }) => (
+      <div>
+        {header}
+        {children}
+      </div>
+    ),
+    PageHeader: ({
+      title,
+      subtitle,
+      actions,
+    }: {
+      title: ReactNode
+      subtitle?: ReactNode
+      actions?: ReactNode
+    }) => (
+      <div>
+        <h2>{title}</h2>
+        {subtitle ? <p>{subtitle}</p> : null}
+        {actions}
+      </div>
+    ),
+    MasterDetailShell: ({
+      list,
+      detail,
+      detailOpen,
+      detailDrawerTitle,
+      onCloseDetail,
+    }: {
+      list: ReactNode
+      detail: ReactNode
+      detailOpen?: boolean
+      detailDrawerTitle?: ReactNode
+      onCloseDetail?: () => void
+    }) => (
+      <div>
+        <section>{list}</section>
+        <section data-detail-open={detailOpen ? 'true' : 'false'}>
+          {detailDrawerTitle ? <h3>{detailDrawerTitle}</h3> : null}
+          {detailOpen && onCloseDetail ? (
+            <button type="button" onClick={onCloseDetail}>
+              Close detail
+            </button>
+          ) : null}
+          {detail}
+        </section>
+      </div>
+    ),
+    EntityList: ({
+      title,
+      extra,
+      toolbar,
+      loading,
+      emptyDescription,
+      dataSource,
+      renderItem,
+    }: {
+      title?: ReactNode
+      extra?: ReactNode
+      toolbar?: ReactNode
+      loading?: boolean
+      emptyDescription?: ReactNode
+      dataSource?: Array<Record<string, unknown>>
+      renderItem: (item: Record<string, unknown>) => ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {extra}
+        {toolbar}
+        {loading ? <div>Loading</div> : (dataSource?.length ?? 0) === 0 ? <div>{emptyDescription}</div> : (
+          (dataSource ?? []).map((item, index) => (
+            <div key={String(item.id ?? index)}>
+              {renderItem(item)}
+            </div>
+          ))
+        )}
+      </section>
+    ),
+    EntityDetails: ({
+      title,
+      children,
+    }: {
+      title?: ReactNode
+      children?: ReactNode
+    }) => (
+      <section>
+        {title ? <h3>{title}</h3> : null}
+        {children}
+      </section>
+    ),
+  }
+})
 
 vi.mock('../../../authz/useAuthz', () => ({
   useAuthz: () => ({
@@ -199,9 +304,12 @@ function renderOperationsPage(initialEntry = '/operations') {
 }
 
 describe('OperationsPage', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'operations')
+  })
+
+  beforeEach(() => {
     vi.clearAllMocks()
     mockGetRuntimeSettings.mockResolvedValue([])
     mockUseOperations.mockReturnValue({
@@ -216,21 +324,19 @@ describe('OperationsPage', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'operations')
     await changeLanguage('ru')
   })
 
   it('restores selected operation and active view from query params', async () => {
-    const user = userEvent.setup()
-
     renderOperationsPage('/operations?operation=operation-1&tab=monitor')
 
     expect(await screen.findByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
     expect(screen.getByTestId('operation-timeline-drawer')).toHaveTextContent('Timeline operation-1')
     expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=operation-1&tab=monitor')
 
-    await user.click(screen.getByRole('button', { name: 'Close timeline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close timeline' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=operation-1&tab=inspect')
@@ -239,27 +345,25 @@ describe('OperationsPage', () => {
   })
 
   it('keeps selected operation and active view in the URL when the operator switches timeline context', async () => {
-    const user = userEvent.setup()
-
     renderOperationsPage('/operations')
 
     expect(await screen.findByRole('heading', { name: 'Operations Monitor', level: 2 })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Open operation manual lock scheduled jobs' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open operation manual lock scheduled jobs' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=manual-op-1&tab=inspect')
     })
     expect(screen.getByTestId('operation-inspect-panel')).toHaveTextContent('Inspect manual-op-1')
 
-    await user.click(screen.getByRole('button', { name: 'Open timeline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open timeline' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=manual-op-1&tab=monitor')
     })
     expect(screen.getByTestId('operation-timeline-drawer')).toHaveTextContent('Timeline manual-op-1')
 
-    await user.click(screen.getByRole('button', { name: 'Close timeline' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close timeline' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('operations-location')).toHaveTextContent('/operations?operation=manual-op-1&tab=inspect')
