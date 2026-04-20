@@ -1,4 +1,13 @@
-import { useId, useState, type ChangeEvent, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useId,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from 'react'
 
 type AntdModule = typeof import('antd')
 
@@ -83,6 +92,20 @@ type SpaceProps = {
   'data-testid'?: string
 }
 
+type RadioGroupProps = {
+  children?: ReactNode
+  defaultValue?: unknown
+  onChange?: (event: { target: { value: unknown } }) => void
+  value?: unknown
+  'data-testid'?: string
+}
+
+type RadioButtonProps = {
+  children?: ReactNode
+  disabled?: boolean
+  value?: unknown
+}
+
 type TableColumn = {
   key?: string
   title?: ReactNode
@@ -99,6 +122,27 @@ type TableProps = {
   rowKey?: string | ((record: Record<string, unknown>) => string)
   style?: CSSProperties
   locale?: { emptyText?: ReactNode }
+  'data-testid'?: string
+}
+
+type TextProps = {
+  children?: ReactNode
+  code?: boolean
+  strong?: boolean
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type TitleProps = {
+  children?: ReactNode
+  level?: 1 | 2 | 3 | 4 | 5
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type ParagraphProps = {
+  children?: ReactNode
+  style?: CSSProperties
   'data-testid'?: string
 }
 
@@ -149,6 +193,12 @@ function resolveSelectedLabel(
 }
 
 export function createPoolRunsAntdTestDouble(actual: AntdModule): AntdModule {
+  const RadioGroupContext = createContext<{
+    currentValue: unknown
+    disabled?: boolean
+    selectValue: (value: unknown) => void
+  } | null>(null)
+
   const MockAlert = ({
     action,
     children,
@@ -328,6 +378,66 @@ export function createPoolRunsAntdTestDouble(actual: AntdModule): AntdModule {
     <div style={style} data-testid={dataTestId}>{children}</div>
   )
 
+  const MockRadioGroup = (props: RadioGroupProps) => {
+    const {
+      children,
+      defaultValue,
+      onChange,
+      value,
+      'data-testid': dataTestId,
+    } = props
+    const [internalValue, setInternalValue] = useState(defaultValue)
+    const isControlled = Object.prototype.hasOwnProperty.call(props, 'value')
+    const currentValue = isControlled ? value : internalValue
+
+    const selectValue = (nextValue: unknown) => {
+      if (!isControlled) {
+        setInternalValue(nextValue)
+      }
+      onChange?.({ target: { value: nextValue } })
+    }
+
+    return (
+      <RadioGroupContext.Provider value={{ currentValue, selectValue }}>
+        <div role="radiogroup" data-testid={dataTestId}>{children}</div>
+      </RadioGroupContext.Provider>
+    )
+  }
+
+  const MockRadioButton = ({
+    children,
+    disabled,
+    value,
+  }: RadioButtonProps) => {
+    const context = useContext(RadioGroupContext)
+    const checked = Object.is(context?.currentValue, value)
+
+    return (
+      <label>
+        <input
+          type="radio"
+          role="radio"
+          checked={checked}
+          disabled={disabled}
+          onChange={() => {
+            if (!disabled) {
+              context?.selectValue(value)
+            }
+          }}
+        />
+        {children}
+      </label>
+    )
+  }
+
+  const MockRadio = Object.assign(
+    ({ children }: { children?: ReactNode }) => <>{children}</>,
+    {
+      Group: MockRadioGroup,
+      Button: MockRadioButton,
+    }
+  )
+
   const MockInputNumber = (props: InputNumberProps) => {
     const {
       defaultValue,
@@ -502,6 +612,54 @@ export function createPoolRunsAntdTestDouble(actual: AntdModule): AntdModule {
     )
   }
 
+  const MockText = ({
+    children,
+    code,
+    strong,
+    style,
+    'data-testid': dataTestId,
+  }: TextProps) => {
+    let content: ReactNode = children
+    if (code) {
+      content = <code>{content}</code>
+    }
+    if (strong) {
+      content = <strong>{content}</strong>
+    }
+    return <span style={style} data-testid={dataTestId}>{content}</span>
+  }
+
+  const MockTitle = ({
+    children,
+    level = 4,
+    style,
+    'data-testid': dataTestId,
+  }: TitleProps) => {
+    const titleByLevel = {
+      1: <h1 style={style} data-testid={dataTestId}>{children}</h1>,
+      2: <h2 style={style} data-testid={dataTestId}>{children}</h2>,
+      3: <h3 style={style} data-testid={dataTestId}>{children}</h3>,
+      4: <h4 style={style} data-testid={dataTestId}>{children}</h4>,
+      5: <h5 style={style} data-testid={dataTestId}>{children}</h5>,
+    } as const
+    return titleByLevel[level]
+  }
+
+  const MockParagraph = ({
+    children,
+    style,
+    'data-testid': dataTestId,
+  }: ParagraphProps) => <p style={style} data-testid={dataTestId}>{children}</p>
+
+  const MockTypography = Object.assign(
+    ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    {
+      Text: MockText,
+      Title: MockTitle,
+      Paragraph: MockParagraph,
+    }
+  )
+
   return {
     ...actual,
     Alert: MockAlert as unknown as AntdModule['Alert'],
@@ -510,10 +668,12 @@ export function createPoolRunsAntdTestDouble(actual: AntdModule): AntdModule {
     Collapse: MockCollapse as unknown as AntdModule['Collapse'],
     Descriptions: MockDescriptions as unknown as AntdModule['Descriptions'],
     InputNumber: MockInputNumber as unknown as AntdModule['InputNumber'],
+    Radio: MockRadio as unknown as AntdModule['Radio'],
     Row: MockRow as unknown as AntdModule['Row'],
     Select: MockSelect as unknown as AntdModule['Select'],
     Space: MockSpace as unknown as AntdModule['Space'],
     Table: MockTable as unknown as AntdModule['Table'],
     Tag: MockTag as unknown as AntdModule['Tag'],
+    Typography: MockTypography as unknown as AntdModule['Typography'],
   }
 }
