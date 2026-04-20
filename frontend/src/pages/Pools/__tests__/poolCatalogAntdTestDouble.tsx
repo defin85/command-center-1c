@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react'
+import { useId, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 
 type AntdModule = typeof import('antd')
 
@@ -36,6 +36,30 @@ type OverlayProps = {
   'data-testid'?: string
 }
 
+type SelectOption = {
+  value: unknown
+  label?: ReactNode
+  disabled?: boolean
+}
+
+type SelectProps = {
+  allowClear?: boolean
+  className?: string
+  defaultValue?: unknown
+  disabled?: boolean
+  labelInValue?: boolean
+  loading?: boolean
+  notFoundContent?: ReactNode
+  onChange?: (value: unknown, option?: SelectOption) => void
+  onOpenChange?: (open: boolean) => void
+  options?: SelectOption[]
+  placeholder?: ReactNode
+  style?: CSSProperties
+  value?: unknown
+  'data-testid'?: string
+  [key: string]: unknown
+}
+
 const resolveDataIndex = (
   record: Record<string, unknown>,
   dataIndex: TableColumn['dataIndex'],
@@ -57,6 +81,37 @@ const resolveDataIndex = (
 const resolveAccessibleLabel = (title: ReactNode) => (
   typeof title === 'string' || typeof title === 'number' ? String(title) : undefined
 )
+
+function isLabelValue(value: unknown): value is { value: unknown; label?: ReactNode } {
+  return Boolean(value) && typeof value === 'object' && 'value' in (value as Record<string, unknown>)
+}
+
+function resolveSelectedValue(value: unknown, labelInValue?: boolean) {
+  if (labelInValue && isLabelValue(value)) {
+    return value.value
+  }
+  return value
+}
+
+function resolveSelectedLabel(
+  value: unknown,
+  options: SelectOption[],
+  labelInValue?: boolean,
+) {
+  if (labelInValue && isLabelValue(value) && value.label !== undefined && value.label !== null && value.label !== '') {
+    return value.label
+  }
+
+  const selectedValue = resolveSelectedValue(value, labelInValue)
+  const matchedOption = options.find((option) => Object.is(option.value, selectedValue))
+  if (matchedOption) {
+    return matchedOption.label ?? String(matchedOption.value ?? '')
+  }
+  if (selectedValue === undefined || selectedValue === null || selectedValue === '') {
+    return null
+  }
+  return String(selectedValue)
+}
 
 export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule {
   const MockCard = ({
@@ -286,12 +341,137 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
     )
   }
 
+  const MockSelect = (props: SelectProps) => {
+    const {
+      allowClear,
+      className,
+      defaultValue,
+      disabled,
+      labelInValue,
+      loading,
+      notFoundContent,
+      onChange,
+      onOpenChange,
+      options = [],
+      placeholder,
+      style,
+      value,
+      'data-testid': dataTestId,
+    } = props
+    const [open, setOpen] = useState(false)
+    const [internalValue, setInternalValue] = useState(defaultValue)
+    const isControlled = Object.prototype.hasOwnProperty.call(props, 'value')
+    const currentValue = isControlled ? value : internalValue
+    const selectedValue = resolveSelectedValue(currentValue, labelInValue)
+    const selectedLabel = resolveSelectedLabel(currentValue, options, labelInValue)
+    const listboxId = useId()
+
+    const handleSelect = (option: SelectOption) => {
+      const nextValue = labelInValue
+        ? { value: option.value, label: option.label }
+        : option.value
+      if (!isControlled) {
+        setInternalValue(nextValue)
+      }
+      onChange?.(nextValue, option)
+      setOpen(false)
+      onOpenChange?.(false)
+    }
+
+    const handleClear = (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!isControlled) {
+        setInternalValue(undefined)
+      }
+      onChange?.(undefined, undefined)
+      setOpen(false)
+      onOpenChange?.(false)
+    }
+
+    const hasSelection = selectedValue !== undefined && selectedValue !== null && selectedValue !== ''
+    const displayContent = selectedLabel ?? (loading ? 'Loading...' : placeholder)
+
+    return (
+      <div
+        className={['ant-select', disabled ? 'ant-select-disabled' : null, className].filter(Boolean).join(' ')}
+        style={style}
+        data-testid={dataTestId}
+      >
+        <div
+          role="combobox"
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          aria-controls={open ? listboxId : undefined}
+          className="ant-select-selector"
+          onMouseDown={(event) => {
+            event.preventDefault()
+            if (!disabled) {
+              setOpen((previous) => {
+                const nextOpen = !previous
+                onOpenChange?.(nextOpen)
+                return nextOpen
+              })
+            }
+          }}
+        >
+          <span className={hasSelection ? 'ant-select-selection-item' : 'ant-select-selection-placeholder'}>
+            {displayContent ?? null}
+          </span>
+          {allowClear && hasSelection ? (
+            <button
+              type="button"
+              className="ant-select-clear"
+              aria-label="Clear selection"
+              onMouseDown={handleClear}
+              onClick={handleClear}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+        {open ? (
+          <div className="ant-select-dropdown">
+            <div role="listbox" id={listboxId}>
+              {options.length > 0 ? (
+                options.map((option, index) => {
+                  const optionLabel = option.label ?? String(option.value ?? '')
+                  return (
+                    <div
+                      key={String(option.value ?? index)}
+                      role="option"
+                      aria-selected={Object.is(option.value, selectedValue)}
+                      className={[
+                        'ant-select-item-option',
+                        option.disabled ? 'ant-select-item-option-disabled' : null,
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => {
+                        if (!option.disabled) {
+                          handleSelect(option)
+                        }
+                      }}
+                    >
+                      <div className="ant-select-item-option-content">{optionLabel}</div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="ant-select-item-empty">{notFoundContent ?? null}</div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return {
     ...actual,
     Card: MockCard as unknown as AntdModule['Card'],
     Descriptions: MockDescriptions as unknown as AntdModule['Descriptions'],
     Drawer: MockDrawer as unknown as AntdModule['Drawer'],
     Modal: MockModal as unknown as AntdModule['Modal'],
+    Select: MockSelect as unknown as AntdModule['Select'],
     Table: MockTable as unknown as AntdModule['Table'],
     Tag: MockTag as unknown as AntdModule['Tag'],
   }
