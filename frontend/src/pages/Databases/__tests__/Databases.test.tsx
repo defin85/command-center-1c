@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode } from 'react'
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp } from 'antd'
@@ -330,6 +330,56 @@ vi.mock('../components/ExtensionsDrawer', () => ({
   ),
 }))
 
+vi.mock('../components/DatabaseWorkspaceDetailPanel', () => ({
+  DatabaseWorkspaceDetailPanel: ({
+    database,
+    onOpenContext,
+  }: {
+    database: Database
+    onOpenContext: (context: 'credentials' | 'dbms' | 'ibcmd' | 'metadata' | 'extensions') => void
+  }) => (
+    <div data-testid="database-workspace-detail-panel">
+      <h3>{`Database Workspace: ${database.name}`}</h3>
+      <output data-testid="database-workspace-selected-id">{database.id}</output>
+      <button
+        type="button"
+        data-testid="database-workspace-open-credentials"
+        onClick={() => onOpenContext('credentials')}
+      >
+        Open credentials
+      </button>
+      <button
+        type="button"
+        data-testid="database-workspace-open-dbms"
+        onClick={() => onOpenContext('dbms')}
+      >
+        Open DBMS metadata
+      </button>
+      <button
+        type="button"
+        data-testid="database-workspace-open-ibcmd"
+        onClick={() => onOpenContext('ibcmd')}
+      >
+        Open IBCMD profile
+      </button>
+      <button
+        type="button"
+        data-testid="database-workspace-open-metadata"
+        onClick={() => onOpenContext('metadata')}
+      >
+        Open metadata management
+      </button>
+      <button
+        type="button"
+        data-testid="database-workspace-open-extensions"
+        onClick={() => onOpenContext('extensions')}
+      >
+        Open extensions
+      </button>
+    </div>
+  ),
+}))
+
 function LocationProbe() {
   const location = useLocation()
   return <output data-testid="databases-location">{location.pathname}{location.search}</output>
@@ -356,9 +406,12 @@ function renderDatabasesPage(initialEntry = '/databases') {
 }
 
 describe('Databases', () => {
-  beforeEach(async () => {
+  beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'databases')
+  })
+
+  beforeEach(() => {
     vi.clearAllMocks()
     mockConfirmWithTracking.mockClear()
     mockUpdateDatabaseCredentialsMutate.mockReset()
@@ -380,7 +433,7 @@ describe('Databases', () => {
     })
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'databases')
     await changeLanguage('ru')
   })

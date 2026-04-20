@@ -62,6 +62,21 @@ type CardProps = {
   title?: ReactNode
 }
 
+type ButtonProps = {
+  'aria-label'?: string
+  children?: ReactNode
+  className?: string
+  danger?: boolean
+  disabled?: boolean
+  icon?: ReactNode
+  loading?: boolean
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void
+  role?: string
+  style?: Record<string, unknown>
+  type?: 'default' | 'primary' | 'dashed' | 'link' | 'text'
+  [key: string]: unknown
+}
+
 type CollapseItem = {
   key: string
   label?: ReactNode
@@ -84,6 +99,41 @@ type DescriptionsProps = {
 
 type SpaceProps = {
   children?: ReactNode
+}
+
+type InputProps = {
+  'aria-controls'?: string
+  'aria-expanded'?: boolean
+  'aria-label'?: string
+  className?: string
+  defaultValue?: string
+  disabled?: boolean
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void
+  placeholder?: string
+  role?: string
+  style?: Record<string, unknown>
+  value?: string
+  [key: string]: unknown
+}
+
+type TextAreaProps = {
+  'aria-label'?: string
+  className?: string
+  defaultValue?: string
+  disabled?: boolean
+  onChange?: (event: ChangeEvent<HTMLTextAreaElement>) => void
+  placeholder?: string
+  role?: string
+  rows?: number
+  style?: Record<string, unknown>
+  value?: string
+  [key: string]: unknown
+}
+
+type SpinProps = {
+  className?: string
+  size?: 'small' | 'default' | 'large'
+  style?: Record<string, unknown>
 }
 
 type TextProps = {
@@ -175,6 +225,37 @@ export function createDecisionsAntdTestDouble(actual: AntdModule): AntdModule {
     </section>
   )
 
+  const MockButton = ({
+    'aria-label': ariaLabel,
+    children,
+    className,
+    danger,
+    disabled,
+    icon,
+    loading,
+    onClick,
+    role,
+    style,
+    type,
+    ...rest
+  }: ButtonProps) => (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className={className}
+      disabled={Boolean(disabled) || Boolean(loading)}
+      data-button-type={type}
+      data-button-danger={danger ? 'true' : undefined}
+      role={role}
+      style={style}
+      onClick={onClick}
+      {...rest}
+    >
+      {icon}
+      {children}
+    </button>
+  )
+
   const MockCollapse = ({ items = [] }: CollapseProps) => {
     const [openKeys, setOpenKeys] = useState<string[]>([])
 
@@ -217,6 +298,66 @@ export function createDecisionsAntdTestDouble(actual: AntdModule): AntdModule {
   )
 
   const MockDivider = () => <hr />
+
+  const MockInput = ({
+    'aria-controls': ariaControls,
+    'aria-expanded': ariaExpanded,
+    'aria-label': ariaLabel,
+    className,
+    defaultValue,
+    disabled,
+    onChange,
+    placeholder,
+    role,
+    style,
+    value,
+    ...rest
+  }: InputProps) => (
+    <input
+      aria-controls={ariaControls}
+      aria-expanded={ariaExpanded}
+      aria-label={ariaLabel}
+      className={className}
+      disabled={disabled}
+      onChange={onChange}
+      placeholder={placeholder}
+      role={role}
+      style={style}
+      value={value ?? defaultValue ?? ''}
+      {...rest}
+    />
+  )
+
+  const MockTextArea = ({
+    'aria-label': ariaLabel,
+    className,
+    defaultValue,
+    disabled,
+    onChange,
+    placeholder,
+    role,
+    rows,
+    style,
+    value,
+    ...rest
+  }: TextAreaProps) => (
+    <textarea
+      aria-label={ariaLabel}
+      className={className}
+      disabled={disabled}
+      onChange={onChange}
+      placeholder={placeholder}
+      role={role}
+      rows={rows}
+      style={style}
+      value={value ?? defaultValue ?? ''}
+      {...rest}
+    />
+  )
+
+  const MockInputRoot = Object.assign(MockInput, {
+    TextArea: MockTextArea,
+  })
 
   const MockSelect = (props: SelectProps) => {
     const {
@@ -432,6 +573,12 @@ export function createDecisionsAntdTestDouble(actual: AntdModule): AntdModule {
 
   const MockSpace = ({ children }: SpaceProps) => <div>{children}</div>
 
+  const MockSpin = ({ className, size, style }: SpinProps) => (
+    <span role="status" aria-label="loading" className={className} data-spin-size={size} style={style}>
+      Loading
+    </span>
+  )
+
   const MockText = ({ children, code, strong }: TextProps) => {
     let content = <span>{children}</span>
     if (code) {
@@ -459,12 +606,15 @@ export function createDecisionsAntdTestDouble(actual: AntdModule): AntdModule {
     ...actual,
     Alert: MockAlert as unknown as AntdModule['Alert'],
     AutoComplete: MockAutoComplete as unknown as AntdModule['AutoComplete'],
+    Button: MockButton as unknown as AntdModule['Button'],
     Card: MockCard as unknown as AntdModule['Card'],
     Collapse: MockCollapse as unknown as AntdModule['Collapse'],
     Descriptions: MockDescriptions as unknown as AntdModule['Descriptions'],
     Divider: MockDivider as unknown as AntdModule['Divider'],
+    Input: MockInputRoot as unknown as AntdModule['Input'],
     Select: MockSelect as unknown as AntdModule['Select'],
     Space: MockSpace as unknown as AntdModule['Space'],
+    Spin: MockSpin as unknown as AntdModule['Spin'],
     Typography: MockTypography as unknown as AntdModule['Typography'],
   }
 }

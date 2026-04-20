@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App as AntApp, Form } from 'antd'
 import { render, screen } from '@testing-library/react'
@@ -6,6 +7,33 @@ import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
 import type { Database } from '../../../../api/generated/model/database'
 import { DatabaseCredentialsModal } from '../DatabaseCredentialsModal'
 import { DatabaseDbmsMetadataModal } from '../DatabaseDbmsMetadataModal'
+
+vi.mock('../../../../components/platform', () => ({
+  ModalFormShell: ({
+    open,
+    forceRender,
+    title,
+    subtitle,
+    submitText,
+    children,
+  }: {
+    open?: boolean
+    forceRender?: boolean
+    title?: ReactNode
+    subtitle?: ReactNode
+    submitText?: ReactNode
+    children?: ReactNode
+  }) => (
+    open || forceRender ? (
+      <section role="dialog" hidden={!open}>
+        {title ? <h2>{title}</h2> : null}
+        {subtitle ? <p>{subtitle}</p> : null}
+        {children}
+        <button type="button">{submitText ?? 'Save'}</button>
+      </section>
+    ) : null
+  ),
+}))
 
 const makeDatabase = (overrides: Partial<Database> = {}): Database => ({
   id: 'db-1',

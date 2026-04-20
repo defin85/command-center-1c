@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -27,6 +28,104 @@ vi.mock('../../../api/generated', async (importOriginal) => {
     }),
   }
 })
+
+vi.mock('../../../components/platform', () => ({
+  WorkspacePage: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div data-testid="workflow-executions-workspace">
+      {header}
+      {children}
+    </div>
+  ),
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title?: ReactNode
+    subtitle?: ReactNode
+    actions?: ReactNode
+  }) => (
+    <header data-testid="workflow-executions-header">
+      <h2>{title}</h2>
+      {subtitle ? <p>{subtitle}</p> : null}
+      <div>{actions}</div>
+    </header>
+  ),
+  MasterDetailShell: ({
+    list,
+    detail,
+  }: {
+    list?: ReactNode
+    detail?: ReactNode
+  }) => (
+    <div data-testid="workflow-executions-shell">
+      <section>{list}</section>
+      <aside>{detail}</aside>
+    </div>
+  ),
+  EntityList: ({
+    title,
+    toolbar,
+    dataSource,
+    renderItem,
+    empty,
+    emptyDescription,
+  }: {
+    title?: ReactNode
+    toolbar?: ReactNode
+    dataSource?: Array<unknown>
+    renderItem?: (item: never) => ReactNode
+    empty?: boolean
+    emptyDescription?: ReactNode
+  }) => (
+    <div data-testid="workflow-executions-entity-list">
+      {title ? <h3>{title}</h3> : null}
+      {toolbar}
+      {empty ? <div>{emptyDescription}</div> : dataSource?.map((item, index) => (
+        <div key={index}>{renderItem ? renderItem(item as never) : null}</div>
+      ))}
+    </div>
+  ),
+  EntityDetails: ({
+    title,
+    extra,
+    empty,
+    emptyDescription,
+    children,
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    empty?: boolean
+    emptyDescription?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div data-testid="workflow-executions-entity-details">
+      {title ? <h3>{title}</h3> : null}
+      {extra}
+      {empty ? <div>{emptyDescription}</div> : children}
+    </div>
+  ),
+  JsonBlock: ({
+    value,
+    dataTestId,
+  }: {
+    value: unknown
+    dataTestId?: string
+  }) => (
+    <pre data-testid={dataTestId}>{JSON.stringify(value, null, 2)}</pre>
+  ),
+  StatusBadge: ({
+    label,
+  }: {
+    label?: ReactNode
+  }) => <span>{label}</span>,
+}))
 
 function renderPage(initialEntry = '/workflows/executions') {
   const queryClient = new QueryClient({

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { App } from 'antd'
@@ -44,6 +45,28 @@ vi.mock('../../../../api/queries/extensionsManualOperations', () => ({
 
 vi.mock('../../../../components/ibcmd/ibcmdCliUiErrors', () => ({
   tryShowIbcmdCliUiError: (...args: unknown[]) => mockTryShowIbcmdCliUiError(...args),
+}))
+
+vi.mock('../../../../components/platform', () => ({
+  DrawerFormShell: ({
+    open,
+    title,
+    subtitle,
+    children,
+  }: {
+    open?: boolean
+    title?: ReactNode
+    subtitle?: ReactNode
+    children?: ReactNode
+  }) => (
+    open ? (
+      <section role="dialog">
+        {title ? <h2>{title}</h2> : null}
+        {subtitle ? <p>{subtitle}</p> : null}
+        {children}
+      </section>
+    ) : null
+  ),
 }))
 
 describe('ExtensionsDrawer', () => {

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
@@ -53,6 +54,76 @@ vi.mock('../../../components/workflow', () => ({
 
 vi.mock('../../../components/code/LazyJsonCodeEditor', () => ({
   LazyJsonCodeEditor: () => <div data-testid="json-editor">json-editor</div>,
+}))
+
+vi.mock('../../../components/platform', () => ({
+  WorkspacePage: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div data-testid="workflow-workspace-page">
+      {header}
+      {children}
+    </div>
+  ),
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title?: ReactNode
+    subtitle?: ReactNode
+    actions?: ReactNode
+  }) => (
+    <header data-testid="workflow-page-header">
+      <h2>{title}</h2>
+      {subtitle ? <p>{subtitle}</p> : null}
+      <div>{actions}</div>
+    </header>
+  ),
+  DrawerFormShell: ({
+    open,
+    title,
+    subtitle,
+    children,
+    drawerTestId,
+  }: {
+    open?: boolean
+    title?: ReactNode
+    subtitle?: ReactNode
+    children?: ReactNode
+    drawerTestId?: string
+  }) => (
+    open ? (
+      <section role="dialog" data-testid={drawerTestId ?? 'workflow-drawer-shell'}>
+        {title ? <h3>{title}</h3> : null}
+        {subtitle ? <p>{subtitle}</p> : null}
+        {children}
+      </section>
+    ) : null
+  ),
+  ModalFormShell: ({
+    open,
+    title,
+    subtitle,
+    children,
+  }: {
+    open?: boolean
+    title?: ReactNode
+    subtitle?: ReactNode
+    children?: ReactNode
+  }) => (
+    open ? (
+      <section role="dialog" data-testid="workflow-modal-shell">
+        {title ? <h3>{title}</h3> : null}
+        {subtitle ? <p>{subtitle}</p> : null}
+        {children}
+      </section>
+    ) : null
+  ),
 }))
 
 const { default: WorkflowDesigner } = await import('../WorkflowDesigner')
