@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
+import { useId, useState, type ChangeEvent, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 
 type AntdModule = typeof import('antd')
 
@@ -36,6 +36,40 @@ type OverlayProps = {
   'data-testid'?: string
 }
 
+type AlertProps = {
+  action?: ReactNode
+  description?: ReactNode
+  message?: ReactNode
+  style?: CSSProperties
+  type?: 'success' | 'info' | 'warning' | 'error'
+  'data-testid'?: string
+}
+
+type CollapseItem = {
+  key: string
+  label?: ReactNode
+  children?: ReactNode
+}
+
+type CollapseProps = {
+  items?: CollapseItem[]
+  style?: CSSProperties
+  'data-testid'?: string
+}
+
+type InputNumberProps = {
+  defaultValue?: number | null
+  disabled?: boolean
+  min?: number
+  onChange?: (value: number | null) => void
+  placeholder?: string
+  step?: number
+  style?: CSSProperties
+  value?: number | null
+  'aria-label'?: string
+  'data-testid'?: string
+}
+
 type SelectOption = {
   value: unknown
   label?: ReactNode
@@ -58,6 +92,13 @@ type SelectProps = {
   value?: unknown
   'data-testid'?: string
   [key: string]: unknown
+}
+
+type SpaceProps = {
+  children?: ReactNode
+  className?: string
+  style?: CSSProperties
+  'data-testid'?: string
 }
 
 const resolveDataIndex = (
@@ -114,6 +155,21 @@ function resolveSelectedLabel(
 }
 
 export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule {
+  const MockAlert = ({
+    action,
+    description,
+    message,
+    style,
+    type,
+    'data-testid': dataTestId,
+  }: AlertProps) => (
+    <section role="alert" data-alert-type={type} style={style} data-testid={dataTestId}>
+      {message ? <div>{message}</div> : null}
+      {description ? <div>{description}</div> : null}
+      {action}
+    </section>
+  )
+
   const MockCard = ({
     title,
     extra,
@@ -341,6 +397,117 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
     )
   }
 
+  const MockCollapse = ({
+    items = [],
+    style,
+    'data-testid': dataTestId,
+  }: CollapseProps) => {
+    const [openKeys, setOpenKeys] = useState<Set<string>>(() => new Set())
+
+    return (
+      <div style={style} data-testid={dataTestId}>
+        {items.map((item) => {
+          const isOpen = openKeys.has(item.key)
+          return (
+            <section key={item.key}>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpenKeys((current) => {
+                    const next = new Set(current)
+                    if (next.has(item.key)) {
+                      next.delete(item.key)
+                    } else {
+                      next.add(item.key)
+                    }
+                    return next
+                  })
+                }}
+              >
+                {item.label}
+              </button>
+              {isOpen ? <div>{item.children}</div> : null}
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const MockRow = ({
+    children,
+    style,
+    'data-testid': dataTestId,
+  }: {
+    children?: ReactNode
+    style?: CSSProperties
+    'data-testid'?: string
+  }) => <div style={style} data-testid={dataTestId}>{children}</div>
+
+  const MockCol = ({
+    children,
+    style,
+    'data-testid': dataTestId,
+  }: {
+    children?: ReactNode
+    style?: CSSProperties
+    'data-testid'?: string
+  }) => <div style={style} data-testid={dataTestId}>{children}</div>
+
+  const MockSpace = ({
+    children,
+    className,
+    style,
+    'data-testid': dataTestId,
+  }: SpaceProps) => (
+    <div className={className} style={style} data-testid={dataTestId}>
+      {children}
+    </div>
+  )
+
+  const MockInputNumber = (props: InputNumberProps) => {
+    const {
+      defaultValue,
+      disabled,
+      min,
+      onChange,
+      placeholder,
+      step,
+      style,
+      value,
+      'aria-label': ariaLabel,
+      'data-testid': dataTestId,
+    } = props
+    const [internalValue, setInternalValue] = useState<number | null>(defaultValue ?? null)
+    const isControlled = Object.prototype.hasOwnProperty.call(props, 'value')
+    const currentValue = isControlled ? (value ?? null) : internalValue
+
+    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+      const rawValue = event.target.value
+      const nextValue = rawValue === '' ? null : Number(rawValue)
+      if (!isControlled) {
+        setInternalValue(nextValue)
+      }
+      onChange?.(nextValue)
+    }
+
+    return (
+      <input
+        type="number"
+        role="spinbutton"
+        min={min}
+        step={step}
+        value={currentValue ?? ''}
+        disabled={disabled}
+        placeholder={placeholder}
+        style={style}
+        aria-label={ariaLabel}
+        data-testid={dataTestId}
+        onChange={handleChange}
+      />
+    )
+  }
+
   const MockSelect = (props: SelectProps) => {
     const {
       allowClear,
@@ -467,11 +634,17 @@ export function createPoolCatalogAntdTestDouble(actual: AntdModule): AntdModule 
 
   return {
     ...actual,
+    Alert: MockAlert as unknown as AntdModule['Alert'],
     Card: MockCard as unknown as AntdModule['Card'],
+    Col: MockCol as unknown as AntdModule['Col'],
+    Collapse: MockCollapse as unknown as AntdModule['Collapse'],
     Descriptions: MockDescriptions as unknown as AntdModule['Descriptions'],
     Drawer: MockDrawer as unknown as AntdModule['Drawer'],
+    InputNumber: MockInputNumber as unknown as AntdModule['InputNumber'],
     Modal: MockModal as unknown as AntdModule['Modal'],
+    Row: MockRow as unknown as AntdModule['Row'],
     Select: MockSelect as unknown as AntdModule['Select'],
+    Space: MockSpace as unknown as AntdModule['Space'],
     Table: MockTable as unknown as AntdModule['Table'],
     Tag: MockTag as unknown as AntdModule['Tag'],
   }
