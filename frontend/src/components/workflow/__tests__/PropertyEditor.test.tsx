@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import userEvent from '@testing-library/user-event'
@@ -14,6 +14,12 @@ import PropertyEditor from '../PropertyEditor'
 vi.mock('../../../observability/uiActionJournal', () => ({
   trackUiAction: mockTrackUiAction,
 }))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPropertyEditorAntdTestDouble } = await import('./propertyEditorAntdTestDouble')
+  return createPropertyEditorAntdTestDouble(actual)
+})
 
 vi.mock('../../code/LazyJsonCodeEditor', () => ({
   LazyJsonCodeEditor: ({ id, value }: { id?: string; value?: string }) => (
@@ -77,18 +83,18 @@ const openSelect = async (testId: string) => {
 }
 
 describe('PropertyEditor', () => {
-  beforeEach(() => {
-    mockTrackUiAction.mockClear()
-  })
-
-  beforeEach(async () => {
-    await changeLanguage('en')
+  beforeAll(async () => {
     await ensureNamespaces('en', 'workflows')
+    await changeLanguage('en')
   })
 
-  afterEach(async () => {
+  afterAll(async () => {
     await ensureNamespaces('ru', 'workflows')
     await changeLanguage('ru')
+  })
+
+  beforeEach(() => {
+    mockTrackUiAction.mockClear()
   })
 
   it('keeps fresh decision gates on pinned-decision path by default', async () => {
