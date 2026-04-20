@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 
 const {
@@ -121,8 +120,6 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
   })
 
   it('renders CLI driver options from driver_schema and respects visible_when', async () => {
-    const user = userEvent.setup()
-
     const cliCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'cli',
@@ -192,7 +189,7 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     const captureItem = captureLabel.closest('.ant-form-item')
     expect(captureItem).not.toBeNull()
     const captureSwitch = within(captureItem as HTMLElement).getByRole('switch')
-    await user.click(captureSwitch)
+    fireEvent.click(captureSwitch)
 
     expect(screen.getByText('Log file path')).toBeInTheDocument()
     expect(screen.getByText('Append log (-NoTruncate)')).toBeInTheDocument()
@@ -272,8 +269,6 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
   })
 
   it('includes ibcmd connection args in preview (remote)', async () => {
-    const user = userEvent.setup()
-
     const ibcmdCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'ibcmd',
@@ -329,14 +324,12 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
     const remoteItem = remoteLabel.closest('.ant-form-item')
     expect(remoteItem).not.toBeNull()
     const remoteInput = within(remoteItem as HTMLElement).getByRole('textbox')
-    await user.type(remoteInput, 'http://host:1545')
+    fireEvent.change(remoteInput, { target: { value: 'http://host:1545' } })
 
     expect(screen.getByText(/--remote=http:\/\/host:1545/)).toBeInTheDocument()
   })
 
   it('hides ibcmd credential fields in driver options and uses Offline advanced collapse', async () => {
-    const user = userEvent.setup()
-
     const ibcmdCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'ibcmd',
@@ -412,7 +405,7 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
 
     // For per_database scope, connection is derived from database profiles by default.
     const overrideSwitch = within(screen.getByTestId('ibcmd-connection-override')).getByRole('switch')
-    await user.click(overrideSwitch)
+    fireEvent.click(overrideSwitch)
 
     expect(screen.getByText('Connection')).toBeInTheDocument()
     expect(screen.getByText('DBMS')).toBeInTheDocument()
@@ -429,8 +422,6 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
   })
 
   it('saves ibcmd shortcuts with driver options (connection/timeout/auth) and no raw stdin', async () => {
-    const user = userEvent.setup()
-
     const ibcmdCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'ibcmd',
@@ -491,7 +482,7 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
       availableDatabaseIds: ['db1'],
     })
 
-    await user.click(screen.getByRole('button', { name: 'Save shortcut' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save shortcut' }))
     expect(mockConfirmWithTracking).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -523,8 +514,6 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
   }, 15_000)
 
   it('shows dangerous confirm modal and updates confirm_dangerous only on confirm', async () => {
-    const user = userEvent.setup()
-
     const cliCatalog: DriverCommandsResponseV2['catalog'] = {
       catalog_version: 2,
       driver: 'cli',
@@ -555,19 +544,19 @@ describe('DriverCommandBuilder (schema-driven driver options)', () => {
 
     const getCheckbox = () => screen.getByRole('checkbox', { name: 'I confirm this dangerous command' })
 
-    await user.click(getCheckbox())
+    fireEvent.click(getCheckbox())
     const dialog1 = await screen.findByRole('dialog')
     expect(within(dialog1).getByText('Confirm dangerous command')).toBeInTheDocument()
 
-    await user.click(within(dialog1).getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(within(dialog1).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(getCheckbox()).not.toBeChecked()
 
-    await user.click(getCheckbox())
+    fireEvent.click(getCheckbox())
     const dialog2 = await screen.findByRole('dialog')
     expect(within(dialog2).getByText('Confirm dangerous command')).toBeInTheDocument()
 
-    await user.click(within(dialog2).getByRole('button', { name: 'Confirm' }))
+    fireEvent.click(within(dialog2).getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(getCheckbox()).toBeChecked()
   }, 25_000)
