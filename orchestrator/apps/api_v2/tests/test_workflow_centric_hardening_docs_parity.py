@@ -118,7 +118,8 @@ def test_workflow_centric_repository_acceptance_evidence_describes_default_shipp
     assert "/api/v2/pools/runs/" in repository_evidence
     assert "/api/v2/pools/workflow-bindings/preview/" in repository_evidence
     assert "/decisions" in repository_evidence
-    assert "frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx" in repository_evidence
+    assert "frontend/src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx" in repository_evidence
+    assert "frontend/src/pages/Pools/__tests__/PoolRunsPage.context.test.tsx" in repository_evidence
     assert "orchestrator/apps/api_v2/tests/test_workflows_binding_policy.py" in repository_evidence
     assert "frontend/src/components/workflow/__tests__/PropertyEditor.test.tsx" in repository_evidence
     assert "frontend/tests/browser/workflow-io-editor.spec.ts" in repository_evidence

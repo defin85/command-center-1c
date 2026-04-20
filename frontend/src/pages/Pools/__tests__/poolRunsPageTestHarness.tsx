@@ -1,5 +1,5 @@
 import { StrictMode, type ReactNode } from 'react'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
@@ -1003,7 +1003,7 @@ async function openInspectDiagnostics() {
   await userClick(await screen.findByText('Diagnostics JSON (Run Input, Validation, Publication, Step Diagnostics)'))
 }
 
-describe('PoolRunsPage', () => {
+export function setupPoolRunsPageTestSuite() {
   beforeAll(async () => {
     await changeLanguage('en')
     await ensureNamespaces('en', 'pools')
@@ -1137,7 +1137,24 @@ describe('PoolRunsPage', () => {
     await ensureNamespaces('ru', 'pools')
     await changeLanguage('ru')
   })
+}
 
+export function registerPoolRunsContextTests() {
+  registerPoolRunsContextPrimaryTests()
+  registerPoolRunsContextRefreshTests()
+}
+
+export function registerPoolRunsOperationsTests() {
+  registerPoolRunsOperationsStageTests()
+  registerPoolRunsOperationsReadinessTests()
+}
+
+export function registerPoolRunsAuthoringTests() {
+  registerPoolRunsAuthoringErrorTests()
+  registerPoolRunsAuthoringWorkflowTests()
+}
+
+function registerPoolRunsContextPrimaryTests() {
   it('deduplicates initial pool reads in StrictMode on the default route', async () => {
     renderPage('/pools/runs', { strict: true })
 
@@ -1455,7 +1472,9 @@ describe('PoolRunsPage', () => {
       expect(location).toContain('detail=1')
     })
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+function registerPoolRunsOperationsStageTests() {
   it('disables confirm while safe run is in pre-publish preparing state', async () => {
     const preparingRun = buildRun({
       status_reason: 'preparing',
@@ -1501,7 +1520,9 @@ describe('PoolRunsPage', () => {
     const generatedKey = mockConfirmPoolRunPublication.mock.calls[0][1] as string
     expect(generatedKey.length).toBeGreaterThan(8)
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+function registerPoolRunsAuthoringErrorTests() {
   it('maps create-run problem+json VALIDATION_ERROR to form field and user-facing message', async () => {
     mockCreatePoolRun.mockRejectedValueOnce({
       response: {
@@ -1688,7 +1709,9 @@ describe('PoolRunsPage', () => {
       )
     ).toBeInTheDocument()
   })
+}
 
+function registerPoolRunsOperationsReadinessTests() {
   it('sends abort-publication with generated idempotency key', async () => {
     renderPage()
 
@@ -2141,7 +2164,9 @@ describe('PoolRunsPage', () => {
       )
     ).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+function registerPoolRunsAuthoringWorkflowTests() {
   it('renders publication credentials source hint in create run form', async () => {
     renderPage()
 
@@ -2548,7 +2573,9 @@ describe('PoolRunsPage', () => {
     expect(screen.queryByText('Pre-publish is still running')).not.toBeInTheDocument()
     expect(screen.getAllByText('awaiting_approval').length).toBeGreaterThan(0)
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+function registerPoolRunsContextRefreshTests() {
   it('refreshes current run report when Refresh Data is clicked', async () => {
     const initialRun = buildRun({
       status: 'validated',
@@ -2597,4 +2624,4 @@ describe('PoolRunsPage', () => {
     await waitFor(() => expect(screen.getByTestId('pool-runs-verification-status')).toHaveTextContent('status: passed'))
     expect(screen.getByText('Published documents verified')).toBeInTheDocument()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
-})
+}

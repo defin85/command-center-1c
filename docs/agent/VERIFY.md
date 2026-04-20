@@ -136,7 +136,7 @@ cd go-services/worker && go test ./...
 cd go-services/shared && go test ./config
 cd go-services/worker && go test ./internal/drivers/poolops ./internal/orchestrator ./internal/scheduler/... ./cmd
 cd frontend && npm run test:run -- src/pages/Pools/__tests__/PoolFactualPage.test.tsx
-cd frontend && timeout 120 npx vitest run src/pages/Pools/__tests__/PoolRunsPage.test.tsx -t "batch-backed|creates a receipt batch"
+cd frontend && timeout 120 npx vitest run src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx -t "batch-backed|creates a receipt batch"
 cd frontend && npm run test:browser:ui-platform
 cd frontend && npm run validate:ui-platform
 ./scripts/dev/check-agent-doc-freshness.sh

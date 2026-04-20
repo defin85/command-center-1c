@@ -13,8 +13,12 @@ export const HEAVY_ROUTE_TEST_FAMILIES = {
     'src/pages/Pools/__tests__/PoolCatalogPage.errors-sync.test.tsx',
     'src/pages/Pools/__tests__/PoolCatalogPage.topology.test.tsx',
     'src/pages/Pools/__tests__/PoolFactualPage.test.tsx',
-    'src/pages/Pools/__tests__/PoolMasterDataPage.test.tsx',
-    'src/pages/Pools/__tests__/PoolRunsPage.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.bootstrap.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.sync.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.workspace.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.context.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.operations.test.tsx',
     'src/pages/Pools/__tests__/PoolTopologyTemplatesPage.test.tsx',
   ],
 } as const
@@ -22,11 +26,15 @@ export const HEAVY_ROUTE_TEST_FAMILIES = {
 export const HEAVY_ROUTE_PROJECT_FILES = {
   [HEAVY_ROUTE_PRIMARY_VITEST_PROJECT]: [
     'src/pages/Pools/__tests__/PoolFactualPage.test.tsx',
-    'src/pages/Pools/__tests__/PoolRunsPage.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.context.test.tsx',
+    'src/pages/Pools/__tests__/PoolRunsPage.operations.test.tsx',
   ],
   [HEAVY_ROUTE_SECONDARY_VITEST_PROJECT]: [
     'src/pages/Pools/__tests__/PoolCatalogPage.topology.test.tsx',
-    'src/pages/Pools/__tests__/PoolMasterDataPage.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.bootstrap.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.sync.test.tsx',
+    'src/pages/Pools/__tests__/PoolMasterDataPage.workspace.test.tsx',
   ],
   [HEAVY_ROUTE_TERTIARY_VITEST_PROJECT]: [
     'src/pages/Decisions/__tests__/DecisionsPage.test.tsx',

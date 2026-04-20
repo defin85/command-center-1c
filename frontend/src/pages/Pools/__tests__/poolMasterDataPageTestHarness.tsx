@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
@@ -910,7 +910,7 @@ async function selectDropdownOption(label: string | RegExp) {
   fireEvent.click(option as Element)
 }
 
-describe('PoolMasterDataPage', () => {
+export function setupPoolMasterDataPageTestSuite() {
   beforeEach(() => {
     mockListMasterDataParties.mockReset()
     mockUpsertMasterDataParty.mockReset()
@@ -1462,7 +1462,9 @@ describe('PoolMasterDataPage', () => {
     consoleErrorSpy?.mockRestore()
     consoleErrorSpy = null
   })
+}
 
+export function registerPoolMasterDataWorkspaceTests() {
   it('renders workspace zones and loads default Party zone list', async () => {
     renderPage()
 
@@ -1710,7 +1712,9 @@ describe('PoolMasterDataPage', () => {
       fingerprint: 'fp-1',
     }))
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+export function registerPoolMasterDataSyncTests() {
   it('renders Sync tab and runs conflict actions', async () => {
     const user = userEvent.setup()
     mockListMasterDataSyncStatus.mockResolvedValue({
@@ -2327,7 +2331,9 @@ describe('PoolMasterDataPage', () => {
 
     await waitFor(() => expect(mockPublishMasterDataGlAccountSet).toHaveBeenCalledWith('gl-set-1'))
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
 
+export function registerPoolMasterDataBootstrapTests() {
   it('runs bootstrap wizard flow preflight -> dry-run -> execute', async () => {
     const dryRunJob = buildBootstrapJob({
       id: 'job-dry-run',
@@ -2392,6 +2398,7 @@ describe('PoolMasterDataPage', () => {
     })
 
     renderPage('/pools/master-data?tab=bootstrap-import')
+    await screen.findByTestId('bootstrap-import-database-select')
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
@@ -2440,6 +2447,7 @@ describe('PoolMasterDataPage', () => {
     })
 
     renderPage('/pools/master-data?tab=bootstrap-import')
+    await screen.findByTestId('bootstrap-import-database-select')
 
     openSelectByTestId('bootstrap-import-database-select')
     await selectDropdownOption(/^Main DB$/)
@@ -3003,5 +3011,4 @@ describe('PoolMasterDataPage', () => {
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
-
-})
+}

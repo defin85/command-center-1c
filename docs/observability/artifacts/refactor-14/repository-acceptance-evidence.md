@@ -12,10 +12,10 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
 
 - Explicit binding is mandatory for `POST /api/v2/pools/runs/`.
   Code: `orchestrator/apps/api_v2/views/intercompany_pools.py`, `orchestrator/apps/intercompany_pools/workflow_runtime.py`
-  Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx`
+  Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx`
 - Explicit binding is mandatory for `POST /api/v2/pools/workflow-bindings/preview/`.
   Code: `orchestrator/apps/api_v2/views/intercompany_pools.py`, `orchestrator/apps/intercompany_pools/binding_preview.py`
-  Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx`
+  Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx`
 - Canonical binding CRUD/read-model uses a dedicated store with revision-safe mutating contract.
   Code: `orchestrator/apps/intercompany_pools/workflow_bindings_store.py`, `orchestrator/apps/api_v2/views/intercompany_pools.py`
   Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`, `orchestrator/apps/api_v2/tests/test_pool_workflow_bindings_src_contract.py`
@@ -39,7 +39,7 @@ Tenant-scoped live cutover evidence belongs in the `*.template.json` files in th
   Tests: `orchestrator/apps/api_v2/tests/test_intercompany_pool_runs.py`
 - Runtime projection persists slot lineage for operator audit and retry semantics.
   Code: `orchestrator/apps/intercompany_pools/runtime_projection_contract.py`, `orchestrator/apps/intercompany_pools/workflow_runtime.py`, `frontend/src/pages/Pools/PoolRunsPage.tsx`
-  Tests: `orchestrator/apps/intercompany_pools/tests/test_workflow_runtime.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.test.tsx`, `orchestrator/apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py`
+  Tests: `orchestrator/apps/intercompany_pools/tests/test_workflow_runtime.py`, `frontend/src/pages/Pools/__tests__/PoolRunsPage.context.test.tsx`, `orchestrator/apps/api_v2/tests/test_pool_runs_openapi_contract_parity.py`
 - Pinned subworkflow execution stays on the pinned revision and fails closed on drift/mismatch.
   Code: `orchestrator/apps/templates/workflow/schema.py`, `orchestrator/apps/templates/workflow/handlers/factory.py`, `orchestrator/apps/templates/workflow/handlers/subworkflow.py`
   Tests: `orchestrator/apps/templates/workflow/tests/test_handlers_advanced.py`, `orchestrator/apps/api_v2/tests/test_workflows_binding_policy.py`, `frontend/src/components/workflow/__tests__/PropertyEditor.test.tsx`, `frontend/tests/browser/workflow-io-editor.spec.ts`
