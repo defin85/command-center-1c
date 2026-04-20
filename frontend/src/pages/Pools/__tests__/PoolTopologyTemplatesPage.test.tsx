@@ -19,6 +19,12 @@ vi.mock('../../../api/queries/poolTopologyTemplates', () => ({
   useRevisePoolTopologyTemplate: (...args: unknown[]) => mockUseRevisePoolTopologyTemplate(...args),
 }))
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolReusableAuthoringAntdTestDouble } = await import('./poolReusableAuthoringAntdTestDouble')
+  return createPoolReusableAuthoringAntdTestDouble(actual)
+})
+
 vi.mock('../../../components/platform', async () => {
   const actual = await vi.importActual<typeof import('../../../components/platform')>(
     '../../../components/platform'

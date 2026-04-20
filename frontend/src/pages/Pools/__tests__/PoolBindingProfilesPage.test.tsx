@@ -33,6 +33,12 @@ vi.mock('../../../api/queries/authoringReferences', () => ({
   useAuthoringReferences: (...args: unknown[]) => mockUseAuthoringReferences(...args),
 }))
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createPoolReusableAuthoringAntdTestDouble } = await import('./poolReusableAuthoringAntdTestDouble')
+  return createPoolReusableAuthoringAntdTestDouble(actual)
+})
+
 vi.mock('../../../components/platform', async () => {
   const actual = await vi.importActual<typeof import('../../../components/platform')>(
     '../../../components/platform'
