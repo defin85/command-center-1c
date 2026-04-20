@@ -36,6 +36,12 @@ vi.mock('../../../api/intercompanyPools', () => ({
   migratePoolEdgeDocumentPolicy: (...args: unknown[]) => mockMigratePoolEdgeDocumentPolicy(...args),
 }))
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createDecisionsAntdTestDouble } = await import('./decisionsAntdTestDouble')
+  return createDecisionsAntdTestDouble(actual)
+})
+
 vi.mock('../../../components/platform', async () => {
   const actual = await vi.importActual<typeof import('../../../components/platform')>(
     '../../../components/platform'
