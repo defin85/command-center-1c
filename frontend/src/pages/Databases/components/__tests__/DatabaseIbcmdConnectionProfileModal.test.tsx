@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp, Form } from 'antd'
 import type { FormInstance } from 'antd'
 import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
@@ -27,10 +26,17 @@ vi.mock('../../../../api/queries/driverCommands', () => ({
   }),
 }))
 
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createDatabaseIbcmdConnectionProfileModalAntdTestDouble } = await import('./databaseIbcmdConnectionProfileModalAntdTestDouble')
+  return createDatabaseIbcmdConnectionProfileModalAntdTestDouble(actual)
+})
+
 vi.mock('../../../../components/platform', () => ({
   ModalFormShell: ({
     children,
     forceRender,
+    onSubmit,
     open,
     submitText,
     subtitle,
@@ -38,6 +44,7 @@ vi.mock('../../../../components/platform', () => ({
   }: {
     children?: ReactNode
     forceRender?: boolean
+    onSubmit?: () => void
     open?: boolean
     submitText?: ReactNode
     subtitle?: ReactNode
@@ -48,7 +55,7 @@ vi.mock('../../../../components/platform', () => ({
         {title ? <h2>{title}</h2> : null}
         {subtitle ? <p>{subtitle}</p> : null}
         {children}
-        <button type="button">{submitText ?? 'Save'}</button>
+        <button type="button" onClick={onSubmit}>{submitText ?? 'Save'}</button>
       </section>
     ) : null
   ),
@@ -93,7 +100,6 @@ const makeDb = (overrides: Partial<Database> = {}): Database =>
   }) as Database
 
 function renderModal(database: Database) {
-  const user = userEvent.setup()
   let formRef: FormInstance | null = null
   const onCancel = vi.fn()
   const onReset = vi.fn()
@@ -122,7 +128,7 @@ function renderModal(database: Database) {
   }
 
   render(<Wrapper />)
-  return { user, onSave, onReset, getForm: () => formRef }
+  return { onSave, onReset, getForm: () => formRef }
 }
 
 function requireForm(getForm: () => FormInstance | null): FormInstance {
@@ -158,14 +164,14 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
 
   it('adds offline key from driver schema', async () => {
     mockOfflineKeys = { db_name: {}, config: {} }
-    const { user, getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
+    const { getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
 
     await waitFor(() => {
       expect(getForm()).not.toBeNull()
     })
 
-    await user.type(screen.getByTestId('ibcmd-profile-offline-schema-input'), 'db_name')
-    await user.click(screen.getByRole('button', { name: 'Add' }))
+    fireEvent.change(screen.getByTestId('ibcmd-profile-offline-schema-input'), { target: { value: 'db_name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
       const form = requireForm(getForm)
@@ -176,22 +182,14 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
   })
 
   it('rejects offline key with -- prefix', async () => {
-    const { getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
+    mockOfflineKeys = { db_name: {} }
+    renderModal(makeDb({ ibcmd_connection: {} }))
 
-    await waitFor(() => {
-      expect(getForm()).not.toBeNull()
-    })
-
-    const form = requireForm(getForm)
-    await act(async () => {
-      form.setFieldsValue({ offline_entries: [{ key: '--db-name', value: 'x' }] })
-    })
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText('/path/to/value')).toBeInTheDocument()
-    })
-    await act(async () => {
-      await form.validateFields().catch(() => undefined)
-    })
+    fireEvent.change(screen.getByTestId('ibcmd-profile-offline-schema-input'), { target: { value: 'db_name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    fireEvent.change(screen.getByPlaceholderText('config'), { target: { value: '--db-name' } })
+    fireEvent.change(screen.getByPlaceholderText('/path/to/value'), { target: { value: 'x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
       expect(screen.getByText(/without the -- prefix/i)).toBeInTheDocument()
@@ -199,17 +197,10 @@ describe('DatabaseIbcmdConnectionProfileModal', () => {
   })
 
   it('shows validation error for non-ssh remote', async () => {
-    const { getForm } = renderModal(makeDb({ ibcmd_connection: {} }))
+    renderModal(makeDb({ ibcmd_connection: {} }))
 
-    await waitFor(() => {
-      expect(getForm()).not.toBeNull()
-    })
-
-    const form = requireForm(getForm)
-    await act(async () => {
-      form.setFieldValue('remote', 'http://host:1545')
-      await form.validateFields().catch(() => undefined)
-    })
+    fireEvent.change(screen.getByPlaceholderText('ssh://host:port'), { target: { value: 'http://host:1545' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
       expect(screen.getByText(/must start with ssh:\/\//i)).toBeInTheDocument()
