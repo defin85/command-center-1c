@@ -1,7 +1,6 @@
 import { isValidElement, type ReactNode } from 'react'
 import { afterAll, beforeAll, beforeEach, describe, it, expect, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { changeLanguage, ensureNamespaces } from '@/i18n/runtime'
@@ -171,6 +170,92 @@ vi.mock('../../../components/table/hooks/useTableToolkit', () => ({
 
 vi.mock('../../../observability/confirmWithTracking', () => ({
   confirmWithTracking: mockConfirmWithTracking,
+}))
+
+vi.mock('antd', async () => {
+  const actual = await vi.importActual<typeof import('antd')>('antd')
+  const { createDatabasesAntdTestDouble } = await import('./databasesAntdTestDouble')
+  return createDatabasesAntdTestDouble(actual)
+})
+
+vi.mock('../../../components/platform', () => ({
+  WorkspacePage: ({
+    header,
+    children,
+  }: {
+    header?: ReactNode
+    children?: ReactNode
+  }) => (
+    <div>
+      {header}
+      {children}
+    </div>
+  ),
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+  }: {
+    title?: ReactNode
+    subtitle?: ReactNode
+    actions?: ReactNode
+  }) => (
+    <header>
+      <h2>{title}</h2>
+      {subtitle ? <div>{subtitle}</div> : null}
+      {actions}
+    </header>
+  ),
+  MasterDetailShell: ({
+    list,
+    detail,
+  }: {
+    list?: ReactNode
+    detail?: ReactNode
+  }) => (
+    <div>
+      <section>{list}</section>
+      <aside>{detail}</aside>
+    </div>
+  ),
+  EntityList: ({
+    title,
+    extra,
+    toolbar,
+    emptyDescription,
+    dataSource,
+    renderItem,
+  }: {
+    title?: ReactNode
+    extra?: ReactNode
+    toolbar?: ReactNode
+    emptyDescription?: ReactNode
+    dataSource?: Database[]
+    renderItem: (database: Database) => ReactNode
+  }) => (
+    <section>
+      {title ? <h3>{title}</h3> : null}
+      {extra}
+      {toolbar}
+      {(dataSource?.length ?? 0) > 0
+        ? dataSource?.map((database) => renderItem(database))
+        : <div>{emptyDescription}</div>}
+    </section>
+  ),
+  EntityDetails: ({
+    title,
+    error,
+    emptyDescription,
+  }: {
+    title?: ReactNode
+    error?: ReactNode
+    emptyDescription?: ReactNode
+  }) => (
+    <section>
+      {title ? <h3>{title}</h3> : null}
+      {error ?? emptyDescription}
+    </section>
+  ),
 }))
 
 const toReactNode = (value: unknown): ReactNode => {
@@ -439,8 +524,6 @@ describe('Databases', () => {
   })
 
   it('restores selected database and active management context from query params', async () => {
-    const user = userEvent.setup()
-
     renderDatabasesPage('/databases?cluster=cluster-1&database=db-1&context=metadata')
 
     expect(await screen.findByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
@@ -448,7 +531,7 @@ describe('Databases', () => {
     expect(screen.getByTestId('database-metadata-drawer')).toHaveTextContent('Metadata Accounting DB')
     expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?cluster=cluster-1&database=db-1&context=metadata')
 
-    await user.click(screen.getByRole('button', { name: 'Close metadata management' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close metadata management' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?cluster=cluster-1&database=db-1&context=inspect')
@@ -457,27 +540,25 @@ describe('Databases', () => {
   })
 
   it('keeps selected database and active management context in the URL when the operator switches workspace surfaces', async () => {
-    const user = userEvent.setup()
-
     renderDatabasesPage('/databases')
 
     expect(await screen.findByRole('heading', { name: 'Databases', level: 2 })).toBeVisible()
 
-    await user.click(screen.getByRole('button', { name: 'Open database Accounting DB' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open database Accounting DB' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?database=db-1&context=inspect')
     })
     expect(screen.getByTestId('database-workspace-selected-id')).toHaveTextContent('db-1')
 
-    await user.click(screen.getByTestId('database-workspace-open-credentials'))
+    fireEvent.click(screen.getByTestId('database-workspace-open-credentials'))
 
     await waitFor(() => {
       expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?database=db-1&context=credentials')
     })
     expect(screen.getByTestId('database-credentials-modal')).toHaveTextContent('Credentials Accounting DB')
 
-    await user.click(screen.getByRole('button', { name: 'Close credentials' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close credentials' }))
 
     await waitFor(() => {
       expect(screen.getByTestId('databases-location')).toHaveTextContent('/databases?database=db-1&context=inspect')
@@ -518,13 +599,11 @@ describe('Databases', () => {
     expectedPayload,
     expectedMutate,
   }) => {
-    const user = userEvent.setup()
-
     renderDatabasesPage(`/databases?database=db-1&context=${context}`)
 
     expect(await screen.findByTestId(modalTestId)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: resetLabel }))
+    fireEvent.click(screen.getByRole('button', { name: resetLabel }))
 
     expect(mockConfirmWithTracking).toHaveBeenCalledWith(
       expect.anything(),
