@@ -267,6 +267,43 @@ const buildOperationMonitorHref = (operationId: string) => (
   `/operations?operation=${encodeURIComponent(operationId)}&tab=monitor`
 )
 
+const FACTUAL_GL_ACCOUNT_BINDING_REMEDIATION_CODES = new Set([
+  'POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING',
+  'POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_AMBIGUOUS',
+  'POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_STALE',
+])
+
+const buildMasterDataBindingsHref = ({
+  entityType,
+  databaseId,
+}: {
+  entityType: string
+  databaseId: string
+}) => {
+  const params = new URLSearchParams()
+  params.set('tab', 'bindings')
+  params.set('entityType', entityType)
+  params.set('databaseId', databaseId)
+  return `/pools/master-data?${params.toString()}`
+}
+
+const resolveSyncCheckpointBindingsRemediationHref = (
+  checkpoint: PoolFactualRefreshCheckpoint,
+): string | null => {
+  const lastErrorCode = String(checkpoint.last_error_code || '').trim()
+  if (!FACTUAL_GL_ACCOUNT_BINDING_REMEDIATION_CODES.has(lastErrorCode)) {
+    return null
+  }
+  const databaseId = String(checkpoint.database_id || '').trim()
+  if (!databaseId) {
+    return null
+  }
+  return buildMasterDataBindingsHref({
+    entityType: 'gl_account',
+    databaseId,
+  })
+}
+
 const getCarryForwardSummary = (row: PoolBatch) => {
   const carryForward = row.settlement?.summary?.carry_forward
   if (!carryForward || typeof carryForward !== 'object') {
@@ -1266,75 +1303,95 @@ export function PoolFactualWorkspaceDetail({
                 {syncCheckpoints.length > 0 ? (
                   <Space direction="vertical" size={12} style={{ width: '100%' }}>
                     <Text type="secondary">{t('detail.diagnostics.summary')}</Text>
-                    {syncCheckpoints.map((checkpoint) => (
-                      <div
-                        key={checkpoint.checkpoint_id}
-                        style={{
-                          border: '1px solid #f0f0f0',
-                          borderRadius: 12,
-                          padding: 12,
-                          background: '#fafafa',
-                        }}
-                      >
-                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                          <Space wrap>
-                            <Text strong>{getSyncCheckpointDatabaseLabel(t, checkpoint)}</Text>
-                            <StatusBadge
-                              status={getSyncCheckpointTone(checkpoint)}
-                              label={getSyncCheckpointStatusLabel(t, checkpoint)}
-                            />
-                            <Text code>{formatShortId(checkpoint.checkpoint_id)}</Text>
-                          </Space>
+                    {syncCheckpoints.map((checkpoint) => {
+                      const bindingsRemediationHref = resolveSyncCheckpointBindingsRemediationHref(checkpoint)
+                      return (
+                        <div
+                          key={checkpoint.checkpoint_id}
+                          style={{
+                            border: '1px solid #f0f0f0',
+                            borderRadius: 12,
+                            padding: 12,
+                            background: '#fafafa',
+                          }}
+                        >
+                          <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                            {bindingsRemediationHref ? (
+                              <Alert
+                                type="warning"
+                                showIcon
+                                message={t('detail.diagnostics.bindingRemediation.title')}
+                                description={t('detail.diagnostics.bindingRemediation.description')}
+                                action={(
+                                  <RouteButton
+                                    size="small"
+                                    to={bindingsRemediationHref}
+                                  >
+                                    {t('detail.diagnostics.bindingRemediation.openBindingsWorkspace')}
+                                  </RouteButton>
+                                )}
+                              />
+                            ) : null}
 
-                          <Text type="secondary">
-                            {checkpoint.last_error_code
-                              ? t('detail.diagnostics.error', {
-                                code: checkpoint.last_error_code,
-                                suffix: checkpoint.last_error ? ` · ${checkpoint.last_error}` : '',
-                              })
-                              : checkpoint.last_synced_at
-                                ? t('detail.diagnostics.lastSync', {
-                                  value: formatTimestamp(formatters, checkpoint.last_synced_at),
+                            <Space wrap>
+                              <Text strong>{getSyncCheckpointDatabaseLabel(t, checkpoint)}</Text>
+                              <StatusBadge
+                                status={getSyncCheckpointTone(checkpoint)}
+                                label={getSyncCheckpointStatusLabel(t, checkpoint)}
+                              />
+                              <Text code>{formatShortId(checkpoint.checkpoint_id)}</Text>
+                            </Space>
+
+                            <Text type="secondary">
+                              {checkpoint.last_error_code
+                                ? t('detail.diagnostics.error', {
+                                  code: checkpoint.last_error_code,
+                                  suffix: checkpoint.last_error ? ` · ${checkpoint.last_error}` : '',
                                 })
-                                : t('detail.diagnostics.noSyncError')}
-                          </Text>
+                                : checkpoint.last_synced_at
+                                  ? t('detail.diagnostics.lastSync', {
+                                    value: formatTimestamp(formatters, checkpoint.last_synced_at),
+                                  })
+                                  : t('detail.diagnostics.noSyncError')}
+                            </Text>
 
-                          <Space wrap>
-                            {checkpoint.execution_id ? (
-                              <RouteButton
-                                size="small"
-                                aria-label={t('detail.diagnostics.openWorkflowExecutionAria', {
-                                  value: checkpoint.execution_id,
-                                })}
-                                to={buildWorkflowExecutionDetailsHref(checkpoint.execution_id)}
-                              >
-                                {t('detail.diagnostics.openWorkflowExecution', {
-                                  value: formatShortId(checkpoint.execution_id),
-                                })}
-                              </RouteButton>
-                            ) : (
-                              <Text type="secondary">{t('detail.diagnostics.noWorkflowExecution')}</Text>
-                            )}
+                            <Space wrap>
+                              {checkpoint.execution_id ? (
+                                <RouteButton
+                                  size="small"
+                                  aria-label={t('detail.diagnostics.openWorkflowExecutionAria', {
+                                    value: checkpoint.execution_id,
+                                  })}
+                                  to={buildWorkflowExecutionDetailsHref(checkpoint.execution_id)}
+                                >
+                                  {t('detail.diagnostics.openWorkflowExecution', {
+                                    value: formatShortId(checkpoint.execution_id),
+                                  })}
+                                </RouteButton>
+                              ) : (
+                                <Text type="secondary">{t('detail.diagnostics.noWorkflowExecution')}</Text>
+                              )}
 
-                            {checkpoint.operation_id ? (
-                              <RouteButton
-                                size="small"
-                                aria-label={t('detail.diagnostics.openOperationAria', {
-                                  value: checkpoint.operation_id,
-                                })}
-                                to={buildOperationMonitorHref(checkpoint.operation_id)}
-                              >
-                                {t('detail.diagnostics.openOperation', {
-                                  value: formatShortId(checkpoint.operation_id),
-                                })}
-                              </RouteButton>
-                            ) : (
-                              <Text type="secondary">{t('detail.diagnostics.noOperationProjection')}</Text>
-                            )}
+                              {checkpoint.operation_id ? (
+                                <RouteButton
+                                  size="small"
+                                  aria-label={t('detail.diagnostics.openOperationAria', {
+                                    value: checkpoint.operation_id,
+                                  })}
+                                  to={buildOperationMonitorHref(checkpoint.operation_id)}
+                                >
+                                  {t('detail.diagnostics.openOperation', {
+                                    value: formatShortId(checkpoint.operation_id),
+                                  })}
+                                </RouteButton>
+                              ) : (
+                                <Text type="secondary">{t('detail.diagnostics.noOperationProjection')}</Text>
+                              )}
+                            </Space>
                           </Space>
-                        </Space>
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </Space>
                 ) : (
                   <Text type="secondary">{t('detail.diagnostics.emptyDescription')}</Text>

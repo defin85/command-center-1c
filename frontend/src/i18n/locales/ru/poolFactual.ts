@@ -180,6 +180,11 @@ const poolFactual = {
       title: 'Диагностика синхронизации',
       summary: 'Secondary workflow и operations handoff для factual sync checkpoints остаются локальными для этого workspace.',
       databaseFallback: 'База {{value}}',
+      bindingRemediation: {
+        title: 'GL Account coverage чинится через Bindings',
+        description: 'Для factual scope нужны chart-scoped `GL Account` bindings. Их remediation идёт в Pool Master Data -> Bindings, а не в Sync: `GL Account` и `GLAccountSet` не являются sync-launch entity types.',
+        openBindingsWorkspace: 'Открыть GL Account bindings',
+      },
       error: 'Ошибка {{code}}{{suffix}}',
       lastSync: 'Последняя синхронизация {{value}}',
       noSyncError: 'Для этого checkpoint ошибка синхронизации не зафиксирована.',

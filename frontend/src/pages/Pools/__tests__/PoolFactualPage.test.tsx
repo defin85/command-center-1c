@@ -1035,6 +1035,7 @@ describe('PoolFactualPage', () => {
   })
 
   it('shows factual sync checkpoint diagnostics with workflow and operations handoff', async () => {
+    const user = userEvent.setup()
     mockListPoolFactualOverview.mockResolvedValue([buildOverviewItem()])
     mockGetPoolFactualWorkspace.mockResolvedValue(buildWorkspace({
       summary: {
@@ -1071,6 +1072,13 @@ describe('PoolFactualPage', () => {
     await screen.findByText('Sync diagnostics')
     await screen.findByText('Pool factual DB 1')
     expect(screen.getByText('Error POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING')).toBeInTheDocument()
+    expect(screen.getByText('Fix GL Account coverage in Bindings')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Open GL Account bindings' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('pool-factual-location')).toHaveTextContent(
+        '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=database-1'
+      )
+    })
     expect(screen.getByRole('button', { name: 'Open workflow execution execution-failed-1' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open operation monitor operation-failed-1' })).toBeInTheDocument()
   })

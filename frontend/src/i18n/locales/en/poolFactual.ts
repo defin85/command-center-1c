@@ -180,6 +180,11 @@ const poolFactual = {
       title: 'Sync diagnostics',
       summary: 'Secondary workflow and operations handoff for factual sync checkpoints stays local to this workspace.',
       databaseFallback: 'Database {{value}}',
+      bindingRemediation: {
+        title: 'Fix GL Account coverage in Bindings',
+        description: 'Factual scope requires chart-scoped `GL Account` bindings. Remediate them in Pool Master Data -> Bindings, not in Sync: `GL Account` and `GLAccountSet` are not sync-launch entity types.',
+        openBindingsWorkspace: 'Open GL Account bindings',
+      },
       error: 'Error {{code}}{{suffix}}',
       lastSync: 'Last sync {{value}}',
       noSyncError: 'No sync error recorded for this checkpoint.',
