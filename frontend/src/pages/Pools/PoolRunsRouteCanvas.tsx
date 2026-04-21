@@ -1438,7 +1438,7 @@ const normalizePreviewSlotCoverageSummary = (
 
 export function PoolRunsPage() {
   const { message } = AntApp.useApp()
-  const { t } = usePoolsTranslation()
+  const { t, ready } = usePoolsTranslation()
   const stageLabels: Record<PoolRunsStage, string> = {
     create: t('runs.page.stages.create'),
     inspect: t('runs.page.stages.inspect'),
@@ -1473,6 +1473,7 @@ export function PoolRunsPage() {
   const [pools, setPools] = useState<OrganizationPool[]>([])
   const [receiptBatches, setReceiptBatches] = useState<PoolBatch[]>([])
   const [schemaTemplates, setSchemaTemplates] = useState<PoolSchemaTemplate[]>([])
+  const [hasResolvedPoolsLoad, setHasResolvedPoolsLoad] = useState(false)
   const [selectedPoolId, setSelectedPoolId] = useState<string | null | undefined>(
     () => poolFromUrl ?? undefined
   )
@@ -1635,6 +1636,7 @@ export function PoolRunsPage() {
     } catch {
       setError(t('runs.page.messages.failedToLoadPools'))
     } finally {
+      setHasResolvedPoolsLoad(true)
       setLoadingPools(false)
     }
   }, [t])
@@ -1932,6 +1934,10 @@ export function PoolRunsPage() {
   }, [loadRuns])
 
   useEffect(() => {
+    if (!hasResolvedPoolsLoad) {
+      return
+    }
+
     if (loadingPools) {
       return
     }
@@ -1952,7 +1958,7 @@ export function PoolRunsPage() {
       routeUpdateModeRef.current = 'replace'
       setSelectedPoolId(pools[0].id)
     }
-  }, [loadingPools, pools, selectedPoolId])
+  }, [hasResolvedPoolsLoad, loadingPools, pools, selectedPoolId])
 
   useEffect(() => {
     if (previousSelectedPoolIdRef.current === selectedPoolId) {
@@ -2738,6 +2744,10 @@ export function PoolRunsPage() {
         ? 2
         : 1
     )
+
+  if (!ready) {
+    return null
+  }
 
   return (
     <WorkspacePage

@@ -163,6 +163,10 @@ export function useCommandSchemasState() {
   )
 
   useEffect(() => {
+    if (!view || view.driver !== activeDriver) {
+      return
+    }
+
     const firstId = routeEffectiveCommandIds[0] ?? ''
     setSelectedCommandId((prev) => {
       if (routeCommandId && routeEffectiveCommandsById[routeCommandId]) {
@@ -170,7 +174,7 @@ export function useCommandSchemasState() {
       }
       return prev && routeEffectiveCommandsById[prev] ? prev : firstId
     })
-  }, [routeCommandId, routeEffectiveCommandIds, routeEffectiveCommandsById])
+  }, [activeDriver, routeCommandId, routeEffectiveCommandIds, routeEffectiveCommandsById, view])
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams)

@@ -160,7 +160,7 @@ const buildListButtonStyle = (selected: boolean) => ({
 
 export function PoolSchemaTemplatesPage() {
   const { message } = AntApp.useApp()
-  const { t } = usePoolsTranslation()
+  const { t, ready } = usePoolsTranslation()
   const formatters = useLocaleFormatters()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
@@ -477,6 +477,10 @@ export function PoolSchemaTemplatesPage() {
   }, [composeMode, form, loadTemplates, message, selectedTemplate, t])
 
   const selectedWorkflowBindingHint = resolveWorkflowBindingHint(selectedTemplate?.metadata ?? {})
+
+  if (!ready) {
+    return null
+  }
 
   return (
     <WorkspacePage

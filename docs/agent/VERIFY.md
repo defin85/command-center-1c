@@ -67,7 +67,12 @@ cd frontend && npm run test:run:decisions-heavy
 cd frontend && npm run test:run -- <path>
 cd frontend && npx vitest run <path...>
 cd frontend && npm run validate:ui-platform:iter
+cd frontend && npm run test:browser:ui-platform:workspaces
+cd frontend && npm run test:browser:ui-platform:runtime-surfaces
+cd frontend && npm run test:browser:ui-platform:governance-settings
+cd frontend && npm run test:browser:ui-platform:shell-contracts
 cd frontend && npm run test:browser:ui-platform
+cd frontend && npm run measure:ui-validation -- --artifact ../docs/observability/artifacts/ui-validation-runtime/<run-id>.json
 cd frontend && npm run validate:ui-platform
 ```
 
@@ -76,6 +81,10 @@ cd frontend && npm run validate:ui-platform
 `test:run:changed` использует builtin `vitest --changed`; при изменении `package.json` или `vitest.config.ts` runner сам расширяет прогон до полного scope. `test:run:related -- <source-file...>` полезен, когда нужно явно прогнать тесты, статически связанные с конкретными source files.
 
 `validate:ui-platform:iter` — это быстрый локальный iteration gate без browser contract. Перед handoff он не заменяет обязательные `npm run test:browser:ui-platform` и `npm run validate:ui-platform`.
+
+`test:browser:ui-platform:*` — это repo-owned focused browser reruns по checked-in shard families (`workspaces`, `runtime-surfaces`, `governance-settings`, `shell-contracts`). Они ускоряют локальную итерацию, но не заменяют полный `npm run test:browser:ui-platform`.
+
+`measure:ui-validation` по умолчанию делает `3` последовательных samples и пишет отдельные summaries для `vitest` и browser gate. Если один full run резко расходится с недавним baseline, perf verdict не считается авторитетным без repeated measurement или явного diagnostic explanation. Checked-in artifact directory: `docs/observability/artifacts/ui-validation-runtime/`.
 
 ### Orchestrator
 
@@ -138,6 +147,7 @@ cd go-services/worker && go test ./internal/drivers/poolops ./internal/orchestra
 cd frontend && npm run test:run -- src/pages/Pools/__tests__/PoolFactualPage.test.tsx
 cd frontend && timeout 120 npx vitest run src/pages/Pools/__tests__/PoolRunsPage.authoring.test.tsx -t "batch-backed|creates a receipt batch"
 cd frontend && npm run test:browser:ui-platform
+cd frontend && npm run measure:ui-validation -- --artifact ../docs/observability/artifacts/ui-validation-runtime/<run-id>.json
 cd frontend && npm run validate:ui-platform
 ./scripts/dev/check-agent-doc-freshness.sh
 ```
@@ -164,14 +174,14 @@ Operator path acceptance notes:
 
 Source of truth: `./debug/runtime-inventory.sh --json`
 
-| Runtime | Canonical test command |
-|---|---|
-| `orchestrator` | `./scripts/dev/pytest.sh -q <path>` |
+| Runtime            | Canonical test command                                          |
+| ------------------ | --------------------------------------------------------------- |
+| `orchestrator`     | `./scripts/dev/pytest.sh -q <path>`                             |
 | `event-subscriber` | `./scripts/dev/pytest.sh -q orchestrator/apps/operations/tests` |
-| `api-gateway` | `cd go-services/api-gateway && go test ./...` |
-| `worker` | `cd go-services/worker && go test ./...` |
-| `worker-workflows` | `cd go-services/worker && go test ./...` |
-| `frontend` | `cd frontend && npm run test:run -- <path>` |
+| `api-gateway`      | `cd go-services/api-gateway && go test ./...`                   |
+| `worker`           | `cd go-services/worker && go test ./...`                        |
+| `worker-workflows` | `cd go-services/worker && go test ./...`                        |
+| `frontend`         | `cd frontend && npm run test:run -- <path>`                     |
 
 ## Handoff Expectations
 

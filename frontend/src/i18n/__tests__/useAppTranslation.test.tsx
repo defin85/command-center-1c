@@ -5,6 +5,7 @@ import {
   usePoolFactualTranslation,
   usePoolsTranslation,
   useSystemStatusTranslation,
+  useTemplatesTranslation,
   useWorkflowTranslation,
 } from '../useAppTranslation'
 import { changeLanguage, ensureNamespaces, i18n } from '../runtime'
@@ -54,5 +55,19 @@ describe('useAppTranslation', () => {
     expect(poolsHook.result.current.t('executionPacks.page.title')).toBe('Execution Packs')
     expect(poolFactualHook.result.current.t('page.title')).toBe('Pool Factual Monitoring')
     expect(workflowsHook.result.current.t('list.page.title')).toBe('Workflow Scheme Library')
+  })
+
+  it('keeps a lazy namespace not ready until the active locale catalog is loaded', async () => {
+    await ensureNamespaces('ru', 'templates')
+    await changeLanguage('en')
+
+    const { result } = renderHook(() => useTemplatesTranslation())
+
+    expect(result.current.ready).toBe(false)
+    expect(result.current.t('page.title')).toBe('Шаблоны операций')
+
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    expect(result.current.t('page.title')).toBe('Operation Templates')
   })
 })

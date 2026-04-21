@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import type { ChangeEvent, MouseEvent, ReactNode } from 'react'
 
 type AntdModule = typeof import('antd')

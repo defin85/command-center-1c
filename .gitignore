@@ -138,6 +138,9 @@ desktop.ini
 # =============================================================================
 logs/
 artifacts/
+!docs/observability/artifacts/
+!docs/observability/artifacts/ui-validation-runtime/
+!docs/observability/artifacts/ui-validation-runtime/*.json
 *.log
 pids/
 *.pid

@@ -101,7 +101,7 @@ const filterBindingProfiles = (profiles: BindingProfileSummary[], searchTerm: st
 
 export function PoolBindingProfilesPage() {
   const screens = useBreakpoint()
-  const { t } = usePoolsTranslation()
+  const { t, ready } = usePoolsTranslation()
   const formatters = useLocaleFormatters()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -488,6 +488,10 @@ export function PoolBindingProfilesPage() {
   useEffect(() => {
     setIsUsageRequested(false)
   }, [selectedProfileId])
+
+  if (!ready) {
+    return null
+  }
 
   return (
     <WorkspacePage

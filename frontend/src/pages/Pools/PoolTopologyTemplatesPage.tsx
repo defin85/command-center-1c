@@ -131,7 +131,7 @@ const buildCatalogButtonStyle = (selected: boolean) => ({
 
 export function PoolTopologyTemplatesPage() {
   const { message } = AntApp.useApp()
-  const { t } = usePoolsTranslation()
+  const { t, ready } = usePoolsTranslation()
   const formatters = useLocaleFormatters()
   const screens = useBreakpoint()
   const hasMatchedBreakpoint = Object.values(screens).some(Boolean)
@@ -346,6 +346,10 @@ export function PoolTopologyTemplatesPage() {
   const listError = topologyTemplatesQuery.isError
     ? resolveApiError(topologyTemplatesQuery.error, t('topologyTemplates.messages.failedToLoad')).message
     : null
+
+  if (!ready) {
+    return null
+  }
 
   return (
     <WorkspacePage

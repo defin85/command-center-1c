@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { FALLBACK_APP_LOCALE } from './constants'
 import { useLocaleState } from './I18nProvider'
 import { ensureNamespaces } from './runtime'
 import { defaultNamespace, type TranslationNamespace } from './resources'
@@ -12,12 +11,12 @@ type ResolvedNamespace<Namespace extends TranslationNamespace | undefined> = (
   Namespace extends TranslationNamespace ? Namespace : typeof defaultNamespace
 )
 
-const hasNamespaceResources = (
+const hasLocaleNamespaceResources = (
   i18n: ReturnType<typeof useTranslation>['i18n'],
   locale: string,
   namespace: TranslationNamespace,
 ) => (
-  i18n.hasResourceBundle(locale, namespace) || i18n.hasResourceBundle(FALLBACK_APP_LOCALE, namespace)
+  i18n.hasResourceBundle(locale, namespace)
 )
 
 const useNamespaceTranslation = <Namespace extends TranslationNamespace | undefined>(value?: Namespace) => {
@@ -31,16 +30,16 @@ const useNamespaceTranslation = <Namespace extends TranslationNamespace | undefi
   type TranslationOptions = Parameters<typeof translation.t>[1]
   type AppTranslationFunction = typeof translation.t & ((key: string, options?: Record<string, unknown>) => string)
   const [namespacesReady, setNamespacesReady] = useState(() => (
-    hasNamespaceResources(translation.i18n, locale, namespace)
+    hasLocaleNamespaceResources(translation.i18n, locale, namespace)
   ))
 
   useEffect(() => {
     let cancelled = false
-    setNamespacesReady(hasNamespaceResources(translation.i18n, locale, namespace))
+    setNamespacesReady(hasLocaleNamespaceResources(translation.i18n, locale, namespace))
 
     void ensureNamespaces(locale, namespace).then(() => {
       if (!cancelled) {
-        setNamespacesReady(hasNamespaceResources(translation.i18n, locale, namespace))
+        setNamespacesReady(hasLocaleNamespaceResources(translation.i18n, locale, namespace))
       }
     })
 

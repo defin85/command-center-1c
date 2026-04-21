@@ -1,0 +1,247 @@
+{
+  "recorded_at": "2026-04-21T12:03:35.360Z",
+  "measurement_protocol": {
+    "default_samples": 3,
+    "requested_samples": 3,
+    "artifact_directory": "docs/observability/artifacts/ui-validation-runtime",
+    "surfaces": [
+      "vitest",
+      "browser"
+    ],
+    "browser_shards": [
+      {
+        "family": "workspaces",
+        "label": "workspace restore, mobile detail, and authoring surfaces",
+        "path": "tests/browser/ui-platform-contract-workspaces.spec.ts"
+      },
+      {
+        "family": "runtime-surfaces",
+        "label": "runtime-facing clusters, system-status, and service-mesh surfaces",
+        "path": "tests/browser/ui-platform-contract-runtime-surfaces.spec.ts"
+      },
+      {
+        "family": "governance-settings",
+        "label": "governance, catalog outliers, and settings detail surfaces",
+        "path": "tests/browser/ui-platform-contract-governance-settings.spec.ts"
+      },
+      {
+        "family": "shell-contracts",
+        "label": "mount budgets, handoffs, same-route re-entry, and shell-level runtime contracts",
+        "path": "tests/browser/ui-platform-contract-shell-contracts.spec.ts"
+      }
+    ]
+  },
+  "environment": {
+    "repo_root": "/home/egor/code/command-center-1c",
+    "frontend_root": "/home/egor/code/command-center-1c/frontend",
+    "platform": "linux",
+    "release": "6.6.87.2-microsoft-standard-WSL2",
+    "cpus": 8,
+    "node": "v25.9.0"
+  },
+  "surfaces": {
+    "vitest": {
+      "command": "npm run test:run",
+      "samples": [
+        {
+          "sample": 1,
+          "command": "npm run test:run",
+          "wall_clock_seconds": 359.44,
+          "parsed": {
+            "test_files": 114,
+            "tests": 728,
+            "duration": {
+              "raw": "358.81s",
+              "seconds": 358.81,
+              "breakdown": {
+                "transform": {
+                  "raw": "22.64s",
+                  "seconds": 22.64
+                },
+                "setup": {
+                  "raw": "12.79s",
+                  "seconds": 12.79
+                },
+                "import": {
+                  "raw": "177.50s",
+                  "seconds": 177.5
+                },
+                "tests": {
+                  "raw": "234.42s",
+                  "seconds": 234.42
+                },
+                "environment": {
+                  "raw": "56.71s",
+                  "seconds": 56.71
+                }
+              }
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "command": "npm run test:run",
+          "wall_clock_seconds": 330.74,
+          "parsed": {
+            "test_files": 114,
+            "tests": 728,
+            "duration": {
+              "raw": "330.17s",
+              "seconds": 330.17,
+              "breakdown": {
+                "transform": {
+                  "raw": "20.26s",
+                  "seconds": 20.26
+                },
+                "setup": {
+                  "raw": "11.03s",
+                  "seconds": 11.03
+                },
+                "import": {
+                  "raw": "159.41s",
+                  "seconds": 159.41
+                },
+                "tests": {
+                  "raw": "218.00s",
+                  "seconds": 218
+                },
+                "environment": {
+                  "raw": "48.40s",
+                  "seconds": 48.4
+                }
+              }
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "command": "npm run test:run",
+          "wall_clock_seconds": 362.33,
+          "parsed": {
+            "test_files": 114,
+            "tests": 728,
+            "duration": {
+              "raw": "361.69s",
+              "seconds": 361.69,
+              "breakdown": {
+                "transform": {
+                  "raw": "22.94s",
+                  "seconds": 22.94
+                },
+                "setup": {
+                  "raw": "11.60s",
+                  "seconds": 11.6
+                },
+                "import": {
+                  "raw": "177.35s",
+                  "seconds": 177.35
+                },
+                "tests": {
+                  "raw": "241.36s",
+                  "seconds": 241.36
+                },
+                "environment": {
+                  "raw": "51.28s",
+                  "seconds": 51.28
+                }
+              }
+            }
+          }
+        }
+      ],
+      "summary": {
+        "wall_clock_seconds": {
+          "min": 330.74,
+          "median": 359.44,
+          "max": 362.33
+        },
+        "reported_duration_seconds": {
+          "min": 330.17,
+          "median": 358.81,
+          "max": 361.69
+        },
+        "reported_breakdown_seconds": {
+          "transform": {
+            "min": 20.26,
+            "median": 22.64,
+            "max": 22.94
+          },
+          "setup": {
+            "min": 11.03,
+            "median": 11.6,
+            "max": 12.79
+          },
+          "import": {
+            "min": 159.41,
+            "median": 177.35,
+            "max": 177.5
+          },
+          "tests": {
+            "min": 218,
+            "median": 234.42,
+            "max": 241.36
+          },
+          "environment": {
+            "min": 48.4,
+            "median": 51.28,
+            "max": 56.71
+          }
+        }
+      }
+    },
+    "browser": {
+      "command": "npm run test:browser:ui-platform",
+      "samples": [
+        {
+          "sample": 1,
+          "command": "npm run test:browser:ui-platform",
+          "wall_clock_seconds": 412.03,
+          "parsed": {
+            "tests": 100,
+            "duration": {
+              "raw": "6.8m",
+              "seconds": 408
+            }
+          }
+        },
+        {
+          "sample": 2,
+          "command": "npm run test:browser:ui-platform",
+          "wall_clock_seconds": 397.41,
+          "parsed": {
+            "tests": 100,
+            "duration": {
+              "raw": "6.6m",
+              "seconds": 396
+            }
+          }
+        },
+        {
+          "sample": 3,
+          "command": "npm run test:browser:ui-platform",
+          "wall_clock_seconds": 448.83,
+          "parsed": {
+            "tests": 100,
+            "duration": {
+              "raw": "7.5m",
+              "seconds": 450
+            }
+          }
+        }
+      ],
+      "summary": {
+        "wall_clock_seconds": {
+          "min": 397.41,
+          "median": 412.03,
+          "max": 448.83
+        },
+        "reported_duration_seconds": {
+          "min": 396,
+          "median": 408,
+          "max": 450
+        },
+        "reported_breakdown_seconds": {}
+      }
+    }
+  }
+}

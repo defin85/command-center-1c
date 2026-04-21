@@ -34,5 +34,12 @@
   - during iteration, prefer `generate:api:if-needed`, `test:run:changed`, `test:run:related`, project-aware focused commands, or path-scoped `cd frontend && npm run test:run -- <path>` over full-suite reruns
   - `cd frontend && npm run validate:ui-platform:iter` is a local iteration gate; it is not a replacement for the blocking landing gate
   - before landing frontend changes, rerun full `cd frontend && npm run test:run`
+  - `cd frontend && npm run test:browser:ui-platform:workspaces`
+  - `cd frontend && npm run test:browser:ui-platform:runtime-surfaces`
+  - `cd frontend && npm run test:browser:ui-platform:governance-settings`
+  - `cd frontend && npm run test:browser:ui-platform:shell-contracts`
+  - focused browser reruns are wired through checked-in shard families; do not replace them with ad hoc Playwright globs in handoff notes
   - `cd frontend && npm run test:browser:ui-platform`
+  - `cd frontend && npm run measure:ui-validation -- --artifact ../docs/observability/artifacts/ui-validation-runtime/<run-id>.json`
+  - treat a single noisy full UI run as non-authoritative by default; perf claims should use repeated measurement or an explicit diagnostic explanation
   - `cd frontend && npm run validate:ui-platform`
