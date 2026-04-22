@@ -1,0 +1,14 @@
+type: object
+properties:
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+required:
+  - database_id
+  - database_name
+

@@ -283,6 +283,8 @@ class PoolMasterGLAccount(models.Model):
     chart_identity = models.CharField(max_length=255)
     config_name = models.CharField(max_length=255)
     config_version = models.CharField(max_length=128)
+    is_retired = models.BooleanField(default=False, db_index=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -293,6 +295,7 @@ class PoolMasterGLAccount(models.Model):
             models.Index(fields=["tenant", "canonical_id"]),
             models.Index(fields=["tenant", "chart_identity"]),
             models.Index(fields=["tenant", "config_name", "config_version"]),
+            models.Index(fields=["tenant", "is_retired"]),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -333,6 +336,259 @@ class PoolMasterDataEntityType(models.TextChoices):
     TAX_PROFILE = "tax_profile", "Tax Profile"
     GL_ACCOUNT = "gl_account", "GL Account"
     GL_ACCOUNT_SET = "gl_account_set", "GL Account Set"
+
+
+class PoolMasterDataChartSourceStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    ERROR = "error", "Error"
+
+
+class PoolMasterDataChartSource(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_chart_sources",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_chart_sources",
+    )
+    chart_identity = models.CharField(max_length=255)
+    config_name = models.CharField(max_length=255)
+    config_version = models.CharField(max_length=128)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataChartSourceStatus.choices,
+        default=PoolMasterDataChartSourceStatus.ACTIVE,
+        db_index=True,
+    )
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=128, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_chart_sources"
+        indexes = [
+            models.Index(fields=["tenant", "chart_identity"]),
+            models.Index(fields=["tenant", "config_name", "config_version"]),
+            models.Index(fields=["tenant", "database"]),
+            models.Index(fields=["tenant", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "chart_identity", "config_name", "config_version"],
+                name="uniq_pool_master_data_chart_source_compatibility",
+            ),
+            models.CheckConstraint(
+                condition=~Q(chart_identity=""),
+                name="chk_pool_master_data_chart_source_chart_identity_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_name=""),
+                name="chk_pool_master_data_chart_source_config_name_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(config_version=""),
+                name="chk_pool_master_data_chart_source_config_version_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Chart source database must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataChartSnapshot(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_chart_snapshots",
+    )
+    chart_source = models.ForeignKey(
+        PoolMasterDataChartSource,
+        on_delete=models.CASCADE,
+        related_name="snapshots",
+    )
+    fingerprint = models.CharField(max_length=128)
+    row_count = models.IntegerField(default=0)
+    materialized_count = models.IntegerField(default=0)
+    updated_count = models.IntegerField(default=0)
+    unchanged_count = models.IntegerField(default=0)
+    retired_count = models.IntegerField(default=0)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "pool_master_data_chart_snapshots"
+        indexes = [
+            models.Index(fields=["tenant", "chart_source", "-created_at"]),
+            models.Index(fields=["tenant", "fingerprint"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(fingerprint=""),
+                name="chk_pool_master_data_chart_snapshot_fingerprint_nonempty",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.chart_source_id and self.tenant_id and self.chart_source.tenant_id != self.tenant_id:
+            raise ValidationError({"chart_source": "Chart snapshot must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataChartMaterializationMode(models.TextChoices):
+    PREFLIGHT = "preflight", "Preflight"
+    DRY_RUN = "dry_run", "Dry Run"
+    MATERIALIZE = "materialize", "Materialize"
+    VERIFY_FOLLOWERS = "verify_followers", "Verify Followers"
+    BACKFILL_BINDINGS = "backfill_bindings", "Backfill Bindings"
+
+
+class PoolMasterDataChartMaterializationJobStatus(models.TextChoices):
+    PENDING = "pending", "Pending"
+    RUNNING = "running", "Running"
+    SUCCEEDED = "succeeded", "Succeeded"
+    FAILED = "failed", "Failed"
+
+
+class PoolMasterDataChartMaterializationJob(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_chart_jobs",
+    )
+    chart_source = models.ForeignKey(
+        PoolMasterDataChartSource,
+        on_delete=models.CASCADE,
+        related_name="jobs",
+    )
+    snapshot = models.ForeignKey(
+        PoolMasterDataChartSnapshot,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="jobs",
+    )
+    mode = models.CharField(max_length=32, choices=PoolMasterDataChartMaterializationMode.choices, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=PoolMasterDataChartMaterializationJobStatus.choices,
+        default=PoolMasterDataChartMaterializationJobStatus.PENDING,
+        db_index=True,
+    )
+    database_ids = models.JSONField(default=list, blank=True)
+    requested_by_username = models.CharField(max_length=150, blank=True, default="")
+    last_error_code = models.CharField(max_length=128, blank=True, default="")
+    last_error = models.TextField(blank=True, default="")
+    counters = models.JSONField(default=dict, blank=True)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    audit_trail = models.JSONField(default=list, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_chart_jobs"
+        indexes = [
+            models.Index(fields=["tenant", "chart_source", "-created_at"]),
+            models.Index(fields=["tenant", "mode", "status"]),
+        ]
+
+    def clean(self) -> None:
+        if self.chart_source_id and self.tenant_id and self.chart_source.tenant_id != self.tenant_id:
+            raise ValidationError({"chart_source": "Chart job source must belong to the same tenant."})
+        if self.snapshot_id and self.tenant_id and self.snapshot.tenant_id != self.tenant_id:
+            raise ValidationError({"snapshot": "Chart job snapshot must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class PoolMasterDataChartFollowerVerdict(models.TextChoices):
+    OK = "ok", "OK"
+    BACKFILLED = "backfilled", "Backfilled"
+    MISSING = "missing", "Missing"
+    AMBIGUOUS = "ambiguous", "Ambiguous"
+    STALE = "stale", "Stale"
+
+
+class PoolMasterDataChartFollowerStatus(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        "tenancy.Tenant",
+        on_delete=models.CASCADE,
+        related_name="pool_master_data_chart_follower_statuses",
+    )
+    job = models.ForeignKey(
+        PoolMasterDataChartMaterializationJob,
+        on_delete=models.CASCADE,
+        related_name="follower_statuses",
+    )
+    snapshot = models.ForeignKey(
+        PoolMasterDataChartSnapshot,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="follower_statuses",
+    )
+    database = models.ForeignKey(
+        "databases.Database",
+        on_delete=models.PROTECT,
+        related_name="pool_master_data_chart_follower_statuses",
+    )
+    verdict = models.CharField(max_length=16, choices=PoolMasterDataChartFollowerVerdict.choices, db_index=True)
+    detail = models.TextField(blank=True, default="")
+    matched_accounts = models.IntegerField(default=0)
+    missing_accounts = models.IntegerField(default=0)
+    ambiguous_accounts = models.IntegerField(default=0)
+    stale_bindings = models.IntegerField(default=0)
+    backfilled_accounts = models.IntegerField(default=0)
+    diagnostics = models.JSONField(default=dict, blank=True)
+    last_verified_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pool_master_data_chart_follower_statuses"
+        indexes = [
+            models.Index(fields=["tenant", "database", "verdict"]),
+            models.Index(fields=["tenant", "job", "database"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["job", "database"],
+                name="uniq_pool_master_data_chart_follower_status_job_database",
+            ),
+        ]
+
+    def clean(self) -> None:
+        if self.job_id and self.tenant_id and self.job.tenant_id != self.tenant_id:
+            raise ValidationError({"job": "Follower status job must belong to the same tenant."})
+        if self.database_id and self.tenant_id and self.database.tenant_id != self.tenant_id:
+            raise ValidationError({"database": "Follower database must belong to the same tenant."})
+        if self.snapshot_id and self.tenant_id and self.snapshot.tenant_id != self.tenant_id:
+            raise ValidationError({"snapshot": "Follower snapshot must belong to the same tenant."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class PoolMasterDataBootstrapImportEntityType(models.TextChoices):

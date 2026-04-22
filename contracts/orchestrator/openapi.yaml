@@ -5931,6 +5931,303 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
+  /api/v2/pools/master-data/chart-import/sources/:
+    get:
+      operationId: v2_pools_master_data_chart_import_sources_list
+      summary: List chart import authoritative sources
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: chart_identity
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: config_name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: config_version
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: database_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartSourceListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+  /api/v2/pools/master-data/chart-import/sources/upsert/:
+    post:
+      operationId: v2_pools_master_data_chart_import_sources_upsert
+      summary: Upsert chart import authoritative source
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChartSourceUpsertRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChartSourceUpsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChartSourceUpsertRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartSourceResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/chart-import/jobs/:
+    get:
+      operationId: v2_pools_master_data_chart_import_jobs_list
+      summary: List chart import jobs
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: chart_source_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - preflight
+              - dry_run
+              - materialize
+              - verify_followers
+              - backfill_bindings
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartJobListResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+    post:
+      operationId: v2_pools_master_data_chart_import_jobs_create
+      summary: Create chart import job
+      tags:
+        - v2
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChartJobCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChartJobCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChartJobCreateRequest'
+        required: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartJobResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+  /api/v2/pools/master-data/chart-import/jobs/{id}/:
+    get:
+      operationId: v2_pools_master_data_chart_import_jobs_get
+      summary: Get chart import job
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartJobResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/master-data/bootstrap-collections/preflight/:
     post:
       operationId: v2_pools_master_data_bootstrap_collections_preflight
@@ -21220,6 +21517,440 @@ components:
           additionalProperties: true
       required:
         - action
+    ChartSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        chart_source_id:
+          type: string
+          format: uuid
+        fingerprint:
+          type: string
+        row_count:
+          type: integer
+          minimum: 0
+        materialized_count:
+          type: integer
+          minimum: 0
+        updated_count:
+          type: integer
+          minimum: 0
+        unchanged_count:
+          type: integer
+          minimum: 0
+        retired_count:
+          type: integer
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - chart_source_id
+        - fingerprint
+        - row_count
+        - materialized_count
+        - updated_count
+        - unchanged_count
+        - retired_count
+    ChartJobSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        chart_source_id:
+          type: string
+          format: uuid
+        snapshot:
+          allOf:
+            - $ref: '#/components/schemas/ChartSnapshot'
+          nullable: true
+        mode:
+          type: string
+          enum:
+            - preflight
+            - dry_run
+            - materialize
+            - verify_followers
+            - backfill_bindings
+        status:
+          type: string
+        database_ids:
+          type: array
+          items:
+            type: string
+        requested_by_username:
+          type: string
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        counters:
+          type: object
+          additionalProperties: true
+        diagnostics:
+          type: object
+          additionalProperties: true
+        audit_trail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - chart_source_id
+        - mode
+        - status
+        - requested_by_username
+        - last_error_code
+        - last_error
+    ChartSourceCandidateDatabase:
+      type: object
+      properties:
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+        - database_id
+        - database_name
+    ChartSource:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        chart_identity:
+          type: string
+        config_name:
+          type: string
+        config_version:
+          type: string
+        status:
+          type: string
+        last_success_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        latest_snapshot:
+          allOf:
+            - $ref: '#/components/schemas/ChartSnapshot'
+          nullable: true
+        latest_job:
+          allOf:
+            - $ref: '#/components/schemas/ChartJobSummary'
+          nullable: true
+        candidate_databases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartSourceCandidateDatabase'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - database_id
+        - database_name
+        - chart_identity
+        - config_name
+        - config_version
+        - status
+        - last_error_code
+        - last_error
+    ChartSourceListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartSource'
+      required:
+        - count
+        - limit
+        - offset
+        - sources
+    ChartSourceUpsertRequest:
+      type: object
+      properties:
+        database_id:
+          type: string
+          maxLength: 64
+        chart_identity:
+          type: string
+          maxLength: 255
+      required:
+        - database_id
+        - chart_identity
+    ChartSourceResponse:
+      type: object
+      properties:
+        source:
+          $ref: '#/components/schemas/ChartSource'
+      required:
+        - source
+    ChartFollowerStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        snapshot_id:
+          type: string
+          format: uuid
+          nullable: true
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        verdict:
+          type: string
+        detail:
+          type: string
+        matched_accounts:
+          type: integer
+          minimum: 0
+        missing_accounts:
+          type: integer
+          minimum: 0
+        ambiguous_accounts:
+          type: integer
+          minimum: 0
+        stale_bindings:
+          type: integer
+          minimum: 0
+        backfilled_accounts:
+          type: integer
+          minimum: 0
+        diagnostics:
+          type: object
+          additionalProperties: true
+        bindings_remediation_href:
+          type: string
+          nullable: true
+        last_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - job_id
+        - database_id
+        - database_name
+        - verdict
+        - detail
+        - matched_accounts
+        - missing_accounts
+        - ambiguous_accounts
+        - stale_bindings
+        - backfilled_accounts
+    ChartJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        chart_source_id:
+          type: string
+          format: uuid
+        chart_source:
+          allOf:
+            - $ref: '#/components/schemas/ChartSource'
+          nullable: true
+        snapshot:
+          allOf:
+            - $ref: '#/components/schemas/ChartSnapshot'
+          nullable: true
+        mode:
+          type: string
+          enum:
+            - preflight
+            - dry_run
+            - materialize
+            - verify_followers
+            - backfill_bindings
+        status:
+          type: string
+        database_ids:
+          type: array
+          items:
+            type: string
+        requested_by_username:
+          type: string
+        last_error_code:
+          type: string
+        last_error:
+          type: string
+        counters:
+          type: object
+          additionalProperties: true
+        diagnostics:
+          type: object
+          additionalProperties: true
+        audit_trail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        follower_statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartFollowerStatus'
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - tenant_id
+        - chart_source_id
+        - mode
+        - status
+        - requested_by_username
+        - last_error_code
+        - last_error
+    ChartJobListResponse:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartJob'
+      required:
+        - count
+        - limit
+        - offset
+        - jobs
+    ChartJobCreateRequest:
+      type: object
+      properties:
+        chart_source_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+            - preflight
+            - dry_run
+            - materialize
+            - verify_followers
+            - backfill_bindings
+        database_ids:
+          type: array
+          items:
+            type: string
+            maxLength: 64
+      required:
+        - chart_source_id
+        - mode
+    ChartJobResponse:
+      type: object
+      properties:
+        job:
+          $ref: '#/components/schemas/ChartJob'
+      required:
+        - job
     PoolMasterDataBootstrapCollectionScopeRequest:
       type: object
       properties:

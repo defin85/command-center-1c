@@ -1,0 +1,7 @@
+type: object
+properties:
+  source:
+    $ref: ./ChartSource.yaml
+required:
+  - source
+

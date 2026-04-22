@@ -1,0 +1,70 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  chart_source_id:
+    type: string
+    format: uuid
+  snapshot:
+    allOf:
+      - $ref: ./ChartSnapshot.yaml
+    nullable: true
+  mode:
+    type: string
+    enum:
+      - preflight
+      - dry_run
+      - materialize
+      - verify_followers
+      - backfill_bindings
+  status:
+    type: string
+  database_ids:
+    type: array
+    items:
+      type: string
+  requested_by_username:
+    type: string
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  counters:
+    type: object
+    additionalProperties: true
+  diagnostics:
+    type: object
+    additionalProperties: true
+  audit_trail:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  started_at:
+    type: string
+    format: date-time
+    nullable: true
+  finished_at:
+    type: string
+    format: date-time
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - chart_source_id
+  - mode
+  - status
+  - requested_by_username
+  - last_error_code
+  - last_error
+

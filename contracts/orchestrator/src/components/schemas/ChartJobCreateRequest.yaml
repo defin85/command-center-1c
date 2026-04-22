@@ -1,0 +1,22 @@
+type: object
+properties:
+  chart_source_id:
+    type: string
+    format: uuid
+  mode:
+    type: string
+    enum:
+      - preflight
+      - dry_run
+      - materialize
+      - verify_followers
+      - backfill_bindings
+  database_ids:
+    type: array
+    items:
+      type: string
+      maxLength: 64
+required:
+  - chart_source_id
+  - mode
+

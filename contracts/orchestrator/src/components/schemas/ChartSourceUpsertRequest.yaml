@@ -1,0 +1,12 @@
+type: object
+properties:
+  database_id:
+    type: string
+    maxLength: 64
+  chart_identity:
+    type: string
+    maxLength: 255
+required:
+  - database_id
+  - chart_identity
+

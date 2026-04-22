@@ -1,0 +1,72 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  job_id:
+    type: string
+    format: uuid
+  snapshot_id:
+    type: string
+    format: uuid
+    nullable: true
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  verdict:
+    type: string
+  detail:
+    type: string
+  matched_accounts:
+    type: integer
+    minimum: 0
+  missing_accounts:
+    type: integer
+    minimum: 0
+  ambiguous_accounts:
+    type: integer
+    minimum: 0
+  stale_bindings:
+    type: integer
+    minimum: 0
+  backfilled_accounts:
+    type: integer
+    minimum: 0
+  diagnostics:
+    type: object
+    additionalProperties: true
+  bindings_remediation_href:
+    type: string
+    nullable: true
+  last_verified_at:
+    type: string
+    format: date-time
+    nullable: true
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - job_id
+  - database_id
+  - database_name
+  - verdict
+  - detail
+  - matched_accounts
+  - missing_accounts
+  - ambiguous_accounts
+  - stale_bindings
+  - backfilled_accounts
+

@@ -41,6 +41,7 @@ from .views import (
     intercompany_pools_binding_profiles,
     intercompany_pools_topology_templates,
     intercompany_pools_master_data,
+    intercompany_pools_master_data_chart,
     intercompany_pools_master_data_dedupe,
     intercompany_pools_master_data_bootstrap,
     intercompany_pools_master_data_sync,
@@ -404,6 +405,26 @@ urlpatterns = [
         'pools/master-data/sync-launches/<uuid:id>/',
         intercompany_pools_master_data_sync.get_sync_launch,
         name='pools-master-data-sync-launch-get',
+    ),
+    path(
+        'pools/master-data/chart-import/sources/',
+        intercompany_pools_master_data_chart.list_pool_master_data_chart_sources_endpoint,
+        name='pools-master-data-chart-import-sources-list',
+    ),
+    path(
+        'pools/master-data/chart-import/sources/upsert/',
+        intercompany_pools_master_data_chart.upsert_pool_master_data_chart_source_endpoint,
+        name='pools-master-data-chart-import-sources-upsert',
+    ),
+    path(
+        'pools/master-data/chart-import/jobs/',
+        intercompany_pools_master_data_chart.pool_master_data_chart_jobs_endpoint,
+        name='pools-master-data-chart-import-jobs',
+    ),
+    path(
+        'pools/master-data/chart-import/jobs/<uuid:id>/',
+        intercompany_pools_master_data_chart.get_pool_master_data_chart_job_endpoint,
+        name='pools-master-data-chart-import-jobs-get',
     ),
     path(
         'pools/master-data/bootstrap-collections/preflight/',

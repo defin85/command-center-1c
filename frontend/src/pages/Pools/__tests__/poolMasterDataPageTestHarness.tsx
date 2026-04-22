@@ -40,6 +40,11 @@ const mockUpsertMasterDataBinding = vi.fn()
 const mockGetPoolMasterDataRegistry = vi.fn()
 const mockListPoolTargetClusters = vi.fn()
 const mockListPoolTargetDatabases = vi.fn()
+const mockUpsertPoolMasterDataChartSource = vi.fn()
+const mockListPoolMasterDataChartSources = vi.fn()
+const mockCreatePoolMasterDataChartJob = vi.fn()
+const mockListPoolMasterDataChartJobs = vi.fn()
+const mockGetPoolMasterDataChartJob = vi.fn()
 const mockListMasterDataSyncStatus = vi.fn()
 const mockListMasterDataSyncConflicts = vi.fn()
 const mockRetryMasterDataSyncConflict = vi.fn()
@@ -170,6 +175,99 @@ const buildBootstrapCollection = (overrides: Record<string, unknown> = {}) => ({
   ],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:02:00Z',
+  ...overrides,
+})
+
+const buildChartSnapshot = (overrides: Record<string, unknown> = {}) => ({
+  id: 'chart-snapshot-1',
+  tenant_id: 'tenant-1',
+  chart_source_id: 'chart-source-1',
+  fingerprint: 'chart-fingerprint-1',
+  row_count: 2,
+  materialized_count: 1,
+  updated_count: 1,
+  unchanged_count: 0,
+  retired_count: 0,
+  metadata: {},
+  created_at: '2026-01-01T00:00:00Z',
+  ...overrides,
+})
+
+const buildChartJobSummary = (overrides: Record<string, unknown> = {}) => ({
+  id: 'chart-job-summary-1',
+  tenant_id: 'tenant-1',
+  chart_source_id: 'chart-source-1',
+  snapshot: buildChartSnapshot(),
+  mode: 'materialize',
+  status: 'succeeded',
+  database_ids: [],
+  requested_by_username: 'admin',
+  last_error_code: '',
+  last_error: '',
+  counters: {},
+  diagnostics: {},
+  audit_trail: [],
+  started_at: '2026-01-01T00:00:00Z',
+  finished_at: '2026-01-01T00:01:00Z',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:01:00Z',
+  ...overrides,
+})
+
+const buildChartSource = (overrides: Record<string, unknown> = {}) => ({
+  id: 'chart-source-1',
+  tenant_id: 'tenant-1',
+  database_id: 'db-1',
+  database_name: 'Main DB',
+  cluster_id: 'cluster-1',
+  chart_identity: 'ChartOfAccounts_Main',
+  config_name: 'Accounting Enterprise',
+  config_version: '3.0.1',
+  status: 'active',
+  last_success_at: '2026-01-01T00:01:00Z',
+  last_error_code: '',
+  last_error: '',
+  metadata: {},
+  latest_snapshot: buildChartSnapshot(),
+  latest_job: buildChartJobSummary(),
+  candidate_databases: [
+    {
+      database_id: 'db-2',
+      database_name: 'Replica DB',
+      cluster_id: 'cluster-1',
+    },
+  ],
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:01:00Z',
+  ...overrides,
+})
+
+const buildChartJob = (overrides: Record<string, unknown> = {}) => ({
+  id: 'chart-job-1',
+  tenant_id: 'tenant-1',
+  chart_source_id: 'chart-source-1',
+  chart_source: buildChartSource(),
+  snapshot: buildChartSnapshot(),
+  mode: 'materialize',
+  status: 'succeeded',
+  database_ids: [],
+  requested_by_username: 'admin',
+  last_error_code: '',
+  last_error: '',
+  counters: {
+    rows_total: 2,
+    created_count: 1,
+    updated_count: 1,
+    unchanged_count: 0,
+    retired_count: 0,
+  },
+  diagnostics: {},
+  audit_trail: [],
+  follower_statuses: [],
+  started_at: '2026-01-01T00:00:00Z',
+  finished_at: '2026-01-01T00:01:00Z',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:01:00Z',
   ...overrides,
 })
 
@@ -705,6 +803,11 @@ vi.mock('../../../api/intercompanyPools', () => ({
   getPoolMasterDataRegistry: (...args: unknown[]) => mockGetPoolMasterDataRegistry(...args),
   listPoolTargetClusters: (...args: unknown[]) => mockListPoolTargetClusters(...args),
   listPoolTargetDatabases: (...args: unknown[]) => mockListPoolTargetDatabases(...args),
+  upsertPoolMasterDataChartSource: (...args: unknown[]) => mockUpsertPoolMasterDataChartSource(...args),
+  listPoolMasterDataChartSources: (...args: unknown[]) => mockListPoolMasterDataChartSources(...args),
+  createPoolMasterDataChartJob: (...args: unknown[]) => mockCreatePoolMasterDataChartJob(...args),
+  listPoolMasterDataChartJobs: (...args: unknown[]) => mockListPoolMasterDataChartJobs(...args),
+  getPoolMasterDataChartJob: (...args: unknown[]) => mockGetPoolMasterDataChartJob(...args),
   listMasterDataSyncStatus: (...args: unknown[]) => mockListMasterDataSyncStatus(...args),
   listMasterDataSyncConflicts: (...args: unknown[]) => mockListMasterDataSyncConflicts(...args),
   retryMasterDataSyncConflict: (...args: unknown[]) => mockRetryMasterDataSyncConflict(...args),
@@ -790,6 +893,11 @@ export function setupPoolMasterDataPageTestSuite() {
     mockGetPoolMasterDataRegistry.mockReset()
     mockListPoolTargetClusters.mockReset()
     mockListPoolTargetDatabases.mockReset()
+    mockUpsertPoolMasterDataChartSource.mockReset()
+    mockListPoolMasterDataChartSources.mockReset()
+    mockCreatePoolMasterDataChartJob.mockReset()
+    mockListPoolMasterDataChartJobs.mockReset()
+    mockGetPoolMasterDataChartJob.mockReset()
     mockListMasterDataSyncStatus.mockReset()
     mockListMasterDataSyncConflicts.mockReset()
     mockRetryMasterDataSyncConflict.mockReset()
@@ -1177,6 +1285,27 @@ export function setupPoolMasterDataPageTestSuite() {
       { id: 'db-1', name: 'Main DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'eligible' },
       { id: 'db-2', name: 'Replica DB', cluster_id: 'cluster-1', cluster_all_eligibility_state: 'eligible' },
     ])
+    mockUpsertPoolMasterDataChartSource.mockResolvedValue({
+      source: buildChartSource(),
+    })
+    mockListPoolMasterDataChartSources.mockResolvedValue({
+      count: 1,
+      limit: 20,
+      offset: 0,
+      sources: [buildChartSource()],
+    })
+    mockCreatePoolMasterDataChartJob.mockResolvedValue({
+      job: buildChartJob(),
+    })
+    mockListPoolMasterDataChartJobs.mockResolvedValue({
+      count: 0,
+      limit: 20,
+      offset: 0,
+      jobs: [],
+    })
+    mockGetPoolMasterDataChartJob.mockResolvedValue({
+      job: buildChartJob(),
+    })
     mockListMasterDataSyncStatus.mockResolvedValue({
       statuses: [],
       count: 0,
@@ -2868,5 +2997,208 @@ export function registerPoolMasterDataBootstrapTests() {
     await waitFor(() =>
       expect(mockRetryFailedPoolMasterDataBootstrapImportChunks).toHaveBeenCalledWith('job-failed')
     )
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+}
+
+export function registerPoolMasterDataChartImportTests() {
+  it('keeps Chart Import separate and runs source -> preflight -> dry-run -> materialize -> verify -> backfill', async () => {
+    const source = buildChartSource()
+    const createdJobs: Array<Record<string, unknown>> = []
+
+    mockListPoolMasterDataChartSources.mockImplementation(async () => ({
+      count: 1,
+      limit: 20,
+      offset: 0,
+      sources: [source],
+    }))
+    mockUpsertPoolMasterDataChartSource.mockImplementation(async (payload: Record<string, unknown>) => {
+      source.database_id = String(payload.database_id)
+      source.chart_identity = String(payload.chart_identity)
+      return { source }
+    })
+    mockCreatePoolMasterDataChartJob.mockImplementation(async (payload: Record<string, unknown>) => {
+      const mode = String(payload.mode)
+      const snapshot = mode === 'materialize' || mode === 'verify_followers' || mode === 'backfill_bindings'
+        ? buildChartSnapshot({ id: `snapshot-${mode}`, chart_source_id: source.id })
+        : null
+      const followerStatuses = mode === 'backfill_bindings'
+        ? [
+          {
+            id: 'follower-1',
+            tenant_id: 'tenant-1',
+            job_id: `job-${mode}`,
+            snapshot_id: snapshot?.id ?? null,
+            database_id: 'db-2',
+            database_name: 'Replica DB',
+            cluster_id: 'cluster-1',
+            verdict: 'stale',
+            detail: 'Binding points to stale Ref_Key.',
+            matched_accounts: 1,
+            missing_accounts: 0,
+            ambiguous_accounts: 0,
+            stale_bindings: 1,
+            backfilled_accounts: 0,
+            diagnostics: {},
+            bindings_remediation_href: '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=db-2&canonicalId=gl-account-001',
+            last_verified_at: '2026-01-01T00:03:00Z',
+            created_at: '2026-01-01T00:03:00Z',
+            updated_at: '2026-01-01T00:03:00Z',
+          },
+        ]
+        : mode === 'verify_followers'
+          ? [
+            {
+              id: 'follower-verify-1',
+              tenant_id: 'tenant-1',
+              job_id: `job-${mode}`,
+              snapshot_id: snapshot?.id ?? null,
+              database_id: 'db-2',
+              database_name: 'Replica DB',
+              cluster_id: 'cluster-1',
+              verdict: 'missing',
+              detail: 'Follower coverage is incomplete.',
+              matched_accounts: 1,
+              missing_accounts: 1,
+              ambiguous_accounts: 0,
+              stale_bindings: 0,
+              backfilled_accounts: 0,
+              diagnostics: {},
+              bindings_remediation_href: '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=db-2&canonicalId=gl-account-001',
+              last_verified_at: '2026-01-01T00:02:00Z',
+              created_at: '2026-01-01T00:02:00Z',
+              updated_at: '2026-01-01T00:02:00Z',
+            },
+          ]
+          : []
+
+      const job = buildChartJob({
+        id: `job-${mode}`,
+        chart_source_id: source.id,
+        chart_source: source,
+        snapshot,
+        mode,
+        database_ids: Array.isArray(payload.database_ids) ? payload.database_ids : [],
+        counters: (
+          mode === 'backfill_bindings'
+            ? { database_count: 1, backfilled_count: 0, stale_count: 1, ambiguous_count: 0, missing_count: 0 }
+            : mode === 'verify_followers'
+              ? { database_count: 1, ok_count: 0, missing_count: 1, ambiguous_count: 0, stale_count: 0, backfilled_count: 0 }
+              : mode === 'materialize'
+                ? { rows_total: 2, created_count: 1, updated_count: 1, unchanged_count: 0, retired_count: 0 }
+                : { source_ok: true }
+        ),
+        follower_statuses: followerStatuses,
+      })
+      createdJobs.unshift(job)
+      source.latest_job = {
+        id: String(job.id),
+        tenant_id: String(job.tenant_id),
+        chart_source_id: String(job.chart_source_id),
+        snapshot: job.snapshot ?? null,
+        mode,
+        status: 'succeeded',
+        database_ids: Array.isArray(job.database_ids) ? job.database_ids : [],
+        requested_by_username: 'admin',
+        last_error_code: '',
+        last_error: '',
+        counters: typeof job.counters === 'object' && job.counters ? job.counters : {},
+        diagnostics: {},
+        audit_trail: [],
+        started_at: '2026-01-01T00:00:00Z',
+        finished_at: '2026-01-01T00:01:00Z',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:01:00Z',
+      }
+      if (snapshot) {
+        source.latest_snapshot = snapshot
+      }
+      return { job }
+    })
+    mockListPoolMasterDataChartJobs.mockImplementation(async () => ({
+      count: createdJobs.length,
+      limit: 20,
+      offset: 0,
+      jobs: [...createdJobs],
+    }))
+    mockGetPoolMasterDataChartJob.mockImplementation(async (jobId: string) => ({
+      job: createdJobs.find((job) => job.id === jobId) ?? buildChartJob({ id: jobId }),
+    }))
+
+    renderPage('/pools/master-data?tab=chart-import')
+
+    expect(await screen.findByText('Authoritative Source')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Chart Import zone' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Bootstrap Import zone' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open Sync zone' })).toBeInTheDocument()
+    expect(screen.getByText('No chart job is selected yet.')).toBeInTheDocument()
+    expect(await screen.findByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1')
+
+    fireEvent.click(screen.getByTestId('chart-import-upsert-source'))
+    await waitFor(() =>
+      expect(mockUpsertPoolMasterDataChartSource).toHaveBeenCalledWith({
+        database_id: 'db-1',
+        chart_identity: 'ChartOfAccounts_Main',
+      })
+    )
+
+    fireEvent.click(screen.getByTestId('chart-import-run-preflight'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataChartJob).toHaveBeenNthCalledWith(1, {
+        chart_source_id: 'chart-source-1',
+        mode: 'preflight',
+        database_ids: undefined,
+      })
+    )
+
+    await waitFor(() => expect(screen.getByTestId('chart-import-run-dry-run')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('chart-import-run-dry-run'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataChartJob).toHaveBeenNthCalledWith(2, {
+        chart_source_id: 'chart-source-1',
+        mode: 'dry_run',
+        database_ids: undefined,
+      })
+    )
+
+    await waitFor(() => expect(screen.getByTestId('chart-import-run-materialize')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('chart-import-run-materialize'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataChartJob).toHaveBeenNthCalledWith(3, {
+        chart_source_id: 'chart-source-1',
+        mode: 'materialize',
+        database_ids: undefined,
+      })
+    )
+
+    await waitFor(() => expect(screen.getByTestId('chart-import-run-verify')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('chart-import-run-verify'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataChartJob).toHaveBeenNthCalledWith(4, {
+        chart_source_id: 'chart-source-1',
+        mode: 'verify_followers',
+        database_ids: ['db-2'],
+      })
+    )
+
+    await waitFor(() => expect(screen.getByTestId('chart-import-run-backfill')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('chart-import-run-backfill'))
+    await waitFor(() =>
+      expect(mockCreatePoolMasterDataChartJob).toHaveBeenNthCalledWith(5, {
+        chart_source_id: 'chart-source-1',
+        mode: 'backfill_bindings',
+        database_ids: ['db-2'],
+      })
+    )
+
+    expect(await screen.findByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1')
+    expect(await screen.findByTestId('pool-master-data-chart-import-selected-job-id')).toHaveTextContent('job-backfill_bindings')
+    expect(await screen.findByRole('link', { name: 'Open Bindings' })).toHaveAttribute(
+      'href',
+      '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=db-2&canonicalId=gl-account-001'
+    )
+
+    expect(mockRunPoolMasterDataBootstrapImportPreflight).not.toHaveBeenCalled()
+    expect(mockCreatePoolMasterDataBootstrapImportJob).not.toHaveBeenCalled()
+    expect(mockCreatePoolMasterDataSyncLaunch).not.toHaveBeenCalled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 }

@@ -1,0 +1,65 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  database_id:
+    type: string
+  database_name:
+    type: string
+  cluster_id:
+    type: string
+    format: uuid
+    nullable: true
+  chart_identity:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  status:
+    type: string
+  last_success_at:
+    type: string
+    format: date-time
+    nullable: true
+  last_error_code:
+    type: string
+  last_error:
+    type: string
+  metadata:
+    type: object
+    additionalProperties: true
+  latest_snapshot:
+    allOf:
+      - $ref: ./ChartSnapshot.yaml
+    nullable: true
+  latest_job:
+    allOf:
+      - $ref: ./ChartJobSummary.yaml
+    nullable: true
+  candidate_databases:
+    type: array
+    items:
+      $ref: ./ChartSourceCandidateDatabase.yaml
+  created_at:
+    type: string
+    format: date-time
+  updated_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - database_id
+  - database_name
+  - chart_identity
+  - config_name
+  - config_version
+  - status
+  - last_error_code
+  - last_error
+

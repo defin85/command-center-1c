@@ -2017,6 +2017,120 @@ export type PoolMasterDataBootstrapCollection = {
   updated_at: string
 }
 
+export type PoolMasterDataChartMaterializationMode =
+  | 'preflight'
+  | 'dry_run'
+  | 'materialize'
+  | 'verify_followers'
+  | 'backfill_bindings'
+
+export type PoolMasterDataChartJobStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+
+export type PoolMasterDataChartSourceCandidateDatabase = {
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+}
+
+export type PoolMasterDataChartSnapshot = {
+  id: string
+  tenant_id: string
+  chart_source_id: string
+  fingerprint: string
+  row_count: number
+  materialized_count: number
+  updated_count: number
+  unchanged_count: number
+  retired_count: number
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
+export type PoolMasterDataChartJobSummary = {
+  id: string
+  tenant_id: string
+  chart_source_id: string
+  snapshot?: PoolMasterDataChartSnapshot | null
+  mode: PoolMasterDataChartMaterializationMode
+  status: PoolMasterDataChartJobStatus
+  database_ids: string[]
+  requested_by_username: string
+  last_error_code: string
+  last_error: string
+  counters: Record<string, unknown>
+  diagnostics: Record<string, unknown>
+  audit_trail: Array<Record<string, unknown>>
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataChartSource = {
+  id: string
+  tenant_id: string
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  chart_identity: string
+  config_name: string
+  config_version: string
+  status: string
+  last_success_at: string | null
+  last_error_code: string
+  last_error: string
+  metadata: Record<string, unknown>
+  latest_snapshot?: PoolMasterDataChartSnapshot | null
+  latest_job?: PoolMasterDataChartJobSummary | null
+  candidate_databases: PoolMasterDataChartSourceCandidateDatabase[]
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataChartFollowerStatus = {
+  id: string
+  tenant_id: string
+  job_id: string
+  snapshot_id: string | null
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  verdict: string
+  detail: string
+  matched_accounts: number
+  missing_accounts: number
+  ambiguous_accounts: number
+  stale_bindings: number
+  backfilled_accounts: number
+  diagnostics: Record<string, unknown>
+  bindings_remediation_href?: string | null
+  last_verified_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PoolMasterDataChartJob = {
+  id: string
+  tenant_id: string
+  chart_source_id: string
+  chart_source?: PoolMasterDataChartSource | null
+  snapshot?: PoolMasterDataChartSnapshot | null
+  mode: PoolMasterDataChartMaterializationMode
+  status: PoolMasterDataChartJobStatus
+  database_ids: string[]
+  requested_by_username: string
+  last_error_code: string
+  last_error: string
+  counters: Record<string, unknown>
+  diagnostics: Record<string, unknown>
+  audit_trail: Array<Record<string, unknown>>
+  follower_statuses?: PoolMasterDataChartFollowerStatus[]
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type PoolMasterDataRegistryResponse = GeneratedPoolMasterDataRegistryResponse
 
 export type CreatePoolMasterDataBootstrapImportJobPayload = PoolMasterDataBootstrapImportScopePayload & {
@@ -2045,6 +2159,34 @@ export type ListPoolMasterDataBootstrapImportJobsParams = {
 }
 
 export type ListPoolMasterDataBootstrapCollectionsParams = {
+  limit?: number
+  offset?: number
+}
+
+export type UpsertPoolMasterDataChartSourcePayload = {
+  database_id: string
+  chart_identity: string
+}
+
+export type CreatePoolMasterDataChartJobPayload = {
+  chart_source_id: string
+  mode: PoolMasterDataChartMaterializationMode
+  database_ids?: string[]
+}
+
+export type ListPoolMasterDataChartSourcesParams = {
+  chart_identity?: string
+  config_name?: string
+  config_version?: string
+  database_id?: string
+  limit?: number
+  offset?: number
+}
+
+export type ListPoolMasterDataChartJobsParams = {
+  chart_source_id?: string
+  mode?: PoolMasterDataChartMaterializationMode
+  status?: string
   limit?: number
   offset?: number
 }
@@ -2860,6 +3002,88 @@ export async function createPoolMasterDataBootstrapCollection(
   const response = await apiClient.post<{ collection: PoolMasterDataBootstrapCollection }>(
     '/api/v2/pools/master-data/bootstrap-collections/',
     payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function upsertPoolMasterDataChartSource(
+  payload: UpsertPoolMasterDataChartSourcePayload
+): Promise<{ source: PoolMasterDataChartSource }> {
+  const response = await apiClient.post<{ source: PoolMasterDataChartSource }>(
+    '/api/v2/pools/master-data/chart-import/sources/upsert/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolMasterDataChartSources(
+  params: ListPoolMasterDataChartSourcesParams = {}
+): Promise<{
+  count: number
+  limit: number
+  offset: number
+  sources: PoolMasterDataChartSource[]
+}> {
+  const response = await apiClient.get<{
+    count: number
+    limit: number
+    offset: number
+    sources: PoolMasterDataChartSource[]
+  }>('/api/v2/pools/master-data/chart-import/sources/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    count: response.data.count ?? 0,
+    limit: response.data.limit ?? (params.limit ?? 50),
+    offset: response.data.offset ?? (params.offset ?? 0),
+    sources: response.data.sources ?? [],
+  }
+}
+
+export async function createPoolMasterDataChartJob(
+  payload: CreatePoolMasterDataChartJobPayload
+): Promise<{ job: PoolMasterDataChartJob }> {
+  const response = await apiClient.post<{ job: PoolMasterDataChartJob }>(
+    '/api/v2/pools/master-data/chart-import/jobs/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function listPoolMasterDataChartJobs(
+  params: ListPoolMasterDataChartJobsParams = {}
+): Promise<{
+  count: number
+  limit: number
+  offset: number
+  jobs: PoolMasterDataChartJob[]
+}> {
+  const response = await apiClient.get<{
+    count: number
+    limit: number
+    offset: number
+    jobs: PoolMasterDataChartJob[]
+  }>('/api/v2/pools/master-data/chart-import/jobs/', {
+    params,
+    skipGlobalError: true,
+  })
+  return {
+    count: response.data.count ?? 0,
+    limit: response.data.limit ?? (params.limit ?? 50),
+    offset: response.data.offset ?? (params.offset ?? 0),
+    jobs: response.data.jobs ?? [],
+  }
+}
+
+export async function getPoolMasterDataChartJob(
+  jobId: string
+): Promise<{ job: PoolMasterDataChartJob }> {
+  const response = await apiClient.get<{ job: PoolMasterDataChartJob }>(
+    `/api/v2/pools/master-data/chart-import/jobs/${jobId}/`,
     { skipGlobalError: true }
   )
   return response.data

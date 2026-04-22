@@ -1,0 +1,45 @@
+type: object
+properties:
+  id:
+    type: string
+    format: uuid
+  tenant_id:
+    type: string
+    format: uuid
+  chart_source_id:
+    type: string
+    format: uuid
+  fingerprint:
+    type: string
+  row_count:
+    type: integer
+    minimum: 0
+  materialized_count:
+    type: integer
+    minimum: 0
+  updated_count:
+    type: integer
+    minimum: 0
+  unchanged_count:
+    type: integer
+    minimum: 0
+  retired_count:
+    type: integer
+    minimum: 0
+  metadata:
+    type: object
+    additionalProperties: true
+  created_at:
+    type: string
+    format: date-time
+required:
+  - id
+  - tenant_id
+  - chart_source_id
+  - fingerprint
+  - row_count
+  - materialized_count
+  - updated_count
+  - unchanged_count
+  - retired_count
+

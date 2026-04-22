@@ -13,6 +13,7 @@ import {
 } from '../../components/platform'
 import { BindingsTab } from './masterData/BindingsTab'
 import { BootstrapImportTab } from './masterData/BootstrapImportTab'
+import { ChartImportTab } from './masterData/ChartImportTab'
 import { ContractsTab } from './masterData/ContractsTab'
 import { DedupeReviewTab } from './masterData/DedupeReviewTab'
 import { GLAccountsTab } from './masterData/GLAccountsTab'
@@ -32,6 +33,7 @@ const MASTER_DATA_TAB_KEYS = [
   'tax-profile',
   'gl-account',
   'gl-account-set',
+  'chart-import',
   'bindings',
   'sync',
   'bootstrap-import',
@@ -85,6 +87,12 @@ const buildMasterDataZones = (
     label: t('masterData.zones.glAccountSet.label'),
     description: t('masterData.zones.glAccountSet.description'),
     render: (registryEntries) => <GLAccountSetsTab registryEntries={registryEntries} />,
+  },
+  {
+    key: 'chart-import',
+    label: t('masterData.zones.chartImport.label'),
+    description: t('masterData.zones.chartImport.description'),
+    render: (registryEntries) => <ChartImportTab registryEntries={registryEntries} />,
   },
   {
     key: 'bindings',

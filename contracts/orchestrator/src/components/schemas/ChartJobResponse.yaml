@@ -1,0 +1,7 @@
+type: object
+properties:
+  job:
+    $ref: ./ChartJob.yaml
+required:
+  - job
+
