@@ -48,6 +48,7 @@ CHART_SOURCE_FETCH_FAILED = "CHART_SOURCE_FETCH_FAILED"
 CHART_SOURCE_PREFLIGHT_FAILED = "CHART_SOURCE_PREFLIGHT_FAILED"
 CHART_JOB_NOT_FOUND = "CHART_JOB_NOT_FOUND"
 CHART_JOB_MODE_INVALID = "CHART_JOB_MODE_INVALID"
+CHART_JOB_PREREQUISITE_MISSING = "CHART_JOB_PREREQUISITE_MISSING"
 
 _CHART_PROVENANCE_KEY = "chart_materialization"
 _TERMINAL_JOB_STATUSES = {
@@ -191,6 +192,7 @@ def create_pool_master_data_chart_job(
         raise ValueError(
             f"{CHART_SOURCE_DATABASE_TENANT_MISMATCH}: chart source '{chart_source.id}' does not belong to tenant '{tenant.id}'"
         )
+    _require_chart_job_prerequisites(source=chart_source, mode=normalized_mode)
     normalized_database_ids = [
         str(item).strip()
         for item in (database_ids or [])
@@ -1127,6 +1129,41 @@ def _normalize_job_mode(mode: str) -> str:
     return normalized
 
 
+def _require_chart_job_prerequisites(*, source: PoolMasterDataChartSource, mode: str) -> None:
+    if mode == PoolMasterDataChartMaterializationMode.PREFLIGHT:
+        return
+
+    successful_jobs = PoolMasterDataChartMaterializationJob.objects.filter(
+        tenant_id=source.tenant_id,
+        chart_source_id=source.id,
+        status=PoolMasterDataChartMaterializationJobStatus.SUCCEEDED,
+    )
+    source_revision_cutoff = source.updated_at or source.created_at
+
+    def _has_successful_stage(stage_mode: str) -> bool:
+        queryset = successful_jobs.filter(mode=stage_mode)
+        if source_revision_cutoff is not None:
+            queryset = queryset.filter(created_at__gte=source_revision_cutoff)
+        return queryset.exists()
+
+    if mode == PoolMasterDataChartMaterializationMode.DRY_RUN and not _has_successful_stage(
+        PoolMasterDataChartMaterializationMode.PREFLIGHT
+    ):
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: successful preflight is required before dry_run for this authoritative source"
+        )
+
+    if mode == PoolMasterDataChartMaterializationMode.MATERIALIZE:
+        if not _has_successful_stage(PoolMasterDataChartMaterializationMode.PREFLIGHT):
+            raise ValueError(
+                f"{CHART_JOB_PREREQUISITE_MISSING}: successful preflight is required before materialize for this authoritative source"
+            )
+        if not _has_successful_stage(PoolMasterDataChartMaterializationMode.DRY_RUN):
+            raise ValueError(
+                f"{CHART_JOB_PREREQUISITE_MISSING}: successful dry_run is required before materialize for this authoritative source"
+            )
+
+
 def _append_job_audit(
     *,
     job: PoolMasterDataChartMaterializationJob,
@@ -1195,6 +1232,7 @@ def _resolve_chart_job_error(exc: Exception) -> tuple[str, str, dict[str, Any]]:
 
 __all__ = [
     "CHART_JOB_NOT_FOUND",
+    "CHART_JOB_PREREQUISITE_MISSING",
     "CHART_SOURCE_BUSINESS_PROFILE_MISMATCH",
     "CHART_SOURCE_BUSINESS_PROFILE_MISSING",
     "CHART_SOURCE_CHART_IDENTITY_REQUIRED",

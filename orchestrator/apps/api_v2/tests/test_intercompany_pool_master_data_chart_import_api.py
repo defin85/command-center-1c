@@ -146,6 +146,64 @@ def _create_chart_job(
 
 
 @pytest.mark.django_db
+def test_chart_import_requires_preflight_before_dry_run_and_dry_run_before_materialize(
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    source_database = _create_database(tenant=default_tenant, name=f"chart-source-{uuid4().hex[:8]}")
+    _set_business_configuration_profile(database=source_database)
+    _configure_source_callbacks(
+        rows_by_database={
+            str(source_database.id): {
+                "gl_account": [
+                    {
+                        "canonical_id": "legacy-10-01",
+                        "source_ref": "src-10-01-v1",
+                        "code": "10.01",
+                        "name": "Materials",
+                        "chart_identity": CHART_IDENTITY,
+                        "config_name": "Accounting Enterprise",
+                        "config_version": "3.0.1",
+                    }
+                ]
+            }
+        }
+    )
+
+    source = _upsert_chart_source(client=admin_client, database_id=str(source_database.id))
+
+    dry_run_without_preflight = admin_client.post(
+        "/api/v2/pools/master-data/chart-import/jobs/",
+        {
+            "chart_source_id": source["id"],
+            "mode": "dry_run",
+        },
+        format="json",
+    )
+    assert dry_run_without_preflight.status_code == 409
+    assert dry_run_without_preflight.json()["code"] == "CHART_JOB_PREREQUISITE_MISSING"
+    assert "preflight" in dry_run_without_preflight.json()["detail"]
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+
+    materialize_without_dry_run = admin_client.post(
+        "/api/v2/pools/master-data/chart-import/jobs/",
+        {
+            "chart_source_id": source["id"],
+            "mode": "materialize",
+        },
+        format="json",
+    )
+    assert materialize_without_dry_run.status_code == 409
+    assert materialize_without_dry_run.json()["code"] == "CHART_JOB_PREREQUISITE_MISSING"
+    assert "dry_run" in materialize_without_dry_run.json()["detail"]
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
+    materialize_job = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
+    assert materialize_job["snapshot"]["materialized_count"] == 1
+
+
+@pytest.mark.django_db
 def test_chart_import_materialization_keeps_deterministic_ids_and_soft_retires(
     admin_client: APIClient,
     default_tenant: Tenant,
@@ -227,6 +285,8 @@ def test_chart_import_materialization_keeps_deterministic_ids_and_soft_retires(
     }
     _configure_source_callbacks(rows_by_database=rows_by_database)
 
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
     second_job = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
     assert second_job["snapshot"]["materialized_count"] == 0
     assert second_job["snapshot"]["updated_count"] == 1
@@ -351,6 +411,8 @@ def test_chart_import_backfill_is_fail_closed_for_ambiguous_and_stale_followers(
     )
 
     source = _upsert_chart_source(client=admin_client, database_id=str(source_database.id))
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
     materialize_job = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
     account_by_code = {
         account.code: account

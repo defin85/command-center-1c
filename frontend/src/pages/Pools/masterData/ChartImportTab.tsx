@@ -404,6 +404,12 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
       title: t('masterData.chartImportTab.columns.database'),
       dataIndex: 'database_name',
       key: 'database_name',
+      render: (_value: string, row: PoolMasterDataChartFollowerStatus) => (
+        <Space direction="vertical" size={0}>
+          <Text>{row.database_name}</Text>
+          {row.detail ? <Text type="secondary">{row.detail}</Text> : null}
+        </Space>
+      ),
     },
     {
       title: t('masterData.chartImportTab.columns.verdict'),

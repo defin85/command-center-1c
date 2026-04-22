@@ -13,6 +13,7 @@ from apps.databases.models import Database
 from apps.intercompany_pools.master_data_chart_materialization_service import (
     CHART_JOB_MODE_INVALID,
     CHART_JOB_NOT_FOUND,
+    CHART_JOB_PREREQUISITE_MISSING,
     CHART_SOURCE_BUSINESS_PROFILE_MISMATCH,
     CHART_SOURCE_BUSINESS_PROFILE_MISSING,
     CHART_SOURCE_CHART_IDENTITY_REQUIRED,
@@ -110,6 +111,7 @@ def _chart_exception_to_response(exc: Exception) -> Response:
         CHART_SOURCE_PREFLIGHT_FAILED,
         CHART_SOURCE_ROWS_EMPTY,
         CHART_SOURCE_FETCH_FAILED,
+        CHART_JOB_PREREQUISITE_MISSING,
     }:
         status_code = http_status.HTTP_409_CONFLICT
     elif code in {CHART_SOURCE_CHART_IDENTITY_REQUIRED, CHART_JOB_MODE_INVALID}:

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   type PoolMasterDataRegistryEntry,
@@ -46,14 +47,15 @@ type BindingsTabProps = {
   registryEntries: PoolMasterDataRegistryEntry[]
 }
 
+const FALLBACK_REMEDIATION_ENTITY_TYPES = new Set(['party', 'item', 'contract', 'tax_profile', 'gl_account'])
+
 export function BindingsTab({ registryEntries }: BindingsTabProps) {
   const { message } = AntApp.useApp()
   const { t } = usePoolsTranslation()
+  const [searchParams] = useSearchParams()
   const [rows, setRows] = useState<PoolMasterDataBinding[]>([])
   const [databases, setDatabases] = useState<SimpleDatabaseRef[]>([])
   const [loading, setLoading] = useState(false)
-  const [queryCanonicalId, setQueryCanonicalId] = useState('')
-  const [entityTypeFilter, setEntityTypeFilter] = useState<string | undefined>(undefined)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingBinding, setEditingBinding] = useState<PoolMasterDataBinding | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -63,6 +65,25 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     () => getDirectBindingEntityOptions(registryEntries),
     [registryEntries]
   )
+  const routeCanonicalId = searchParams.get('canonicalId')?.trim() ?? ''
+  const routeDatabaseId = searchParams.get('databaseId')?.trim() ?? ''
+  const routeEntityTypeRaw = searchParams.get('entityType')?.trim() ?? ''
+  const directBindingEntityTypeValues = useMemo(
+    () => new Set(entityTypeOptions.map((item) => String(item.value))),
+    [entityTypeOptions]
+  )
+  const routeEntityType = useMemo(() => {
+    if (!routeEntityTypeRaw) {
+      return undefined
+    }
+    if (directBindingEntityTypeValues.size > 0) {
+      return directBindingEntityTypeValues.has(routeEntityTypeRaw) ? routeEntityTypeRaw : undefined
+    }
+    return FALLBACK_REMEDIATION_ENTITY_TYPES.has(routeEntityTypeRaw) ? routeEntityTypeRaw : undefined
+  }, [directBindingEntityTypeValues, routeEntityTypeRaw])
+  const [queryCanonicalId, setQueryCanonicalId] = useState(routeCanonicalId)
+  const [entityTypeFilter, setEntityTypeFilter] = useState<string | undefined>(routeEntityType)
+  const [databaseIdFilter, setDatabaseIdFilter] = useState<string | undefined>(routeDatabaseId || undefined)
   const defaultEntityType = useMemo(
     () => getDefaultDirectBindingEntityType(registryEntries),
     [registryEntries]
@@ -109,6 +130,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
       const response = await listMasterDataBindings({
         entity_type: entityTypeFilter,
         canonical_id: queryCanonicalId.trim() || undefined,
+        database_id: databaseIdFilter,
         limit: 200,
         offset: 0,
       })
@@ -119,7 +141,7 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
     } finally {
       setLoading(false)
     }
-  }, [entityTypeFilter, message, queryCanonicalId, t])
+  }, [databaseIdFilter, entityTypeFilter, message, queryCanonicalId, t])
 
   useEffect(() => {
     void loadRows()
@@ -128,6 +150,12 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
   useEffect(() => {
     void loadDatabases()
   }, [loadDatabases])
+
+  useEffect(() => {
+    setQueryCanonicalId((current) => (current === routeCanonicalId ? current : routeCanonicalId))
+    setEntityTypeFilter((current) => (current === routeEntityType ? current : routeEntityType))
+    setDatabaseIdFilter((current) => (current === (routeDatabaseId || undefined) ? current : (routeDatabaseId || undefined)))
+  }, [routeCanonicalId, routeDatabaseId, routeEntityType])
 
   const openCreateModal = () => {
     setEditingBinding(null)
@@ -338,6 +366,19 @@ export function BindingsTab({ registryEntries }: BindingsTabProps) {
             options={entityTypeOptions}
             onChange={(value) => setEntityTypeFilter(value)}
             style={{ width: 180 }}
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder={t('masterData.bindingsTab.columns.database')}
+            value={databaseIdFilter}
+            options={databases.map((database) => ({
+              value: database.id,
+              label: database.name,
+            }))}
+            onChange={(value) => setDatabaseIdFilter(value)}
+            style={{ width: 220 }}
           />
           <Button onClick={() => void loadRows()} loading={loading}>{t('masterData.bindingsTab.actions.refresh')}</Button>
           <Button type="primary" onClick={openCreateModal}>{t('masterData.bindingsTab.actions.addBinding')}</Button>

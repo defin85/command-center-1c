@@ -1514,6 +1514,41 @@ export function registerPoolMasterDataWorkspaceTests() {
     )
   })
 
+  it('applies chart remediation query context to the Bindings workspace default filters', async () => {
+    mockListMasterDataBindings.mockResolvedValueOnce({
+      bindings: [
+        {
+          id: 'binding-gl-account-db2',
+          tenant_id: 'tenant-1',
+          entity_type: 'gl_account',
+          canonical_id: 'gl-account-001',
+          database_id: 'db-2',
+          ib_ref_key: 'ref-gl-db2',
+          chart_identity: 'ChartOfAccounts_Main',
+          sync_status: 'resolved',
+          fingerprint: 'fp-db2',
+          metadata: {},
+          last_synced_at: '2026-01-01T00:00:00Z',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
+      ],
+      meta: { limit: 200, offset: 0, total: 1 },
+    })
+
+    renderPage('/pools/master-data?tab=bindings&entityType=gl_account&canonicalId=gl-account-001&databaseId=db-2')
+
+    await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalledWith({
+      entity_type: 'gl_account',
+      canonical_id: 'gl-account-001',
+      database_id: 'db-2',
+      limit: 200,
+      offset: 0,
+    }))
+    expect(await screen.findByText('gl-account-001')).toBeInTheDocument()
+    expect(screen.getAllByText('Replica DB').length).toBeGreaterThan(0)
+  })
+
   it('renders Dedupe Review tab and applies choose survivor action', async () => {
     const user = userEvent.setup()
     const pendingReview = buildDedupeReviewItem()
@@ -3192,6 +3227,7 @@ export function registerPoolMasterDataChartImportTests() {
 
     expect(await screen.findByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1')
     expect(await screen.findByTestId('pool-master-data-chart-import-selected-job-id')).toHaveTextContent('job-backfill_bindings')
+    expect(screen.getByText('Binding points to stale Ref_Key.')).toBeInTheDocument()
     expect(await screen.findByRole('link', { name: 'Open Bindings' })).toHaveAttribute(
       'href',
       '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=db-2&canonicalId=gl-account-001'
