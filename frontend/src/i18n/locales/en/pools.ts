@@ -1544,6 +1544,19 @@ const pools = {
         clusterAll: 'cluster_all · {{count}} db',
         databaseSet: 'database_set · {{count}} db',
       },
+      diagnostics: {
+        rateLimited: 'Gateway rate-limited {{scope}} under a separate request budget.',
+        retryAfter: 'Retry in about {{seconds}}s.',
+        rateLimitClass: 'Budget class: {{value}}.',
+        budgetScope: 'Budget scope: {{value}}.',
+        requestId: 'Request ID: {{value}}.',
+        scope: {
+          launches: 'launch history',
+          launch_detail: 'launch detail',
+          status: 'sync status/conflicts',
+          targets: 'clusters and databases',
+        },
+      },
       messages: {
         failedToLoadLaunchDetail: 'Failed to load manual sync launch detail.',
         failedToLoadLaunchHistory: 'Failed to load launch history.',

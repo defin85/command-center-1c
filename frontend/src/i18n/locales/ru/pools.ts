@@ -1544,6 +1544,19 @@ const pools = {
         clusterAll: 'cluster_all · {{count}} db',
         databaseSet: 'database_set · {{count}} db',
       },
+      diagnostics: {
+        rateLimited: 'Gateway ограничил {{scope}} отдельным request budget.',
+        retryAfter: 'Повторите через ~{{seconds}}с.',
+        rateLimitClass: 'Budget class: {{value}}.',
+        budgetScope: 'Budget scope: {{value}}.',
+        requestId: 'Request ID: {{value}}.',
+        scope: {
+          launches: 'историю launch',
+          launch_detail: 'детали launch',
+          status: 'sync status/conflicts',
+          targets: 'clusters и databases',
+        },
+      },
       messages: {
         failedToLoadLaunchDetail: 'Не удалось загрузить детали manual sync launch.',
         failedToLoadLaunchHistory: 'Не удалось загрузить историю launch.',

@@ -23,8 +23,7 @@ cors:
     - Content-Type
     - X-Requested-With
 
-rate_limiting:
-  default:
-    requests_per_minute: 100
-  operations:
-    requests_per_minute: 50
+# Gateway request-budget isolation is configured via shared env/runtime config
+# (`go-services/shared/config` and checked-in `.env*.example` files).
+# Keep this file free from unused rate-limit knobs so checked-in config does not
+# drift away from runtime behavior.

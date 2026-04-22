@@ -313,8 +313,11 @@ class UiIncidentTelemetryUploader {
       if (response.ok) {
         return 'success'
       }
-      if (response.status >= 500 || response.status === 429) {
+      if (response.status >= 500) {
         return 'retry'
+      }
+      if (response.status === 429) {
+        return 'drop'
       }
       return 'drop'
     } catch {

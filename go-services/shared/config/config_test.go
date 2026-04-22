@@ -93,6 +93,76 @@ func TestLoadFromEnv_WorkerFairnessOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnv_GatewayRateLimitDefaults(t *testing.T) {
+	t.Setenv("API_GATEWAY_RATE_LIMIT_DEFAULT_CLASS", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_SHELL_CRITICAL_REQUESTS", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_SHELL_CRITICAL_WINDOW", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_INTERACTIVE_REQUESTS", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_INTERACTIVE_WINDOW", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_BACKGROUND_HEAVY_REQUESTS", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_BACKGROUND_HEAVY_WINDOW", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_TELEMETRY_REQUESTS", "")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_TELEMETRY_WINDOW", "")
+
+	cfg := LoadFromEnv()
+
+	if cfg.GatewayRateLimit.DefaultClass != GatewayRateLimitClassInteractive {
+		t.Fatalf("expected default gateway rate limit class interactive, got %q", cfg.GatewayRateLimit.DefaultClass)
+	}
+	if cfg.GatewayRateLimit.ShellCritical != (GatewayRateLimitBudget{Requests: 60, Window: time.Minute}) {
+		t.Fatalf("unexpected shell_critical budget: %+v", cfg.GatewayRateLimit.ShellCritical)
+	}
+	if cfg.GatewayRateLimit.Interactive != (GatewayRateLimitBudget{Requests: 100, Window: time.Minute}) {
+		t.Fatalf("unexpected interactive budget: %+v", cfg.GatewayRateLimit.Interactive)
+	}
+	if cfg.GatewayRateLimit.BackgroundHeavy != (GatewayRateLimitBudget{Requests: 50, Window: time.Minute}) {
+		t.Fatalf("unexpected background_heavy budget: %+v", cfg.GatewayRateLimit.BackgroundHeavy)
+	}
+	if cfg.GatewayRateLimit.Telemetry != (GatewayRateLimitBudget{Requests: 20, Window: time.Minute}) {
+		t.Fatalf("unexpected telemetry budget: %+v", cfg.GatewayRateLimit.Telemetry)
+	}
+}
+
+func TestLoadFromEnv_GatewayRateLimitOverridesAndNormalization(t *testing.T) {
+	t.Setenv("API_GATEWAY_RATE_LIMIT_DEFAULT_CLASS", "background_heavy")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_SHELL_CRITICAL_REQUESTS", "30")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_SHELL_CRITICAL_WINDOW", "30s")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_INTERACTIVE_REQUESTS", "200")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_INTERACTIVE_WINDOW", "2m")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_BACKGROUND_HEAVY_REQUESTS", "25")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_BACKGROUND_HEAVY_WINDOW", "45s")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_TELEMETRY_REQUESTS", "8")
+	t.Setenv("API_GATEWAY_RATE_LIMIT_TELEMETRY_WINDOW", "15s")
+
+	cfg := LoadFromEnv()
+
+	if cfg.GatewayRateLimit.DefaultClass != GatewayRateLimitClassBackground {
+		t.Fatalf("expected default gateway rate limit class background_heavy, got %q", cfg.GatewayRateLimit.DefaultClass)
+	}
+	if cfg.GatewayRateLimit.ShellCritical != (GatewayRateLimitBudget{Requests: 30, Window: 30 * time.Second}) {
+		t.Fatalf("unexpected shell_critical override: %+v", cfg.GatewayRateLimit.ShellCritical)
+	}
+	if cfg.GatewayRateLimit.Interactive != (GatewayRateLimitBudget{Requests: 200, Window: 2 * time.Minute}) {
+		t.Fatalf("unexpected interactive override: %+v", cfg.GatewayRateLimit.Interactive)
+	}
+	if cfg.GatewayRateLimit.BackgroundHeavy != (GatewayRateLimitBudget{Requests: 25, Window: 45 * time.Second}) {
+		t.Fatalf("unexpected background_heavy override: %+v", cfg.GatewayRateLimit.BackgroundHeavy)
+	}
+	if cfg.GatewayRateLimit.Telemetry != (GatewayRateLimitBudget{Requests: 8, Window: 15 * time.Second}) {
+		t.Fatalf("unexpected telemetry override: %+v", cfg.GatewayRateLimit.Telemetry)
+	}
+}
+
+func TestLoadFromEnv_GatewayRateLimitFallsBackOnInvalidClass(t *testing.T) {
+	t.Setenv("API_GATEWAY_RATE_LIMIT_DEFAULT_CLASS", "unknown")
+
+	cfg := LoadFromEnv()
+
+	if cfg.GatewayRateLimit.DefaultClass != GatewayRateLimitClassInteractive {
+		t.Fatalf("expected invalid default class to fall back to interactive, got %q", cfg.GatewayRateLimit.DefaultClass)
+	}
+}
+
 func TestLoadFromEnv_EnablePoolOpsRoute_True(t *testing.T) {
 	t.Setenv("ENABLE_POOLOPS_ROUTE", "true")
 

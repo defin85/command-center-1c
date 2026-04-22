@@ -31,6 +31,38 @@ type SyncUiMockState = {
   actionErrors?: Partial<Record<'retry' | 'reconcile' | 'resolve', ActionError>>
 }
 
+function buildBootstrapResponse() {
+  return {
+    me: { id: 1, username: 'sync-user', is_staff: true },
+    tenant_context: {
+      active_tenant_id: TENANT_ID,
+      tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
+    },
+    access: {
+      user: { id: 1, username: 'sync-user' },
+      clusters: [],
+      databases: [],
+      operation_templates: [],
+    },
+    capabilities: {
+      can_manage_rbac: false,
+      can_manage_driver_catalogs: false,
+      can_manage_runtime_controls: false,
+    },
+  }
+}
+
+function buildGatewayRateLimitPayload() {
+  return {
+    error: 'Rate limit exceeded',
+    code: 'RATE_LIMIT_EXCEEDED',
+    rate_limit_class: 'background_heavy',
+    retry_after_seconds: 11,
+    budget_scope: 'tenant=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa;principal=user:1;class=background_heavy',
+    request_id: 'req-budget-1',
+  }
+}
+
 async function fulfillJson(route: Route, data: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -49,6 +81,7 @@ async function setupAuth(page: Page) {
     }
     localStorage.setItem('auth_token', 'test-token')
     localStorage.setItem('active_tenant_id', tenantId)
+    localStorage.setItem('cc1c_locale_override', 'en')
   }, TENANT_ID)
 }
 
@@ -76,27 +109,14 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     const method = request.method()
 
     if (method === 'GET' && path === '/api/v2/system/bootstrap/') {
-      return fulfillJson(route, {
-        me: { id: 1, username: 'sync-user', is_staff: true },
-        tenant_context: {
-          active_tenant_id: TENANT_ID,
-          tenants: [{ id: TENANT_ID, slug: 'default', name: 'Default', role: 'owner' }],
-        },
-        access: {
-          user: { id: 1, username: 'sync-user' },
-          clusters: [],
-          databases: [],
-          operation_templates: [],
-        },
-        capabilities: {
-          can_manage_rbac: false,
-          can_manage_driver_catalogs: false,
-          can_manage_runtime_controls: false,
-        },
-      })
+      return fulfillJson(route, buildBootstrapResponse())
     }
     if (method === 'GET' && path === '/api/v2/system/me/') {
-      return fulfillJson(route, { id: 1, username: 'sync-user', is_staff: true })
+      return fulfillJson(route, {
+        id: 1,
+        username: 'sync-user',
+        is_staff: true,
+      })
     }
     if (method === 'GET' && path === '/api/v2/rbac/get-effective-access/') {
       return fulfillJson(route, { clusters: [], databases: [] })
@@ -226,7 +246,10 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
       return fulfillJson(route, { contracts: [], ...buildListMeta(100, 0, 0) })
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/tax-profiles/') {
-      return fulfillJson(route, { tax_profiles: [], ...buildListMeta(100, 0, 0) })
+      return fulfillJson(route, {
+        tax_profiles: [],
+        ...buildListMeta(100, 0, 0),
+      })
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/gl-accounts/') {
       return fulfillJson(route, {
@@ -380,13 +403,14 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
     }
 
     if (method === 'GET' && path === '/api/v2/pools/master-data/sync-status/') {
-      return fulfillJson(route, { count: state.statuses.length, statuses: state.statuses })
+      return fulfillJson(route, {
+        count: state.statuses.length,
+        statuses: state.statuses,
+      })
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/sync-conflicts/') {
       const statusFilter = String(url.searchParams.get('status') || '').trim()
-      const rows = statusFilter
-        ? state.conflicts.filter((item) => String(item.status) === statusFilter)
-        : state.conflicts
+      const rows = statusFilter ? state.conflicts.filter((item) => String(item.status) === statusFilter) : state.conflicts
       return fulfillJson(route, { count: rows.length, conflicts: rows })
     }
     if (method === 'GET' && path === '/api/v2/pools/master-data/sync-launches/') {
@@ -446,9 +470,7 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
             database_id: DATABASE_ID,
             database_name: 'Main DB',
             cluster_id: 'cluster-1',
-            entity_type: Array.isArray(payload.entity_scope) && payload.entity_scope.length > 0
-              ? payload.entity_scope[0]
-              : 'item',
+            entity_type: Array.isArray(payload.entity_scope) && payload.entity_scope.length > 0 ? payload.entity_scope[0] : 'item',
             status: 'scheduled',
             reason_code: '',
             reason_detail: '',
@@ -473,11 +495,15 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
       state.actionCalls.retry.push(payload)
       const actionError = state.actionErrors?.retry
       if (actionError) {
-        return fulfillJson(route, {
-          code: actionError.code,
-          title: 'Sync Conflict Action Invalid',
-          detail: actionError.detail,
-        }, actionError.status)
+        return fulfillJson(
+          route,
+          {
+            code: actionError.code,
+            title: 'Sync Conflict Action Invalid',
+            detail: actionError.detail,
+          },
+          actionError.status,
+        )
       }
       const id = path.split('/')[6]
       const target = state.conflicts.find((item) => String(item.id) === id)
@@ -492,11 +518,15 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
       state.actionCalls.reconcile.push(payload)
       const actionError = state.actionErrors?.reconcile
       if (actionError) {
-        return fulfillJson(route, {
-          code: actionError.code,
-          title: 'Sync Conflict Action Invalid',
-          detail: actionError.detail,
-        }, actionError.status)
+        return fulfillJson(
+          route,
+          {
+            code: actionError.code,
+            title: 'Sync Conflict Action Invalid',
+            detail: actionError.detail,
+          },
+          actionError.status,
+        )
       }
       const id = path.split('/')[6]
       const target = state.conflicts.find((item) => String(item.id) === id)
@@ -511,11 +541,15 @@ async function setupApiMocks(page: Page, state: SyncUiMockState) {
       state.actionCalls.resolve.push(payload)
       const actionError = state.actionErrors?.resolve
       if (actionError) {
-        return fulfillJson(route, {
-          code: actionError.code,
-          title: 'Sync Conflict Action Invalid',
-          detail: actionError.detail,
-        }, actionError.status)
+        return fulfillJson(
+          route,
+          {
+            code: actionError.code,
+            title: 'Sync Conflict Action Invalid',
+            detail: actionError.detail,
+          },
+          actionError.status,
+        )
       }
       const id = path.split('/')[6]
       const target = state.conflicts.find((item) => String(item.id) === id)
@@ -592,16 +626,18 @@ test('Pool Master Data Sync: list status/conflicts and execute conflict actions'
   await expect(page.getByText('POLICY_VIOLATION', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Retry' }).first().click()
-  await expect(page.getByText('Conflict переведён в retrying.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Conflict moved to retrying.', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Reconcile' }).first().click()
-  await expect(page.getByText('Conflict отправлен в reconcile.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Conflict queued for reconcile.', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Resolve' }).first().click()
-  await expect(page.getByText('Conflict помечен как resolved.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Conflict marked as resolved.', { exact: true })).toBeVisible()
 
   expect(state.actionCalls.retry).toHaveLength(1)
-  expect(state.actionCalls.retry[0]).toEqual({ note: 'Manual retry from Pool Master Data Sync UI' })
+  expect(state.actionCalls.retry[0]).toEqual({
+    note: 'Manual retry from Pool Master Data Sync UI',
+  })
 
   expect(state.actionCalls.reconcile).toHaveLength(1)
   expect(state.actionCalls.reconcile[0]).toEqual({
@@ -622,7 +658,9 @@ test('Pool Master Data Sync: creates manual launch and shows launch detail/histo
   await setupAuth(page)
   await setupApiMocks(page, state)
 
-  await page.goto('/pools/master-data?tab=sync', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/master-data?tab=sync', {
+    waitUntil: 'domcontentloaded',
+  })
   await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
   await expect(page.getByText('Launch History', { exact: true })).toBeVisible()
 
@@ -676,7 +714,11 @@ test('Pool Master Data Sync: shows forbidden/not-found/error messages for confli
   await expect(page.getByText('Tenant admin only.', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Reconcile' }).first().click()
-  await expect(page.getByText("Sync conflict 'conflict-1' does not exist.", { exact: true })).toBeVisible()
+  await expect(
+    page.getByText("Sync conflict 'conflict-1' does not exist.", {
+      exact: true,
+    }),
+  ).toBeVisible()
 
   await page.getByRole('button', { name: 'Resolve' }).first().click()
   await expect(page.getByText('Conflict is already resolved.', { exact: true })).toBeVisible()
@@ -687,7 +729,9 @@ test('Pool Master Data Accounts: restores GL Account Set zone from deep-link rou
   await setupAuth(page)
   await setupApiMocks(page, state)
 
-  await page.goto('/pools/master-data?tab=gl-account-set&detail=1', { waitUntil: 'domcontentloaded' })
+  await page.goto('/pools/master-data?tab=gl-account-set&detail=1', {
+    waitUntil: 'domcontentloaded',
+  })
 
   await expect(page.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
   await expect(page.getByText('Current zone: GL Account Set')).toBeVisible()
@@ -712,4 +756,79 @@ test('Pool Master Data Accounts: mobile shell opens GL Account zone without hori
   await expect(detailDrawer.getByTestId('pool-master-data-gl-account-selected-id')).toHaveText('gl-account-1')
   await expect(detailDrawer.getByText('Compatible class').first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
+})
+
+test('Pool Master Data Sync: background-heavy tab does not starve shell bootstrap in another authenticated tab', async ({ context }) => {
+  const state = buildDefaultState()
+  const backgroundBudget = {
+    limit: 2,
+    consumed: 0,
+    bootstrapReads: 0,
+    bootstrap429s: 0,
+  }
+
+  const installBudgetAwareRoutes = async (page: Page) => {
+    await setupAuth(page)
+    await setupApiMocks(page, state)
+
+    await page.route('**/api/v2/system/bootstrap/', async (route) => {
+      backgroundBudget.bootstrapReads += 1
+      return fulfillJson(route, buildBootstrapResponse())
+    })
+
+    await page.route('**/api/v2/pools/master-data/sync-launches/', async (route) => {
+      backgroundBudget.consumed += 1
+      if (backgroundBudget.consumed > backgroundBudget.limit) {
+        backgroundBudget.bootstrap429s += 0
+        return fulfillJson(route, buildGatewayRateLimitPayload(), 429)
+      }
+      return fulfillJson(route, {
+        launches: state.launches,
+        count: state.launches.length,
+        limit: 20,
+        offset: 0,
+      })
+    })
+
+    await page.route('**/api/v2/pools/master-data/sync-status/', async (route) => {
+      backgroundBudget.consumed += 1
+      if (backgroundBudget.consumed > backgroundBudget.limit) {
+        return fulfillJson(route, buildGatewayRateLimitPayload(), 429)
+      }
+      return fulfillJson(route, {
+        statuses: state.statuses,
+        count: state.statuses.length,
+      })
+    })
+
+    await page.route('**/api/v2/pools/master-data/sync-conflicts/', async (route) => {
+      backgroundBudget.consumed += 1
+      if (backgroundBudget.consumed > backgroundBudget.limit) {
+        return fulfillJson(route, buildGatewayRateLimitPayload(), 429)
+      }
+      return fulfillJson(route, {
+        conflicts: state.conflicts,
+        count: state.conflicts.length,
+      })
+    })
+  }
+
+  const firstPage = await context.newPage()
+  await installBudgetAwareRoutes(firstPage)
+  await firstPage.goto('/pools/master-data?tab=sync', {
+    waitUntil: 'domcontentloaded',
+  })
+  await expect(firstPage.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await expect.poll(() => backgroundBudget.consumed).toBeGreaterThanOrEqual(2)
+
+  const secondPage = await context.newPage()
+  await installBudgetAwareRoutes(secondPage)
+  await secondPage.goto('/pools/master-data?tab=party', {
+    waitUntil: 'domcontentloaded',
+  })
+  await expect(secondPage.getByRole('heading', { name: 'Pool Master Data', exact: true })).toBeVisible()
+  await expect(secondPage.getByText('Current zone: Party', { exact: true })).toBeVisible()
+
+  expect(backgroundBudget.bootstrapReads).toBeGreaterThanOrEqual(2)
+  expect(backgroundBudget.bootstrap429s).toBe(0)
 })

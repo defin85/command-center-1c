@@ -69,6 +69,9 @@ type Config struct {
 	MetricsEnabled bool
 	MetricsPort    string
 
+	// Gateway request budget isolation
+	GatewayRateLimit GatewayRateLimitConfig
+
 	// Credentials Transport Encryption (AES-256)
 	// ВАЖНО: Должен совпадать с Django CREDENTIALS_TRANSPORT_KEY!
 	CredentialsTransportKey string
@@ -198,8 +201,9 @@ func LoadFromEnv() *Config {
 		LogFormat: getEnv("LOG_FORMAT", "text"),
 
 		// Metrics
-		MetricsEnabled: getBoolEnv("METRICS_ENABLED", true),
-		MetricsPort:    getEnv("METRICS_PORT", "9090"),
+		MetricsEnabled:   getBoolEnv("METRICS_ENABLED", true),
+		MetricsPort:      getEnv("METRICS_PORT", "9090"),
+		GatewayRateLimit: loadGatewayRateLimitConfig(),
 
 		// Credentials Transport Encryption
 		CredentialsTransportKey: getEnv("CREDENTIALS_TRANSPORT_KEY", ""),
@@ -305,6 +309,15 @@ func getEnv(key, defaultValue string) string {
 func getIntEnv(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getPositiveIntEnv(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil && intValue > 0 {
 			return intValue
 		}
 	}

@@ -2,7 +2,6 @@ package routes
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/commandcenter1c/commandcenter/api-gateway/internal/handlers"
 	"github.com/commandcenter1c/commandcenter/api-gateway/internal/middleware"
@@ -95,18 +94,45 @@ func setupV2Routes(router *gin.Engine, cfg *config.Config) {
 	v2 := router.Group("/api/v2")
 	v2.Use(auth.AuthMiddleware(jwtManager))
 
-	// Apply global API rate limit to most routes, but keep streaming (SSE) and ticket endpoints outside
-	// to avoid blocking unrelated user actions under reconnect scenarios.
-	v2Limited := v2.Group("")
-	v2Limited.Use(middleware.RateLimitMiddleware(100, time.Minute)) // 100 req/min
-	{
-		// Jaeger tracing routes
-		v2Limited.Any("/tracing/*path", jaegerHandler)
+	shellCritical := v2.Group("")
+	shellCritical.Use(middleware.RateLimitMiddleware(
+		config.GatewayRateLimitClassShellCritical,
+		cfg.GatewayRateLimit.BudgetForClass(config.GatewayRateLimitClassShellCritical),
+	))
 
-		// Orchestrator routes (Django backend for CRUD operations)
-		// Routes are generated from OpenAPI spec + fallback wildcards
-		RegisterOrchestratorRoutes(v2Limited, v2, handlers.ProxyToOrchestratorV2)
-	}
+	interactive := v2.Group("")
+	interactive.Use(middleware.RateLimitMiddleware(
+		config.GatewayRateLimitClassInteractive,
+		cfg.GatewayRateLimit.BudgetForClass(config.GatewayRateLimitClassInteractive),
+	))
+
+	backgroundHeavy := v2.Group("")
+	backgroundHeavy.Use(middleware.RateLimitMiddleware(
+		config.GatewayRateLimitClassBackground,
+		cfg.GatewayRateLimit.BudgetForClass(config.GatewayRateLimitClassBackground),
+	))
+
+	telemetry := v2.Group("")
+	telemetry.Use(middleware.RateLimitMiddleware(
+		config.GatewayRateLimitClassTelemetry,
+		cfg.GatewayRateLimit.BudgetForClass(config.GatewayRateLimitClassTelemetry),
+	))
+
+	streaming := v2.Group("")
+
+	// Keep tracing under the bounded interactive class unless explicitly reclassified later.
+	interactive.Any("/tracing/*path", jaegerHandler)
+
+	// Orchestrator routes (Django backend for CRUD operations)
+	// Routes are generated from OpenAPI spec + explicit gateway budget classification.
+	RegisterOrchestratorRoutes(OrchestratorRouteGroups{
+		ShellCritical: shellCritical,
+		Interactive:   interactive,
+		Background:    backgroundHeavy,
+		Telemetry:     telemetry,
+		Streaming:     streaming,
+		DefaultClass:  cfg.GatewayRateLimit.DefaultClass,
+	}, handlers.ProxyToOrchestratorV2)
 
 	log.Info("API v2 routes configured",
 		zap.String("jaeger", cfg.JaegerURL),

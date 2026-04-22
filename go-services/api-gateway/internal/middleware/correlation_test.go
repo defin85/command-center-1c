@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/commandcenter1c/commandcenter/shared/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,11 +32,16 @@ func TestCorrelatedErrorPayloadFromHTTP_PreservesCorrelationAndSanitizesMessage(
 }
 
 func TestRateLimitMiddleware_ReturnsCorrelatedErrorPayload(t *testing.T) {
-	limiter = nil
-
 	router := gin.New()
 	router.Use(LoggerMiddleware())
-	router.Use(RateLimitMiddleware(1, time.Minute))
+	router.Use(func(c *gin.Context) {
+		c.Set("user_id", "user-1")
+		c.Next()
+	})
+	router.Use(RateLimitMiddleware(
+		config.GatewayRateLimitClassInteractive,
+		config.GatewayRateLimitBudget{Requests: 1, Window: time.Minute},
+	))
 	router.GET("/api/v2/test/", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
@@ -56,12 +62,17 @@ func TestRateLimitMiddleware_ReturnsCorrelatedErrorPayload(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, secondResp.Code)
 	assert.Equal(t, "req-ui-2", secondResp.Header().Get("X-Request-ID"))
 	assert.Equal(t, "uia-2", secondResp.Header().Get("X-UI-Action-ID"))
+	assert.Equal(t, "60", secondResp.Header().Get("Retry-After"))
 
-	var payload map[string]string
+	var payload map[string]any
 	require.NoError(t, json.Unmarshal(secondResp.Body.Bytes(), &payload))
 	assert.Equal(t, "Rate limit exceeded", payload["error"])
 	assert.Equal(t, "req-ui-2", payload["request_id"])
 	assert.Equal(t, "uia-2", payload["ui_action_id"])
+	assert.Equal(t, "RATE_LIMIT_EXCEEDED", payload["code"])
+	assert.Equal(t, "interactive", payload["rate_limit_class"])
+	assert.Equal(t, "tenant=tenant:unknown;principal=user:user-1;class=interactive", payload["budget_scope"])
+	assert.EqualValues(t, 60, payload["retry_after_seconds"])
 }
 
 func TestAPIKeyMiddleware_ReturnsCorrelatedErrorPayload(t *testing.T) {

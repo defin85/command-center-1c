@@ -172,6 +172,24 @@ describe('uiIncidentTelemetry', () => {
     ])
   })
 
+  it('drops 429 telemetry batches without retry storm', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 429 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    captureUiRouteTransition({
+      pathname: '/pools/master-data',
+      search: '?tab=sync',
+      hash: '',
+    })
+    recordUiErrorBoundary(new Error('sync failed'), 'stack:line-2')
+
+    await vi.advanceTimersByTimeAsync(__TESTING__.FLUSH_INTERVAL_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(__TESTING__.RETRY_DELAY_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('omits steady-state websocket lifecycle noise from durable telemetry while keeping incident signals', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 202 }))
     vi.stubGlobal('fetch', fetchMock)
