@@ -40,6 +40,8 @@ const MASTER_DATA_TAB_KEYS = [
   'dedupe-review',
 ] as const
 
+const SYNC_ROUTE_PARAM_KEYS = ['launchId'] as const
+
 type MasterDataTabKey = typeof MASTER_DATA_TAB_KEYS[number]
 
 type MasterDataZoneDefinition = {
@@ -163,6 +165,10 @@ export function PoolMasterDataPage() {
     const next = new URLSearchParams(searchParams)
 
     next.set('tab', activeTab)
+
+    if (activeTab !== 'sync') {
+      SYNC_ROUTE_PARAM_KEYS.forEach((key) => next.delete(key))
+    }
 
     if (isDetailOpen) {
       next.set('detail', '1')

@@ -8,6 +8,7 @@ import type { ApiErrorDetail } from './api/apiErrorPolicy'
 import { useRealtimeInvalidation } from './hooks/useRealtimeInvalidation'
 import { DatabaseStreamProvider } from './contexts/DatabaseStreamContext'
 import { useShellBootstrap } from './api/queries/shellBootstrap'
+import { buildLoginRedirectPath } from './lib/authRedirect'
 import { getAuthToken, subscribeAuthChange } from './lib/authState'
 import { AuthzProvider } from './authz'
 import { useCommonTranslation, useErrorsTranslation, useLocaleState, useShellTranslation } from './i18n'
@@ -77,6 +78,18 @@ function LazyBoundary({ children }: { children: React.ReactNode }) {
   )
 }
 
+function LoginRedirect() {
+  const location = useLocation()
+
+  return (
+    <Navigate
+      to={buildLoginRedirectPath(location)}
+      replace
+      state={{ from: location }}
+    />
+  )
+}
+
 function getShellBootstrapErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message
@@ -108,7 +121,7 @@ const ProtectedRoute = ({ children, authToken }: { children: React.ReactNode, au
   const shellBootstrapQuery = useShellBootstrap({ enabled: Boolean(authToken) })
 
   if (!authToken) {
-    return <Navigate to="/login" replace />
+    return <LoginRedirect />
   }
 
   if (shellBootstrapQuery.isLoading) {
@@ -130,7 +143,7 @@ const StaffRoute = ({ children, authToken, preload }: { children: React.ReactNod
   }, [authToken, preload])
 
   if (!authToken) {
-    return <Navigate to="/login" replace />
+    return <LoginRedirect />
   }
 
   if (shellBootstrapQuery.isLoading) {
@@ -156,7 +169,7 @@ const RbacRoute = ({ children, authToken, preload }: { children: React.ReactNode
   }, [authToken, preload])
 
   if (!authToken) {
-    return <Navigate to="/login" replace />
+    return <LoginRedirect />
   }
 
   if (shellBootstrapQuery.isLoading) {
@@ -182,7 +195,7 @@ const DriverCatalogsRoute = ({ children, authToken, preload }: { children: React
   }, [authToken, preload])
 
   if (!authToken) {
-    return <Navigate to="/login" replace />
+    return <LoginRedirect />
   }
 
   if (shellBootstrapQuery.isLoading) {
@@ -315,7 +328,7 @@ function App() {
           <GlobalApiErrorHandler />
           <AuthzProvider key={authToken ?? 'guest'}>
             <DatabaseStreamProvider>
-              <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+              <BrowserRouter future={{ v7_relativeSplatPath: true }}>
                 <UiObservabilityBridge enabled={Boolean(authToken)} />
                 <Routes>
                   {/* Публичный маршрут - логин */}

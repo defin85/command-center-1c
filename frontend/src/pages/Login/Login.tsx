@@ -1,10 +1,12 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import type { Location } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Form, Input, Button, Card, Typography, App } from 'antd'
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { getApiBaseUrl } from '../../api/baseUrl'
 import { setAuthToken } from '../../api/client'
+import { buildReturnToPath, resolveSafeReturnTo } from '../../lib/authRedirect'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
 
@@ -18,7 +20,14 @@ interface LoginForm {
 export const Login = () => {
     const [loading, setLoading] = useState(false)
     const navigate = useNavigate()
+    const location = useLocation()
     const { message } = App.useApp()
+    const returnTo = useMemo(() => {
+        const state = location.state as { from?: Pick<Location, 'pathname' | 'search' | 'hash'> } | null
+        const returnToFromState = state?.from ? buildReturnToPath(state.from) : null
+        const returnToFromQuery = new URLSearchParams(location.search).get('next')
+        return resolveSafeReturnTo(returnToFromState || returnToFromQuery)
+    }, [location.search, location.state])
 
     const onFinish = async (values: LoginForm) => {
         setLoading(true)
@@ -45,8 +54,7 @@ export const Login = () => {
 
             message.success('Успешная авторизация!')
 
-            // Перенаправляем на главную
-            navigate('/')
+            navigate(returnTo, { replace: true })
         } catch (error: unknown) {
             console.error('Login error:', error)
             const status = (error as { response?: { status?: number } } | null)?.response?.status

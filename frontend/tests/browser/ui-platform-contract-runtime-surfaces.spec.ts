@@ -875,6 +875,48 @@ test("Runtime contract: /service-mesh ignores same-route menu re-entry and keeps
   await expect(page.getByText("Request Error")).toHaveCount(0);
 });
 
+test("Runtime contract: /service-mesh hands off to /pools/master-data without leaving stale diagnostics content mounted", async ({
+  page,
+}) => {
+  const counts = createRequestCounts();
+
+  await setupAuth(page);
+  await setupPersistentDatabaseStream(page);
+  await setupUiPlatformMocks(page, { isStaff: true, counts });
+
+  await page.goto("/service-mesh", {
+    waitUntil: "domcontentloaded",
+  });
+
+  const serviceMeshHeading = page.getByRole("heading", {
+    name: "Service mesh",
+    level: 2,
+  });
+  const poolMasterDataMenuItem = page.getByRole("menuitem", {
+    name: /Pool Master Data/i,
+  });
+
+  await expect(serviceMeshHeading).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  });
+  await expect(page.getByText("Recent operations")).toBeVisible();
+  await expect.poll(() => counts.operationsList).toBeGreaterThan(0);
+
+  await poolMasterDataMenuItem.click();
+
+  await expect(page).toHaveURL(/\/pools\/master-data(?:\?.*)?$/);
+  await expect(
+    page.getByRole("heading", { name: "Pool Master Data", level: 2 }),
+  ).toBeVisible({
+    timeout: ROUTE_MOUNT_TIMEOUT_MS,
+  });
+  await expect(serviceMeshHeading).toHaveCount(0);
+  await expect(page.getByTestId("service-mesh-service-drawer")).toHaveCount(0);
+  await expect(counts.bootstrap).toBe(1);
+  await expect(counts.meReads).toBe(0);
+  await expect(counts.myTenantsReads).toBe(0);
+});
+
 test("Runtime contract: /service-mesh ignores same-route menu re-entry and keeps realtime context stable", async ({
   page,
 }) => {

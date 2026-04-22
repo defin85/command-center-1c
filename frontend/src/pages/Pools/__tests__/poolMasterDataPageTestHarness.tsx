@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolMasterDataPage } from '../PoolMasterDataPage'
@@ -837,11 +837,17 @@ vi.mock('../../../api/intercompanyPools', () => ({
 }))
 
 function renderPage(path = '/pools/master-data') {
+  function LocationProbe() {
+    const location = useLocation()
+    return <output data-testid="pool-master-data-route-location">{`${location.pathname}${location.search}`}</output>
+  }
+
   return render(
     <MemoryRouter initialEntries={[path]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <ConfigProvider theme={{ token: { motion: false } }} wave={{ disabled: true }}>
         <AntApp>
           <PoolMasterDataPage />
+          <LocationProbe />
         </AntApp>
       </ConfigProvider>
     </MemoryRouter>
@@ -1470,6 +1476,23 @@ export function registerPoolMasterDataWorkspaceTests() {
     fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
     await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
     await waitFor(() => expect(mockListMasterDataSyncConflicts).toHaveBeenCalled())
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
+  it('drops Sync launchId when switching to another workspace zone', async () => {
+    renderPage('/pools/master-data?tab=sync&detail=1&databaseId=db-1&entityType=party&launchId=launch-1')
+
+    expect(await screen.findByText('Launch Detail')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent(
+      '/pools/master-data?tab=sync&detail=1&databaseId=db-1&entityType=party&launchId=launch-1'
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Bindings zone' }))
+
+    await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByTestId('pool-master-data-route-location')).not.toHaveTextContent('launchId='))
+    expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent(
+      '/pools/master-data?tab=bindings&detail=1&databaseId=db-1&entityType=party'
+    )
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
   it('renders reusable account zones and loads GL Account / GL Account Set surfaces inside the same shell', async () => {
