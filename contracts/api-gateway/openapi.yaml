@@ -6,7 +6,7 @@ info:
 
     API Gateway выполняет функции:
     - JWT аутентификация
-    - Rate limiting (100 req/min per user)
+    - Class-aware request budgets для authenticated `/api/v2` traffic
     - Проксирование запросов к Orchestrator
     - CORS handling
 
@@ -130,6 +130,8 @@ paths:
           description: Unauthorized
         '403':
           description: Forbidden
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '503':
           description: Jaeger unavailable
 
@@ -160,6 +162,8 @@ paths:
           description: Forbidden
         '404':
           description: Not found
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '503':
           description: Jaeger unavailable
 
@@ -522,6 +526,62 @@ components:
         details:
           type: object
           additionalProperties: true
+        request_id:
+          type: string
+          description: Stable gateway correlation identifier for the failed request.
+          example: "req-5ab86ce3-d7f2-4cbf-8204-8f3e3479dd15"
+        ui_action_id:
+          type: string
+          description: Optional frontend action correlation identifier echoed by the gateway.
+          example: "uia-pool-master-data-sync-open"
+
+    GatewayRateLimitClass:
+      type: string
+      description: Gateway request-budget class that produced the `429`.
+      enum:
+        - shell_critical
+        - interactive
+        - background_heavy
+        - telemetry
+
+    GatewayRateLimitExceededResponse:
+      type: object
+      required:
+        - error
+        - code
+        - request_id
+        - rate_limit_class
+        - retry_after_seconds
+        - budget_scope
+      properties:
+        error:
+          type: string
+          example: "Rate limit exceeded"
+        code:
+          type: string
+          example: "RATE_LIMIT_EXCEEDED"
+        details:
+          type: object
+          additionalProperties: true
+        request_id:
+          type: string
+          description: Stable gateway correlation identifier for the rejected request.
+          example: "req-5ab86ce3-d7f2-4cbf-8204-8f3e3479dd15"
+        ui_action_id:
+          type: string
+          description: Optional frontend action correlation identifier echoed by the gateway.
+          example: "uia-pool-master-data-sync-open"
+        rate_limit_class:
+          $ref: '#/components/schemas/GatewayRateLimitClass'
+        retry_after_seconds:
+          type: integer
+          minimum: 1
+          description: Recommended backoff window for the exhausted budget class.
+          example: 17
+        budget_scope:
+          type: string
+          description: Human-readable budget key emitted by the gateway for diagnostics.
+          example: "tenant=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa;principal=user:1;class=background_heavy"
 
   responses:
     BadRequest:
@@ -552,11 +612,15 @@ components:
             code: "NOT_FOUND"
 
     TooManyRequests:
-      description: Rate limit exceeded (100 req/min)
+      description: Gateway request budget exceeded
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ErrorResponse'
+            $ref: '#/components/schemas/GatewayRateLimitExceededResponse'
           example:
             error: "Rate limit exceeded"
-            code: "RATE_LIMIT"
+            code: "RATE_LIMIT_EXCEEDED"
+            request_id: "req-5ab86ce3-d7f2-4cbf-8204-8f3e3479dd15"
+            rate_limit_class: "interactive"
+            retry_after_seconds: 11
+            budget_scope: "tenant=tenant:unknown;principal=user:user-1;class=interactive"

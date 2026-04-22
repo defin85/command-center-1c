@@ -6,7 +6,7 @@
 
 API Gateway выполняет функции:
 - JWT аутентификация
-- Rate limiting (100 req/min per user)
+- Class-aware request budgets для authenticated `/api/v2` traffic
 - Проксирование запросов к Orchestrator
 - CORS handling
 
@@ -34,6 +34,9 @@ export * from "./errorResponse";
 export * from "./errorResponseDetails";
 export * from "./extensionFile";
 export * from "./extensionList";
+export * from "./gatewayRateLimitClass";
+export * from "./gatewayRateLimitExceededResponse";
+export * from "./gatewayRateLimitExceededResponseDetails";
 export * from "./getTracingGetTracesParams";
 export * from "./healthResponse";
 export * from "./healthResponseStatus";

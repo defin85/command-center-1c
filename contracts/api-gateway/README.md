@@ -1,280 +1,102 @@
 # API Gateway OpenAPI Contract
 
-> OpenAPI 3.0.3 спецификация для публичного API CommandCenter1C (Frontend → API Gateway)
+> OpenAPI 3.0.3 contract for gateway-owned endpoints and shared gateway error envelopes.
 
----
+## Что здесь является source of truth
 
-## О
+- `contracts/api-gateway/openapi.yaml` описывает gateway-owned routes и gateway-generated error payloads.
+- Текущий generated client для этого контракта живёт в `frontend/src/api/generated-gateway/`.
+- Business `/api/v2/*` CRUD routes остаются source-of-truth в `contracts/orchestrator/openapi.yaml` и генерируются в `frontend/src/api/generated/`.
 
-API Gateway - единая точка входа для Frontend приложения. Выполняет функции:
-- **JWT аутентификация** - проверка токенов для защищенных endpoints
-- **Rate limiting** - ограничение 100 запросов/минуту на пользователя
-- **Proxy к Orchestrator** - большинство запросов проксируются в Django
-- **CORS handling** - обработка кросс-доменных запросов
+Иными словами: этот контракт нужен не для всего `/api/v2`, а для тех surfaces, которыми gateway владеет сам, плюс для общих envelopes вроде class-aware `429`.
 
-## Архитектура
+## Что покрывает gateway сейчас
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Frontend (React + TypeScript)                           │
-│  • Использует автогенерированный TypeScript клиент      │
-│  • Type-safe API calls с автодополнением IDE            │
-└──────────────────┬──────────────────────────────────────┘
-                   ↓ HTTP/HTTPS (Bearer JWT)
-┌──────────────────┴──────────────────────────────────────┐
-│ API Gateway (Go:8080)                                   │
-│  • JWT auth + Rate limiting                             │
-│  • ProxyToOrchestrator для бизнес-логики                │
-│  • Собственные endpoints: /health, /metrics             │
-└──────────────────┬──────────────────────────────────────┘
-                   ↓ HTTP (internal)
-┌──────────────────┴──────────────────────────────────────┐
-│ Orchestrator (Django:8000) + Микросервисы               │
-└─────────────────────────────────────────────────────────┘
-```
+- `GET /health`
+- `GET /metrics`
+- `GET /api/v2/tracing/traces`
+- `GET /api/v2/tracing/traces/{traceId}`
+- shared gateway-generated error envelopes, включая correlated `request_id` и class-aware `429`
 
-## Endpoints
+## Генерация frontend client
 
-### Собственные (не прокси)
+Authoritative flow:
 
-**Health & Status:**
-- `GET /health` - health check API Gateway
-- `GET /metrics` - Prometheus метрики
-
-### Проксируемые (→ Orchestrator)
-
-Большинство бизнес-endpoints проксируются в Django Orchestrator и доступны под `/api/v2/*`.
-
-Полный список см. в `openapi.yaml`.
-
-## Автоматическая генерация TypeScript клиента
-
-### Что генерируется
-
-**Output директория:** `frontend/src/api/generated/`
-
-**Содержимое:**
-```
-frontend/src/api/generated/
-├── api.ts              # API классы (DefaultApi)
-├── base.ts             # Базовые HTTP конфигурации
-├── common.ts           # Общие утилиты
-├── configuration.ts    # Configuration класс
-└── index.ts            # Re-exports
-```
-
-### Как использовать
-
-**1. Сгенерировать клиент:**
 ```bash
-# Автоматически при старте проекта
-./scripts/dev/start-all.sh
-
-# Или вручную
-./contracts/scripts/generate-all.sh --force
+cd frontend && npm run generate:api
 ```
 
-**2. Импортировать в React:**
-```typescript
-import { DefaultApi, Configuration } from '@/api/generated';
+Что происходит:
 
-// Создать API client с конфигурацией
-const config = new Configuration({
-  basePath: 'http://localhost:8080',
-  accessToken: localStorage.getItem('jwt_token') || undefined
-});
+- `frontend/orval.config.ts` читает `../contracts/api-gateway/openapi.yaml`
+- orval регенерирует `frontend/src/api/generated-gateway/`
+- runtime entrypoint для этого клиента: `getCommandCenter1CAPIGateway()`
 
-const api = new DefaultApi(config);
+Минимальный пример:
 
-// Type-safe API calls
-const operations = await api.listOperations();
-const database = await api.getDatabase('uuid-here');
+```ts
+import { getCommandCenter1CAPIGateway } from '@/api/generated-gateway'
+
+const gatewayApi = getCommandCenter1CAPIGateway()
+
+const response = await gatewayApi.getTracingGetTraces({
+  service: 'orchestrator',
+  limit: 20,
+  lookback: '1h',
+})
+
+console.log(response.data.data)
 ```
 
-**3. Примеры интеграции см. в `EXAMPLE_USAGE.md`**
+## Rate limiting contract
 
-## Обновление API
+Gateway больше не документируется как один global `100 req/min per user` bucket. Для authenticated `/api/v2` traffic gateway использует class-aware budgets:
 
-### Workflow при изменении endpoints
+- `shell_critical`
+- `interactive`
+- `background_heavy`
+- `telemetry`
 
-1. **Обновить OpenAPI спецификацию**
-   ```bash
-   # Редактировать
-   vim contracts/api-gateway/openapi.yaml
+Tracing proxy по умолчанию находится в bounded `interactive` class, поэтому его OpenAPI contract теперь явно объявляет `429`.
 
-   # Валидировать
-   ./contracts/scripts/validate-specs.sh
-   ```
+### Machine-readable 429 payload
 
-2. **Проверить breaking changes**
-   ```bash
-   ./contracts/scripts/check-breaking-changes.sh
-   ```
+Gateway-generated `429 Too Many Requests` now includes:
 
-3. **Регенерировать TypeScript клиент**
-   ```bash
-   ./contracts/scripts/generate-all.sh --force
-   ```
+- `request_id`
+- optional `ui_action_id`
+- `rate_limit_class`
+- `retry_after_seconds`
+- `budget_scope`
 
-4. **Обновить Frontend код**
-   - Компилятор TypeScript покажет несовместимости
-   - Обновить компоненты под новые типы
+Example:
 
-5. **Commit изменения**
-   ```bash
-   git add contracts/api-gateway/openapi.yaml
-   git add frontend/src/api/generated/
-   git commit -m "feat(api): update operations endpoint"
-   ```
-
-### Добавление нового endpoint
-
-**Пример: добавить `POST /api/v2/my-new-endpoint/`**
-
-```yaml
-paths:
-  /api/v2/my-new-endpoint/:
-    post:
-      summary: Example endpoint
-      operationId: myNewEndpoint
-      tags:
-        - misc
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OperationCreate'
-      responses:
-        '201':
-          description: Operation created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Operation'
-
-components:
-  schemas:
-    OperationCreate:
-      type: object
-      required:
-        - operation_type
-        - databases
-      properties:
-        operation_type:
-          type: string
-          enum: [install_extension, update_data]
-        databases:
-          type: array
-          items:
-            type: string
-            format: uuid
+```json
+{
+  "error": "Rate limit exceeded",
+  "code": "RATE_LIMIT_EXCEEDED",
+  "request_id": "req-5ab86ce3-d7f2-4cbf-8204-8f3e3479dd15",
+  "rate_limit_class": "interactive",
+  "retry_after_seconds": 11,
+  "budget_scope": "tenant=tenant:unknown;principal=user:user-1;class=interactive"
+}
 ```
 
-**После сохранения:**
-1. Валидация пройдет автоматически (pre-commit hook)
-2. TypeScript клиент регенерируется автоматически
-3. Новый метод `api.createOperation()` станет доступен в Frontend
+## Обновление контракта
 
-## Versioning
+Минимальный workflow:
 
-### Текущая версия: v2
+1. Обновить `contracts/api-gateway/openapi.yaml`.
+2. Проверить spec:
+   `./contracts/scripts/validate-specs.sh`
+3. Регенерировать frontend client:
+   `cd frontend && npm run generate:api`
+4. Прогнать релевантные tests/docs checks для изменённого surface.
 
-Все публичные endpoints системы начинаются с `/api/v2/`.
-
-### Breaking changes
-
-**При breaking change:**
-1. Создать новую версию API: `/api/v3/`
-2. Поддерживать обе версии параллельно (grace period)
-3. Добавить deprecation warnings в v1
-4. Документировать migration guide
-
-**Пример breaking change:**
-- Изменение типа поля (string → integer)
-- Удаление обязательного поля
-- Изменение enum значений
-- Изменение формата response
-
-## Security
-
-### JWT Authentication
-
-**Все protected endpoints требуют JWT токен:**
-
-```typescript
-// В configuration
-const config = new Configuration({
-  basePath: 'http://localhost:8080',
-  accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-});
-```
-
-**HTTP заголовок:**
-```
-Authorization: Bearer <jwt_token>
-```
-
-### Rate Limiting
-
-**Лимит:** 100 запросов/минуту на пользователя
-
-**При превышении:**
-- HTTP Status: `429 Too Many Requests`
-- Response:
-  ```json
-  {
-    "error": "Rate limit exceeded",
-    "code": "RATE_LIMIT"
-  }
-  ```
-
-## Troubleshooting
-
-### TypeScript клиент не генерируется
-
-**Проблема:** `openapi-generator-cli not found`
-
-**Решение:**
-```bash
-# Установить глобально
-npm install -g @openapitools/openapi-generator-cli
-
-# Или использовать npx (без установки)
-npx @openapitools/openapi-generator-cli --version
-```
-
-### Ошибки компиляции TypeScript после обновления
-
-**Причина:** Breaking changes в API
-
-**Решение:**
-1. Проверить changelog: `git diff HEAD~1 contracts/api-gateway/openapi.yaml`
-2. Обновить типы в компонентах React
-3. Использовать автодополнение IDE для новых типов
-
-### OpenAPI спецификация не проходит валидацию
-
-**Проверить:**
-```bash
-./contracts/scripts/validate-specs.sh
-```
-
-**Частые ошибки:**
-- Отсутствует `operationId` (обязателен для каждого endpoint)
-- Неправильный `$ref` путь
-- Дублирование operationId
-- Невалидный YAML синтаксис
+Если change затрагивает business `/api/v2/*` routes, править нужно не этот контракт, а `contracts/orchestrator/openapi.yaml`.
 
 ## См. также
 
-- [OpenAPI 3.0 Specification](https://spec.openapis.org/oas/v3.0.3)
-- [EXAMPLE_USAGE.md](./EXAMPLE_USAGE.md) - примеры использования
-- [../../README.md](../../README.md) - общая документация проекта
-- [../README.md](../README.md) - Contract-First подход
-
----
-
-**Дата создания:** 2025-11-24
-**Версия спецификации:** 1.0.0
-**Статус:** ✅ Production Ready
+- [EXAMPLE_USAGE.md](./EXAMPLE_USAGE.md)
+- [../README.md](../README.md)
+- [OpenAPI 3.0.3](https://spec.openapis.org/oas/v3.0.3)
