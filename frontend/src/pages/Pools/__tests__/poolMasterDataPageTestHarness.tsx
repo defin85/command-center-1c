@@ -1,10 +1,16 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as AntApp, ConfigProvider } from 'antd'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 
+import {
+  captureUiRouteTransition,
+  clearUiActionJournal,
+  exportUiActionJournalBundle,
+  setUiActionJournalEnabled,
+} from '../../../observability/uiActionJournal'
 import { HEAVY_ROUTE_TEST_TIMEOUT_MS } from '../../../test/timeouts'
 import { PoolMasterDataPage } from '../PoolMasterDataPage'
 
@@ -714,6 +720,9 @@ vi.mock('../../../api/intercompanyPools', () => ({
 function renderPage(path = '/pools/master-data') {
   function LocationProbe() {
     const location = useLocation()
+    useEffect(() => {
+      captureUiRouteTransition(location)
+    }, [location])
     return <output data-testid="pool-master-data-route-location">{`${location.pathname}${location.search}`}</output>
   }
 
@@ -751,6 +760,8 @@ async function selectDropdownOption(label: string | RegExp) {
 
 export function setupPoolMasterDataPageTestSuite() {
   beforeEach(() => {
+    setUiActionJournalEnabled(true)
+    clearUiActionJournal()
     mockListMasterDataParties.mockReset()
     mockUpsertMasterDataParty.mockReset()
     mockListMasterDataItems.mockReset()
@@ -1335,6 +1346,8 @@ export function setupPoolMasterDataPageTestSuite() {
     setIntervalSpy = null
     consoleErrorSpy?.mockRestore()
     consoleErrorSpy = null
+    setUiActionJournalEnabled(false)
+    clearUiActionJournal()
   })
 }
 
@@ -1364,6 +1377,55 @@ export function registerPoolMasterDataWorkspaceTests() {
   )
 
   it(
+    'captures explicit zone-switch intent and attributed route transitions in the UI journal',
+    async () => {
+      renderPage('/pools/master-data?tab=bindings')
+
+      expect(await screen.findByText('Current zone: Bindings')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+
+      await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+
+      const bundle = exportUiActionJournalBundle()
+      const routeIntent = [...bundle.events]
+        .reverse()
+        .find((event) => event.event_type === 'ui.action' && event.action_kind === 'route.change')
+      const attributedTransition = [...bundle.events]
+        .reverse()
+        .find((event) => event.event_type === 'route.transition' && event.write_reason === 'zone_switch')
+
+      expect(routeIntent).toMatchObject({
+        action_kind: 'route.change',
+        action_source: 'explicit',
+        surface_id: 'pool_master_data',
+        control_id: 'zone.sync',
+        context: {
+          from_tab: 'bindings',
+          to_tab: 'sync',
+          detail_before: false,
+          detail_after: true,
+        },
+      })
+      expect(attributedTransition).toMatchObject({
+        surface_id: 'pool_master_data',
+        route_writer_owner: 'pool_master_data_page',
+        write_reason: 'zone_switch',
+        navigation_mode: 'push',
+        param_diff: {
+          detail: { from: null, to: '1' },
+          tab: { from: 'bindings', to: 'sync' },
+        },
+      })
+      expect(attributedTransition).toMatchObject({
+        ui_action_id: routeIntent && 'ui_action_id' in routeIntent ? routeIntent.ui_action_id : undefined,
+        caused_by_ui_action_id: routeIntent && 'ui_action_id' in routeIntent ? routeIntent.ui_action_id : undefined,
+      })
+    },
+    HEAVY_ROUTE_TEST_TIMEOUT_MS,
+  )
+
+  it(
     'drops Sync launchId when switching to another workspace zone',
     async () => {
       renderPage('/pools/master-data?tab=sync&detail=1&databaseId=db-1&entityType=party&launchId=launch-1')
@@ -1376,6 +1438,45 @@ export function registerPoolMasterDataWorkspaceTests() {
       await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalled())
       await waitFor(() => expect(screen.getByTestId('pool-master-data-route-location')).not.toHaveTextContent('launchId='))
       expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent('/pools/master-data?tab=bindings&detail=1&databaseId=db-1&entityType=party')
+    },
+    HEAVY_ROUTE_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'emits a bounded route.loop_warning when workspace zones oscillate',
+    async () => {
+      renderPage('/pools/master-data?tab=bindings&detail=1')
+
+      expect(await screen.findByText('Current zone: Bindings')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+      await waitFor(() => expect(mockListMasterDataSyncStatus).toHaveBeenCalled())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Bindings zone' }))
+      await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalled())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Sync zone' }))
+      await waitFor(() => expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent('tab=sync'))
+
+      const bundle = exportUiActionJournalBundle()
+      const loopWarning = [...bundle.events]
+        .reverse()
+        .find((event) => event.event_type === 'route.loop_warning')
+
+      expect(loopWarning).toMatchObject({
+        route_path: '/pools/master-data',
+        surface_id: 'pool_master_data',
+        outcome: 'loop_warning',
+        oscillating_keys: ['tab'],
+        writer_owners: ['pool_master_data_page'],
+        transition_count: 4,
+      })
+      expect(loopWarning).toMatchObject({
+        observed_states: expect.arrayContaining([
+          expect.objectContaining({ detail: '1', tab: 'bindings' }),
+          expect.objectContaining({ detail: '1', tab: 'sync' }),
+        ]),
+      })
     },
     HEAVY_ROUTE_TEST_TIMEOUT_MS,
   )

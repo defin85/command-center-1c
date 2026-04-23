@@ -1073,14 +1073,14 @@ describe('PoolFactualPage', () => {
     await screen.findByText('Pool factual DB 1')
     expect(screen.getByText('Error POOL_FACTUAL_SCOPE_GL_ACCOUNT_BINDING_MISSING')).toBeInTheDocument()
     expect(screen.getByText('Fix GL Account coverage in Bindings')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open workflow execution execution-failed-1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open operation monitor operation-failed-1' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Open GL Account bindings' }))
     await waitFor(() => {
       expect(screen.getByTestId('pool-factual-location')).toHaveTextContent(
         '/pools/master-data?tab=bindings&entityType=gl_account&databaseId=database-1'
       )
     })
-    expect(screen.getByRole('button', { name: 'Open workflow execution execution-failed-1' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Open operation monitor operation-failed-1' })).toBeInTheDocument()
   })
 
   it('lets the operator trigger a shipped factual refresh path from the workspace', async () => {

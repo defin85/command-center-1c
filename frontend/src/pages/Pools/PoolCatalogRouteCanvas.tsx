@@ -2193,22 +2193,23 @@ export function PoolCatalogPage() {
   }, [graphDateFromUrl])
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams)
+    const next = new URLSearchParams()
 
-    if (selectedPoolId !== undefined) {
-      if (selectedPoolId) {
-        next.set('pool_id', selectedPoolId)
-      } else {
-        next.delete('pool_id')
-      }
+    if (selectedPoolId !== undefined && selectedPoolId) {
+      next.set('pool_id', selectedPoolId)
     }
 
     next.set('tab', activeWorkspaceTab)
 
     if (graphDate.trim()) {
       next.set('date', graphDate.trim())
-    } else {
-      next.delete('date')
+    }
+
+    for (const [key, value] of searchParams.entries()) {
+      if (key === 'pool_id' || key === 'tab' || key === 'date') {
+        continue
+      }
+      next.append(key, value)
     }
 
     if (next.toString() !== searchParams.toString()) {

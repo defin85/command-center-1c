@@ -17,6 +17,7 @@ const productionTrackUiActionFiles = [
   'src/pages/Decisions/DecisionEditorPanel.tsx',
   'src/pages/Decisions/DecisionLegacyImportPanel.tsx',
   'src/pages/Pools/PoolCatalogRouteCanvas.tsx',
+  'src/pages/Pools/PoolMasterDataPage.tsx',
   'src/pages/Settings/RuntimeSettingsPage.tsx',
 ]
 

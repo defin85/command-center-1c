@@ -18,6 +18,7 @@ import {
 } from '../../../api/intercompanyPools'
 import { JsonBlock } from '../../../components/platform'
 import { usePoolsTranslation } from '../../../i18n'
+import { buildUiRouteParamDiff, queueUiRouteWrite } from '../../../observability/uiActionJournal'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { getDedupeEntityOptions, getRegistryEntityLabel } from './registry'
@@ -133,6 +134,22 @@ export function DedupeReviewTab({ registryEntries }: DedupeReviewTabProps) {
 
   useEffect(() => {
     if (syncRouteContext.toString() !== searchParams.toString()) {
+      const paramDiff = buildUiRouteParamDiff(searchParams, syncRouteContext)
+      const diffKeys = Object.keys(paramDiff)
+      const writeReason = diffKeys.includes('reviewItemId')
+        ? 'review_selection_sync'
+        : diffKeys.includes('clusterId')
+          ? 'cluster_context_sync'
+          : diffKeys.includes('databaseId') || diffKeys.includes('entityType')
+            ? 'dedupe_filter_sync'
+            : 'dedupe_state_sync'
+      queueUiRouteWrite({
+        surfaceId: 'pool_master_data',
+        routeWriterOwner: 'dedupe_review_tab',
+        writeReason,
+        navigationMode: 'replace',
+        paramDiff,
+      })
       setSearchParams(syncRouteContext, { replace: true })
     }
   }, [searchParams, setSearchParams, syncRouteContext])

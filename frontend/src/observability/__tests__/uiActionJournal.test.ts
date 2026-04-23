@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   __TESTING__,
+  buildUiRouteParamDiff,
   captureUiRouteTransition,
   clearUiActionJournal,
   completeUiHttpRequest,
   exportUiActionJournalBundle,
+  queueUiRouteWrite,
   recordUiErrorBoundary,
   recordUiWebSocketLifecycle,
   setUiActionJournalEnabled,
@@ -276,6 +278,75 @@ describe('uiActionJournal', () => {
       request_id: request.requestId,
       ui_action_id: request.uiActionId,
       latency_ms: 2_500,
+    })
+  })
+
+  it('captures attributed route transitions and emits a bounded route loop warning', () => {
+    captureUiRouteTransition({
+      pathname: '/pools/master-data',
+      search: '?tab=bindings&detail=1',
+      hash: '',
+    })
+
+    const switchZone = (toTab: 'bindings' | 'sync') => {
+      const currentSearch = exportUiActionJournalBundle().route.search
+      const nextSearch = `?tab=${toTab}&detail=1`
+      trackUiAction({
+        actionKind: 'route.change',
+        actionName: `Open ${toTab} zone`,
+        surfaceId: 'pool_master_data',
+        controlId: `zone.${toTab}`,
+        context: {
+          from_tab: currentSearch.includes('tab=sync') ? 'sync' : 'bindings',
+          to_tab: toTab,
+          detail_before: true,
+          detail_after: true,
+        },
+      }, ({ uiActionId }) => {
+        queueUiRouteWrite({
+          surfaceId: 'pool_master_data',
+          routeWriterOwner: 'pool_master_data_page',
+          writeReason: 'zone_switch',
+          navigationMode: 'push',
+          paramDiff: buildUiRouteParamDiff(currentSearch, nextSearch),
+          causedByUiActionId: uiActionId,
+        })
+        captureUiRouteTransition({
+          pathname: '/pools/master-data',
+          search: nextSearch,
+          hash: '',
+        })
+      })
+    }
+
+    switchZone('sync')
+    switchZone('bindings')
+    switchZone('sync')
+
+    const bundle = exportUiActionJournalBundle()
+    const attributedTransition = [...bundle.events]
+      .reverse()
+      .find((event) => event.event_type === 'route.transition' && event.write_reason === 'zone_switch')
+    const loopWarning = [...bundle.events]
+      .reverse()
+      .find((event) => event.event_type === 'route.loop_warning')
+
+    expect(attributedTransition).toMatchObject({
+      surface_id: 'pool_master_data',
+      route_writer_owner: 'pool_master_data_page',
+      write_reason: 'zone_switch',
+      navigation_mode: 'push',
+      param_diff: {
+        tab: { from: 'bindings', to: 'sync' },
+      },
+    })
+    expect(loopWarning).toMatchObject({
+      route_path: '/pools/master-data',
+      surface_id: 'pool_master_data',
+      oscillating_keys: ['tab'],
+      writer_owners: ['pool_master_data_page'],
+      transition_count: 4,
+      outcome: 'loop_warning',
     })
   })
 })

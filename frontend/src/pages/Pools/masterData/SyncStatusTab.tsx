@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createPoolMasterDataSyncLaunch, getPoolMasterDataSyncLaunch, listMasterDataSyncConflicts, listMasterDataSyncStatus, listPoolMasterDataSyncLaunches, listPoolTargetClusters, listPoolTargetDatabases, reconcileMasterDataSyncConflict, resolveMasterDataSyncConflict, retryMasterDataSyncConflict, type PoolMasterDataRegistryEntry, type PoolMasterDataSyncConflict, type PoolMasterDataSyncDeadlineState, type PoolMasterDataSyncLaunch, type PoolMasterDataSyncLaunchItem, type PoolMasterDataSyncLaunchMode, type PoolMasterDataSyncPriority, type PoolMasterDataSyncRole, type PoolMasterDataSyncStatus } from '../../../api/intercompanyPools'
 import { usePoolsTranslation } from '../../../i18n'
+import { buildUiRouteParamDiff, queueUiRouteWrite } from '../../../observability/uiActionJournal'
 import { resolveApiError } from './errorUtils'
 import { formatDateTime } from './formatters'
 import { findRegistryEntryByEntityType, getSyncEntityOptions } from './registry'
@@ -201,7 +202,10 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   }, [clusters])
 
   const updateRouteParams = useCallback(
-    (updates: Record<string, string | null | undefined>) => {
+    (
+      updates: Record<string, string | null | undefined>,
+      writeReason = 'sync_route_state_change',
+    ) => {
       setSearchParams(
         (current) => {
           const next = new URLSearchParams(current)
@@ -212,6 +216,17 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             } else {
               next.delete(key)
             }
+          })
+          const paramDiff = buildUiRouteParamDiff(current, next)
+          if (Object.keys(paramDiff).length === 0) {
+            return current
+          }
+          queueUiRouteWrite({
+            surfaceId: 'pool_master_data',
+            routeWriterOwner: 'sync_status_tab',
+            writeReason,
+            navigationMode: 'replace',
+            paramDiff,
           })
           return next
         },
@@ -311,7 +326,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       if (!selectedLaunchId && response.launches.length > 0) {
         const nextId = response.launches[0].id
         setSelectedLaunchId(nextId)
-        updateRouteParams({ launchId: nextId })
+        updateRouteParams({ launchId: nextId }, 'launch_autoselect')
       }
       clearLoadDiagnostic('launches')
     } catch (error) {
@@ -443,7 +458,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
   const handleSelectLaunch = useCallback(
     (launchId: string) => {
       setSelectedLaunchId(launchId)
-      updateRouteParams({ launchId })
+      updateRouteParams({ launchId }, 'launch_select')
     },
     [updateRouteParams],
   )
@@ -459,7 +474,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
         databaseId: item.database_id,
         entityType: item.entity_type,
         launchId: selectedLaunchId,
-      })
+      }, target === 'conflicts' ? 'launch_conflict_handoff' : 'launch_status_handoff')
     },
     [selectedLaunchId, updateRouteParams],
   )
@@ -469,7 +484,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
       const response = await createPoolMasterDataSyncLaunch(payload)
       setDrawerOpen(false)
       setSelectedLaunchId(response.launch.id)
-      updateRouteParams({ launchId: response.launch.id })
+      updateRouteParams({ launchId: response.launch.id }, 'launch_created')
       message.success(t('masterData.syncStatusTab.messages.launchCreated'))
       await Promise.all([loadLaunches(), loadLaunchDetail(response.launch.id)])
     },
@@ -874,7 +889,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             }))}
             onChange={(value) => {
               setDatabaseId(value)
-              updateRouteParams({ databaseId: value, entityType })
+              updateRouteParams({ databaseId: value, entityType }, 'database_filter_change')
             }}
             style={{ width: 280 }}
           />
@@ -886,7 +901,7 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
             options={filterEntityTypeOptions}
             onChange={(value) => {
               setEntityType(value)
-              updateRouteParams({ databaseId, entityType: value })
+              updateRouteParams({ databaseId, entityType: value }, 'entity_filter_change')
             }}
             style={{ width: 180 }}
           />

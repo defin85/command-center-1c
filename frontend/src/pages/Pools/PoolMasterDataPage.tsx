@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import { usePoolsTranslation } from '../../i18n'
 import { getPoolMasterDataRegistry, type PoolMasterDataRegistryEntry } from '../../api/intercompanyPools'
+import { buildUiRouteParamDiff, queueUiRouteWrite, trackUiAction } from '../../observability/uiActionJournal'
 import {
   EntityDetails,
   EntityList,
@@ -146,6 +147,10 @@ export function PoolMasterDataPage() {
   const { t, ready } = usePoolsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
+  const pendingRouteWriteRef = useRef<{
+    causedByUiActionId?: string
+    writeReason: string
+  } | null>(null)
   const activeTabFromUrl = normalizeMasterDataTab(searchParams.get('tab'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
   const [activeTab, setActiveTab] = useState<MasterDataTabKey>(activeTabFromUrl)
@@ -176,7 +181,18 @@ export function PoolMasterDataPage() {
       next.delete('detail')
     }
 
-    if (next.toString() !== searchParams.toString()) {
+    const nextSearch = next.toString()
+    const currentSearch = searchParams.toString()
+    if (nextSearch !== currentSearch) {
+      const pendingRouteWrite = pendingRouteWriteRef.current
+      queueUiRouteWrite({
+        surfaceId: 'pool_master_data',
+        routeWriterOwner: 'pool_master_data_page',
+        writeReason: pendingRouteWrite?.writeReason ?? 'workspace_state_sync',
+        navigationMode: routeUpdateModeRef.current,
+        paramDiff: buildUiRouteParamDiff(searchParams, next),
+        causedByUiActionId: pendingRouteWrite?.causedByUiActionId,
+      })
       setSearchParams(
         next,
         routeUpdateModeRef.current === 'replace'
@@ -184,6 +200,7 @@ export function PoolMasterDataPage() {
           : undefined
       )
     }
+    pendingRouteWriteRef.current = null
     routeUpdateModeRef.current = 'replace'
   }, [activeTab, isDetailOpen, searchParams, setSearchParams])
 
@@ -283,6 +300,9 @@ export function PoolMasterDataPage() {
         detailOpen={isDetailOpen}
         onCloseDetail={() => {
           routeUpdateModeRef.current = 'push'
+          pendingRouteWriteRef.current = {
+            writeReason: 'detail_close',
+          }
           setIsDetailOpen(false)
         }}
         detailDrawerTitle={t('masterData.page.detailDrawerTitle', { zone: selectedZone.label })}
@@ -298,9 +318,31 @@ export function PoolMasterDataPage() {
                   key={zone.key}
                   type="button"
                   onClick={() => {
-                    routeUpdateModeRef.current = 'push'
-                    setActiveTab(zone.key)
-                    setIsDetailOpen(true)
+                    if (zone.key === activeTab && isDetailOpen) {
+                      return
+                    }
+
+                    trackUiAction({
+                      actionKind: 'route.change',
+                      actionName: t('masterData.list.openZone', { zone: zone.label }),
+                      actionSource: 'explicit',
+                      surfaceId: 'pool_master_data',
+                      controlId: `zone.${zone.key}`,
+                      context: {
+                        from_tab: activeTab,
+                        to_tab: zone.key,
+                        detail_before: isDetailOpen,
+                        detail_after: true,
+                      },
+                    }, ({ uiActionId }) => {
+                      routeUpdateModeRef.current = 'push'
+                      pendingRouteWriteRef.current = {
+                        causedByUiActionId: uiActionId,
+                        writeReason: 'zone_switch',
+                      }
+                      setActiveTab(zone.key)
+                      setIsDetailOpen(true)
+                    })
                   }}
                   aria-label={t('masterData.list.openZone', { zone: zone.label })}
                   aria-pressed={selected}

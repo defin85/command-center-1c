@@ -4,8 +4,11 @@ import { queryKeys } from '../../api/queries/queryKeys'
 import { queryClient, resetQueryClient } from '../../lib/queryClient'
 import {
   captureUiRouteTransition,
+  buildUiRouteParamDiff,
   clearUiActionJournal,
   completeUiHttpRequest,
+  exportUiActionJournalBundle,
+  queueUiRouteWrite,
   recordUiErrorBoundary,
   recordUiWebSocketLifecycle,
   setUiActionJournalEnabled,
@@ -129,6 +132,62 @@ describe('uiIncidentTelemetry', () => {
       'ui.action',
       'http.request.failure',
     ])
+  })
+
+  it('persists route.loop_warning in durable telemetry batches', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 202 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    captureUiRouteTransition({
+      pathname: '/pools/master-data',
+      search: '?tab=bindings&detail=1',
+      hash: '',
+    })
+
+    const exportBundleRouteSearch = () => exportUiActionJournalBundle().route.search
+
+    const switchZone = (toTab: 'bindings' | 'sync') => {
+      const current = exportBundleRouteSearch()
+      const next = `?tab=${toTab}&detail=1`
+      trackUiAction({
+        actionKind: 'route.change',
+        actionName: `Open ${toTab} zone`,
+        surfaceId: 'pool_master_data',
+        controlId: `zone.${toTab}`,
+        context: {
+          from_tab: current.includes('tab=sync') ? 'sync' : 'bindings',
+          to_tab: toTab,
+          detail_before: true,
+          detail_after: true,
+        },
+      }, ({ uiActionId }) => {
+        queueUiRouteWrite({
+          surfaceId: 'pool_master_data',
+          routeWriterOwner: 'pool_master_data_page',
+          writeReason: 'zone_switch',
+          navigationMode: 'push',
+          paramDiff: buildUiRouteParamDiff(current, next),
+          causedByUiActionId: uiActionId,
+        })
+        captureUiRouteTransition({
+          pathname: '/pools/master-data',
+          search: next,
+          hash: '',
+        })
+      })
+    }
+
+    switchZone('sync')
+    switchZone('bindings')
+    switchZone('sync')
+
+    await vi.advanceTimersByTimeAsync(__TESTING__.FLUSH_INTERVAL_MS)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const request = getFetchRequestInit(fetchMock)
+    const payload = JSON.parse(String(request?.body))
+
+    expect(payload.events.some((event: { event_type: string }) => event.event_type === 'route.loop_warning')).toBe(true)
   })
 
   it('retries failed batches and uses keepalive for pagehide flush', async () => {

@@ -103,6 +103,26 @@ def _event(
             "action_name": "Create pool run",
             "ui_action_id": ui_action_id,
         })
+    if event_type == "route.transition":
+        payload.update({
+            "ui_action_id": ui_action_id,
+            "surface_id": "pool_master_data",
+            "route_writer_owner": "pool_master_data_page",
+            "write_reason": "zone_switch",
+            "navigation_mode": "push",
+            "param_diff": {"tab": {"from": "bindings", "to": "sync"}},
+            "caused_by_ui_action_id": ui_action_id,
+        })
+    if event_type == "route.loop_warning":
+        payload.update({
+            "ui_action_id": ui_action_id,
+            "surface_id": "pool_master_data",
+            "route_path": "/pools/master-data",
+            "oscillating_keys": ["tab"],
+            "writer_owners": ["pool_master_data_page"],
+            "transition_count": 4,
+            "window_ms": 1800,
+        })
     if event_type == "http.request.failure":
         payload.update({
             "request_id": request_id,
@@ -150,6 +170,12 @@ def test_ingest_ui_incident_telemetry_stores_redacted_events_and_is_duplicate_sa
         },
         "events": [
             _event(
+                event_id="evt-0",
+                event_type="route.transition",
+                occurred_at="2026-04-19T11:59:58Z",
+                ui_action_id="uia-1",
+            ),
+            _event(
                 event_id="evt-1",
                 event_type="ui.action",
                 occurred_at="2026-04-19T12:00:00Z",
@@ -168,6 +194,12 @@ def test_ingest_ui_incident_telemetry_stores_redacted_events_and_is_duplicate_sa
                 occurred_at="2026-04-19T12:00:06Z",
                 ui_action_id="uia-1",
             ),
+            _event(
+                event_id="evt-4",
+                event_type="route.loop_warning",
+                occurred_at="2026-04-19T12:00:07Z",
+                ui_action_id="uia-1",
+            ),
         ],
     }
 
@@ -181,16 +213,18 @@ def test_ingest_ui_incident_telemetry_stores_redacted_events_and_is_duplicate_sa
     )
 
     assert response.status_code == 202
-    assert response.data["accepted_events"] == 3
+    assert response.data["accepted_events"] == 5
     assert response.data["duplicate"] is False
     assert UiIncidentTelemetryBatch.objects.count() == 1
-    assert UiIncidentTelemetryEvent.objects.count() == 3
+    assert UiIncidentTelemetryEvent.objects.count() == 5
 
-    event = UiIncidentTelemetryEvent.objects.get(event_id="evt-3")
+    event = UiIncidentTelemetryEvent.objects.get(event_id="evt-4")
     assert event.actor_user_id == member_user.id
     assert event.actor_username == member_user.username
     assert event.route_path == "/pools/runs"
     assert event.route_context == {"tab": "create"}
+    assert event.payload["surface_id"] == "pool_master_data"
+    assert event.payload["writer_owners"] == ["pool_master_data_page"]
     assert "super-secret" not in str(event.payload)
     assert "should-not-store" not in str(event.payload)
     assert "secret-value" not in str(event.payload)
@@ -205,7 +239,7 @@ def test_ingest_ui_incident_telemetry_stores_redacted_events_and_is_duplicate_sa
     assert duplicate_response.status_code == 202
     assert duplicate_response.data["duplicate"] is True
     assert UiIncidentTelemetryBatch.objects.count() == 1
-    assert UiIncidentTelemetryEvent.objects.count() == 3
+    assert UiIncidentTelemetryEvent.objects.count() == 5
 
 
 @pytest.mark.django_db
@@ -238,13 +272,20 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
         actor_username=member_user.username,
         session_id="session-summary",
         event_id="evt-summary",
-        event_type="http.request.failure",
+        event_type="route.loop_warning",
         occurred_at=occurred_at,
-        route_path="/pools/runs",
-        request_id="req-summary",
+        route_path="/pools/master-data",
         ui_action_id="uia-summary",
         trace_id="trace-summary",
-        payload={"error_code": "POOL_RUN_FAILED"},
+        payload={
+            "surface_id": "pool_master_data",
+            "route_writer_owner": "pool_master_data_page",
+            "write_reason": "zone_switch",
+            "oscillating_keys": ["tab"],
+            "writer_owners": ["pool_master_data_page"],
+            "transition_count": 4,
+            "window_ms": 1800,
+        },
     )
 
     forbidden = member_client.get(
@@ -264,11 +305,20 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
 
     assert response.status_code == 200
     assert response.data["count"] == 1
-    assert response.data["incidents"][0]["request_id"] == "req-summary"
+    assert response.data["incidents"][0]["request_id"] is None
     assert response.data["incidents"][0]["trace_id"] == "trace-summary"
     assert response.data["incidents"][0]["actor_username"] == member_user.username
     assert response.data["incidents"][0]["release"]["fingerprint"] == "frontend@2026.04.19+42"
-    assert response.data["incidents"][0]["signal_event_types"] == ["http.request.failure"]
+    assert response.data["incidents"][0]["signal_event_types"] == ["route.loop_warning"]
+    assert response.data["incidents"][0]["preview"] == {
+        "surface_id": "pool_master_data",
+        "route_writer_owner": "pool_master_data_page",
+        "write_reason": "zone_switch",
+        "oscillating_keys": ["tab"],
+        "writer_owners": ["pool_master_data_page"],
+        "transition_count": 4,
+        "window_ms": 1800,
+    }
 
 
 @pytest.mark.django_db
@@ -288,9 +338,9 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
         release_app="commandcenter1c-frontend",
         release_fingerprint="frontend@2026.04.19+99",
         release_mode="prod",
-        accepted_event_count=4,
+        accepted_event_count=5,
         first_occurred_at=started_at,
-        last_occurred_at=started_at + timedelta(seconds=6),
+        last_occurred_at=started_at + timedelta(seconds=7),
     )
     UiIncidentTelemetryEvent.objects.bulk_create([
         UiIncidentTelemetryEvent(
@@ -303,7 +353,17 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
             event_type="route.transition",
             occurred_at=started_at,
             route_path="/pools/runs",
-            payload={"outcome": "navigated"},
+            ui_action_id="uia-timeline",
+            trace_id="trace-timeline",
+            payload={
+                "outcome": "navigated",
+                "surface_id": "pool_master_data",
+                "route_writer_owner": "pool_master_data_page",
+                "write_reason": "zone_switch",
+                "navigation_mode": "push",
+                "param_diff": {"tab": {"from": "bindings", "to": "sync"}},
+                "caused_by_ui_action_id": "uia-timeline",
+            },
         ),
         UiIncidentTelemetryEvent(
             tenant=tenant,
@@ -348,6 +408,26 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
             trace_id="trace-timeline",
             payload={"error_message": "render failed"},
         ),
+        UiIncidentTelemetryEvent(
+            tenant=tenant,
+            batch=batch,
+            actor_user=member_user,
+            actor_username=member_user.username,
+            session_id="session-timeline",
+            event_id="evt-loop",
+            event_type="route.loop_warning",
+            occurred_at=started_at + timedelta(seconds=7),
+            route_path="/pools/runs",
+            ui_action_id="uia-timeline",
+            trace_id="trace-timeline",
+            payload={
+                "surface_id": "pool_master_data",
+                "oscillating_keys": ["tab"],
+                "writer_owners": ["pool_master_data_page"],
+                "transition_count": 4,
+                "window_ms": 1800,
+            },
+        ),
     ])
 
     response = staff_client.get(
@@ -362,9 +442,12 @@ def test_recent_ui_incident_timeline_expands_around_request_correlation(
         "evt-action",
         "evt-failure",
         "evt-error",
+        "evt-loop",
     ]
     assert response.data["timeline"][1]["trace_id"] == "trace-timeline"
     assert response.data["timeline"][1]["release"]["fingerprint"] == "frontend@2026.04.19+99"
+    assert response.data["timeline"][0]["payload"]["route_writer_owner"] == "pool_master_data_page"
+    assert response.data["timeline"][4]["payload"]["oscillating_keys"] == ["tab"]
 
 
 @pytest.mark.django_db

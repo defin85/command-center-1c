@@ -84,17 +84,26 @@ class UiIncidentReleaseSerializer(serializers.Serializer):
 class UiIncidentSummaryPreviewSerializer(serializers.Serializer):
     action_kind = serializers.CharField(required=False, allow_null=True)
     action_name = serializers.CharField(required=False, allow_null=True)
+    control_id = serializers.CharField(required=False, allow_null=True)
     error_code = serializers.CharField(required=False, allow_null=True)
     error_title = serializers.CharField(required=False, allow_null=True)
     error_name = serializers.CharField(required=False, allow_null=True)
     error_message = serializers.CharField(required=False, allow_null=True)
+    navigation_mode = serializers.CharField(required=False, allow_null=True)
     outcome = serializers.CharField(required=False, allow_null=True)
+    oscillating_keys = serializers.ListField(child=serializers.CharField(), required=False)
     status = serializers.IntegerField(required=False, allow_null=True)
     latency_ms = serializers.IntegerField(required=False, allow_null=True)
     method = serializers.CharField(required=False, allow_null=True)
     path = serializers.CharField(required=False, allow_null=True)
     owner = serializers.CharField(required=False, allow_null=True)
+    route_writer_owner = serializers.CharField(required=False, allow_null=True)
     reuse_key = serializers.CharField(required=False, allow_null=True)
+    surface_id = serializers.CharField(required=False, allow_null=True)
+    transition_count = serializers.IntegerField(required=False, allow_null=True)
+    window_ms = serializers.IntegerField(required=False, allow_null=True)
+    write_reason = serializers.CharField(required=False, allow_null=True)
+    writer_owners = serializers.ListField(child=serializers.CharField(), required=False)
 
 
 class UiIncidentSummarySerializer(serializers.Serializer):

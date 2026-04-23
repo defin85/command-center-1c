@@ -15,6 +15,7 @@ export type RouteSnapshot = {
 
 type ActionSource = 'explicit' | 'navigation' | 'synthetic_request'
 type ActionKind =
+  | 'route.change'
   | 'route.navigate'
   | 'modal.submit'
   | 'modal.confirm'
@@ -34,6 +35,26 @@ type ActionEvent = {
   action_kind: ActionKind
   action_name: string
   action_source: ActionSource
+  surface_id?: string
+  control_id?: string
+}
+
+export type UiRouteParamDiffEntry = {
+  from: PrimitiveValue | null
+  to: PrimitiveValue | null
+}
+
+type UiRouteParamDiff = Record<string, UiRouteParamDiffEntry>
+
+type RouteNavigationMode = 'push' | 'replace'
+
+type RouteWriteAttribution = {
+  surface_id?: string
+  route_writer_owner?: string
+  write_reason?: string
+  navigation_mode?: RouteNavigationMode
+  param_diff?: UiRouteParamDiff
+  caused_by_ui_action_id?: string
 }
 
 type RouteEvent = {
@@ -42,7 +63,25 @@ type RouteEvent = {
   occurred_at: string
   route: RouteSnapshot
   context: Record<string, PrimitiveValue>
+  ui_action_id?: string
   outcome: 'navigated'
+} & RouteWriteAttribution
+
+type RouteLoopWarningEvent = {
+  event_id: string
+  event_type: 'route.loop_warning'
+  occurred_at: string
+  route: RouteSnapshot
+  context: Record<string, PrimitiveValue>
+  ui_action_id?: string
+  outcome: 'loop_warning'
+  route_path: string
+  surface_id?: string
+  oscillating_keys: string[]
+  observed_states: Record<string, PrimitiveValue>[]
+  writer_owners: string[]
+  transition_count: number
+  window_ms: number
 }
 
 type HttpFailureEvent = {
@@ -93,7 +132,13 @@ type WebSocketEvent = {
   reconnect_attempt?: number
 }
 
-export type UiJournalEvent = RouteEvent | ActionEvent | HttpFailureEvent | UiErrorEvent | WebSocketEvent
+export type UiJournalEvent =
+  | RouteEvent
+  | RouteLoopWarningEvent
+  | ActionEvent
+  | HttpFailureEvent
+  | UiErrorEvent
+  | WebSocketEvent
 type UiJournalListener = (event: UiJournalEvent) => void
 
 type ActiveActionContext = {
@@ -103,6 +148,8 @@ type ActiveActionContext = {
   action_source: ActionSource
   route: RouteSnapshot
   context: Record<string, PrimitiveValue>
+  surface_id?: string
+  control_id?: string
   timeout_id: ReturnType<typeof setTimeout> | null
   settle_token: { canceled: boolean } | null
 }
@@ -150,6 +197,8 @@ type UiActionMeta = {
   actionName?: string
   actionSource?: ActionSource
   context?: Record<string, unknown>
+  surfaceId?: string
+  controlId?: string
 }
 
 type StartHttpRequestInput = {
@@ -177,6 +226,35 @@ type WebSocketLifecycleInput = {
   closeCode?: number
   closeReason?: string
   reconnectAttempt?: number
+}
+
+type UiRouteWriteMeta = {
+  surfaceId?: string
+  routeWriterOwner: string
+  writeReason: string
+  navigationMode?: RouteNavigationMode
+  paramDiff?: Record<string, { from?: unknown; to?: unknown }>
+  causedByUiActionId?: string | null
+}
+
+type PendingRouteWrite = {
+  queued_at_ms: number
+  surface_id?: string
+  route_writer_owner: string
+  write_reason: string
+  navigation_mode: RouteNavigationMode
+  param_diff?: UiRouteParamDiff
+  caused_by_ui_action_id?: string
+}
+
+type RecentRouteTransition = {
+  occurred_at_ms: number
+  route_path: string
+  surface_id?: string
+  route_state: Record<string, PrimitiveValue>
+  route_state_signature: string
+  writer_owner?: string
+  ui_action_id?: string
 }
 
 type WindowGlobalJournalApi = {
@@ -214,27 +292,49 @@ export type UiJournalBundle = {
 
 const JOURNAL_MAX_EVENTS = 240
 const ACTION_TTL_MS = 15_000
+const ROUTE_WRITE_TTL_MS = 5_000
 const SLOW_REQUEST_THRESHOLD_MS = 2_000
 const WEBSOCKET_CHURN_WINDOW_MS = 60_000
 const WEBSOCKET_CHURN_THRESHOLD = 3
+const ROUTE_LOOP_WINDOW_MS = 8_000
+const ROUTE_LOOP_MIN_TRANSITIONS = 4
+const ROUTE_LOOP_HISTORY_MAX = 32
 const ACTION_CONTEXT_ALLOWLIST = new Set([
+  'canonical_id',
+  'cluster_id',
+  'control_id',
+  'database_id',
+  'detail_after',
+  'detail_before',
+  'entity_type',
+  'from_tab',
+  'launch_id',
   'manual_operation',
   'next_is_active',
   'node_type',
+  'review_item_id',
+  'surface_id',
+  'to_tab',
 ])
 const ROUTE_CONTEXT_ALLOWLIST = new Set([
   'artifact',
   'batch',
   'binding',
   'cluster',
+  'clusterid',
   'context',
+  'control',
+  'canonicalid',
   'database',
+  'databaseid',
   'detail',
   'direction',
   'edge',
+  'entitytype',
   'execution',
   'execution_id',
   'focus',
+  'launchid',
   'mode',
   'operation',
   'organization',
@@ -252,7 +352,18 @@ const ROUTE_CONTEXT_ALLOWLIST = new Set([
   'user',
   'view',
   'workflow',
+  'reviewitemid',
 ])
+const ROUTE_LOOP_KEY_ALLOWLIST = [
+  'canonicalId',
+  'clusterId',
+  'databaseId',
+  'detail',
+  'entityType',
+  'launchId',
+  'reviewItemId',
+  'tab',
+] as const
 const SENSITIVE_KEY_PATTERN = /(auth|authorization|cookie|csrf|passwd|password|secret|session|token)/i
 const SECRET_VALUE_PATTERN = /\b(password|passwd|pwd|token|authorization|secret|cookie)\b[:=]\s*([^\s,;]+)/gi
 const DEFAULT_RELEASE_FINGERPRINT = '0.0.0+unknown'
@@ -310,6 +421,19 @@ const isPrimitiveValue = (value: unknown): value is PrimitiveValue => (
     || typeof value === 'boolean'
 )
 
+const sanitizePrimitiveValue = (value: unknown, maxLength = 160): PrimitiveValue | undefined => {
+  if (value === null) {
+    return null
+  }
+  if (typeof value === 'string') {
+    return sanitizeString(value, maxLength)
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value
+  }
+  return undefined
+}
+
 const isRouteContextKeyAllowed = (key: string): boolean => {
   const normalized = key.trim().toLowerCase()
   if (!normalized || SENSITIVE_KEY_PATTERN.test(normalized)) {
@@ -354,6 +478,113 @@ const sanitizeContextRecord = (value: Record<string, unknown> | undefined): Reco
   }
   return normalized
 }
+
+const normalizeSearchParamsInput = (
+  value: URLSearchParams | string,
+): URLSearchParams => (
+  value instanceof URLSearchParams
+    ? new URLSearchParams(value)
+    : new URLSearchParams(value.startsWith('?') ? value.slice(1) : value)
+)
+
+const buildRouteParamDiff = (
+  current: URLSearchParams | string,
+  next: URLSearchParams | string,
+): UiRouteParamDiff => {
+  const currentParams = normalizeSearchParamsInput(current)
+  const nextParams = normalizeSearchParamsInput(next)
+  const keys = new Set<string>([...currentParams.keys(), ...nextParams.keys()])
+  const diff: UiRouteParamDiff = {}
+
+  for (const key of keys) {
+    if (!isRouteContextKeyAllowed(key)) {
+      continue
+    }
+    const from = sanitizePrimitiveValue(currentParams.get(key), 120) ?? null
+    const to = sanitizePrimitiveValue(nextParams.get(key), 120) ?? null
+    if (from === to) {
+      continue
+    }
+    diff[key] = { from, to }
+  }
+
+  return diff
+}
+
+const sanitizeRouteParamDiff = (
+  value: Record<string, { from?: unknown; to?: unknown }> | undefined,
+): UiRouteParamDiff | undefined => {
+  if (!value) {
+    return undefined
+  }
+
+  const normalized: UiRouteParamDiff = {}
+  for (const [key, rawEntry] of Object.entries(value)) {
+    if (!isRouteContextKeyAllowed(key) || !rawEntry || typeof rawEntry !== 'object') {
+      continue
+    }
+    const from = sanitizePrimitiveValue(rawEntry.from, 120) ?? null
+    const to = sanitizePrimitiveValue(rawEntry.to, 120) ?? null
+    if (from === to) {
+      continue
+    }
+    normalized[key] = { from, to }
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined
+}
+
+const sanitizeRouteWriteMeta = (
+  meta: UiRouteWriteMeta,
+  fallbackActionId: string | null,
+): PendingRouteWrite | null => {
+  const routeWriterOwner = sanitizeString(meta.routeWriterOwner, 120)
+  const writeReason = sanitizeString(meta.writeReason, 120)
+  if (!routeWriterOwner || !writeReason) {
+    return null
+  }
+
+  return {
+    queued_at_ms: Date.now(),
+    surface_id: sanitizeString(meta.surfaceId, 120),
+    route_writer_owner: routeWriterOwner,
+    write_reason: writeReason,
+    navigation_mode: meta.navigationMode === 'push' ? 'push' : 'replace',
+    param_diff: sanitizeRouteParamDiff(meta.paramDiff),
+    caused_by_ui_action_id: sanitizeString(meta.causedByUiActionId ?? fallbackActionId, 160),
+  }
+}
+
+const pickRouteLoopState = (route: RouteSnapshot): Record<string, PrimitiveValue> => {
+  const state: Record<string, PrimitiveValue> = {}
+  for (const key of ROUTE_LOOP_KEY_ALLOWLIST) {
+    const value = route.context[key]
+    if (value !== undefined) {
+      state[key] = value
+    }
+  }
+  return state
+}
+
+const stableSerializePrimitiveRecord = (value: Record<string, PrimitiveValue>): string => (
+  JSON.stringify(
+    Object.keys(value)
+      .sort()
+      .reduce<Record<string, PrimitiveValue>>((acc, key) => {
+        acc[key] = value[key]
+        return acc
+      }, {}),
+  )
+)
+
+const collectRouteStateDiffKeys = (
+  first: Record<string, PrimitiveValue>,
+  second: Record<string, PrimitiveValue>,
+): string[] => (
+  Array.from(new Set([...Object.keys(first), ...Object.keys(second)]))
+    .filter((key) => first[key] !== second[key])
+    .sort()
+)
 
 const collectAllowedRouteParams = (
   rawValue: string,
@@ -441,6 +672,9 @@ class UiActionJournal {
   private lastRouteSignature = ''
   private readonly activeActions: ActiveActionContext[] = []
   private currentExecutionActionId: string | null = null
+  private pendingRouteWrite: PendingRouteWrite | null = null
+  private readonly recentRouteTransitions: RecentRouteTransition[] = []
+  private readonly recentRouteLoopWarnings = new Map<string, number>()
 
   constructor() {
     this.installWindowApi()
@@ -486,25 +720,39 @@ class UiActionJournal {
 
     this.lastRouteSignature = signature
     this.currentRoute = route
-    this.pushEvent({
+    const occurredAt = nowIso()
+    const pendingRouteWrite = this.consumePendingRouteWrite()
+    const routeEvent: RouteEvent = {
       event_id: generateRuntimeId('evt'),
       event_type: 'route.transition',
-      occurred_at: nowIso(),
+      occurred_at: occurredAt,
       route,
       context: route.context,
+      ui_action_id: pendingRouteWrite?.caused_by_ui_action_id,
       outcome: 'navigated',
-    })
+      surface_id: pendingRouteWrite?.surface_id,
+      route_writer_owner: pendingRouteWrite?.route_writer_owner,
+      write_reason: pendingRouteWrite?.write_reason,
+      navigation_mode: pendingRouteWrite?.navigation_mode,
+      param_diff: pendingRouteWrite?.param_diff,
+      caused_by_ui_action_id: pendingRouteWrite?.caused_by_ui_action_id,
+    }
+    this.pushEvent(routeEvent)
+    this.trackRouteLoop(routeEvent)
   }
 
-  trackAction<T>(meta: UiActionMeta, handler?: () => T): T | undefined {
+  trackAction<T>(meta: UiActionMeta, handler?: (action: { uiActionId: string }) => T): T | undefined {
+    const fallbackActionId = this.getCurrentContextActionId() ?? generateRuntimeId('uia')
     if (!this.enabled) {
-      return handler?.()
+      return handler?.({ uiActionId: fallbackActionId })
     }
 
     const action = this.activateAction(meta)
 
     try {
-      const result = this.runWithActionContext(action.ui_action_id, () => handler?.())
+      const result = this.runWithActionContext(action.ui_action_id, () => (
+        handler?.({ uiActionId: action.ui_action_id })
+      ))
       if (isPromiseLike(result)) {
         return Promise.resolve(result)
           .finally(() => {
@@ -520,6 +768,15 @@ class UiActionJournal {
       this.resolveAction(action.ui_action_id)
       throw error
     }
+  }
+
+  queueRouteWrite(meta: UiRouteWriteMeta) {
+    if (!this.enabled) {
+      return
+    }
+
+    this.ensureSession()
+    this.pendingRouteWrite = sanitizeRouteWriteMeta(meta, this.getCurrentContextActionId())
   }
 
   startHttpRequest(input: StartHttpRequestInput) {
@@ -766,6 +1023,8 @@ class UiActionJournal {
         ...route.context,
         ...sanitizeContextRecord(meta.context),
       },
+      surface_id: sanitizeString(meta.surfaceId, 120),
+      control_id: sanitizeString(meta.controlId, 120),
       timeout_id: null,
       settle_token: null,
     }
@@ -785,6 +1044,8 @@ class UiActionJournal {
       action_kind: action.action_kind,
       action_name: action.action_name,
       action_source: action.action_source,
+      surface_id: action.surface_id,
+      control_id: action.control_id,
     })
     return action
   }
@@ -931,6 +1192,121 @@ class UiActionJournal {
     }
   }
 
+  private consumePendingRouteWrite(): PendingRouteWrite | null {
+    const pendingRouteWrite = this.pendingRouteWrite
+    this.pendingRouteWrite = null
+    if (!pendingRouteWrite) {
+      return null
+    }
+    if (Date.now() - pendingRouteWrite.queued_at_ms > ROUTE_WRITE_TTL_MS) {
+      return null
+    }
+    return pendingRouteWrite
+  }
+
+  private trackRouteLoop(event: RouteEvent) {
+    const routeState = pickRouteLoopState(event.route)
+    if (Object.keys(routeState).length === 0) {
+      return
+    }
+
+    const occurredAtMs = Date.now()
+    const routeStateSignature = stableSerializePrimitiveRecord(routeState)
+    this.recentRouteTransitions.push({
+      occurred_at_ms: occurredAtMs,
+      route_path: event.route.path,
+      surface_id: event.surface_id,
+      route_state: routeState,
+      route_state_signature: routeStateSignature,
+      writer_owner: event.route_writer_owner,
+      ui_action_id: event.caused_by_ui_action_id ?? event.ui_action_id,
+    })
+    while (this.recentRouteTransitions.length > 0) {
+      const first = this.recentRouteTransitions[0]
+      if (!first || occurredAtMs - first.occurred_at_ms <= ROUTE_LOOP_WINDOW_MS) {
+        break
+      }
+      this.recentRouteTransitions.shift()
+    }
+    while (this.recentRouteTransitions.length > ROUTE_LOOP_HISTORY_MAX) {
+      this.recentRouteTransitions.shift()
+    }
+
+    const candidates = this.recentRouteTransitions.filter((entry) => entry.route_path === event.route.path)
+    if (candidates.length < ROUTE_LOOP_MIN_TRANSITIONS) {
+      return
+    }
+
+    const sequence = candidates.slice(-ROUTE_LOOP_MIN_TRANSITIONS)
+    const [first, second, third, fourth] = sequence
+    if (!first || !second || !third || !fourth) {
+      return
+    }
+
+    const firstSignature = first.route_state_signature
+    const secondSignature = second.route_state_signature
+    if (
+      firstSignature === secondSignature
+      || firstSignature !== third.route_state_signature
+      || secondSignature !== fourth.route_state_signature
+    ) {
+      return
+    }
+
+    const oscillatingKeys = collectRouteStateDiffKeys(first.route_state, second.route_state)
+    if (oscillatingKeys.length === 0) {
+      return
+    }
+
+    const warningSignature = `${event.route.path}|${oscillatingKeys.join(',')}|${firstSignature}|${secondSignature}`
+    const lastWarningAtMs = this.recentRouteLoopWarnings.get(warningSignature) ?? 0
+    if (occurredAtMs - lastWarningAtMs < ROUTE_LOOP_WINDOW_MS) {
+      return
+    }
+    this.recentRouteLoopWarnings.set(warningSignature, occurredAtMs)
+    for (const [signature, seenAt] of this.recentRouteLoopWarnings.entries()) {
+      if (occurredAtMs - seenAt > ROUTE_LOOP_WINDOW_MS) {
+        this.recentRouteLoopWarnings.delete(signature)
+      }
+    }
+
+    const observedStates = Array.from(
+      new Map(
+        [first, second, third, fourth].map((entry) => [
+          entry.route_state_signature,
+          entry.route_state,
+        ]),
+      ).values(),
+    )
+    const writerOwners = Array.from(
+      new Set(sequence.map((entry) => entry.writer_owner).filter((value): value is string => Boolean(value))),
+    )
+    const uiActionId = [...sequence]
+      .reverse()
+      .map((entry) => entry.ui_action_id)
+      .find((value): value is string => Boolean(value))
+    const transitionCount = candidates.filter((entry) => (
+      entry.route_state_signature === firstSignature || entry.route_state_signature === secondSignature
+    )).length
+
+    this.pushEvent({
+      event_id: generateRuntimeId('evt'),
+      event_type: 'route.loop_warning',
+      occurred_at: event.occurred_at,
+      route: event.route,
+      context: event.route.context,
+      ui_action_id: uiActionId,
+      outcome: 'loop_warning',
+      route_path: event.route.path,
+      surface_id: event.surface_id ?? fourth.surface_id,
+      oscillating_keys: oscillatingKeys,
+      observed_states: observedStates,
+      writer_owners: writerOwners,
+      transition_count: transitionCount,
+      window_ms: Math.max(0, fourth.occurred_at_ms - first.occurred_at_ms),
+    })
+  }
+
   private countActiveWebSocketsForReuseKey(reuseKey: string): number {
     let count = 0
     for (const socket of this.activeWebSockets.values()) {
@@ -1013,6 +1389,9 @@ class UiActionJournal {
     this.activeWebSockets.clear()
     this.websocketChurnHistory.clear()
     this.recentChurnAnomalies.splice(0, this.recentChurnAnomalies.length)
+    this.pendingRouteWrite = null
+    this.recentRouteTransitions.splice(0, this.recentRouteTransitions.length)
+    this.recentRouteLoopWarnings.clear()
     this.sessionId = null
     this.currentRoute = buildRouteSnapshot()
     this.lastRouteSignature = ''
@@ -1124,9 +1503,13 @@ export const captureUiRouteTransition = (location?: RouteLocationInput) => {
   uiActionJournal.captureRoute(location)
 }
 
-export const trackUiAction = <T>(meta: UiActionMeta, handler?: () => T) => (
+export const trackUiAction = <T>(meta: UiActionMeta, handler?: (action: { uiActionId: string }) => T) => (
   uiActionJournal.trackAction(meta, handler)
 )
+
+export const queueUiRouteWrite = (meta: UiRouteWriteMeta) => {
+  uiActionJournal.queueRouteWrite(meta)
+}
 
 export const startUiHttpRequest = (input: StartHttpRequestInput) => (
   uiActionJournal.startHttpRequest(input)
@@ -1176,6 +1559,10 @@ export const buildUiProblemCorrelation = (value: unknown): RequestProblemDetails
 }
 
 export const normalizeUiRequestPathForSummary = (rawPath?: string) => normalizeRequestPath(rawPath)
+export const buildUiRouteParamDiff = (
+  current: URLSearchParams | string,
+  next: URLSearchParams | string,
+) => buildRouteParamDiff(current, next)
 
 declare global {
   interface Window {
@@ -1186,6 +1573,7 @@ declare global {
 
 export const __TESTING__ = {
   buildRouteSnapshot,
+  buildRouteParamDiff,
   buildReleaseFingerprint,
   sanitizeContextRecord,
   sanitizeRouteHash,

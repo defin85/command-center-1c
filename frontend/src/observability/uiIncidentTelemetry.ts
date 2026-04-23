@@ -49,6 +49,7 @@ const getEventPriority = (event: UiJournalEvent): number => {
     case 'ui.action':
       return 1
     case 'http.request.slow':
+    case 'route.loop_warning':
     case 'websocket.churn_warning':
       return 2
     case 'http.request.failure':
@@ -67,6 +68,7 @@ const shouldPersistEvent = (event: UiJournalEvent): boolean => {
     case 'ui.action':
     case 'http.request.failure':
     case 'http.request.slow':
+    case 'route.loop_warning':
     case 'ui.error.boundary':
     case 'ui.error.global':
     case 'ui.error.unhandled_rejection':

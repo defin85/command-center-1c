@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Space, Typography } from 'antd'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 
 import type { PoolFactualOverviewItem } from '../../api/intercompanyPools'
 import { listPoolFactualOverview } from '../../api/intercompanyPools'
@@ -70,6 +70,7 @@ const parseAmount = (value: string | null | undefined) => {
 export function PoolFactualWorkspacePage() {
   const { t } = usePoolFactualTranslation()
   const formatters = useLocaleFormatters()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const poolFromUrl = normalizeRouteParam(searchParams.get('pool'))
   const runFromUrl = normalizeRouteParam(searchParams.get('run'))
@@ -127,6 +128,10 @@ export function PoolFactualWorkspacePage() {
   }, [quarterStartFromUrl, t])
 
   useEffect(() => {
+    if (location.pathname !== POOL_FACTUAL_ROUTE) {
+      return
+    }
+
     const next = new URLSearchParams(searchParams)
 
     if (selectedPoolId) {
@@ -162,7 +167,7 @@ export function PoolFactualWorkspacePage() {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true })
     }
-  }, [focusFromUrl, isDetailOpen, quarterStartFromUrl, runFromUrl, searchParams, selectedPoolId, setSearchParams])
+  }, [focusFromUrl, isDetailOpen, location.pathname, quarterStartFromUrl, runFromUrl, searchParams, selectedPoolId, setSearchParams])
 
   const sortedOverviewItems = useMemo(() => {
     return [...overviewItems].sort((left, right) => {

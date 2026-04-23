@@ -36,6 +36,7 @@ _KNOWN_EVENT_FIELDS = {
 _SIGNAL_EVENT_TYPES = {
     "http.request.failure",
     "http.request.slow",
+    "route.loop_warning",
     "ui.error.boundary",
     "ui.error.global",
     "ui.error.unhandled_rejection",
@@ -372,6 +373,15 @@ def _build_summary_preview(event: UiIncidentTelemetryEvent) -> dict[str, Any]:
         "path",
         "owner",
         "reuse_key",
+        "surface_id",
+        "control_id",
+        "route_writer_owner",
+        "write_reason",
+        "navigation_mode",
+        "oscillating_keys",
+        "writer_owners",
+        "transition_count",
+        "window_ms",
     ]
     return {
         key: payload[key]
