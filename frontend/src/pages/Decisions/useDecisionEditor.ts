@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { DecisionTable } from '../../api/generated/model'
+import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
 import { getV2 } from '../../api/generated'
 import { useDecisionsTranslation } from '../../i18n'
 import {
@@ -18,6 +18,7 @@ import {
   buildChainsFromDraft,
   buildDraftFromDecision,
   buildEditorTargetSummary,
+  expectDecisionDetailResponse,
   toErrorMessage,
   type MetadataContextLike,
   DECISIONS_API_OPTIONS,
@@ -254,7 +255,9 @@ export function useDecisionEditor({
         is_active: editorDraft.isActive,
       })
 
-      const response = await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
+      const response = expectDecisionDetailResponse(
+        await api.postDecisionsCollection_2(payload, DECISIONS_API_OPTIONS)
+      )
       const nextDecisionId = response?.decision?.id ?? null
       message.success(
         editorDraft.mode === 'rollover'
@@ -303,7 +306,7 @@ export function useDecisionEditor({
         is_active: false,
       })
 
-      await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
+      await api.postDecisionsCollection_2(payload, DECISIONS_API_OPTIONS)
       message.warning(t(($) => $.messages.deactivated))
       onDecisionSaved(selectedDecision.id)
     } catch (error) {

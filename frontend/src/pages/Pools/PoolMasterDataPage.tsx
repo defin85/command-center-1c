@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Alert, App as AntApp, Space, Typography } from 'antd'
 import { useSearchParams } from 'react-router-dom'
 
@@ -146,63 +146,68 @@ export function PoolMasterDataPage() {
   const { message } = AntApp.useApp()
   const { t, ready } = usePoolsTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const routeUpdateModeRef = useRef<'push' | 'replace'>('replace')
-  const pendingRouteWriteRef = useRef<{
-    causedByUiActionId?: string
-    writeReason: string
-  } | null>(null)
   const activeTabFromUrl = normalizeMasterDataTab(searchParams.get('tab'))
   const detailOpenFromUrl = searchParams.get('detail') === '1'
-  const [activeTab, setActiveTab] = useState<MasterDataTabKey>(activeTabFromUrl)
-  const [isDetailOpen, setIsDetailOpen] = useState(detailOpenFromUrl)
+  const activeTab = activeTabFromUrl
+  const isDetailOpen = detailOpenFromUrl
   const [registryEntries, setRegistryEntries] = useState<PoolMasterDataRegistryEntry[]>([])
   const masterDataZones = buildMasterDataZones(t)
 
-  useEffect(() => {
-    setActiveTab((current) => (current === activeTabFromUrl ? current : activeTabFromUrl))
-  }, [activeTabFromUrl])
-
-  useEffect(() => {
-    setIsDetailOpen((current) => (current === detailOpenFromUrl ? current : detailOpenFromUrl))
-  }, [detailOpenFromUrl])
-
-  useEffect(() => {
+  const commitWorkspaceRoute = useCallback(({
+    tab,
+    detailOpen,
+    writeReason,
+    navigationMode = 'replace',
+    causedByUiActionId,
+  }: {
+    tab: MasterDataTabKey
+    detailOpen: boolean
+    writeReason: string
+    navigationMode?: 'push' | 'replace'
+    causedByUiActionId?: string
+  }) => {
     const next = new URLSearchParams(searchParams)
 
-    next.set('tab', activeTab)
+    next.set('tab', tab)
 
-    if (activeTab !== 'sync') {
+    if (tab !== 'sync') {
       SYNC_ROUTE_PARAM_KEYS.forEach((key) => next.delete(key))
     }
 
-    if (isDetailOpen) {
+    if (detailOpen) {
       next.set('detail', '1')
     } else {
       next.delete('detail')
     }
 
-    const nextSearch = next.toString()
-    const currentSearch = searchParams.toString()
-    if (nextSearch !== currentSearch) {
-      const pendingRouteWrite = pendingRouteWriteRef.current
-      queueUiRouteWrite({
-        surfaceId: 'pool_master_data',
-        routeWriterOwner: 'pool_master_data_page',
-        writeReason: pendingRouteWrite?.writeReason ?? 'workspace_state_sync',
-        navigationMode: routeUpdateModeRef.current,
-        paramDiff: buildUiRouteParamDiff(searchParams, next),
-        causedByUiActionId: pendingRouteWrite?.causedByUiActionId,
-      })
-      setSearchParams(
-        next,
-        routeUpdateModeRef.current === 'replace'
-          ? { replace: true }
-          : undefined
-      )
+    const paramDiff = buildUiRouteParamDiff(searchParams, next)
+    if (Object.keys(paramDiff).length === 0) {
+      return
     }
-    pendingRouteWriteRef.current = null
-    routeUpdateModeRef.current = 'replace'
-  }, [activeTab, isDetailOpen, searchParams, setSearchParams])
+
+    queueUiRouteWrite({
+      surfaceId: 'pool_master_data',
+      routeWriterOwner: 'pool_master_data_page',
+      writeReason,
+      navigationMode,
+      paramDiff,
+      causedByUiActionId,
+    })
+    setSearchParams(
+      next,
+      navigationMode === 'replace'
+        ? { replace: true }
+        : undefined
+    )
+  }, [searchParams, setSearchParams])
+
+  useEffect(() => {
+    commitWorkspaceRoute({
+      tab: activeTab,
+      detailOpen: isDetailOpen,
+      writeReason: 'workspace_state_sync',
+    })
+  }, [activeTab, commitWorkspaceRoute, isDetailOpen])
 
   const remediationContextLines = useMemo(() => {
     const lines: string[] = []
@@ -298,13 +303,12 @@ export function PoolMasterDataPage() {
 
       <MasterDetailShell
         detailOpen={isDetailOpen}
-        onCloseDetail={() => {
-          routeUpdateModeRef.current = 'push'
-          pendingRouteWriteRef.current = {
-            writeReason: 'detail_close',
-          }
-          setIsDetailOpen(false)
-        }}
+        onCloseDetail={() => commitWorkspaceRoute({
+          tab: activeTab,
+          detailOpen: false,
+          writeReason: 'detail_close',
+          navigationMode: 'push',
+        })}
         detailDrawerTitle={t('masterData.page.detailDrawerTitle', { zone: selectedZone.label })}
         list={(
           <EntityList
@@ -335,13 +339,13 @@ export function PoolMasterDataPage() {
                         detail_after: true,
                       },
                     }, ({ uiActionId }) => {
-                      routeUpdateModeRef.current = 'push'
-                      pendingRouteWriteRef.current = {
-                        causedByUiActionId: uiActionId,
+                      commitWorkspaceRoute({
+                        tab: zone.key,
+                        detailOpen: true,
                         writeReason: 'zone_switch',
-                      }
-                      setActiveTab(zone.key)
-                      setIsDetailOpen(true)
+                        navigationMode: 'push',
+                        causedByUiActionId: uiActionId,
+                      })
                     })
                   }}
                   aria-label={t('masterData.list.openZone', { zone: zone.label })}

@@ -6,6 +6,12 @@ properties:
   action_name:
     type: string
     nullable: true
+  caused_by_ui_action_id:
+    type: string
+    nullable: true
+  control_id:
+    type: string
+    nullable: true
   error_code:
     type: string
     nullable: true
@@ -18,9 +24,19 @@ properties:
   error_message:
     type: string
     nullable: true
+  navigation_mode:
+    type: string
+    nullable: true
   outcome:
     type: string
     nullable: true
+  oscillating_keys:
+    type: array
+    items:
+      type: string
+  param_diff:
+    type: object
+    additionalProperties: true
   status:
     type: integer
     nullable: true
@@ -36,6 +52,25 @@ properties:
   owner:
     type: string
     nullable: true
+  route_writer_owner:
+    type: string
+    nullable: true
   reuse_key:
     type: string
     nullable: true
+  surface_id:
+    type: string
+    nullable: true
+  transition_count:
+    type: integer
+    nullable: true
+  window_ms:
+    type: integer
+    nullable: true
+  write_reason:
+    type: string
+    nullable: true
+  writer_owners:
+    type: array
+    items:
+      type: string

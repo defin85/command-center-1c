@@ -83,6 +83,12 @@ type RevisionOption = {
   profileLifecycleWarning?: PoolWorkflowBinding['profile_lifecycle_warning']
 }
 
+const toUnknownRecord = (value: unknown): Record<string, unknown> | undefined => (
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
+)
+
 const buildRevisionOptions = (
   availableBindingProfiles: BindingProfileSummary[],
   availableBindingProfileDetails: Record<string, BindingProfileDetail>,
@@ -116,19 +122,19 @@ const buildRevisionOptions = (
         label: `${profileCode} · ${profileName} · r${revision.revision_number} · ${profileStatus}`,
         bindingProfileId: profile.binding_profile_id,
         bindingProfileRevisionNumber: revision.revision_number,
-        resolvedProfile: {
-          binding_profile_id: profile.binding_profile_id,
-          code: profileCode,
-          name: profileName,
-          status: profileStatus,
-          binding_profile_revision_id: revision.binding_profile_revision_id,
-          binding_profile_revision_number: revision.revision_number,
-          workflow: revision.workflow,
-          decisions: revision.decisions,
-          parameters: revision.parameters,
-          role_mapping: revision.role_mapping as Record<string, string>,
-          topology_template_compatibility: revision.topology_template_compatibility,
-        },
+          resolvedProfile: {
+            binding_profile_id: profile.binding_profile_id,
+            code: profileCode,
+            name: profileName,
+            status: profileStatus,
+            binding_profile_revision_id: revision.binding_profile_revision_id,
+            binding_profile_revision_number: revision.revision_number,
+            workflow: revision.workflow,
+            decisions: revision.decisions,
+            parameters: toUnknownRecord(revision.parameters),
+            role_mapping: revision.role_mapping as Record<string, string>,
+            topology_template_compatibility: revision.topology_template_compatibility,
+          },
         profileLifecycleWarning: null,
       }))
   })

@@ -50,6 +50,20 @@ type BindingSelector = {
   tags?: string[]
 }
 
+const asBindingSelector = (value: unknown): BindingSelector | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  const candidate = value as Record<string, unknown>
+  return {
+    direction: typeof candidate.direction === 'string' ? candidate.direction : null,
+    mode: typeof candidate.mode === 'string' ? candidate.mode : null,
+    tags: Array.isArray(candidate.tags)
+      ? candidate.tags.filter((item): item is string => typeof item === 'string')
+      : undefined,
+  }
+}
+
 type BindingProfileUsageRow = {
   key: string
   poolId: string
@@ -261,7 +275,7 @@ export function PoolBindingProfilesPage() {
       bindingProfileRevisionId: attachment.binding_profile_revision_id,
       bindingProfileRevisionNumber: attachment.binding_profile_revision_number ?? null,
       status: attachment.status,
-      scope: formatBindingScopeLabel(attachment.selector),
+      scope: formatBindingScopeLabel(asBindingSelector(attachment.selector)),
     }))
   }, [formatBindingScopeLabel, selectedProfile])
   const selectedProfileUsageRevisionCount = useMemo(

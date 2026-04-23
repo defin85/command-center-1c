@@ -170,6 +170,23 @@ def test_ui_incident_telemetry_src_schemas_cover_summary_and_timeline_contract()
     assert summary_properties["release"] == {"$ref": "./UiIncidentRelease.yaml"}
     assert summary_properties["preview"] == {"$ref": "./UiIncidentSummaryPreview.yaml"}
 
+    summary_preview = _load_src_schema("UiIncidentSummaryPreview.yaml")
+    summary_preview_properties = summary_preview.get("properties")
+    assert isinstance(summary_preview_properties, dict)
+    assert {
+        "caused_by_ui_action_id",
+        "control_id",
+        "navigation_mode",
+        "oscillating_keys",
+        "param_diff",
+        "route_writer_owner",
+        "surface_id",
+        "transition_count",
+        "window_ms",
+        "write_reason",
+        "writer_owners",
+    }.issubset(summary_preview_properties)
+
     timeline_response = _load_src_schema("UiIncidentTimelineResponse.yaml")
     timeline_properties = timeline_response.get("properties")
     assert isinstance(timeline_properties, dict)

@@ -45,6 +45,10 @@ const metadataManagementProfilePath = resolve(
   process.cwd(),
   'src/api/generated/model/databaseMetadataManagementConfigurationProfile.ts'
 )
+const uiIncidentSummaryPreviewPath = resolve(
+  process.cwd(),
+  'src/api/generated/model/uiIncidentSummaryPreview.ts'
+)
 const modelIndexPath = resolve(process.cwd(), 'src/api/generated/model/index.ts')
 const streamConflictDetailsPath = resolve(
   process.cwd(),
@@ -117,6 +121,10 @@ const generatedHeader =
   ' * OpenAPI spec version: 1.0.0\n' +
   ' */\n'
 
+function writeGeneratedFile(filePath, source) {
+  writeFileSync(filePath, `${generatedHeader}${source}`, 'utf8')
+}
+
 function ensureBootstrapImportGlAccountEnum(filePath) {
   if (!existsSync(filePath)) {
     return
@@ -159,6 +167,114 @@ function ensurePoolFactualSummarySyncFields(filePath) {
   }
 
   writeFileSync(filePath, content, 'utf8')
+}
+
+function ensureUiIncidentSummaryPreviewRouteIntentFields(filePath) {
+  if (!existsSync(filePath)) {
+    return
+  }
+  writeFileSync(
+    filePath,
+    `${generatedHeader}export interface UiIncidentSummaryPreview {
+  /** @nullable */
+  action_kind?: string | null;
+  /** @nullable */
+  action_name?: string | null;
+  /** @nullable */
+  caused_by_ui_action_id?: string | null;
+  /** @nullable */
+  control_id?: string | null;
+  /** @nullable */
+  error_code?: string | null;
+  /** @nullable */
+  error_title?: string | null;
+  /** @nullable */
+  error_name?: string | null;
+  /** @nullable */
+  error_message?: string | null;
+  /** @nullable */
+  navigation_mode?: string | null;
+  /** @nullable */
+  outcome?: string | null;
+  oscillating_keys?: string[];
+  param_diff?: Record<string, unknown>;
+  /** @nullable */
+  status?: number | null;
+  /** @nullable */
+  latency_ms?: number | null;
+  /** @nullable */
+  method?: string | null;
+  /** @nullable */
+  path?: string | null;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  route_writer_owner?: string | null;
+  /** @nullable */
+  reuse_key?: string | null;
+  /** @nullable */
+  surface_id?: string | null;
+  /** @nullable */
+  transition_count?: number | null;
+  /** @nullable */
+  window_ms?: number | null;
+  /** @nullable */
+  write_reason?: string | null;
+  writer_owners?: string[];
+}
+`,
+    'utf8'
+  )
+}
+
+function ensureGeneratedCompatibilityModelShims() {
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/workflowDefinitionRef.ts'),
+    `import type { BindingProfileWorkflowDefinitionRef } from './bindingProfileWorkflowDefinitionRef';
+
+export type WorkflowDefinitionRef = BindingProfileWorkflowDefinitionRef;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/poolWorkflowBindingDecisionRef.ts'),
+    `import type { BindingProfileDecisionRef } from './bindingProfileDecisionRef';
+
+export type PoolWorkflowBindingDecisionRef = BindingProfileDecisionRef;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/bindingProfileRevisionParameters.ts'),
+    `export type BindingProfileRevisionParameters = Record<string, unknown>;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/bindingProfileRevisionRoleMapping.ts'),
+    `import type { BindingProfileRevisionReadRoleMapping } from './bindingProfileRevisionReadRoleMapping';
+
+export type BindingProfileRevisionRoleMapping = BindingProfileRevisionReadRoleMapping;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/bindingProfileRevisionMetadata.ts'),
+    `export type BindingProfileRevisionMetadata = Record<string, unknown>;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/poolWorkflowBindingResolvedProfileParameters.ts'),
+    `export type PoolWorkflowBindingResolvedProfileParameters = Record<string, unknown>;
+`
+  )
+
+  writeGeneratedFile(
+    resolve(process.cwd(), 'src/api/generated/model/problemDetailsFieldErrors.ts'),
+    `export type ProblemDetailsFieldErrors = Record<string, string[]>;
+`
+  )
 }
 
 function ensureBootstrapCollectionCreateRequestCollectionId(filePath) {
@@ -502,3 +618,7 @@ ensureBootstrapImportGlAccountEnum(bootstrapImportScopeEntityScopeItemPath)
 ensureBootstrapImportGlAccountEnum(bootstrapImportJobEntityScopeItemPath)
 ensurePoolFactualSummarySyncFields(factualSummaryPath)
 ensureBootstrapCollectionCreateRequestCollectionId(bootstrapCollectionCreateRequestAllOfPath)
+// orval currently omits several UI incident preview fields even though they exist in the schema.
+ensureUiIncidentSummaryPreviewRouteIntentFields(uiIncidentSummaryPreviewPath)
+// orval currently references several compatibility model names without emitting the files.
+ensureGeneratedCompatibilityModelShims()

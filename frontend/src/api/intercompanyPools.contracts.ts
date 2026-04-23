@@ -37,7 +37,7 @@ import type {
   UpsertOrganizationPoolPayload,
   WorkflowDefinitionRef,
 } from './intercompanyPools'
-import type { DecisionTableRef as GeneratedDecisionTableRef } from './generated/model/decisionTableRef'
+import type { DecisionTableRead as GeneratedDecisionTableRead } from './generated/model/decisionTableRead'
 import type { OrganizationPool as GeneratedOrganizationPool } from './generated/model/organizationPool'
 import type { OrganizationPoolUpsertRequest as GeneratedOrganizationPoolUpsertRequest } from './generated/model/organizationPoolUpsertRequest'
 import type { PoolGraphResponse as GeneratedPoolGraphResponse } from './generated/model/poolGraphResponse'
@@ -72,11 +72,36 @@ import type { TopologyTemplateMutationResponse as GeneratedTopologyTemplateMutat
 import type { TopologyTemplateRevision as GeneratedPoolTopologyTemplateRevision } from './generated/model/topologyTemplateRevision'
 import type { TopologyTemplateRevisionCreateRequest as GeneratedTopologyTemplateRevisionCreateRequest } from './generated/model/topologyTemplateRevisionCreateRequest'
 import type { PoolWorkflowBindingInput as GeneratedPoolWorkflowBindingInput } from './generated/model/poolWorkflowBindingInput'
+import type { PoolWorkflowBindingDecisionRef as GeneratedPoolWorkflowBindingDecisionRef } from './generated/model/poolWorkflowBindingDecisionRef'
 import type { PoolWorkflowBindingRead as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBindingRead'
-import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelector'
+import type { PoolWorkflowBindingResolvedProfile as GeneratedPoolWorkflowBindingResolvedProfile } from './generated/model/poolWorkflowBindingResolvedProfile'
+import type { PoolWorkflowBindingSelectorInput as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelectorInput'
 import type { WorkflowDefinitionRef as GeneratedWorkflowDefinitionRef } from './generated/model/workflowDefinitionRef'
 
 type AssertAssignable<TActual extends TExpected, TExpected> = TActual
+type GeneratedDecisionTableRef = Pick<
+  GeneratedDecisionTableRead,
+  'decision_table_id' | 'decision_key' | 'decision_revision'
+>
+type GeneratedWorkflowDefinitionRefContractShape = Omit<GeneratedWorkflowDefinitionRef, 'contract_version'> & {
+  contract_version?: string
+}
+type GeneratedPoolWorkflowBindingResolvedProfileContractShape = Omit<
+  GeneratedPoolWorkflowBindingResolvedProfile,
+  'workflow' | 'decisions' | 'parameters'
+> & {
+  workflow: GeneratedWorkflowDefinitionRefContractShape
+  decisions?: GeneratedPoolWorkflowBindingDecisionRef[]
+  parameters?: Record<string, unknown>
+}
+type GeneratedPoolWorkflowBindingContractShape = Omit<
+  GeneratedPoolWorkflowBinding,
+  'contract_version' | 'selector' | 'resolved_profile'
+> & {
+  contract_version?: string
+  selector?: GeneratedPoolWorkflowBindingSelector
+  resolved_profile: GeneratedPoolWorkflowBindingResolvedProfileContractShape
+}
 
 type GeneratedPoolBatchContractShape = Omit<GeneratedPoolBatch, 'settlement'> & {
   settlement?: GeneratedPoolBatchSettlement | null
@@ -86,9 +111,13 @@ type GeneratedPoolBatchListResponseContractShape = Omit<GeneratedPoolBatchListRe
   batches: GeneratedPoolBatchContractShape[]
 }
 
+type GeneratedPoolRunContractShape = Omit<GeneratedPoolRun, 'workflow_binding'> & {
+  workflow_binding?: GeneratedPoolWorkflowBindingContractShape | null
+}
+
 type GeneratedPoolBatchCreateResponseContractShape = Omit<GeneratedPoolBatchCreateResponse, 'batch' | 'run' | 'sale_closing'> & {
   batch: GeneratedPoolBatchContractShape
-  run?: GeneratedPoolRun | null
+  run?: GeneratedPoolRunContractShape | null
   sale_closing?: GeneratedPoolSaleClosingStartResponse | null
 }
 
@@ -96,10 +125,18 @@ type GeneratedPoolFactualWorkspaceResponseContractShape = Omit<GeneratedPoolFact
   settlements: GeneratedPoolBatchContractShape[]
 }
 
-export type WorkflowDefinitionRefContract = AssertAssignable<WorkflowDefinitionRef, GeneratedWorkflowDefinitionRef>
+type GeneratedPoolRunReportContractShape = Omit<GeneratedPoolRunReportResponse, 'run'> & {
+  run: GeneratedPoolRunContractShape
+}
+
+type GeneratedPoolRunSafeCommandResponseContractShape = Omit<GeneratedPoolRunSafeCommandResponse, 'run'> & {
+  run: GeneratedPoolRunContractShape
+}
+
+export type WorkflowDefinitionRefContract = AssertAssignable<WorkflowDefinitionRef, GeneratedWorkflowDefinitionRefContractShape>
 export type DecisionTableRefContract = AssertAssignable<DecisionTableRef, GeneratedDecisionTableRef>
 export type PoolWorkflowBindingSelectorContract = AssertAssignable<PoolWorkflowBindingSelector, GeneratedPoolWorkflowBindingSelector>
-export type PoolWorkflowBindingContract = AssertAssignable<PoolWorkflowBinding, GeneratedPoolWorkflowBinding>
+export type PoolWorkflowBindingContract = AssertAssignable<PoolWorkflowBinding, GeneratedPoolWorkflowBindingContractShape>
 export type PoolWorkflowBindingInputContract = AssertAssignable<PoolWorkflowBindingInput, GeneratedPoolWorkflowBindingInput>
 export type OrganizationPoolContract = AssertAssignable<OrganizationPool, GeneratedOrganizationPool>
 export type PoolSchemaTemplateContract = AssertAssignable<PoolSchemaTemplate, GeneratedPoolSchemaTemplate>
@@ -119,8 +156,8 @@ export type PoolTopologyTemplateMutationResponseContract = AssertAssignable<
   PoolTopologyTemplateMutationResponse,
   GeneratedTopologyTemplateMutationResponse
 >
-export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRun>
-export type PoolRunReportContract = AssertAssignable<PoolRunReport, GeneratedPoolRunReportResponse>
+export type PoolRunContract = AssertAssignable<PoolRun, GeneratedPoolRunContractShape>
+export type PoolRunReportContract = AssertAssignable<PoolRunReport, GeneratedPoolRunReportContractShape>
 export type PoolGraphContract = AssertAssignable<PoolGraph, GeneratedPoolGraphResponse>
 export type PoolBatchSettlementContract = AssertAssignable<PoolBatchSettlement, GeneratedPoolBatchSettlement>
 export type PoolBatchContract = AssertAssignable<PoolBatch, GeneratedPoolBatchContractShape>
@@ -135,7 +172,7 @@ export type PoolFactualReviewQueueItemContract = AssertAssignable<PoolFactualRev
 export type PoolFactualReviewQueueContract = AssertAssignable<PoolFactualReviewQueue, GeneratedPoolFactualReviewQueue>
 export type PoolFactualWorkspaceContract = AssertAssignable<PoolFactualWorkspace, GeneratedPoolFactualWorkspaceResponseContractShape>
 export type PoolFactualReviewActionResponseContract = AssertAssignable<PoolFactualReviewActionResponse, GeneratedPoolFactualReviewActionResponse>
-export type PoolRunSafeCommandResponseContract = AssertAssignable<PoolRunSafeCommandResponse, GeneratedPoolRunSafeCommandResponse>
+export type PoolRunSafeCommandResponseContract = AssertAssignable<PoolRunSafeCommandResponse, GeneratedPoolRunSafeCommandResponseContractShape>
 export type PoolRunSafeCommandConflictContract = AssertAssignable<PoolRunSafeCommandConflict, GeneratedPoolRunSafeCommandConflict>
 export type PoolRunRetryAcceptedResponseContract = AssertAssignable<PoolRunRetryAcceptedResponse, GeneratedPoolRunRetryAcceptedResponse>
 

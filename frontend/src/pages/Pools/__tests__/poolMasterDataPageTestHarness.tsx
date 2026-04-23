@@ -1858,6 +1858,53 @@ export function registerPoolMasterDataSyncTests() {
   )
 
   it(
+    'ignores late launch_autoselect after leaving the Sync zone',
+    async () => {
+      const launchesRequest = deferred<{
+        launches: Array<Record<string, unknown>>
+        count: number
+        limit: number
+        offset: number
+      }>()
+
+      mockListPoolMasterDataSyncLaunches.mockImplementation(() => launchesRequest.promise)
+
+      renderPage('/pools/master-data?tab=sync&detail=1')
+
+      expect(await screen.findByText('Sync Status')).toBeInTheDocument()
+      await waitFor(() => expect(mockListPoolMasterDataSyncLaunches).toHaveBeenCalled())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open Bindings zone' }))
+
+      await waitFor(() => expect(mockListMasterDataBindings).toHaveBeenCalled())
+      await waitFor(() => expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent('/pools/master-data?tab=bindings&detail=1'))
+      expect(screen.getByTestId('pool-master-data-route-location')).not.toHaveTextContent('launchId=')
+
+      launchesRequest.resolve({
+        launches: [buildSyncLaunch({ id: 'launch-late-1' })],
+        count: 1,
+        limit: 20,
+        offset: 0,
+      })
+      await launchesRequest.promise
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(screen.getByTestId('pool-master-data-route-location')).toHaveTextContent('/pools/master-data?tab=bindings&detail=1')
+      expect(screen.getByTestId('pool-master-data-route-location')).not.toHaveTextContent('launchId=')
+      expect(mockGetPoolMasterDataSyncLaunch).not.toHaveBeenCalled()
+
+      const bundle = exportUiActionJournalBundle()
+      expect(bundle.events.some((event) => (
+        event.event_type === 'route.transition'
+          && event.write_reason === 'launch_autoselect'
+      ))).toBe(false)
+      expect(bundle.events.some((event) => event.event_type === 'route.loop_warning')).toBe(false)
+    },
+    HEAVY_ROUTE_TEST_TIMEOUT_MS,
+  )
+
+  it(
     'shows class-aware 429 diagnostics for Sync load without replacing the workspace shell',
     async () => {
       mockListMasterDataSyncStatus.mockRejectedValue({

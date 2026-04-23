@@ -17,11 +17,32 @@ const mockUseDatabases = vi.fn()
 const mockUseDatabaseMetadataManagement = vi.fn()
 let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
 
+const toLegacyDecisionReadArgs = (options: unknown): [Record<string, unknown>, { errorPolicy?: string }] => {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    return [{}, { errorPolicy: 'page' }]
+  }
+
+  const candidate = options as {
+    params?: Record<string, unknown>
+    errorPolicy?: string
+  }
+  return [
+    candidate.params ?? {},
+    candidate.errorPolicy ? { errorPolicy: candidate.errorPolicy } : { errorPolicy: 'page' },
+  ]
+}
+
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
-    getDecisionsCollection: (...args: unknown[]) => mockGetDecisionsCollection(...args),
-    getDecisionsDetail: (...args: unknown[]) => mockGetDecisionsDetail(...args),
-    postDecisionsCollection: (...args: unknown[]) => mockPostDecisionsCollection(...args),
+    getDecisionsCollection: (options?: unknown) => {
+      const [params, normalizedOptions] = toLegacyDecisionReadArgs(options)
+      return mockGetDecisionsCollection(params, normalizedOptions)
+    },
+    getDecisionsDetail: (decisionId: string, options?: unknown) => {
+      const [params, normalizedOptions] = toLegacyDecisionReadArgs(options)
+      return mockGetDecisionsDetail(decisionId, params, normalizedOptions)
+    },
+    postDecisionsCollection_2: (...args: unknown[]) => mockPostDecisionsCollection(...args),
   }),
 }))
 

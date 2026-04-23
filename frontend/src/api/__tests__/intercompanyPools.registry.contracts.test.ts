@@ -12,10 +12,11 @@ import type {
 import type { PoolMasterDataRegistryBootstrapContract as GeneratedPoolMasterDataRegistryBootstrapContract } from '../generated/model/poolMasterDataRegistryBootstrapContract'
 import type { PoolMasterDataRegistryCapabilities as GeneratedPoolMasterDataRegistryCapabilities } from '../generated/model/poolMasterDataRegistryCapabilities'
 import type { PoolMasterDataRegistryEntry as GeneratedPoolMasterDataRegistryEntry } from '../generated/model/poolMasterDataRegistryEntry'
-import type { PoolMasterDataRegistryEntryKind as GeneratedPoolMasterDataRegistryKind } from '../generated/model/poolMasterDataRegistryEntryKind'
 import type { PoolMasterDataRegistryInspectResponse as GeneratedPoolMasterDataRegistryResponse } from '../generated/model/poolMasterDataRegistryInspectResponse'
 import type { PoolMasterDataRegistryTokenContract as GeneratedPoolMasterDataRegistryTokenContract } from '../generated/model/poolMasterDataRegistryTokenContract'
-import type { PoolMasterDataRegistryTokenContractQualifierKind as GeneratedPoolMasterDataTokenQualifierKind } from '../generated/model/poolMasterDataRegistryTokenContractQualifierKind'
+
+type GeneratedPoolMasterDataRegistryKind = GeneratedPoolMasterDataRegistryEntry['kind']
+type GeneratedPoolMasterDataTokenQualifierKind = GeneratedPoolMasterDataRegistryTokenContract['qualifier_kind']
 
 describe('intercompanyPools registry contract parity', () => {
   it('keeps registry types aligned with generated OpenAPI contracts', () => {

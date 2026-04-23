@@ -378,6 +378,8 @@ def _build_summary_preview(event: UiIncidentTelemetryEvent) -> dict[str, Any]:
         "route_writer_owner",
         "write_reason",
         "navigation_mode",
+        "param_diff",
+        "caused_by_ui_action_id",
         "oscillating_keys",
         "writer_owners",
         "transition_count",
@@ -388,6 +390,76 @@ def _build_summary_preview(event: UiIncidentTelemetryEvent) -> dict[str, Any]:
         for key in preview_keys
         if key in payload and payload[key] not in (None, "", [], {})
     }
+
+
+def _merge_preview_fields(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    for key, value in source.items():
+        if key not in target and value not in (None, "", [], {}):
+            target[key] = value
+    return target
+
+
+def _select_incident_context_events(
+    *,
+    incident: dict[str, Any],
+    session_events: list[UiIncidentTelemetryEvent],
+) -> list[UiIncidentTelemetryEvent]:
+    start = incident["started_at"] - _TIMELINE_EXPANSION
+    end = incident["ended_at"] + _TIMELINE_EXPANSION
+    route_path = incident.get("route_path") or ""
+    ui_action_id = incident.get("ui_action_id") or ""
+    request_id = incident.get("request_id") or ""
+
+    scoped = [
+        event
+        for event in session_events
+        if start <= event.occurred_at <= end
+        and (not route_path or not event.route_path or event.route_path == route_path)
+    ]
+    if ui_action_id:
+        action_scoped = [event for event in scoped if event.ui_action_id == ui_action_id]
+        if action_scoped:
+            return action_scoped
+    if request_id:
+        request_scoped = [event for event in scoped if event.request_id == request_id]
+        if request_scoped:
+            return request_scoped
+    return scoped
+
+
+def _build_incident_summary_preview(
+    *,
+    signal_event: UiIncidentTelemetryEvent,
+    related_events: list[UiIncidentTelemetryEvent],
+) -> dict[str, Any]:
+    preview = _build_summary_preview(signal_event)
+    if not related_events:
+        return preview
+
+    latest_transition = next(
+        (event for event in reversed(related_events) if event.event_type == "route.transition"),
+        None,
+    )
+    latest_route_action = next(
+        (
+            event
+            for event in reversed(related_events)
+            if event.event_type == "ui.action"
+            and isinstance(event.payload, dict)
+            and event.payload.get("action_kind") == "route.change"
+        ),
+        None,
+    )
+    latest_action = next(
+        (event for event in reversed(related_events) if event.event_type == "ui.action"),
+        None,
+    )
+
+    for candidate in (latest_transition, latest_route_action, latest_action):
+        if candidate is None:
+            continue
+        preview = _merge_preview_fields(preview, _build_summary_preview(candidate))
+    return preview
 
 
 def _build_release_metadata(batch: UiIncidentTelemetryBatch) -> dict[str, Any]:
@@ -469,6 +541,7 @@ def list_ui_incident_summaries(
                 "signal_count": 0,
                 "last_event_type": event.event_type,
                 "preview": _build_summary_preview(event),
+                "_latest_signal_event": event,
             },
         )
         item["signal_count"] += 1
@@ -482,12 +555,47 @@ def list_ui_incident_summaries(
             item["ended_at"] = event.occurred_at
             item["last_event_type"] = event.event_type
             item["preview"] = _build_summary_preview(event)
+            item["_latest_signal_event"] = event
             if event.trace_id:
                 item["trace_id"] = event.trace_id
             item["release"] = _build_release_metadata(event.batch)
 
     ordered = sorted(grouped.values(), key=lambda item: item["ended_at"], reverse=True)
     sliced = ordered[offset:offset + limit]
+    session_ids = sorted({item["session_id"] for item in sliced if item.get("session_id")})
+    context_events_by_session: dict[str, list[UiIncidentTelemetryEvent]] = {}
+    if session_ids:
+        earliest = min(item["started_at"] for item in sliced) - _TIMELINE_EXPANSION
+        latest = max(item["ended_at"] for item in sliced) + _TIMELINE_EXPANSION
+        context_queryset = UiIncidentTelemetryEvent.objects.filter(
+            tenant=tenant,
+            session_id__in=session_ids,
+            occurred_at__gte=earliest,
+            occurred_at__lte=latest,
+        ).order_by("occurred_at", "id")
+        context_queryset = _apply_filters(
+            context_queryset,
+            actor_username=actor_username,
+            user_id=user_id,
+        )
+        for event in context_queryset:
+            if not event.session_id:
+                continue
+            context_events_by_session.setdefault(event.session_id, []).append(event)
+
+    for item in sliced:
+        signal_event = item.pop("_latest_signal_event", None)
+        if not isinstance(signal_event, UiIncidentTelemetryEvent):
+            continue
+        session_events = context_events_by_session.get(item.get("session_id") or "", [])
+        related_events = _select_incident_context_events(
+            incident=item,
+            session_events=session_events,
+        )
+        item["preview"] = _build_incident_summary_preview(
+            signal_event=signal_event,
+            related_events=related_events,
+        )
     return {
         "incidents": sliced,
         "count": len(sliced),

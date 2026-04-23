@@ -3,10 +3,8 @@ import { getV2 } from './generated/v2/v2'
 import type { PoolMasterDataRegistryBootstrapContract as GeneratedPoolMasterDataRegistryBootstrapContract } from './generated/model/poolMasterDataRegistryBootstrapContract'
 import type { PoolMasterDataRegistryCapabilities as GeneratedPoolMasterDataRegistryCapabilities } from './generated/model/poolMasterDataRegistryCapabilities'
 import type { PoolMasterDataRegistryEntry as GeneratedPoolMasterDataRegistryEntry } from './generated/model/poolMasterDataRegistryEntry'
-import type { PoolMasterDataRegistryEntryKind as GeneratedPoolMasterDataRegistryKind } from './generated/model/poolMasterDataRegistryEntryKind'
 import type { PoolMasterDataRegistryInspectResponse as GeneratedPoolMasterDataRegistryResponse } from './generated/model/poolMasterDataRegistryInspectResponse'
 import type { PoolMasterDataRegistryTokenContract as GeneratedPoolMasterDataRegistryTokenContract } from './generated/model/poolMasterDataRegistryTokenContract'
-import type { PoolMasterDataRegistryTokenContractQualifierKind as GeneratedPoolMasterDataTokenQualifierKind } from './generated/model/poolMasterDataRegistryTokenContractQualifierKind'
 import type { PoolMasterDataGLAccount as GeneratedPoolMasterDataGLAccount } from './generated/model/poolMasterDataGLAccount'
 import type { PoolMasterDataGLAccountSetDetail as GeneratedPoolMasterDataGLAccountSetDetail } from './generated/model/poolMasterDataGLAccountSetDetail'
 import type { PoolMasterDataGLAccountSetMemberRead as GeneratedPoolMasterDataGLAccountSetMemberRead } from './generated/model/poolMasterDataGLAccountSetMemberRead'
@@ -1610,8 +1608,8 @@ export async function abortPoolRunPublication(
 export type PoolMasterDataEntityType = string
 export type PoolMasterBindingCatalogKind = string
 export type PoolMasterBindingSyncStatus = 'resolved' | 'upserted' | 'conflict'
-export type PoolMasterDataRegistryKind = GeneratedPoolMasterDataRegistryKind
-export type PoolMasterDataTokenQualifierKind = GeneratedPoolMasterDataTokenQualifierKind
+export type PoolMasterDataRegistryKind = GeneratedPoolMasterDataRegistryEntry['kind']
+export type PoolMasterDataTokenQualifierKind = GeneratedPoolMasterDataRegistryTokenContract['qualifier_kind']
 export type PoolMasterDataRegistryCapabilities = GeneratedPoolMasterDataRegistryCapabilities
 export type PoolMasterDataRegistryTokenContract = GeneratedPoolMasterDataRegistryTokenContract
 export type PoolMasterDataRegistryBootstrapContract = GeneratedPoolMasterDataRegistryBootstrapContract

@@ -84,6 +84,7 @@ class UiIncidentReleaseSerializer(serializers.Serializer):
 class UiIncidentSummaryPreviewSerializer(serializers.Serializer):
     action_kind = serializers.CharField(required=False, allow_null=True)
     action_name = serializers.CharField(required=False, allow_null=True)
+    caused_by_ui_action_id = serializers.CharField(required=False, allow_null=True)
     control_id = serializers.CharField(required=False, allow_null=True)
     error_code = serializers.CharField(required=False, allow_null=True)
     error_title = serializers.CharField(required=False, allow_null=True)
@@ -92,6 +93,7 @@ class UiIncidentSummaryPreviewSerializer(serializers.Serializer):
     navigation_mode = serializers.CharField(required=False, allow_null=True)
     outcome = serializers.CharField(required=False, allow_null=True)
     oscillating_keys = serializers.ListField(child=serializers.CharField(), required=False)
+    param_diff = serializers.JSONField(required=False)
     status = serializers.IntegerField(required=False, allow_null=True)
     latency_ms = serializers.IntegerField(required=False, allow_null=True)
     method = serializers.CharField(required=False, allow_null=True)

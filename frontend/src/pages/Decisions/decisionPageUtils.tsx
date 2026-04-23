@@ -3,8 +3,10 @@ import { StatusBadge } from '../../components/platform'
 import type {
   DatabaseMetadataManagementResponse,
   DecisionMetadataCompatibility,
+  DecisionTableDetailResponse,
+  DecisionTableListResponse,
+  DecisionTableRead,
   DecisionRevisionMetadataContext,
-  DecisionTable,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
 import type {
@@ -33,10 +35,37 @@ const api = getV2()
 
 export type MetadataContextLike = PoolODataMetadataCatalogResponse | DecisionRevisionMetadataContext | null | undefined
 export type DatabaseMetadataManagementLike = DatabaseMetadataManagementResponse | null | undefined
-export type DecisionReadResponse = Awaited<ReturnType<typeof api.getDecisionsCollection>>
-export type DecisionDetailReadResponse = Awaited<ReturnType<typeof api.getDecisionsDetail>>
+export type DecisionTable = DecisionTableRead
+export type DecisionReadResponse = DecisionTableListResponse
+export type DecisionDetailReadResponse = DecisionTableDetailResponse
 
 export const DECISIONS_API_OPTIONS = { errorPolicy: 'page' } as const
+
+type DecisionsCollectionResult = Awaited<ReturnType<typeof api.getDecisionsCollection>>
+
+const buildDecisionReadOptions = (databaseId: string | undefined) => (
+  databaseId
+    ? { ...DECISIONS_API_OPTIONS, params: { database_id: databaseId } }
+    : DECISIONS_API_OPTIONS
+)
+
+export const expectDecisionListResponse = (
+  response: DecisionsCollectionResult,
+): DecisionTableListResponse => {
+  if ('decisions' in response) {
+    return response
+  }
+  throw new Error('Expected DecisionTableListResponse from GET /api/v2/decisions/.')
+}
+
+export const expectDecisionDetailResponse = (
+  response: DecisionTableListResponse | DecisionTableDetailResponse,
+): DecisionTableDetailResponse => {
+  if ('decision' in response) {
+    return response
+  }
+  throw new Error('Expected DecisionTableDetailResponse from decisions mutation.')
+}
 
 const METADATA_CONTEXT_FALLBACK_CODES = new Set([
   'ODATA_MAPPING_AMBIGUOUS',
@@ -112,9 +141,8 @@ export const loadDecisionsCollection = async (
   databaseId: string | undefined
 ): Promise<{ response: DecisionReadResponse; usedFallback: boolean }> => {
   try {
-    const response = await api.getDecisionsCollection(
-      databaseId ? { database_id: databaseId } : {},
-      DECISIONS_API_OPTIONS,
+    const response = expectDecisionListResponse(
+      await api.getDecisionsCollection(buildDecisionReadOptions(databaseId))
     )
     return { response, usedFallback: false }
   } catch (error) {
@@ -122,7 +150,9 @@ export const loadDecisionsCollection = async (
       throw error
     }
 
-    const response = await api.getDecisionsCollection({}, DECISIONS_API_OPTIONS)
+    const response = expectDecisionListResponse(
+      await api.getDecisionsCollection(DECISIONS_API_OPTIONS)
+    )
     return { response, usedFallback: true }
   }
 }
@@ -134,8 +164,7 @@ export const loadDecisionDetail = async (
   try {
     const response = await api.getDecisionsDetail(
       decisionId,
-      databaseId ? { database_id: databaseId } : {},
-      DECISIONS_API_OPTIONS,
+      buildDecisionReadOptions(databaseId),
     )
     return { response, usedFallback: false }
   } catch (error) {
@@ -143,7 +172,7 @@ export const loadDecisionDetail = async (
       throw error
     }
 
-    const response = await api.getDecisionsDetail(decisionId, {}, DECISIONS_API_OPTIONS)
+    const response = await api.getDecisionsDetail(decisionId, DECISIONS_API_OPTIONS)
     return { response, usedFallback: true }
   }
 }

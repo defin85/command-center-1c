@@ -208,6 +208,10 @@ export function SyncStatusTab({ registryEntries }: SyncStatusTabProps) {
     ) => {
       setSearchParams(
         (current) => {
+          // Ignore late async Sync callbacks once the route has moved to another zone.
+          if (current.get('tab')?.trim() !== 'sync') {
+            return current
+          }
           const next = new URLSearchParams(current)
           Object.entries(updates).forEach(([key, value]) => {
             const normalized = typeof value === 'string' ? value.trim() : ''

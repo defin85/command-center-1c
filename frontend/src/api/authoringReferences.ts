@@ -1,4 +1,5 @@
 import { getV2 } from './generated/v2/v2'
+import type { DecisionTableListResponse, DecisionTableRead } from './generated/model'
 import { isDecisionAvailableByDefault } from '../features/authoringReferences/options'
 import type {
   AvailableDecisionRevision,
@@ -9,7 +10,16 @@ type V2Api = ReturnType<typeof getV2>
 type WorkflowsListResponse = Awaited<ReturnType<V2Api['getWorkflowsListWorkflows']>>
 type WorkflowSummary = NonNullable<WorkflowsListResponse['workflows']>[number]
 type DecisionsCollectionResponse = Awaited<ReturnType<V2Api['getDecisionsCollection']>>
-type DecisionSummary = NonNullable<DecisionsCollectionResponse['decisions']>[number]
+type DecisionSummary = DecisionTableRead
+
+const expectDecisionListResponse = (
+  response: DecisionsCollectionResponse,
+): DecisionTableListResponse => {
+  if ('decisions' in response) {
+    return response
+  }
+  throw new Error('Expected DecisionTableListResponse from GET /api/v2/decisions/.')
+}
 
 export type AuthoringReferences = {
   availableWorkflows: AvailableWorkflowRevision[]
@@ -93,13 +103,14 @@ export async function listAuthoringReferences(options?: {
     api.getWorkflowsListWorkflows({ surface: 'workflow_library', limit: 1000 }),
     api.getDecisionsCollection(
       databaseId
-        ? { database_id: databaseId }
+        ? { params: { database_id: databaseId } }
         : undefined
     ),
   ])
+  const decisions = expectDecisionListResponse(decisionResponse)
 
   return {
     availableWorkflows: buildAvailableWorkflowRevisions(workflowResponse.workflows),
-    availableDecisions: buildAvailableDecisionRevisions(decisionResponse.decisions),
+    availableDecisions: buildAvailableDecisionRevisions(decisions.decisions),
   }
 }

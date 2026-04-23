@@ -261,10 +261,50 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
         release_fingerprint="frontend@2026.04.19+42",
         release_mode="prod",
         release_origin="https://cc1c.example.test",
-        accepted_event_count=1,
+        accepted_event_count=3,
         last_occurred_at=occurred_at,
     )
     batch = UiIncidentTelemetryBatch.objects.get(batch_id="batch-summary")
+    UiIncidentTelemetryEvent.objects.create(
+        tenant=tenant,
+        batch=batch,
+        actor_user=member_user,
+        actor_username=member_user.username,
+        session_id="session-summary",
+        event_id="evt-summary-action",
+        event_type="ui.action",
+        occurred_at=occurred_at - timedelta(seconds=2),
+        route_path="/pools/master-data",
+        ui_action_id="uia-summary",
+        trace_id="trace-summary",
+        payload={
+            "action_kind": "route.change",
+            "action_name": "Open Sync zone",
+            "surface_id": "pool_master_data",
+            "control_id": "zone.sync",
+        },
+    )
+    UiIncidentTelemetryEvent.objects.create(
+        tenant=tenant,
+        batch=batch,
+        actor_user=member_user,
+        actor_username=member_user.username,
+        session_id="session-summary",
+        event_id="evt-summary-transition",
+        event_type="route.transition",
+        occurred_at=occurred_at - timedelta(seconds=1),
+        route_path="/pools/master-data",
+        ui_action_id="uia-summary",
+        trace_id="trace-summary",
+        payload={
+            "surface_id": "pool_master_data",
+            "route_writer_owner": "pool_master_data_page",
+            "write_reason": "zone_switch",
+            "navigation_mode": "push",
+            "param_diff": {"tab": {"from": "bindings", "to": "sync"}},
+            "caused_by_ui_action_id": "uia-summary",
+        },
+    )
     UiIncidentTelemetryEvent.objects.create(
         tenant=tenant,
         batch=batch,
@@ -311,6 +351,12 @@ def test_recent_ui_incident_queries_are_staff_only_and_tenant_scoped(
     assert response.data["incidents"][0]["release"]["fingerprint"] == "frontend@2026.04.19+42"
     assert response.data["incidents"][0]["signal_event_types"] == ["route.loop_warning"]
     assert response.data["incidents"][0]["preview"] == {
+        "action_kind": "route.change",
+        "action_name": "Open Sync zone",
+        "caused_by_ui_action_id": "uia-summary",
+        "control_id": "zone.sync",
+        "navigation_mode": "push",
+        "param_diff": {"tab": {"from": "bindings", "to": "sync"}},
         "surface_id": "pool_master_data",
         "route_writer_owner": "pool_master_data_page",
         "write_reason": "zone_switch",
@@ -540,3 +586,32 @@ def test_generated_openapi_marks_tenant_header_required_for_ui_incident_telemetr
         assert tenant_headers[0]["description"] == (
             "Required tenant context selector for UI incident telemetry ingest and staff diagnostics queries."
         )
+
+
+def test_generated_openapi_exposes_ui_incident_summary_preview_route_intent_fields() -> None:
+    contract = _load_openapi_contract()
+    components = contract.get("components")
+    assert isinstance(components, dict)
+    schemas = components.get("schemas")
+    assert isinstance(schemas, dict)
+    preview = schemas.get("UiIncidentSummaryPreview")
+    assert isinstance(preview, dict)
+    properties = preview.get("properties")
+    assert isinstance(properties, dict)
+
+    expected_properties = {
+        "caused_by_ui_action_id",
+        "control_id",
+        "navigation_mode",
+        "oscillating_keys",
+        "param_diff",
+        "route_writer_owner",
+        "surface_id",
+        "transition_count",
+        "window_ms",
+        "write_reason",
+        "writer_owners",
+    }
+
+    missing = sorted(expected_properties.difference(properties))
+    assert missing == []

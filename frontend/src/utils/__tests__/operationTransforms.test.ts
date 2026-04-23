@@ -17,6 +17,15 @@ const baseOperation: BatchOperation = {
   success_rate: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
+  workflow_execution_id: null,
+  node_id: null,
+  root_operation_id: 'op-1',
+  execution_consumer: 'operations',
+  lane: 'operations',
+  priority: null,
+  role: null,
+  server_affinity: null,
+  deadline_at: null,
   database_names: [],
   tasks: [],
 }
@@ -50,6 +59,9 @@ describe('transformBatchOperation observability fields', () => {
     const transformed = transformBatchOperation({
       ...baseOperation,
       id: 'op-2',
+      root_operation_id: '',
+      execution_consumer: '',
+      lane: '',
       metadata: {},
     })
 

@@ -1,8 +1,8 @@
 import type {
   DecisionRevisionMetadataContext,
-  DecisionTable,
   PoolODataMetadataCatalogResponse,
 } from '../../api/generated/model'
+import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
 
 export type DecisionSnapshotFilterMode = 'matching_snapshot' | 'all'
 

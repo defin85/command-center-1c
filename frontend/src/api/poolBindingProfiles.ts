@@ -5,7 +5,7 @@ import type { BindingProfileDetail } from './generated/model/bindingProfileDetai
 import type { BindingProfileDetailResponse } from './generated/model/bindingProfileDetailResponse'
 import type { BindingProfileListResponse } from './generated/model/bindingProfileListResponse'
 import type { BindingProfileMutationResponse } from './generated/model/bindingProfileMutationResponse'
-import type { BindingProfileRevision } from './generated/model/bindingProfileRevision'
+import type { BindingProfileRevisionRead as BindingProfileRevision } from './generated/model/bindingProfileRevisionRead'
 import type { BindingProfileRevisionCreateRequest } from './generated/model/bindingProfileRevisionCreateRequest'
 import type { BindingProfileSummary } from './generated/model/bindingProfileSummary'
 import type { BindingProfileUsageAttachment } from './generated/model/bindingProfileUsageAttachment'

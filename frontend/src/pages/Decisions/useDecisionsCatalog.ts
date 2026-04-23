@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
-import type { DecisionTable, PoolODataMetadataCatalogResponse } from '../../api/generated/model'
+import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
 import { listOrganizationPools, type OrganizationPool } from '../../api/intercompanyPools'
 import { useDecisionsTranslation } from '../../i18n'
 import { useDatabaseMetadataManagement, useDatabases } from '../../api/queries/databases'
@@ -30,7 +30,7 @@ type DecisionsCatalogState = {
   setSelectedDatabaseId: Dispatch<SetStateAction<string | null | undefined>>
   effectiveSelectedDatabaseId: string | undefined
   selectedDatabaseLabel: string
-  metadataContext: PoolODataMetadataCatalogResponse | null
+  metadataContext: MetadataContextLike
   detailContext: MetadataContextLike
   listLoading: boolean
   detailLoading: boolean
@@ -103,7 +103,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
     () => decisionFromUrl
   )
   const [selectedDecision, setSelectedDecision] = useState<DecisionTable | null>(null)
-  const [metadataContext, setMetadataContext] = useState<PoolODataMetadataCatalogResponse | null>(null)
+  const [metadataContext, setMetadataContext] = useState<MetadataContextLike>(null)
   const [detailContext, setDetailContext] = useState<MetadataContextLike>(null)
   const [listLoading, setListLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -275,7 +275,7 @@ export function useDecisionsCatalog(): DecisionsCatalogState {
         const { response, usedFallback } = await loadDecisionsCollection(databaseIdForRead)
         if (cancelled) return
 
-        const items = response.decisions ?? []
+        const items = response.decisions
         setDecisions(items)
         routeUpdateModeRef.current = 'replace'
         setSelectedDecisionId((current) => (
