@@ -1,6 +1,6 @@
 import { Alert, Collapse, Descriptions, Space, Typography } from 'antd'
 
-import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
+import type { DecisionTable } from '../../api/generated/model/decisionTable'
 import { LazyJsonCodeEditor } from '../../components/code/LazyJsonCodeEditor'
 import { EntityDetails } from '../../components/platform'
 import { useDecisionsTranslation } from '../../i18n'

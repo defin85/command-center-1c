@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
+import type { DecisionTable } from '../../api/generated/model/decisionTable'
 import { getV2 } from '../../api/generated'
 import { useDecisionsTranslation } from '../../i18n'
 import {
@@ -256,7 +256,7 @@ export function useDecisionEditor({
       })
 
       const response = expectDecisionDetailResponse(
-        await api.postDecisionsCollection_2(payload, DECISIONS_API_OPTIONS)
+        await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
       )
       const nextDecisionId = response?.decision?.id ?? null
       message.success(
@@ -306,7 +306,7 @@ export function useDecisionEditor({
         is_active: false,
       })
 
-      await api.postDecisionsCollection_2(payload, DECISIONS_API_OPTIONS)
+      await api.postDecisionsCollection(payload, DECISIONS_API_OPTIONS)
       message.warning(t(($) => $.messages.deactivated))
       onDecisionSaved(selectedDecision.id)
     } catch (error) {

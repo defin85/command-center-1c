@@ -230,17 +230,26 @@ function ensureUiIncidentSummaryPreviewRouteIntentFields(filePath) {
 function ensureGeneratedCompatibilityModelShims() {
   writeGeneratedFile(
     resolve(process.cwd(), 'src/api/generated/model/workflowDefinitionRef.ts'),
-    `import type { BindingProfileWorkflowDefinitionRef } from './bindingProfileWorkflowDefinitionRef';
-
-export type WorkflowDefinitionRef = BindingProfileWorkflowDefinitionRef;
+    `export interface WorkflowDefinitionRef {
+  /** Execution-pack revision contract version. */
+  contract_version?: string;
+  workflow_definition_key: string;
+  workflow_revision_id: string;
+  workflow_revision: number;
+  workflow_name: string;
+}
 `
   )
 
   writeGeneratedFile(
     resolve(process.cwd(), 'src/api/generated/model/poolWorkflowBindingDecisionRef.ts'),
-    `import type { BindingProfileDecisionRef } from './bindingProfileDecisionRef';
-
-export type PoolWorkflowBindingDecisionRef = BindingProfileDecisionRef;
+    `export interface PoolWorkflowBindingDecisionRef {
+  decision_table_id: string;
+  decision_key: string;
+  /** @nullable */
+  slot_key?: string | null;
+  decision_revision: number;
+}
 `
   )
 
@@ -252,9 +261,7 @@ export type PoolWorkflowBindingDecisionRef = BindingProfileDecisionRef;
 
   writeGeneratedFile(
     resolve(process.cwd(), 'src/api/generated/model/bindingProfileRevisionRoleMapping.ts'),
-    `import type { BindingProfileRevisionReadRoleMapping } from './bindingProfileRevisionReadRoleMapping';
-
-export type BindingProfileRevisionRoleMapping = BindingProfileRevisionReadRoleMapping;
+    `export type BindingProfileRevisionRoleMapping = Record<string, string>;
 `
   )
 

@@ -37,7 +37,7 @@ import type {
   UpsertOrganizationPoolPayload,
   WorkflowDefinitionRef,
 } from './intercompanyPools'
-import type { DecisionTableRead as GeneratedDecisionTableRead } from './generated/model/decisionTableRead'
+import type { DecisionTable as GeneratedDecisionTableRead } from './generated/model/decisionTable'
 import type { OrganizationPool as GeneratedOrganizationPool } from './generated/model/organizationPool'
 import type { OrganizationPoolUpsertRequest as GeneratedOrganizationPoolUpsertRequest } from './generated/model/organizationPoolUpsertRequest'
 import type { PoolGraphResponse as GeneratedPoolGraphResponse } from './generated/model/poolGraphResponse'
@@ -75,7 +75,7 @@ import type { PoolWorkflowBindingInput as GeneratedPoolWorkflowBindingInput } fr
 import type { PoolWorkflowBindingDecisionRef as GeneratedPoolWorkflowBindingDecisionRef } from './generated/model/poolWorkflowBindingDecisionRef'
 import type { PoolWorkflowBindingRead as GeneratedPoolWorkflowBinding } from './generated/model/poolWorkflowBindingRead'
 import type { PoolWorkflowBindingResolvedProfile as GeneratedPoolWorkflowBindingResolvedProfile } from './generated/model/poolWorkflowBindingResolvedProfile'
-import type { PoolWorkflowBindingSelectorInput as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelectorInput'
+import type { PoolWorkflowBindingSelector as GeneratedPoolWorkflowBindingSelector } from './generated/model/poolWorkflowBindingSelector'
 import type { WorkflowDefinitionRef as GeneratedWorkflowDefinitionRef } from './generated/model/workflowDefinitionRef'
 
 type AssertAssignable<TActual extends TExpected, TExpected> = TActual

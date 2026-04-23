@@ -1,6 +1,6 @@
 import { Alert, Button, Space, Typography } from 'antd'
 
-import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
+import type { DecisionTable } from '../../api/generated/model/decisionTable'
 import { EntityList, StatusBadge } from '../../components/platform'
 import { useDecisionsTranslation } from '../../i18n'
 import { isDecisionPinnedInBinding, type DecisionSnapshotFilterMode, type PinnedDecisionRefs } from './decisionSnapshotFilter'

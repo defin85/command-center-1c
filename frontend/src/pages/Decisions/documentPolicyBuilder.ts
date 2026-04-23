@@ -1,4 +1,4 @@
-import type { DecisionTableWrite } from '../../api/generated/model/decisionTableWrite'
+import type { DecisionTableWriteRequest } from '../../api/generated/model/decisionTableWriteRequest'
 
 export const DOCUMENT_POLICY_VERSION = 'document_policy.v1'
 export const DOCUMENT_POLICY_DECISION_KEY = 'document_policy'
@@ -590,8 +590,8 @@ export const buildDocumentPolicyFromBuilder = (
 
 export const buildDocumentPolicyDecisionPayload = (
   input: BuildDocumentPolicyDecisionPayloadInput
-): DecisionTableWrite => {
-  const payload: DecisionTableWrite = {
+): DecisionTableWriteRequest => {
+  const payload: DecisionTableWriteRequest = {
     name: trimString(input.name),
     description: trimString(input.description),
     decision_table_id: trimString(input.decision_table_id),

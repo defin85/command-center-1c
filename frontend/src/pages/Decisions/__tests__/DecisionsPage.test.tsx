@@ -17,31 +17,45 @@ const mockUseDatabases = vi.fn()
 const mockUseDatabaseMetadataManagement = vi.fn()
 let consoleErrorSpy: ReturnType<typeof vi.spyOn> | null = null
 
-const toLegacyDecisionReadArgs = (options: unknown): [Record<string, unknown>, { errorPolicy?: string }] => {
-  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+const toDecisionReadArgs = (
+  params: unknown,
+  options?: unknown,
+): [Record<string, unknown>, { errorPolicy?: string }] => {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
     return [{}, { errorPolicy: 'page' }]
   }
 
-  const candidate = options as {
+  const candidate = params as {
     params?: Record<string, unknown>
     errorPolicy?: string
   }
+  if ('params' in candidate || 'errorPolicy' in candidate) {
+    return [
+      candidate.params ?? {},
+      candidate.errorPolicy ? { errorPolicy: candidate.errorPolicy } : { errorPolicy: 'page' },
+    ]
+  }
+
+  const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options)
+    ? options as { errorPolicy?: string }
+    : {}
   return [
-    candidate.params ?? {},
-    candidate.errorPolicy ? { errorPolicy: candidate.errorPolicy } : { errorPolicy: 'page' },
+    params as Record<string, unknown>,
+    normalizedOptions.errorPolicy ? { errorPolicy: normalizedOptions.errorPolicy } : { errorPolicy: 'page' },
   ]
 }
 
 vi.mock('../../../api/generated/v2/v2', () => ({
   getV2: () => ({
-    getDecisionsCollection: (options?: unknown) => {
-      const [params, normalizedOptions] = toLegacyDecisionReadArgs(options)
-      return mockGetDecisionsCollection(params, normalizedOptions)
+    getDecisionsCollection: (params?: unknown, options?: unknown) => {
+      const [normalizedParams, normalizedOptions] = toDecisionReadArgs(params, options)
+      return mockGetDecisionsCollection(normalizedParams, normalizedOptions)
     },
-    getDecisionsDetail: (decisionId: string, options?: unknown) => {
-      const [params, normalizedOptions] = toLegacyDecisionReadArgs(options)
-      return mockGetDecisionsDetail(decisionId, params, normalizedOptions)
+    getDecisionsDetail: (decisionId: string, params?: unknown, options?: unknown) => {
+      const [normalizedParams, normalizedOptions] = toDecisionReadArgs(params, options)
+      return mockGetDecisionsDetail(decisionId, normalizedParams, normalizedOptions)
     },
+    postDecisionsCollection: (...args: unknown[]) => mockPostDecisionsCollection(...args),
     postDecisionsCollection_2: (...args: unknown[]) => mockPostDecisionsCollection(...args),
   }),
 }))

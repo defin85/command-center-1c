@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
-import type { DecisionTableRead as DecisionTable } from '../../api/generated/model/decisionTableRead'
+import type { DecisionTable } from '../../api/generated/model/decisionTable'
 import { listOrganizationPools, type OrganizationPool } from '../../api/intercompanyPools'
 import { useDecisionsTranslation } from '../../i18n'
 import { useDatabaseMetadataManagement, useDatabases } from '../../api/queries/databases'
