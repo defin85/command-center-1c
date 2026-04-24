@@ -2,6 +2,7 @@ export const governanceTiers = ['platform-governed', 'legacy-monitored', 'exclud
 export const routeStateTransports = ['none', 'search-params', 'path-params', 'mixed']
 export const detailMobileFallbackKinds = ['none', 'drawer', 'dedicated-route', 'mixed']
 export const compactMasterPaneModes = ['compact-selection']
+export const routeShellRuntimeKinds = ['public', 'redirect', 'shell-backed authenticated', 'authenticated no-shell/fullscreen']
 
 /**
  * Checked-in route governance inventory for operator-facing frontend surfaces.
@@ -10,24 +11,29 @@ export const compactMasterPaneModes = ['compact-selection']
  * `ownedLocaleBoundaryFiles` extends locale-boundary governance to the effective
  * route-owned canvases/helpers that render default user-facing copy or formatting.
  * Redirect-only helper aliases keep `modulePath: null` and document the redirect target instead.
+ * `shellRuntimeKind` is the checked-in source of truth for shell-backed vs
+ * no-shell/fullscreen route ownership.
  */
 export const routeGovernanceInventory = [
   {
     routePath: '/login',
     modulePath: 'src/pages/Login/Login.tsx',
     tier: 'excluded',
+    shellRuntimeKind: 'public',
     exclusionReason: 'public-auth-route',
   },
   {
     routePath: '/forbidden',
     modulePath: 'src/pages/Forbidden/ForbiddenPage.tsx',
     tier: 'excluded',
+    shellRuntimeKind: 'public',
     exclusionReason: 'public-forbidden-route',
   },
   {
     routePath: '/',
     modulePath: 'src/pages/Dashboard/Dashboard.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'dashboard-route',
     workspaceKind: 'dashboard',
     stateTransport: 'none',
@@ -37,6 +43,7 @@ export const routeGovernanceInventory = [
     routePath: '/clusters',
     modulePath: 'src/pages/Clusters/Clusters.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'clusters-route',
     workspaceKind: 'management-workspace',
     stateTransport: 'search-params',
@@ -46,6 +53,7 @@ export const routeGovernanceInventory = [
     routePath: '/operations',
     modulePath: 'src/pages/Operations/OperationsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'operations-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -59,6 +67,7 @@ export const routeGovernanceInventory = [
     routePath: '/artifacts',
     modulePath: 'src/pages/Artifacts/ArtifactsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'catalog-workspace',
     stateTransport: 'search-params',
@@ -68,6 +77,7 @@ export const routeGovernanceInventory = [
     routePath: '/databases',
     modulePath: 'src/pages/Databases/Databases.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'databases-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -81,6 +91,7 @@ export const routeGovernanceInventory = [
     routePath: '/extensions',
     modulePath: 'src/pages/Extensions/Extensions.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'management-workspace',
     stateTransport: 'search-params',
@@ -90,6 +101,7 @@ export const routeGovernanceInventory = [
     routePath: '/installation-monitor',
     modulePath: null,
     tier: 'excluded',
+    shellRuntimeKind: 'redirect',
     exclusionReason: 'legacy-route-alias',
     redirectTarget: '/operations?tab=list',
   },
@@ -97,6 +109,7 @@ export const routeGovernanceInventory = [
     routePath: '/operation-monitor',
     modulePath: null,
     tier: 'excluded',
+    shellRuntimeKind: 'redirect',
     exclusionReason: 'legacy-route-alias',
     redirectTarget: '/operations?tab=monitor',
   },
@@ -104,6 +117,7 @@ export const routeGovernanceInventory = [
     routePath: '/system-status',
     modulePath: 'src/pages/SystemStatus/SystemStatus.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'observability-route',
     workspaceKind: 'diagnostics-workspace',
     stateTransport: 'search-params',
@@ -113,6 +127,7 @@ export const routeGovernanceInventory = [
     routePath: '/workflows',
     modulePath: 'src/pages/Workflows/WorkflowList.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'workflow-list-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -126,6 +141,7 @@ export const routeGovernanceInventory = [
     routePath: '/workflows/executions',
     modulePath: 'src/pages/Workflows/WorkflowExecutions.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'workflow-executions-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -139,6 +155,7 @@ export const routeGovernanceInventory = [
     routePath: '/workflows/new',
     modulePath: 'src/pages/Workflows/WorkflowDesigner.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'authenticated no-shell/fullscreen',
     lintProfile: 'workflow-designer-route',
     workspaceKind: 'authoring-workspace',
     stateTransport: 'search-params',
@@ -157,6 +174,7 @@ export const routeGovernanceInventory = [
     routePath: '/workflows/:id',
     modulePath: 'src/pages/Workflows/WorkflowDesigner.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'authenticated no-shell/fullscreen',
     lintProfile: 'workflow-designer-route',
     workspaceKind: 'authoring-workspace',
     stateTransport: 'mixed',
@@ -175,6 +193,7 @@ export const routeGovernanceInventory = [
     routePath: '/workflows/executions/:executionId',
     modulePath: 'src/pages/Workflows/WorkflowMonitor.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'authenticated no-shell/fullscreen',
     lintProfile: 'workflow-monitor-route',
     workspaceKind: 'diagnostics-workspace',
     stateTransport: 'mixed',
@@ -193,6 +212,7 @@ export const routeGovernanceInventory = [
     routePath: '/templates',
     modulePath: 'src/pages/Templates/TemplatesPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'templates-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -206,6 +226,7 @@ export const routeGovernanceInventory = [
     routePath: '/decisions',
     modulePath: 'src/pages/Decisions/DecisionsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'canonical-page-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -215,6 +236,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/templates',
     modulePath: 'src/pages/Pools/PoolSchemaTemplatesPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'pool-schema-templates-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -224,6 +246,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/catalog',
     modulePath: 'src/pages/Pools/PoolCatalogPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'pool-catalog-route',
     workspaceKind: 'task-workspace',
     stateTransport: 'search-params',
@@ -237,6 +260,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/topology-templates',
     modulePath: 'src/pages/Pools/PoolTopologyTemplatesPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'topology-templates-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -250,6 +274,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/execution-packs',
     modulePath: 'src/pages/Pools/PoolBindingProfilesPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'canonical-page-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -263,6 +288,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/master-data',
     modulePath: 'src/pages/Pools/PoolMasterDataPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'pool-master-data-route',
     workspaceKind: 'multi-zone-workspace',
     stateTransport: 'search-params',
@@ -275,6 +301,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/factual',
     modulePath: 'src/pages/Pools/PoolFactualPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'canonical-page-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -290,6 +317,7 @@ export const routeGovernanceInventory = [
     routePath: '/pools/runs',
     modulePath: 'src/pages/Pools/PoolRunsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'pool-runs-route',
     workspaceKind: 'stage-workspace',
     stateTransport: 'search-params',
@@ -302,6 +330,7 @@ export const routeGovernanceInventory = [
     routePath: '/service-mesh',
     modulePath: 'src/pages/ServiceMesh/ServiceMeshPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'observability-route',
     workspaceKind: 'realtime-workspace',
     stateTransport: 'search-params',
@@ -311,6 +340,7 @@ export const routeGovernanceInventory = [
     routePath: '/rbac',
     modulePath: 'src/pages/RBAC/RBACPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'governance-workspace',
     stateTransport: 'search-params',
@@ -320,6 +350,7 @@ export const routeGovernanceInventory = [
     routePath: '/users',
     modulePath: 'src/pages/Users/UsersPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'catalog-detail',
     stateTransport: 'search-params',
@@ -329,6 +360,7 @@ export const routeGovernanceInventory = [
     routePath: '/dlq',
     modulePath: 'src/pages/DLQ/DLQPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'remediation-workspace',
     stateTransport: 'search-params',
@@ -338,6 +370,7 @@ export const routeGovernanceInventory = [
     routePath: '/settings/runtime',
     modulePath: 'src/pages/Settings/RuntimeSettingsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'settings-workspace',
     stateTransport: 'search-params',
@@ -347,6 +380,7 @@ export const routeGovernanceInventory = [
     routePath: '/settings/driver-catalogs',
     modulePath: null,
     tier: 'excluded',
+    shellRuntimeKind: 'redirect',
     exclusionReason: 'redirect-alias-to-command-schemas',
     redirectTarget: '/settings/command-schemas?mode=raw',
   },
@@ -354,6 +388,7 @@ export const routeGovernanceInventory = [
     routePath: '/settings/command-schemas',
     modulePath: 'src/pages/CommandSchemas/CommandSchemasPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'authoring-workspace',
     stateTransport: 'search-params',
@@ -363,6 +398,7 @@ export const routeGovernanceInventory = [
     routePath: '/settings/timeline',
     modulePath: 'src/pages/Settings/TimelineSettingsPage.tsx',
     tier: 'platform-governed',
+    shellRuntimeKind: 'shell-backed authenticated',
     lintProfile: 'privileged-workspace-route',
     workspaceKind: 'settings-workspace',
     stateTransport: 'search-params',
@@ -567,6 +603,16 @@ export const shellSurfaceGovernanceInventory = [
 
 export const routeGovernancePathSet = new Set(routeGovernanceInventory.map((entry) => entry.routePath))
 export const shellSurfaceFilePathSet = new Set(shellSurfaceGovernanceInventory.map((entry) => entry.filePath))
+export const shellBackedAuthenticatedRoutePathSet = new Set(
+  routeGovernanceInventory
+    .filter((entry) => entry.shellRuntimeKind === 'shell-backed authenticated')
+    .map((entry) => entry.routePath)
+)
+export const noShellAuthenticatedRoutePathSet = new Set(
+  routeGovernanceInventory
+    .filter((entry) => entry.shellRuntimeKind === 'authenticated no-shell/fullscreen')
+    .map((entry) => entry.routePath)
+)
 
 export const platformGovernedRouteInventory = routeGovernanceInventory.filter(
   (entry) => entry.tier === 'platform-governed'

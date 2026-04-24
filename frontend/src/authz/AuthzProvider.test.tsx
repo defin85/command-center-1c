@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 
 import { AuthzProvider } from './AuthzProvider'
 import { useAuthz } from './useAuthz'
+import { ShellRuntimeProvider } from '../shell/ShellRuntimeProvider'
 
 const mockUseShellBootstrap = vi.fn()
 
@@ -84,9 +85,11 @@ describe('AuthzProvider', () => {
     })
 
     render(
-      <AuthzProvider>
-        <AuthzProbe />
-      </AuthzProvider>
+      <ShellRuntimeProvider>
+        <AuthzProvider>
+          <AuthzProbe />
+        </AuthzProvider>
+      </ShellRuntimeProvider>
     )
 
     expect(screen.getByTestId('authz-summary')).toHaveTextContent(

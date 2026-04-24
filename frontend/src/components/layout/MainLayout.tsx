@@ -1,16 +1,17 @@
-import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select, Grid } from 'antd'
+import { Layout, Menu, Button, Dropdown, Tag, Tooltip, Space, Popover, Typography, Select, Grid, Spin } from 'antd'
 import { DashboardOutlined, ThunderboltOutlined, DatabaseOutlined, ClusterOutlined, UserOutlined, LogoutOutlined, MonitorOutlined, ApartmentOutlined, DeploymentUnitOutlined, SafetyCertificateOutlined, FileTextOutlined, WarningOutlined, LoadingOutlined, SettingOutlined, InboxOutlined, AppstoreOutlined } from '@ant-design/icons'
+import { flushSync } from 'react-dom'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
-import type { ReactNode, MouseEvent } from 'react'
+import { useEffect, useState, type ReactNode, type MouseEvent } from 'react'
 import type { MenuProps } from 'antd'
 
-import { useShellBootstrap } from '../../api/queries/shellBootstrap'
 import { useSetActiveTenant } from '../../api/queries/tenants'
 import { useDatabaseStreamStatus } from '../../contexts/DatabaseStreamContext'
 import { setAuthToken } from '../../api/client'
 import { notifyAuthChanged } from '../../lib/authState'
 import { resetQueryClient } from '../../lib/queryClient'
 import { POOL_EXECUTION_PACKS_ROUTE, POOL_FACTUAL_ROUTE, POOL_TOPOLOGY_TEMPLATES_ROUTE } from '../../pages/Pools/routes'
+import { useShellRuntime } from '../../shell/ShellRuntimeProvider'
 import { useCommonTranslation, useLocaleState, useShellTranslation } from '../../i18n'
 
 const { Header, Content, Sider } = Layout
@@ -40,8 +41,8 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const screens = useBreakpoint()
   const navigate = useNavigate()
   const location = useLocation()
-  const hasToken = Boolean(localStorage.getItem('auth_token'))
-  const shellBootstrapQuery = useShellBootstrap({ enabled: hasToken })
+  const [pendingNavigationPath, setPendingNavigationPath] = useState<string | null>(null)
+  const { shellBootstrapQuery } = useShellRuntime()
   const setActiveTenantMutation = useSetActiveTenant()
   const {
     isConnected: isDatabaseStreamConnected,
@@ -66,6 +67,13 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const streamTagStyle = isDatabaseStreamConnected
     ? STREAM_TAG_STYLES.connected
     : STREAM_TAG_STYLES.fallback
+  const isRouteSwitchPending = Boolean(pendingNavigationPath && pendingNavigationPath !== location.pathname)
+
+  useEffect(() => {
+    if (pendingNavigationPath === location.pathname) {
+      setPendingNavigationPath(null)
+    }
+  }, [location.pathname, pendingNavigationPath])
 
   const handleSkipToContent = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault()
@@ -369,7 +377,14 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
               if (nextPath === location.pathname) {
                 return
               }
-              navigate(nextPath)
+              const navigationTarget = nextPath === '/pools/master-data'
+                ? '/pools/master-data?tab=party'
+                : nextPath
+
+              flushSync(() => {
+                setPendingNavigationPath(nextPath)
+              })
+              navigate(navigationTarget)
             }}
             style={{ height: '100%', borderRight: 0 }}
           />
@@ -386,7 +401,11 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
               background: '#fff',
             }}
           >
-            {children}
+            {isRouteSwitchPending ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 240 }}>
+                <Spin size="large" />
+              </div>
+            ) : children}
           </Content>
         </Layout>
       </Layout>

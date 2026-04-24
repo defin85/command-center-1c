@@ -1,15 +1,14 @@
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 
-import { useShellBootstrap } from '../api/queries/shellBootstrap'
+import { useShellRuntime } from '../shell/ShellRuntimeProvider'
 import { AuthzContext, hasLevel, normalizeLevel, type AccessLevel, type AuthzContextValue } from './context'
 
 export const AuthzProvider = ({ children }: { children: ReactNode }) => {
-  const hasToken = Boolean(localStorage.getItem('auth_token'))
-  const shellBootstrapQuery = useShellBootstrap({ enabled: hasToken })
+  const { hasAuthToken, shellBootstrapQuery } = useShellRuntime()
 
   const isStaff = Boolean(shellBootstrapQuery.data?.me.is_staff)
-  const isLoading = Boolean(hasToken && shellBootstrapQuery.isLoading)
+  const isLoading = Boolean(hasAuthToken && shellBootstrapQuery.isLoading)
   const canManageRuntimeControls = Boolean(shellBootstrapQuery.data?.capabilities.can_manage_runtime_controls)
 
   const { databaseLevels, clusterLevels, templateLevels } = useMemo(() => {

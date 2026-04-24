@@ -25,6 +25,7 @@ const {
 }))
 
 import App from './App'
+import { ShellRuntimeProvider } from './shell/ShellRuntimeProvider'
 
 vi.mock('axios', async () => {
   const actual = await vi.importActual<typeof import('axios')>('axios')
@@ -173,9 +174,11 @@ describe('App auth redirect restore', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <AntApp>
-          <App />
-        </AntApp>
+        <ShellRuntimeProvider>
+          <AntApp>
+            <App />
+          </AntApp>
+        </ShellRuntimeProvider>
       </QueryClientProvider>
     )
 
@@ -194,8 +197,10 @@ describe('App auth redirect restore', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Войти' }))
 
+    await waitFor(() => {
+      expect(window.location.pathname + window.location.search).toBe('/pools/master-data?tab=bindings&detail=1')
+    })
     expect(await screen.findByTestId('pool-master-data-route-page')).toBeInTheDocument()
-    expect(window.location.pathname + window.location.search).toBe('/pools/master-data?tab=bindings&detail=1')
     expect(localStorage.getItem('auth_token')).toBe('access-token')
     expect(localStorage.getItem('refresh_token')).toBe('refresh-token')
     expect(mockAxiosPost).toHaveBeenCalledTimes(1)

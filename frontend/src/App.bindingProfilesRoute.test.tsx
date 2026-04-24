@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -21,6 +21,7 @@ const {
 }))
 
 import App from './App'
+import { ShellRuntimeProvider } from './shell/ShellRuntimeProvider'
 
 vi.mock('./hooks/useRealtimeInvalidation', () => ({
   useRealtimeInvalidation: vi.fn(),
@@ -71,6 +72,14 @@ vi.mock('./lib/authState', () => ({
 
 vi.mock('./pages/Pools/PoolBindingProfilesPage', () => ({
   PoolBindingProfilesPage: () => <div data-testid="pool-binding-profiles-route-page">Execution Packs Route</div>,
+}))
+
+vi.mock('./pages/Pools/PoolMasterDataPage', () => ({
+  PoolMasterDataPage: () => <div data-testid="pool-master-data-route-page">Pool Master Data Route</div>,
+}))
+
+vi.mock('./pages/ServiceMesh/ServiceMeshPage', () => ({
+  default: () => <div data-testid="service-mesh-route-page">Service Mesh Route</div>,
 }))
 
 describe('App pools binding profiles route', () => {
@@ -124,9 +133,11 @@ describe('App pools binding profiles route', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <AntApp>
-          <App />
-        </AntApp>
+        <ShellRuntimeProvider>
+          <AntApp>
+            <App />
+          </AntApp>
+        </ShellRuntimeProvider>
       </QueryClientProvider>
     )
 
@@ -177,9 +188,11 @@ describe('App pools binding profiles route', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <AntApp>
-          <App />
-        </AntApp>
+        <ShellRuntimeProvider>
+          <AntApp>
+            <App />
+          </AntApp>
+        </ShellRuntimeProvider>
       </QueryClientProvider>
     )
 
@@ -205,13 +218,46 @@ describe('App pools binding profiles route', () => {
 
     render(
       <QueryClientProvider client={queryClient}>
-        <AntApp>
-          <App />
-        </AntApp>
+        <ShellRuntimeProvider>
+          <AntApp>
+            <App />
+          </AntApp>
+        </ShellRuntimeProvider>
       </QueryClientProvider>
     )
 
     expect(await screen.findByText('Shell bootstrap failed')).toBeInTheDocument()
     expect(screen.queryByTestId('pool-binding-profiles-route-page')).not.toBeInTheDocument()
+  })
+
+  it('hands off between shared-shell routes without stale content', async () => {
+    window.history.pushState({}, '', '/service-mesh')
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ShellRuntimeProvider>
+          <AntApp>
+            <App />
+          </AntApp>
+        </ShellRuntimeProvider>
+      </QueryClientProvider>
+    )
+
+    expect(await screen.findByTestId('service-mesh-route-page')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('Pool Master Data'))
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/pools/master-data')
+    })
+    expect(await screen.findByTestId('pool-master-data-route-page')).toBeInTheDocument()
+    expect(screen.queryByTestId('service-mesh-route-page')).not.toBeInTheDocument()
   })
 })

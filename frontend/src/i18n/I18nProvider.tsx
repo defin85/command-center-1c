@@ -2,8 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useQueryClient } from '@tanstack/react-query'
 
 import type { SystemBootstrapI18nSummary } from '@/api/generated/model/systemBootstrapI18nSummary'
-import { useShellBootstrap } from '@/api/queries/shellBootstrap'
 import { queryKeys } from '@/api/queries/queryKeys'
+import { useOptionalShellRuntime } from '@/shell/ShellRuntimeProvider'
 
 import { antdLocaleByAppLocale } from './localeBridge'
 import { changeLanguage } from './runtime'
@@ -43,9 +43,11 @@ const createFallbackLocaleState = (): LocaleState => {
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
-  const hasToken = typeof window !== 'undefined' && Boolean(window.localStorage.getItem('auth_token'))
-  const shellBootstrapQuery = useShellBootstrap({ enabled: hasToken })
-  const shellBootstrapI18n: SystemBootstrapI18nSummary | undefined = shellBootstrapQuery.data?.i18n
+  const shellRuntime = useOptionalShellRuntime()
+  const hasToken = shellRuntime
+    ? shellRuntime.hasAuthToken
+    : typeof window !== 'undefined' && Boolean(window.localStorage.getItem('auth_token'))
+  const shellBootstrapI18n: SystemBootstrapI18nSummary | undefined = shellRuntime?.shellBootstrapQuery.data?.i18n
   const [locale, setLocaleState] = useState<AppLocale>(() => resolveInitialAppLocale())
   const [defaultLocale, setDefaultLocale] = useState<AppLocale>(DEFAULT_APP_LOCALE)
   const [supportedLocales, setSupportedLocales] = useState<readonly AppLocale[]>(supportedAppLocales)

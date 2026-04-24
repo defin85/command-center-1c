@@ -8,11 +8,13 @@ type GovernanceTier = 'platform-governed' | 'legacy-monitored' | 'excluded'
 type RouteStateTransport = 'none' | 'search-params' | 'path-params' | 'mixed'
 type DetailMobileFallbackKind = 'none' | 'drawer' | 'dedicated-route' | 'mixed'
 type CompactMasterPaneMode = 'compact-selection'
+type RouteShellRuntimeKind = 'public' | 'redirect' | 'shell-backed authenticated' | 'authenticated no-shell/fullscreen'
 
 type RouteInventoryEntry = {
   routePath: string
   modulePath: string | null
   tier: GovernanceTier
+  shellRuntimeKind: RouteShellRuntimeKind
   ownedLocaleBoundaryFiles?: string[]
   redirectTarget?: string
   workspaceKind?: string
@@ -34,6 +36,7 @@ type ShellSurfaceEntry = {
 type AppRouteEntry = {
   routePath: string
   modulePath: string | null
+  shellRuntimeKind: RouteShellRuntimeKind
 }
 
 type ShellSurfaceUsage = {
@@ -53,6 +56,7 @@ const {
   platformGovernedRouteModuleFileSet,
   platformGovernedShellSurfaceFileSet,
   routeGovernanceInventory,
+  routeShellRuntimeKinds,
   routeStateTransports,
   shellSurfaceGovernanceInventory,
 } = governanceInventory as {
@@ -64,6 +68,7 @@ const {
   platformGovernedRouteModuleFileSet: Set<string>
   platformGovernedShellSurfaceFileSet: Set<string>
   routeGovernanceInventory: RouteInventoryEntry[]
+  routeShellRuntimeKinds: RouteShellRuntimeKind[]
   routeStateTransports: RouteStateTransport[]
   shellSurfaceGovernanceInventory: ShellSurfaceEntry[]
 }
@@ -71,6 +76,10 @@ const {
 const frontendRoot = path.resolve(__dirname, '../../../..')
 const appSourcePath = path.join(frontendRoot, 'src/App.tsx')
 const appSourceDir = path.dirname(appSourcePath)
+const shellBootstrapOwnerAllowlist = new Set([
+  'src/api/queries/shellBootstrap.ts',
+  'src/shell/ShellRuntimeProvider.tsx',
+])
 
 function collectSourceFiles(rootPath: string): string[] {
   const entries = readdirSync(rootPath)
@@ -96,6 +105,12 @@ function collectSourceFiles(rootPath: string): string[] {
 
 function collectAppRoutePaths(): string[] {
   return collectAppRouteEntries().map((entry) => entry.routePath).sort()
+}
+
+function normalizeRoutePath(routePath: string): string {
+  return routePath === '/' || routePath.startsWith('/')
+    ? routePath
+    : `/${routePath}`
 }
 
 function createAppSourceFile(): ts.SourceFile {
@@ -144,6 +159,33 @@ function getJsxExpressionAttribute(
   }
 
   return null
+}
+
+function hasJsxAttribute(attributes: ts.JsxAttributes, attributeName: string): boolean {
+  return attributes.properties.some((attribute) => (
+    ts.isJsxAttribute(attribute) && getJsxAttributeName(attribute) === attributeName
+  ))
+}
+
+function collectJsxTagNames(
+  node: ts.Node | null | undefined,
+  sourceFile: ts.SourceFile,
+): Set<string> {
+  const tagNames = new Set<string>()
+  if (!node) {
+    return tagNames
+  }
+
+  const visit = (current: ts.Node) => {
+    if (ts.isJsxSelfClosingElement(current) || ts.isJsxOpeningElement(current)) {
+      tagNames.add(current.tagName.getText(sourceFile))
+    }
+
+    ts.forEachChild(current, visit)
+  }
+
+  visit(node)
+  return tagNames
 }
 
 function resolveSourceModulePath(moduleSpecifier: string): string | null {
@@ -292,26 +334,64 @@ function collectAppRouteEntries(): AppRouteEntry[] {
   const lazyModules = collectLazyRouteModules(sourceFile)
   const routes: AppRouteEntry[] = []
 
-  const visit = (node: ts.Node) => {
-    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(sourceFile) === 'Route') {
-      const routePath = extractStaticStringAttribute(node.attributes, 'path')
-      if (!routePath) {
+  const visitRoute = (
+    routeElement: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+    inheritedShellRuntimeKind: RouteShellRuntimeKind | null,
+    visitChildren: (childShellRuntimeKind: RouteShellRuntimeKind | null) => void,
+  ) => {
+    const routeElementExpression = getJsxExpressionAttribute(routeElement.attributes, 'element')
+    const elementTagNames = collectJsxTagNames(routeElementExpression, sourceFile)
+    const childShellRuntimeKind = elementTagNames.has('SharedShellRoute')
+      ? 'shell-backed authenticated'
+      : elementTagNames.has('NoShellRouteBoundary')
+        ? 'authenticated no-shell/fullscreen'
+        : inheritedShellRuntimeKind
+
+    if (hasJsxAttribute(routeElement.attributes, 'path')) {
+      const rawRoutePath = extractStaticStringAttribute(routeElement.attributes, 'path')
+      if (!rawRoutePath) {
         throw new Error('App route path must stay a static string literal for governance checks')
       }
+      const routePath = normalizeRoutePath(rawRoutePath)
 
-      const routeElementExpression = getJsxExpressionAttribute(node.attributes, 'element')
       const modulePath = findRouteEntryModulePath(routeElementExpression, sourceFile, lazyModules)
       if (modulePath === undefined) {
         throw new Error(`Could not resolve route entry module for ${routePath}`)
       }
 
-      routes.push({ routePath, modulePath })
+      const shellRuntimeKind = modulePath === null
+        ? 'redirect'
+        : childShellRuntimeKind ?? 'public'
+
+      routes.push({ routePath, modulePath, shellRuntimeKind })
     }
 
-    ts.forEachChild(node, visit)
+    visitChildren(childShellRuntimeKind)
   }
 
-  visit(sourceFile)
+  const visit = (node: ts.Node, inheritedShellRuntimeKind: RouteShellRuntimeKind | null) => {
+    if (ts.isJsxElement(node) && node.openingElement.tagName.getText(sourceFile) === 'Route') {
+      visitRoute(
+        node.openingElement,
+        inheritedShellRuntimeKind,
+        (childShellRuntimeKind) => node.children.forEach((child) => visit(child, childShellRuntimeKind))
+      )
+      return
+    }
+
+    if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(sourceFile) === 'Route') {
+      visitRoute(node, inheritedShellRuntimeKind, () => undefined)
+      return
+    }
+
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(sourceFile) === 'Route') {
+      return
+    }
+
+    ts.forEachChild(node, (child) => visit(child, inheritedShellRuntimeKind))
+  }
+
+  visit(sourceFile, null)
   return routes
 }
 
@@ -338,6 +418,18 @@ function collectPlatformShellSurfaceUsage(): ShellSurfaceUsage[] {
     .filter((entry): entry is ShellSurfaceUsage => Boolean(entry))
 }
 
+function collectForbiddenShellBootstrapOwners(): string[] {
+  return collectSourceFiles(path.join(frontendRoot, 'src'))
+    .filter((relativePath) => {
+      if (shellBootstrapOwnerAllowlist.has(relativePath)) {
+        return false
+      }
+
+      return readFileSync(path.join(frontendRoot, relativePath), 'utf8').includes('useShellBootstrap(')
+    })
+    .sort()
+}
+
 describe('ui governance inventory', () => {
   it('covers every route path declared in App.tsx', () => {
     const appRoutePaths = collectAppRoutePaths()
@@ -350,6 +442,7 @@ describe('ui governance inventory', () => {
   it('keeps route entries on valid tiers and existing source modules', () => {
     for (const entry of routeGovernanceInventory) {
       expect(governanceTiers).toContain(entry.tier)
+      expect(routeShellRuntimeKinds).toContain(entry.shellRuntimeKind)
       if (!entry.modulePath) {
         expect(entry.tier).toBe('excluded')
         expect(typeof entry.redirectTarget).toBe('string')
@@ -366,10 +459,18 @@ describe('ui governance inventory', () => {
   it('keeps inventory routePath to modulePath wiring aligned with App.tsx', () => {
     const appRouteEntries = collectAppRouteEntries().sort((left, right) => left.routePath.localeCompare(right.routePath))
     const inventoryRouteEntries = routeGovernanceInventory
-      .map((entry) => ({ routePath: entry.routePath, modulePath: entry.modulePath ?? null }))
+      .map((entry) => ({
+        routePath: entry.routePath,
+        modulePath: entry.modulePath ?? null,
+        shellRuntimeKind: entry.shellRuntimeKind,
+      }))
       .sort((left, right) => left.routePath.localeCompare(right.routePath))
 
     expect(appRouteEntries).toEqual(inventoryRouteEntries)
+  })
+
+  it('keeps shell bootstrap query ownership centralized in the shell runtime provider', () => {
+    expect(collectForbiddenShellBootstrapOwners()).toEqual([])
   })
 
   it('requires route semantics metadata for platform-governed route entries', () => {

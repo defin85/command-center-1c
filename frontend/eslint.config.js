@@ -230,6 +230,11 @@ const filePathMatchesInventory = (filename, relativePath) => {
   const normalizedFilename = normalizeInventoryPath(filename)
   return normalizedFilename === relativePath || normalizedFilename.endsWith(`/${relativePath}`)
 }
+const normalizeRoutePath = (routePath) => (
+  routePath === '/' || routePath.startsWith('/')
+    ? routePath
+    : `/${routePath}`
+)
 
 const getJsxIdentifierName = (node) => (node?.type === 'JSXIdentifier' ? node.name : null)
 const getJsxTagRootName = (node) => {
@@ -502,7 +507,7 @@ const uiPlatformLocalPlugin = {
             return
           }
 
-          routePaths.add(routePathAttribute.value)
+          routePaths.add(normalizeRoutePath(routePathAttribute.value))
         }
 
         return {

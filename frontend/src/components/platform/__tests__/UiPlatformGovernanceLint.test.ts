@@ -89,6 +89,29 @@ describe('ui platform governance lint', () => {
     ))).toBe(true)
   })
 
+  it('accepts relative child App route paths when their canonical absolute path is inventoried', async () => {
+    const messages = await lintSnippet(
+      'src/App.tsx',
+      `
+        import { Route, Routes } from 'react-router-dom'
+
+        export default function App() {
+          return (
+            <Routes>
+              <Route element={<div />}>
+                <Route path="pools/master-data" element={<div />} />
+              </Route>
+            </Routes>
+          )
+        }
+      `,
+    )
+
+    expect(messages.some((message) => (
+      message.ruleId === 'ui-platform-local/app-routes-must-exist-in-governance-inventory'
+    ))).toBe(false)
+  })
+
   it('rejects custom div/css shell composition on the service-mesh route module', async () => {
     const messages = await lintSnippet(
       'src/pages/ServiceMesh/ServiceMeshPage.tsx',
