@@ -128,6 +128,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "GET", Path: "/pools/master-data/dedupe-review/", OperationID: "v2_pools_master_data_dedupe_review_list"},
 	{Method: "GET", Path: "/pools/master-data/dedupe-review/:id/", OperationID: "v2_pools_master_data_dedupe_review_get"},
 	{Method: "POST", Path: "/pools/master-data/dedupe-review/:id/actions/", OperationID: "v2_pools_master_data_dedupe_review_action"},
+	{Method: "GET", Path: "/pools/master-data/chart-import/discovery/", OperationID: "v2_pools_master_data_chart_import_discovery_retrieve"},
 	{Method: "GET", Path: "/pools/master-data/chart-import/sources/", OperationID: "v2_pools_master_data_chart_import_sources_list"},
 	{Method: "POST", Path: "/pools/master-data/chart-import/sources/upsert/", OperationID: "v2_pools_master_data_chart_import_sources_upsert"},
 	{Method: "GET", Path: "/pools/master-data/chart-import/jobs/", OperationID: "v2_pools_master_data_chart_import_jobs_list"},

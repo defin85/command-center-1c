@@ -171,7 +171,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   )
   const selectedCandidateLoadReady = isChartCandidateLoadReady(selectedCandidate)
   const selectedSourceRowSourceStatus = readRowSourceStatusFromSource(selectedSource)
-  const selectedSourceLoadReady = !selectedSource || !selectedSourceRowSourceStatus || selectedSourceRowSourceStatus === 'ready'
+  const selectedSourceLoadReady = selectedSourceRowSourceStatus === 'ready'
   const selectedSourceRowSource = readRowSourceRecordFromSource(selectedSource)
   const candidateDatabases = selectedSource?.candidate_databases ?? []
   const latestSuccessfulDryRun = useMemo(

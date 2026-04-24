@@ -3689,4 +3689,43 @@ export function registerPoolMasterDataChartImportTests() {
     },
     HEAVY_ROUTE_TEST_TIMEOUT_MS,
   )
+
+  it(
+    'blocks lifecycle actions for selected chart sources without row-source readiness',
+    async () => {
+      const legacySource = buildChartSource({
+        metadata: {
+          source_revision: {
+            token: 'legacy-revision',
+          },
+        },
+        latest_snapshot: null,
+        latest_job: null,
+      })
+      mockListPoolMasterDataChartSources.mockResolvedValue({
+        count: 1,
+        limit: 20,
+        offset: 0,
+        sources: [legacySource],
+      })
+      mockListPoolMasterDataChartJobs.mockResolvedValue({
+        count: 0,
+        limit: 20,
+        offset: 0,
+        jobs: [],
+      })
+
+      renderPage('/pools/master-data?tab=chart-import')
+
+      expect(await screen.findByText('Authoritative Source')).toBeInTheDocument()
+      await waitFor(() =>
+        expect(screen.getByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1'),
+      )
+      expect(await screen.findByText('Row source is not ready')).toBeInTheDocument()
+      expect(screen.getByTestId('chart-import-run-preflight')).toBeDisabled()
+      expect(screen.getByTestId('chart-import-run-dry-run')).toBeDisabled()
+      expect(screen.getByTestId('chart-import-run-materialize')).toBeDisabled()
+    },
+    HEAVY_ROUTE_TEST_TIMEOUT_MS,
+  )
 }

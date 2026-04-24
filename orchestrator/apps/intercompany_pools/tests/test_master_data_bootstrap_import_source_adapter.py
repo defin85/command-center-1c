@@ -409,3 +409,61 @@ def test_chart_row_source_probe_fails_when_required_fields_are_missing(monkeypat
     assert preflight.ok is False
     assert preflight.errors[0]["code"] == CHART_ROW_SOURCE_PROBE_FAILED
     assert "Description" in preflight.errors[0]["detail"]
+
+
+@pytest.mark.django_db
+def test_chart_row_source_preflight_surfaces_unstable_pagination_diagnostic(monkeypatch) -> None:
+    tenant = Tenant.objects.create(slug=f"chart-row-order-{uuid4().hex[:8]}", name="Chart Row Order")
+    database = _create_database(tenant=tenant, name=f"chart-row-order-db-{uuid4().hex[:8]}")
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, *_args, **_kwargs):
+            return [
+                {
+                    "Ref_Key": "gl-10-01",
+                    "Code": "10.01",
+                    "Description": "Materials",
+                    "Chart": "ChartOfAccounts_Main",
+                }
+            ]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    preflight = run_pool_master_data_chart_row_source_preflight(
+        tenant_id=str(tenant.id),
+        database=database,
+        row_source={
+            "row_source_status": "ready",
+            "row_source_kind": "ib_odata",
+            "row_source_entity_name": "Catalog_GLAccounts",
+            "row_source_field_mapping": {
+                "canonical_id": "Ref_Key",
+                "code": "Code",
+                "name": "Description",
+                "chart_identity": "Chart",
+            },
+            "row_source_select_fields": ["Ref_Key", "Code", "Description", "Chart"],
+        },
+    )
+
+    assert preflight.ok is True
+    assert preflight.diagnostics["snapshot_consistency"]["stable_ordering"] is False
+    assert preflight.diagnostics["snapshot_consistency"]["code"] == "CHART_ROW_SOURCE_STABLE_ORDERING_UNAVAILABLE"

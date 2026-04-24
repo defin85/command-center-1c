@@ -886,6 +886,15 @@ def _default_chart_row_source_preflight(
                     path="row_source.field_mapping",
                 )
             )
+        if not config.order_by:
+            diagnostics["snapshot_consistency"] = {
+                "stable_ordering": False,
+                "code": "CHART_ROW_SOURCE_STABLE_ORDERING_UNAVAILABLE",
+                "detail": (
+                    "Chart row source pagination has no stable order_by; source rows must not change "
+                    "during dry-run/materialize fetch."
+                ),
+            }
 
     if not errors and credentials is not None and config is not None:
         client: ODataClient | None = None
@@ -1002,6 +1011,11 @@ def _serialize_row_source_for_diagnostics(*, row_source: Mapping[str, Any]) -> d
             "row_source_select_fields": _normalize_select_fields(
                 row_source.get("row_source_select_fields")
                 or row_source.get("select_fields")
+                or []
+            ),
+            "row_source_order_by": _normalize_select_fields(
+                row_source.get("row_source_order_by")
+                or row_source.get("order_by")
                 or []
             ),
         }

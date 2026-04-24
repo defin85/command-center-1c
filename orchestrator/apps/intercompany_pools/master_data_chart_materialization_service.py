@@ -1228,28 +1228,35 @@ def _resolve_chart_source_row_source(*, source: PoolMasterDataChartSource) -> di
 
 
 def _build_metadata_rows_row_source_from_database(*, source: PoolMasterDataChartSource) -> dict[str, Any]:
-    database_metadata = source.database.metadata if isinstance(source.database.metadata, dict) else {}
+    return _build_metadata_rows_row_source_for_database(
+        database=source.database,
+        chart_identity=str(source.chart_identity or ""),
+    )
+
+
+def _build_metadata_rows_row_source_for_database(*, database: Database, chart_identity: str) -> dict[str, Any]:
+    database_metadata = database.metadata if isinstance(database.metadata, dict) else {}
     if str(database_metadata.get("bootstrap_import_source_mode") or "").strip().lower() != "metadata_rows":
         return {}
     rows_by_entity = database_metadata.get("bootstrap_import_rows")
     raw_rows = rows_by_entity.get("gl_account") if isinstance(rows_by_entity, Mapping) else None
     if not isinstance(raw_rows, list):
         return {}
-    chart_identity = str(source.chart_identity or "").strip()
+    normalized_chart_identity = str(chart_identity or "").strip()
     has_matching_row = any(
         isinstance(row, Mapping)
-        and _normalize_chart_identity(str(row.get("chart_identity") or "")) == _normalize_chart_identity(chart_identity)
+        and _normalize_chart_identity(str(row.get("chart_identity") or "")) == _normalize_chart_identity(normalized_chart_identity)
         for row in raw_rows
     )
     if not has_matching_row:
         return {}
     return _build_metadata_rows_row_source(
         candidate={
-            "chart_identity": chart_identity,
+            "chart_identity": normalized_chart_identity,
             "source_evidence_fingerprint": _build_source_evidence_fingerprint(
                 {
-                    "database_id": str(source.database_id),
-                    "chart_identity": chart_identity,
+                    "database_id": str(database.id),
+                    "chart_identity": normalized_chart_identity,
                     "row_count": len(raw_rows),
                     "source": "metadata_rows",
                 }
@@ -1259,7 +1266,14 @@ def _build_metadata_rows_row_source_from_database(*, source: PoolMasterDataChart
 
 
 def _build_compatible_global_bootstrap_row_source(*, source: PoolMasterDataChartSource) -> dict[str, Any]:
-    metadata = source.database.metadata if isinstance(source.database.metadata, dict) else {}
+    return _build_compatible_global_bootstrap_row_source_for_database(
+        database=source.database,
+        chart_identity=str(source.chart_identity or ""),
+    )
+
+
+def _build_compatible_global_bootstrap_row_source_for_database(*, database: Database, chart_identity: str) -> dict[str, Any]:
+    metadata = database.metadata if isinstance(database.metadata, dict) else {}
     bootstrap_source = metadata.get("bootstrap_import_source")
     entities = bootstrap_source.get("entities") if isinstance(bootstrap_source, Mapping) else None
     gl_account_config = entities.get("gl_account") if isinstance(entities, Mapping) else None
@@ -1270,8 +1284,8 @@ def _build_compatible_global_bootstrap_row_source(*, source: PoolMasterDataChart
         return {}
     derived_identity = _extract_chart_identity_from_type_token(entity_name)
     explicit_identity = str(gl_account_config.get("chart_identity") or "").strip()
-    chart_identity = explicit_identity or derived_identity
-    if _normalize_chart_identity(chart_identity) != _normalize_chart_identity(str(source.chart_identity or "")):
+    row_source_chart_identity = explicit_identity or derived_identity
+    if _normalize_chart_identity(row_source_chart_identity) != _normalize_chart_identity(str(chart_identity or "")):
         return {}
     field_mapping = gl_account_config.get("field_mapping")
     if not isinstance(field_mapping, Mapping):
@@ -1307,8 +1321,8 @@ def _build_compatible_global_bootstrap_row_source(*, source: PoolMasterDataChart
         "row_source_derivation_method": "compatible_global_bootstrap_mapping_snapshot",
         "row_source_credential_strategy": "",
         "row_source_diagnostics": [],
-        "chart_identity": str(source.chart_identity or ""),
-        "database_id": str(source.database_id),
+        "chart_identity": str(chart_identity or ""),
+        "database_id": str(database.id),
     }
     row_source["row_source_evidence_fingerprint"] = _build_source_evidence_fingerprint(row_source)
     return sanitize_master_data_sync_value(row_source)
@@ -1781,6 +1795,14 @@ def _build_chart_source_metadata(
         chart_identity=chart_identity,
         discovery_provenance=provenance,
     )
+    if not row_source:
+        row_source = _build_metadata_rows_row_source_for_database(
+            database=database,
+            chart_identity=chart_identity,
+        ) or _build_compatible_global_bootstrap_row_source_for_database(
+            database=database,
+            chart_identity=chart_identity,
+        )
     if provenance:
         extra["chart_discovery"] = provenance
     if row_source:

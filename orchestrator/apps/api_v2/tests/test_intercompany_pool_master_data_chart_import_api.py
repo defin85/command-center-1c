@@ -636,6 +636,92 @@ def test_chart_materialization_reads_full_rows_from_chart_scoped_odata_row_sourc
 
 
 @pytest.mark.django_db
+def test_manual_chart_source_snapshots_compatible_global_mapping_before_initial_load(
+    monkeypatch,
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database_metadata = {
+        "bootstrap_import_source": {
+            "entities": {
+                "gl_account": {
+                    "entity_name": "ChartOfAccounts_Main",
+                    "field_mapping": {
+                        "canonical_id": "Ref_Key",
+                        "source_ref": "Ref_Key",
+                        "code": "Code",
+                        "name": "Description",
+                    },
+                }
+            }
+        }
+    }
+    database = _create_database(
+        tenant=default_tenant,
+        name=f"chart-global-snapshot-{uuid4().hex[:8]}",
+        metadata=database_metadata,
+    )
+    _set_business_configuration_profile(database=database)
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+    calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, entity_name: str, **kwargs):
+            calls.append({"entity_name": entity_name, **kwargs})
+            if int(kwargs.get("skip") or 0) > 0:
+                return []
+            if entity_name == "ChartOfAccounts_Main":
+                return [{"Ref_Key": "gl-10-01", "Code": "10.01", "Description": "Materials"}]
+            return [{"Ref_Key": "gl-99-99", "Code": "99.99", "Description": "Wrong chart"}]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    source = _upsert_chart_source(client=admin_client, database_id=str(database.id))
+    row_source = source["metadata"]["row_source"]
+    assert row_source["row_source_entity_name"] == "ChartOfAccounts_Main"
+    assert row_source["row_source_derivation_method"] == "compatible_global_bootstrap_mapping_snapshot"
+    assert source["metadata"]["source_revision"]["row_source_evidence_fingerprint"] == row_source["row_source_evidence_fingerprint"]
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
+
+    updated_metadata = dict(database.metadata or {})
+    updated_bootstrap_source = dict(updated_metadata["bootstrap_import_source"])
+    updated_entities = dict(updated_bootstrap_source["entities"])
+    updated_gl_account = dict(updated_entities["gl_account"])
+    updated_gl_account["entity_name"] = "ChartOfAccounts_Other"
+    updated_entities["gl_account"] = updated_gl_account
+    updated_bootstrap_source["entities"] = updated_entities
+    updated_metadata["bootstrap_import_source"] = updated_bootstrap_source
+    database.metadata = updated_metadata
+    database.save(update_fields=["metadata"])
+
+    calls.clear()
+    materialize = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
+
+    assert materialize["snapshot"]["materialized_count"] == 1
+    assert set(PoolMasterGLAccount.objects.filter(tenant=default_tenant).values_list("code", flat=True)) == {"10.01"}
+    assert {call["entity_name"] for call in calls} == {"ChartOfAccounts_Main"}
+
+
+@pytest.mark.django_db
 def test_chart_discovery_is_tenant_bounded(
     admin_client: APIClient,
     default_tenant: Tenant,
