@@ -14,6 +14,10 @@ from apps.intercompany_pools.master_data_chart_materialization_service import (
     CHART_JOB_MODE_INVALID,
     CHART_JOB_NOT_FOUND,
     CHART_JOB_PREREQUISITE_MISSING,
+    CHART_ROW_SOURCE_EVIDENCE_STALE,
+    CHART_ROW_SOURCE_MAPPING_INCOMPLETE,
+    CHART_ROW_SOURCE_NOT_READY,
+    CHART_ROW_SOURCE_PROBE_FAILED,
     CHART_SOURCE_BUSINESS_PROFILE_MISMATCH,
     CHART_SOURCE_BUSINESS_PROFILE_MISSING,
     CHART_SOURCE_CHART_IDENTITY_REQUIRED,
@@ -107,6 +111,10 @@ def _chart_exception_to_response(exc: Exception) -> Response:
     if code in {CHART_SOURCE_DATABASE_NOT_FOUND, CHART_SOURCE_NOT_FOUND, CHART_JOB_NOT_FOUND}:
         status_code = http_status.HTTP_404_NOT_FOUND
     elif code in {
+        CHART_ROW_SOURCE_EVIDENCE_STALE,
+        CHART_ROW_SOURCE_MAPPING_INCOMPLETE,
+        CHART_ROW_SOURCE_NOT_READY,
+        CHART_ROW_SOURCE_PROBE_FAILED,
         CHART_SOURCE_BUSINESS_PROFILE_MISSING,
         CHART_SOURCE_BUSINESS_PROFILE_MISMATCH,
         CHART_SOURCE_PREFLIGHT_FAILED,
@@ -319,6 +327,14 @@ class ChartDiscoveryCandidateSerializer(serializers.Serializer):
     metadata_hash = serializers.CharField(allow_blank=True)
     catalog_version = serializers.CharField(allow_blank=True)
     source_evidence_fingerprint = serializers.CharField()
+    row_source_status = serializers.CharField(required=False, allow_blank=True)
+    row_source_kind = serializers.CharField(required=False, allow_blank=True)
+    row_source_entity_name = serializers.CharField(required=False, allow_blank=True)
+    row_source_field_mapping = serializers.JSONField(required=False)
+    row_source_select_fields = serializers.ListField(child=serializers.CharField(), required=False)
+    row_source_evidence_fingerprint = serializers.CharField(required=False, allow_blank=True)
+    row_source_diagnostics = serializers.JSONField(required=False)
+    initial_load_ready = serializers.BooleanField(required=False)
     diagnostics = serializers.JSONField(required=False)
     warnings = serializers.JSONField(required=False)
     is_complete = serializers.BooleanField()

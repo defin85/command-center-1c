@@ -313,7 +313,8 @@ class ODataClient:
         filter_query: Optional[str] = None,
         select_fields: Optional[List[str]] = None,
         top: Optional[int] = None,
-        skip: Optional[int] = None
+        skip: Optional[int] = None,
+        order_by: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Получить список сущностей (GET).
@@ -349,6 +350,8 @@ class ODataClient:
             params['$top'] = top
         if skip:
             params['$skip'] = skip
+        if order_by:
+            params['$orderby'] = ','.join(order_by)
 
         response = self._make_request('GET', url, params=params)
         data = response.json()

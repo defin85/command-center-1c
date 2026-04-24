@@ -244,7 +244,24 @@ const buildChartSource = (overrides: Record<string, unknown> = {}) => ({
   last_success_at: '2026-01-01T00:01:00Z',
   last_error_code: '',
   last_error: '',
-  metadata: {},
+  metadata: {
+    row_source: {
+      row_source_status: 'ready',
+      row_source_kind: 'ib_odata',
+      row_source_entity_name: 'ChartOfAccounts_Main',
+      row_source_field_mapping: {
+        canonical_id: 'Ref_Key',
+        source_ref: 'Ref_Key',
+        code: 'Code',
+        name: 'Description',
+      },
+      row_source_evidence_fingerprint: 'row-source-evidence-main',
+    },
+    source_revision: {
+      token: 'revision-v1',
+      row_source_evidence_fingerprint: 'row-source-evidence-main',
+    },
+  },
   latest_snapshot: buildChartSnapshot(),
   latest_job: buildChartJobSummary(),
   candidate_databases: [
@@ -272,6 +289,19 @@ const buildChartDiscoveryCandidate = (overrides: Record<string, unknown> = {}) =
   metadata_hash: '',
   catalog_version: '',
   source_evidence_fingerprint: 'evidence-main',
+  row_source_status: 'ready',
+  row_source_kind: 'ib_odata',
+  row_source_entity_name: 'ChartOfAccounts_Main',
+  row_source_field_mapping: {
+    canonical_id: 'Ref_Key',
+    source_ref: 'Ref_Key',
+    code: 'Code',
+    name: 'Description',
+  },
+  row_source_select_fields: ['Ref_Key', 'Code', 'Description'],
+  row_source_evidence_fingerprint: 'row-source-evidence-main',
+  row_source_diagnostics: [],
+  initial_load_ready: true,
   diagnostics: [],
   warnings: [],
   is_complete: true,
@@ -3529,6 +3559,7 @@ export function registerPoolMasterDataChartImportTests() {
       expect(screen.getByText('No chart job is selected yet.')).toBeInTheDocument()
       expect(await screen.findByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1')
       expect(await screen.findByTestId('chart-import-selected-candidate-evidence')).toHaveTextContent('ChartOfAccounts_Main')
+      expect(await screen.findByTestId('chart-import-row-source-preview')).toHaveTextContent('canonical_id <- Ref_Key')
 
       fireEvent.click(screen.getByTestId('chart-import-upsert-source'))
       await waitFor(() =>
@@ -3607,6 +3638,54 @@ export function registerPoolMasterDataChartImportTests() {
       expect(mockRunPoolMasterDataBootstrapImportPreflight).not.toHaveBeenCalled()
       expect(mockCreatePoolMasterDataBootstrapImportJob).not.toHaveBeenCalled()
       expect(mockCreatePoolMasterDataSyncLaunch).not.toHaveBeenCalled()
+    },
+    HEAVY_ROUTE_TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'blocks initial load for identity-only chart discovery candidates',
+    async () => {
+      mockDiscoverPoolMasterDataChartCandidates.mockResolvedValue({
+        database_id: 'db-1',
+        database_name: 'Main DB',
+        cluster_id: 'cluster-1',
+        config_name: 'Accounting Enterprise',
+        config_version: '3.0.1',
+        candidates: [
+          buildChartDiscoveryCandidate({
+            source_kind: 'metadata_catalog',
+            derivation_method: 'metadata_catalog_field_type',
+            row_source_status: 'needs_probe',
+            row_source_kind: 'ib_odata',
+            row_source_entity_name: 'ChartOfAccounts_Main',
+            row_source_evidence_fingerprint: 'row-source-needs-probe',
+            row_source_diagnostics: [
+              {
+                code: 'CHART_ROW_SOURCE_NOT_READY',
+                detail: 'Infobase mapping is not configured for chart row source.',
+              },
+            ],
+            initial_load_ready: false,
+          }),
+        ],
+        diagnostics: [],
+      })
+
+      renderPage('/pools/master-data?tab=chart-import')
+
+      expect(await screen.findByTestId('chart-import-selected-candidate-evidence')).toHaveTextContent('needs_probe')
+      expect(await screen.findByText('Row source is not ready')).toBeInTheDocument()
+      expect(screen.getByTestId('chart-import-prepare-initial-load')).toBeDisabled()
+
+      fireEvent.click(screen.getByTestId('chart-import-upsert-source'))
+      await waitFor(() =>
+        expect(mockUpsertPoolMasterDataChartSource).toHaveBeenCalledWith(expect.objectContaining({
+          discovery_provenance: expect.objectContaining({
+            row_source_status: 'needs_probe',
+          }),
+        })),
+      )
+      expect(mockCreatePoolMasterDataChartJob).not.toHaveBeenCalled()
     },
     HEAVY_ROUTE_TEST_TIMEOUT_MS,
   )

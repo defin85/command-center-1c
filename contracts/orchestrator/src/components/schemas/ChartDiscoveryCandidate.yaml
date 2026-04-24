@@ -24,6 +24,35 @@ properties:
     type: string
   source_evidence_fingerprint:
     type: string
+  row_source_status:
+    type: string
+    description: Row-source readiness for initial load.
+    enum:
+      - ready
+      - needs_probe
+      - needs_mapping
+      - unavailable
+  row_source_kind:
+    type: string
+  row_source_entity_name:
+    type: string
+  row_source_field_mapping:
+    type: object
+    additionalProperties:
+      type: string
+  row_source_select_fields:
+    type: array
+    items:
+      type: string
+  row_source_evidence_fingerprint:
+    type: string
+  row_source_diagnostics:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  initial_load_ready:
+    type: boolean
   diagnostics:
     type: array
     items:
@@ -49,4 +78,11 @@ required:
   - metadata_hash
   - catalog_version
   - source_evidence_fingerprint
+  - row_source_status
+  - row_source_kind
+  - row_source_entity_name
+  - row_source_field_mapping
+  - row_source_select_fields
+  - row_source_evidence_fingerprint
+  - initial_load_ready
   - is_complete

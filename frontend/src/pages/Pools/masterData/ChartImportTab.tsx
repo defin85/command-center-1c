@@ -94,7 +94,27 @@ function summarizeCounters(counters: Record<string, unknown> | undefined): strin
 }
 
 function getChartCandidateKey(candidate: PoolMasterDataChartDiscoveryCandidate): string {
-  return candidate.source_evidence_fingerprint || `${candidate.chart_identity}:${candidate.derivation_method}`
+  return candidate.row_source_evidence_fingerprint || candidate.source_evidence_fingerprint || `${candidate.chart_identity}:${candidate.derivation_method}`
+}
+
+function isChartCandidateLoadReady(candidate: PoolMasterDataChartDiscoveryCandidate | null): boolean {
+  return Boolean(candidate?.is_complete && candidate.row_source_status === 'ready')
+}
+
+function readRowSourceStatusFromSource(source: PoolMasterDataChartSource | null): string {
+  const rowSource = source?.metadata?.row_source
+  if (rowSource && typeof rowSource === 'object' && 'row_source_status' in rowSource) {
+    const status = (rowSource as Record<string, unknown>).row_source_status
+    return typeof status === 'string' ? status : ''
+  }
+  return ''
+}
+
+function readRowSourceRecordFromSource(source: PoolMasterDataChartSource | null): Record<string, unknown> {
+  const rowSource = source?.metadata?.row_source
+  return rowSource && typeof rowSource === 'object'
+    ? rowSource as Record<string, unknown>
+    : {}
 }
 
 function readSourceRevisionToken(job: PoolMasterDataChartJob | null): string {
@@ -149,6 +169,10 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
     () => chartCandidates.find((candidate) => getChartCandidateKey(candidate) === selectedCandidateKey) ?? null,
     [chartCandidates, selectedCandidateKey]
   )
+  const selectedCandidateLoadReady = isChartCandidateLoadReady(selectedCandidate)
+  const selectedSourceRowSourceStatus = readRowSourceStatusFromSource(selectedSource)
+  const selectedSourceLoadReady = !selectedSource || !selectedSourceRowSourceStatus || selectedSourceRowSourceStatus === 'ready'
+  const selectedSourceRowSource = readRowSourceRecordFromSource(selectedSource)
   const candidateDatabases = selectedSource?.candidate_databases ?? []
   const latestSuccessfulDryRun = useMemo(
     () => jobs.find((job) => job.mode === 'dry_run' && job.status === 'succeeded') ?? null,
@@ -209,7 +233,8 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
         candidate.is_complete && candidate.chart_identity === currentIdentity
       ))
       const firstComplete = response.candidates.find((candidate) => candidate.is_complete)
-      const candidate = selectedByIdentity ?? firstComplete ?? null
+      const firstLoadReady = response.candidates.find((candidate) => isChartCandidateLoadReady(candidate))
+      const candidate = selectedByIdentity ?? firstLoadReady ?? firstComplete ?? null
       form.setFieldsValue({
         chart_candidate_key: candidate ? getChartCandidateKey(candidate) : undefined,
         chart_identity: candidate?.chart_identity ?? (manualOverride ? currentIdentity : undefined),
@@ -391,6 +416,10 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   }
 
   const handlePrepareInitialLoad = useCallback(async () => {
+    if (manualOverride || !selectedCandidateLoadReady) {
+      message.warning(t('masterData.chartImportTab.messages.rowSourceNotReady'))
+      return
+    }
     const source = await saveSourceFromForm()
     if (!source) {
       return
@@ -426,14 +455,20 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
     getModeLabel,
     loadJobs,
     loadSources,
+    manualOverride,
     message,
     saveSourceFromForm,
+    selectedCandidateLoadReady,
     t,
   ])
 
   const runJob = useCallback(async (mode: PoolMasterDataChartMaterializationMode) => {
     if (!selectedSource) {
       message.error(t('masterData.chartImportTab.messages.selectSourceFirst'))
+      return
+    }
+    if (!selectedSourceLoadReady && (mode === 'preflight' || mode === 'dry_run' || mode === 'materialize')) {
+      message.warning(t('masterData.chartImportTab.messages.rowSourceNotReady'))
       return
     }
     if (mode === 'dry_run' && !hasSuccessfulPreflight) {
@@ -502,6 +537,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
     loadSources,
     message,
     selectedSource,
+    selectedSourceLoadReady,
     t,
     targetDatabaseIds,
   ])
@@ -678,6 +714,15 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
         />
       ) : null}
 
+      {selectedSource && !selectedSourceLoadReady ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={t('masterData.chartImportTab.alerts.rowSourceNotReady')}
+          description={t('masterData.chartImportTab.alerts.rowSourceNotReadyDescription')}
+        />
+      ) : null}
+
       {!hasFollowerTargets && hasSnapshot ? (
         <Alert
           type="warning"
@@ -738,13 +783,40 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
               />
             </Form.Item>
             {selectedCandidate ? (
-              <Space size={8} wrap data-testid="chart-import-selected-candidate-evidence">
-                <Tag color={selectedCandidate.confidence === 'high' ? 'success' : 'processing'}>
-                  {selectedCandidate.confidence}
-                </Tag>
-                <Tag>{selectedCandidate.source_kind}</Tag>
-                <Text code>{selectedCandidate.chart_identity}</Text>
-                <Text type="secondary">{selectedCandidate.source_evidence_fingerprint.slice(0, 12)}</Text>
+              <Space direction="vertical" size={8} style={{ width: '100%' }} data-testid="chart-import-selected-candidate-evidence">
+                <Space size={8} wrap>
+                  <Tag color={selectedCandidate.confidence === 'high' ? 'success' : 'processing'}>
+                    {selectedCandidate.confidence}
+                  </Tag>
+                  <Tag>{selectedCandidate.source_kind}</Tag>
+                  <Tag color={selectedCandidateLoadReady ? 'success' : 'warning'}>
+                    {selectedCandidate.row_source_status || 'identity_only'}
+                  </Tag>
+                  <Text code>{selectedCandidate.chart_identity}</Text>
+                  <Text type="secondary">{selectedCandidate.source_evidence_fingerprint.slice(0, 12)}</Text>
+                </Space>
+                {selectedCandidateLoadReady ? (
+                  <Descriptions size="small" column={1} data-testid="chart-import-row-source-preview">
+                    <Descriptions.Item label={t('masterData.chartImportTab.details.rowSourceEntity')}>
+                      <Text code>{selectedCandidate.row_source_entity_name || '-'}</Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label={t('masterData.chartImportTab.details.rowSourceMapping')}>
+                      {Object.entries(selectedCandidate.row_source_field_mapping ?? {})
+                        .map(([target, source]) => `${target} <- ${source}`)
+                        .join(', ') || '-'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label={t('masterData.chartImportTab.details.rowSourceEvidence')}>
+                      {selectedCandidate.row_source_evidence_fingerprint?.slice(0, 12) || '-'}
+                    </Descriptions.Item>
+                  </Descriptions>
+                ) : (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message={t('masterData.chartImportTab.alerts.rowSourceNotReady')}
+                    description={t('masterData.chartImportTab.alerts.rowSourceNotReadyDescription')}
+                  />
+                )}
               </Space>
             ) : null}
             {discoveryDiagnostics.length > 0 ? (
@@ -811,6 +883,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
               </Button>
               <Button
                 loading={preparingInitialLoad}
+                disabled={manualOverride || !selectedCandidateLoadReady}
                 onClick={() => { void handlePrepareInitialLoad() }}
                 data-testid="chart-import-prepare-initial-load"
               >
@@ -853,7 +926,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
           <Space size={8} wrap>
             <Button
               type="primary"
-              disabled={!selectedSource}
+              disabled={!selectedSource || !selectedSourceLoadReady}
               loading={runningMode === 'preflight'}
               onClick={() => { void runJob('preflight') }}
               data-testid="chart-import-run-preflight"
@@ -861,7 +934,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
               {t('masterData.chartImportTab.actions.runPreflight')}
             </Button>
             <Button
-              disabled={!selectedSource || !hasSuccessfulPreflight}
+              disabled={!selectedSource || !selectedSourceLoadReady || !hasSuccessfulPreflight}
               loading={runningMode === 'dry_run'}
               onClick={() => { void runJob('dry_run') }}
               data-testid="chart-import-run-dry-run"
@@ -869,7 +942,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
               {t('masterData.chartImportTab.actions.runDryRun')}
             </Button>
             <Button
-              disabled={!selectedSource || !hasSuccessfulDryRun || !hasReviewedDryRun}
+              disabled={!selectedSource || !selectedSourceLoadReady || !hasSuccessfulDryRun || !hasReviewedDryRun}
               loading={runningMode === 'materialize'}
               onClick={() => { void runJob('materialize') }}
               data-testid="chart-import-run-materialize"
@@ -908,6 +981,16 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
             <Descriptions.Item label={t('masterData.chartImportTab.details.compatibilityClass')}>
               {selectedSource.config_name} / {selectedSource.config_version}
             </Descriptions.Item>
+            <Descriptions.Item label={t('masterData.chartImportTab.details.rowSourceStatus')}>
+              <Tag color={selectedSourceLoadReady ? 'success' : 'warning'}>
+                {selectedSourceRowSourceStatus || 'legacy'}
+              </Tag>
+            </Descriptions.Item>
+            {selectedSourceRowSource.row_source_entity_name ? (
+              <Descriptions.Item label={t('masterData.chartImportTab.details.rowSourceEntity')}>
+                <Text code>{String(selectedSourceRowSource.row_source_entity_name)}</Text>
+              </Descriptions.Item>
+            ) : null}
             <Descriptions.Item label={t('masterData.chartImportTab.details.selectedSourceId')}>
               <Text code data-testid="pool-master-data-chart-import-selected-source-id">
                 {selectedSource.id}

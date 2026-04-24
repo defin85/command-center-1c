@@ -22,10 +22,26 @@ BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING = "BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MIS
 BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID = "BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID"
 BOOTSTRAP_SOURCE_MAPPING_INVALID = "BOOTSTRAP_SOURCE_MAPPING_INVALID"
 BOOTSTRAP_SOURCE_FETCH_FAILED = "BOOTSTRAP_SOURCE_FETCH_FAILED"
+CHART_ROW_SOURCE_NOT_READY = "CHART_ROW_SOURCE_NOT_READY"
+CHART_ROW_SOURCE_PROBE_FAILED = "CHART_ROW_SOURCE_PROBE_FAILED"
+CHART_ROW_SOURCE_MAPPING_INCOMPLETE = "CHART_ROW_SOURCE_MAPPING_INCOMPLETE"
 
 BOOTSTRAP_SOURCE_KIND_IB_ODATA = "ib_odata"
 BOOTSTRAP_SOURCE_MODE_ODATA = "odata"
 BOOTSTRAP_SOURCE_MODE_METADATA_ROWS = "metadata_rows"
+CHART_ROW_SOURCE_STATUS_READY = "ready"
+CHART_ROW_SOURCE_STATUS_NEEDS_PROBE = "needs_probe"
+CHART_ROW_SOURCE_STATUS_NEEDS_MAPPING = "needs_mapping"
+CHART_ROW_SOURCE_STATUS_UNAVAILABLE = "unavailable"
+CHART_ROW_SOURCE_KIND_METADATA_ROWS = "metadata_rows"
+STANDARD_CHART_ROW_SOURCE_FIELD_MAPPING = {
+    "canonical_id": "Ref_Key",
+    "source_ref": "Ref_Key",
+    "code": "Code",
+    "name": "Description",
+}
+STANDARD_CHART_ROW_SOURCE_SELECT_FIELDS = ["Ref_Key", "Code", "Description"]
+STANDARD_CHART_ROW_SOURCE_ORDER_BY = ["Ref_Key", "Code"]
 
 
 @dataclass(frozen=True)
@@ -55,6 +71,7 @@ class _BootstrapSourceEntityConfig:
     select_fields: list[str]
     filter_query: str
     page_size: int
+    order_by: list[str]
 
 
 _BootstrapPreflightCallback = Callable[..., PoolMasterDataBootstrapSourcePreflightResult]
@@ -90,6 +107,10 @@ def reset_pool_master_data_bootstrap_source_callbacks() -> None:
     _FETCH_ROWS_CALLBACK = None
     _PREFLIGHT_CALLBACK_KWARGS.clear()
     _FETCH_ROWS_CALLBACK_KWARGS.clear()
+
+
+def is_pool_master_data_bootstrap_source_callback_configured() -> bool:
+    return _PREFLIGHT_CALLBACK is not None or _FETCH_ROWS_CALLBACK is not None
 
 
 def run_pool_master_data_bootstrap_source_preflight(
@@ -141,6 +162,112 @@ def fetch_pool_master_data_bootstrap_source_rows(
         entity_type=normalized_entity_type,
         actor_id=str(actor_id or "").strip(),
     )
+
+
+def build_standard_chart_odata_row_source(
+    *,
+    chart_identity: str,
+    status: str = CHART_ROW_SOURCE_STATUS_NEEDS_PROBE,
+    diagnostics: list[dict[str, Any]] | None = None,
+    credential_strategy: str = "",
+) -> dict[str, Any]:
+    entity_name = str(chart_identity or "").strip()
+    return sanitize_master_data_sync_value(
+        {
+            "row_source_status": str(status or CHART_ROW_SOURCE_STATUS_NEEDS_PROBE).strip(),
+            "row_source_kind": BOOTSTRAP_SOURCE_KIND_IB_ODATA,
+            "row_source_entity_name": entity_name,
+            "row_source_field_mapping": dict(STANDARD_CHART_ROW_SOURCE_FIELD_MAPPING),
+            "row_source_select_fields": list(STANDARD_CHART_ROW_SOURCE_SELECT_FIELDS),
+            "row_source_order_by": list(STANDARD_CHART_ROW_SOURCE_ORDER_BY),
+            "row_source_page_size": 500,
+            "row_source_derivation_method": "standard_chartofaccounts_odata_entity",
+            "row_source_credential_strategy": str(credential_strategy or "").strip(),
+            "row_source_diagnostics": list(diagnostics or []),
+        }
+    )
+
+
+def run_pool_master_data_chart_row_source_preflight(
+    *,
+    tenant_id: str,
+    database: Database,
+    row_source: Mapping[str, Any],
+    actor_id: str = "",
+) -> PoolMasterDataBootstrapSourcePreflightResult:
+    if _PREFLIGHT_CALLBACK is not None:
+        return run_pool_master_data_bootstrap_source_preflight(
+            tenant_id=tenant_id,
+            database=database,
+            entity_scope=[PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT],
+            actor_id=actor_id,
+        )
+    return _default_chart_row_source_preflight(
+        tenant_id=str(tenant_id or "").strip(),
+        database=database,
+        row_source=row_source,
+        actor_id=str(actor_id or "").strip(),
+    )
+
+
+def fetch_pool_master_data_chart_row_source_rows(
+    *,
+    tenant_id: str,
+    database: Database,
+    row_source: Mapping[str, Any],
+    actor_id: str = "",
+) -> list[dict[str, Any]]:
+    if _FETCH_ROWS_CALLBACK is not None:
+        return fetch_pool_master_data_bootstrap_source_rows(
+            tenant_id=tenant_id,
+            database=database,
+            entity_type=PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
+            actor_id=actor_id,
+        )
+
+    source_mode = _resolve_source_mode(database=database)
+    if source_mode == BOOTSTRAP_SOURCE_MODE_METADATA_ROWS:
+        return _default_fetch_rows(
+            tenant_id=tenant_id,
+            database=database,
+            entity_type=PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
+            actor_id=actor_id,
+        )
+
+    config = _resolve_chart_row_source_entity_config(row_source=row_source)
+    mapping_error = _validate_source_mapping_config(config=config)
+    if mapping_error is not None:
+        raise ValueError(f"{CHART_ROW_SOURCE_MAPPING_INCOMPLETE}: {mapping_error}")
+
+    credentials = _resolve_mapping_credentials(database=database, actor_id=actor_id)
+    if credentials is None:
+        raise ValueError(
+            f"{CHART_ROW_SOURCE_NOT_READY}: Infobase mapping is not configured for chart row source."
+        )
+    if credentials.strategy == "ambiguous":
+        raise ValueError(
+            f"{CHART_ROW_SOURCE_NOT_READY}: Multiple infobase mappings found for chart row source."
+        )
+    if not credentials.username or not credentials.password:
+        raise ValueError(
+            f"{CHART_ROW_SOURCE_NOT_READY}: Infobase mapping requires non-empty username and password."
+        )
+
+    client: ODataClient | None = None
+    try:
+        client = ODataClient(
+            base_url=str(database.odata_url or ""),
+            username=credentials.username,
+            password=credentials.password,
+        )
+        return _fetch_all_source_rows_from_odata(client=client, config=config)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            f"{BOOTSTRAP_SOURCE_FETCH_FAILED}: failed to fetch chart row source '{config.entity_name}': {exc}"
+        ) from exc
+    finally:
+        if client is not None:
+            client.close()
 
 
 def discover_pool_master_data_bootstrap_source_chart_candidates(
@@ -243,6 +370,7 @@ def discover_pool_master_data_bootstrap_source_chart_candidates(
                     "field_mapping": config.field_mapping,
                     "select_fields": config.select_fields,
                     "filter_query": config.filter_query,
+                    "order_by": config.order_by,
                 },
                 diagnostics=[],
             )
@@ -510,13 +638,15 @@ def _fetch_all_source_rows_from_odata(
     skip = 0
     page_size = int(config.page_size)
     while True:
-        batch = client.get_entities(
-            config.entity_name,
-            filter_query=config.filter_query or None,
-            select_fields=config.select_fields or None,
-            top=page_size,
-            skip=skip,
-        )
+        request_kwargs = {
+            "filter_query": config.filter_query or None,
+            "select_fields": config.select_fields or None,
+            "top": page_size,
+            "skip": skip,
+        }
+        if config.order_by:
+            request_kwargs["order_by"] = config.order_by
+        batch = client.get_entities(config.entity_name, **request_kwargs)
         normalized_batch = _map_source_rows(
             rows=batch,
             config=config,
@@ -663,6 +793,9 @@ def _resolve_odata_source_entity_configs(*, database: Database) -> dict[str, _Bo
         select_fields = _normalize_select_fields(raw_config.get("select_fields"))
         if not select_fields:
             select_fields = sorted({value for value in field_mapping.values() if value})
+        order_by = _normalize_select_fields(raw_config.get("order_by"))
+        if not order_by and entity_type == PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT:
+            order_by = _default_chart_row_source_order_by(entity_name=entity_name, field_mapping=field_mapping)
         resolved[entity_type] = _BootstrapSourceEntityConfig(
             entity_type=entity_type,
             entity_name=entity_name,
@@ -672,8 +805,207 @@ def _resolve_odata_source_entity_configs(*, database: Database) -> dict[str, _Bo
             select_fields=select_fields,
             filter_query=str(raw_config.get("filter_query") or "").strip(),
             page_size=_safe_page_size(raw_config.get("page_size"), default=default_page_size),
+            order_by=order_by,
         )
     return resolved
+
+
+def _default_chart_row_source_preflight(
+    *,
+    tenant_id: str,
+    database: Database,
+    row_source: Mapping[str, Any],
+    actor_id: str,
+) -> PoolMasterDataBootstrapSourcePreflightResult:
+    errors: list[dict[str, Any]] = []
+    diagnostics: dict[str, Any] = {
+        "tenant_id": str(tenant_id),
+        "database_id": str(database.id),
+        "source_mode": BOOTSTRAP_SOURCE_MODE_ODATA,
+        "row_source": _serialize_row_source_for_diagnostics(row_source=row_source),
+        "odata_url": sanitize_master_data_sync_text(str(database.odata_url or "")),
+    }
+    credential_strategy = "none"
+
+    if not str(database.odata_url or "").strip():
+        errors.append(
+            _error(
+                code=CHART_ROW_SOURCE_PROBE_FAILED,
+                detail="Database OData URL is missing for chart row source probe.",
+                path="database.odata_url",
+            )
+        )
+
+    config: _BootstrapSourceEntityConfig | None = None
+    try:
+        config = _resolve_chart_row_source_entity_config(row_source=row_source)
+    except ValueError as exc:
+        errors.append(
+            _error(
+                code=CHART_ROW_SOURCE_MAPPING_INCOMPLETE,
+                detail=str(exc),
+                path="row_source",
+            )
+        )
+
+    credentials = _resolve_mapping_credentials(database=database, actor_id=actor_id)
+    if credentials is None:
+        errors.append(
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="Infobase mapping is not configured for chart row source.",
+                path="infobase_user_mapping",
+            )
+        )
+    elif credentials.strategy == "ambiguous":
+        errors.append(
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="Multiple infobase mappings found for chart row source.",
+                path="infobase_user_mapping",
+            )
+        )
+    else:
+        credential_strategy = credentials.strategy
+        if not credentials.username or not credentials.password:
+            errors.append(
+                _error(
+                    code=CHART_ROW_SOURCE_NOT_READY,
+                    detail="Infobase mapping requires non-empty username and password for chart row source.",
+                    path="infobase_user_mapping.credentials",
+                )
+            )
+
+    if config is not None:
+        mapping_error = _validate_source_mapping_config(config=config)
+        if mapping_error is not None:
+            errors.append(
+                _error(
+                    code=CHART_ROW_SOURCE_MAPPING_INCOMPLETE,
+                    detail=mapping_error,
+                    path="row_source.field_mapping",
+                )
+            )
+
+    if not errors and credentials is not None and config is not None:
+        client: ODataClient | None = None
+        try:
+            client = ODataClient(
+                base_url=str(database.odata_url or ""),
+                username=credentials.username,
+                password=credentials.password,
+            )
+            healthy = bool(client.health_check())
+            if not healthy:
+                errors.append(
+                    _error(
+                        code=CHART_ROW_SOURCE_PROBE_FAILED,
+                        detail="Chart row source OData endpoint is unavailable.",
+                        path="row_source.health_check",
+                    )
+                )
+            else:
+                _check_source_entity_availability(client=client, config=config)
+        except ValueError as exc:
+            errors.append(
+                _error(
+                    code=CHART_ROW_SOURCE_PROBE_FAILED,
+                    detail=str(exc),
+                    path="row_source.entity_probe",
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                _error(
+                    code=CHART_ROW_SOURCE_PROBE_FAILED,
+                    detail=str(exc) or "Chart row source OData endpoint is unavailable.",
+                    path="row_source.entity_probe",
+                )
+            )
+        finally:
+            if client is not None:
+                client.close()
+
+    diagnostics["coverage"] = {PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT: not errors}
+    diagnostics["credential_strategy"] = credential_strategy
+    diagnostics["error_count"] = len(errors)
+    return PoolMasterDataBootstrapSourcePreflightResult(
+        ok=not errors,
+        source_kind=BOOTSTRAP_SOURCE_KIND_IB_ODATA,
+        coverage={PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT: not errors},
+        credential_strategy=credential_strategy,
+        errors=errors,
+        diagnostics=sanitize_master_data_sync_value(diagnostics),
+    )
+
+
+def _resolve_chart_row_source_entity_config(*, row_source: Mapping[str, Any]) -> _BootstrapSourceEntityConfig:
+    if not isinstance(row_source, Mapping):
+        raise ValueError("Chart row source metadata is required.")
+    kind = str(row_source.get("row_source_kind") or row_source.get("kind") or "").strip()
+    if kind and kind != BOOTSTRAP_SOURCE_KIND_IB_ODATA:
+        raise ValueError(f"Unsupported chart row source kind '{kind}'.")
+    entity_name = str(
+        row_source.get("row_source_entity_name")
+        or row_source.get("entity_name")
+        or ""
+    ).strip()
+    if not entity_name:
+        raise ValueError("Chart row source entity name is required.")
+    field_mapping = _normalize_field_mapping(
+        row_source.get("row_source_field_mapping")
+        or row_source.get("field_mapping")
+        or {}
+    )
+    if not field_mapping:
+        field_mapping = dict(STANDARD_CHART_ROW_SOURCE_FIELD_MAPPING)
+    select_fields = _normalize_select_fields(
+        row_source.get("row_source_select_fields")
+        or row_source.get("select_fields")
+        or []
+    )
+    if not select_fields:
+        select_fields = sorted({value for value in field_mapping.values() if value})
+    chart_identity = str(row_source.get("chart_identity") or "").strip() or _derive_chart_identity_from_source_entity_name(entity_name)
+    return _BootstrapSourceEntityConfig(
+        entity_type=PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT,
+        entity_name=entity_name,
+        chart_identity=chart_identity,
+        chart_identity_source="row_source_metadata" if str(row_source.get("chart_identity") or "").strip() else "odata_entity_name",
+        field_mapping=field_mapping,
+        select_fields=select_fields,
+        filter_query=str(row_source.get("row_source_filter_query") or row_source.get("filter_query") or "").strip(),
+        page_size=_safe_page_size(row_source.get("row_source_page_size") or row_source.get("page_size"), default=500),
+        order_by=_normalize_select_fields(
+            row_source.get("row_source_order_by")
+            or row_source.get("order_by")
+            or []
+        )
+        or _default_chart_row_source_order_by(entity_name=entity_name, field_mapping=field_mapping),
+    )
+
+
+def _serialize_row_source_for_diagnostics(*, row_source: Mapping[str, Any]) -> dict[str, Any]:
+    return sanitize_master_data_sync_value(
+        {
+            "row_source_kind": str(row_source.get("row_source_kind") or row_source.get("kind") or "").strip(),
+            "row_source_entity_name": str(
+                row_source.get("row_source_entity_name")
+                or row_source.get("entity_name")
+                or ""
+            ).strip(),
+            "row_source_field_mapping": _normalize_field_mapping(
+                row_source.get("row_source_field_mapping")
+                or row_source.get("field_mapping")
+                or {}
+            ),
+            "row_source_select_fields": _normalize_select_fields(
+                row_source.get("row_source_select_fields")
+                or row_source.get("select_fields")
+                or []
+            ),
+        }
+    )
 
 
 def _normalize_field_mapping(value: Any) -> dict[str, str]:
@@ -735,17 +1067,32 @@ def _check_source_entity_availability(
     client: ODataClient,
     config: _BootstrapSourceEntityConfig,
 ) -> None:
-    probe = client.get_entities(
-        config.entity_name,
-        filter_query=config.filter_query or None,
-        select_fields=config.select_fields or None,
-        top=1,
-        skip=0,
-    )
+    request_kwargs = {
+        "filter_query": config.filter_query or None,
+        "select_fields": config.select_fields or None,
+        "top": 1,
+        "skip": 0,
+    }
+    if config.order_by:
+        request_kwargs["order_by"] = config.order_by
+    probe = client.get_entities(config.entity_name, **request_kwargs)
     if not isinstance(probe, list):
         raise ValueError(
             f"Bootstrap source probe for '{config.entity_name}' returned invalid payload."
         )
+    if probe:
+        first_row = probe[0]
+        if isinstance(first_row, Mapping):
+            missing_fields = sorted(
+                source_field
+                for source_field in set(config.field_mapping.values())
+                if source_field and source_field not in first_row
+            )
+            if missing_fields:
+                raise ValueError(
+                    f"Bootstrap source probe for '{config.entity_name}' missed required field(s): "
+                    f"{', '.join(missing_fields)}."
+                )
 
 
 def _safe_page_size(value: Any, *, default: int) -> int:
@@ -777,6 +1124,17 @@ def _derive_chart_identity_from_source_entity_name(entity_name: str) -> str:
     return ""
 
 
+def _default_chart_row_source_order_by(*, entity_name: str, field_mapping: Mapping[str, str]) -> list[str]:
+    if not _derive_chart_identity_from_source_entity_name(entity_name):
+        return []
+    order_by: list[str] = []
+    for target_key in ("canonical_id", "code"):
+        source_key = str(field_mapping.get(target_key) or "").strip()
+        if source_key and source_key not in order_by:
+            order_by.append(source_key)
+    return order_by or list(STANDARD_CHART_ROW_SOURCE_ORDER_BY)
+
+
 def _build_bootstrap_chart_candidate(
     *,
     database: Database,
@@ -802,6 +1160,25 @@ def _build_bootstrap_chart_candidate(
     )
     serialized = json.dumps(evidence_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    row_source_payload: dict[str, Any] = {}
+    if source_kind == "bootstrap_source_config":
+        entity_name = str(evidence.get("entity_name") or "").strip()
+        field_mapping = _normalize_field_mapping(evidence.get("field_mapping"))
+        select_fields = _normalize_select_fields(evidence.get("select_fields"))
+        if entity_name and field_mapping:
+            row_source_payload = {
+                "row_source_status": CHART_ROW_SOURCE_STATUS_NEEDS_PROBE,
+                "row_source_kind": BOOTSTRAP_SOURCE_KIND_IB_ODATA,
+                "row_source_entity_name": entity_name,
+                "row_source_field_mapping": field_mapping,
+                "row_source_select_fields": select_fields or sorted({value for value in field_mapping.values() if value}),
+                "row_source_order_by": _normalize_select_fields(evidence.get("order_by"))
+                or _default_chart_row_source_order_by(entity_name=entity_name, field_mapping=field_mapping),
+                "row_source_page_size": 500,
+                "row_source_derivation_method": "bootstrap_source_config",
+                "row_source_credential_strategy": "",
+                "row_source_diagnostics": [],
+            }
     return sanitize_master_data_sync_value(
         {
             "chart_identity": normalized_identity,
@@ -819,6 +1196,7 @@ def _build_bootstrap_chart_candidate(
             "diagnostics": list(diagnostics or []),
             "warnings": [],
             "is_complete": bool(normalized_identity and config_name and config_version),
+            **row_source_payload,
         }
     )
 
@@ -849,15 +1227,30 @@ __all__ = [
     "BOOTSTRAP_SOURCE_ENTITY_TYPE_INVALID",
     "BOOTSTRAP_SOURCE_FETCH_FAILED",
     "BOOTSTRAP_SOURCE_KIND_IB_ODATA",
+    "BOOTSTRAP_SOURCE_MODE_METADATA_ROWS",
     "BOOTSTRAP_SOURCE_MAPPING_AMBIGUOUS",
     "BOOTSTRAP_SOURCE_MAPPING_INVALID",
     "BOOTSTRAP_SOURCE_MAPPING_NOT_CONFIGURED",
     "BOOTSTRAP_SOURCE_ODATA_URL_MISSING",
     "BOOTSTRAP_SOURCE_UNAVAILABLE",
+    "CHART_ROW_SOURCE_MAPPING_INCOMPLETE",
+    "CHART_ROW_SOURCE_NOT_READY",
+    "CHART_ROW_SOURCE_PROBE_FAILED",
+    "CHART_ROW_SOURCE_STATUS_NEEDS_MAPPING",
+    "CHART_ROW_SOURCE_STATUS_NEEDS_PROBE",
+    "CHART_ROW_SOURCE_STATUS_READY",
+    "CHART_ROW_SOURCE_STATUS_UNAVAILABLE",
+    "STANDARD_CHART_ROW_SOURCE_FIELD_MAPPING",
+    "STANDARD_CHART_ROW_SOURCE_ORDER_BY",
+    "STANDARD_CHART_ROW_SOURCE_SELECT_FIELDS",
     "PoolMasterDataBootstrapSourcePreflightResult",
+    "build_standard_chart_odata_row_source",
     "configure_pool_master_data_bootstrap_source_callbacks",
     "discover_pool_master_data_bootstrap_source_chart_candidates",
+    "fetch_pool_master_data_chart_row_source_rows",
     "fetch_pool_master_data_bootstrap_source_rows",
+    "is_pool_master_data_bootstrap_source_callback_configured",
     "reset_pool_master_data_bootstrap_source_callbacks",
+    "run_pool_master_data_chart_row_source_preflight",
     "run_pool_master_data_bootstrap_source_preflight",
 ]

@@ -2043,6 +2043,14 @@ export type PoolMasterDataChartDiscoveryCandidate = {
   metadata_hash: string
   catalog_version: string
   source_evidence_fingerprint: string
+  row_source_status?: string
+  row_source_kind?: string
+  row_source_entity_name?: string
+  row_source_field_mapping?: Record<string, string>
+  row_source_select_fields?: string[]
+  row_source_evidence_fingerprint?: string
+  row_source_diagnostics?: Array<Record<string, unknown>>
+  initial_load_ready?: boolean
   diagnostics: Array<Record<string, unknown>>
   warnings: Array<Record<string, unknown>>
   is_complete: boolean
