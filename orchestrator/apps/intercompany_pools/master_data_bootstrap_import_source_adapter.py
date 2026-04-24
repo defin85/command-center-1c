@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from apps.databases.models import Database, InfobaseUserMapping
-from apps.databases.odata import ODataClient
+from apps.databases.odata import (
+    ODataClient,
+    ODataMetadataAdapter,
+    ODataMetadataTransportError,
+    resolve_database_odata_verify_tls,
+)
 
 from .master_data_registry import normalize_pool_master_data_bootstrap_entity_type
 from .master_data_sync_redaction import sanitize_master_data_sync_text, sanitize_master_data_sync_value
@@ -25,6 +31,9 @@ BOOTSTRAP_SOURCE_FETCH_FAILED = "BOOTSTRAP_SOURCE_FETCH_FAILED"
 CHART_ROW_SOURCE_NOT_READY = "CHART_ROW_SOURCE_NOT_READY"
 CHART_ROW_SOURCE_PROBE_FAILED = "CHART_ROW_SOURCE_PROBE_FAILED"
 CHART_ROW_SOURCE_MAPPING_INCOMPLETE = "CHART_ROW_SOURCE_MAPPING_INCOMPLETE"
+CHART_DISCOVERY_ODATA_METADATA_FETCH_FAILED = "CHART_DISCOVERY_ODATA_METADATA_FETCH_FAILED"
+CHART_DISCOVERY_ODATA_CHART_ENTITY_MISSING = "CHART_DISCOVERY_ODATA_CHART_ENTITY_MISSING"
+CHART_DISCOVERY_ODATA_METADATA_PARSE_FAILED = "CHART_DISCOVERY_ODATA_METADATA_PARSE_FAILED"
 
 BOOTSTRAP_SOURCE_KIND_IB_ODATA = "ib_odata"
 BOOTSTRAP_SOURCE_MODE_ODATA = "odata"
@@ -343,13 +352,21 @@ def discover_pool_master_data_bootstrap_source_chart_candidates(
     entity_configs = _resolve_odata_source_entity_configs(database=database)
     config = entity_configs.get(PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT)
     if config is None:
-        diagnostics.append(
-            _error(
-                code=BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING,
-                detail="Bootstrap source mapping does not cover GLAccount.",
-                path="metadata.bootstrap_import_source.entities.gl_account",
-            )
+        odata_candidates, odata_diagnostics = _discover_odata_chart_entity_candidates_from_metadata(
+            database=database,
+            config_name=config_name,
+            config_version=config_version,
         )
+        candidates.extend(odata_candidates)
+        diagnostics.extend(odata_diagnostics)
+        if not candidates:
+            diagnostics.append(
+                _error(
+                    code=BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING,
+                    detail="Bootstrap source mapping does not cover GLAccount.",
+                    path="metadata.bootstrap_import_source.entities.gl_account",
+                )
+            )
         return candidates, diagnostics
 
     if config.chart_identity:
@@ -405,6 +422,148 @@ def discover_pool_master_data_bootstrap_source_chart_candidates(
         )
     )
     return candidates, diagnostics
+
+
+def _discover_odata_chart_entity_candidates_from_metadata(
+    *,
+    database: Database,
+    config_name: str,
+    config_version: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    diagnostics: list[dict[str, Any]] = []
+    credentials = _resolve_mapping_credentials(database=database, actor_id="")
+    if credentials is None:
+        return [], [
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="Infobase mapping is not configured for OData chart entity discovery.",
+                path="infobase_user_mapping",
+            )
+        ]
+    if credentials.strategy == "ambiguous":
+        return [], [
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="Multiple infobase mappings found for OData chart entity discovery.",
+                path="infobase_user_mapping",
+            )
+        ]
+    if not credentials.username or not credentials.password:
+        return [], [
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="Infobase mapping requires non-empty username and password for OData chart entity discovery.",
+                path="infobase_user_mapping.credentials",
+            )
+        ]
+
+    if not str(database.odata_url or "").strip():
+        return [], [
+            _error(
+                code=BOOTSTRAP_SOURCE_ODATA_URL_MISSING,
+                detail="Database OData URL is missing.",
+                path="database.odata_url",
+            )
+        ]
+
+    try:
+        with ODataMetadataAdapter(
+            base_url=str(database.odata_url or ""),
+            username=credentials.username,
+            password=credentials.password,
+            timeout=database.connection_timeout,
+            verify_tls=resolve_database_odata_verify_tls(database=database),
+        ) as metadata_adapter:
+            response = metadata_adapter.fetch_metadata()
+    except ODataMetadataTransportError as exc:
+        return [], [
+            _error(
+                code=CHART_DISCOVERY_ODATA_METADATA_FETCH_FAILED,
+                detail=f"Unable to fetch OData $metadata for chart discovery: {exc}",
+                path="$metadata",
+            )
+        ]
+
+    if response.status_code in {401, 403}:
+        return [], [
+            _error(
+                code=CHART_ROW_SOURCE_NOT_READY,
+                detail="OData $metadata authentication failed for chart discovery.",
+                path="$metadata",
+            )
+        ]
+    if response.status_code >= 400:
+        return [], [
+            _error(
+                code=CHART_DISCOVERY_ODATA_METADATA_FETCH_FAILED,
+                detail=f"OData $metadata request failed for chart discovery with HTTP {response.status_code}.",
+                path="$metadata",
+            )
+        ]
+
+    try:
+        entity_names = _extract_odata_chart_entity_names_from_csdl(response.text)
+    except ET.ParseError as exc:
+        return [], [
+            _error(
+                code=CHART_DISCOVERY_ODATA_METADATA_PARSE_FAILED,
+                detail=f"OData $metadata XML is invalid for chart discovery: {exc}",
+                path="$metadata",
+            )
+        ]
+
+    if not entity_names:
+        diagnostics.append(
+            _error(
+                code=CHART_DISCOVERY_ODATA_CHART_ENTITY_MISSING,
+                detail="OData $metadata does not expose ChartOfAccounts_* entity sets.",
+                path="$metadata.EntitySet",
+            )
+        )
+        return [], diagnostics
+
+    entity_fingerprint = hashlib.sha256(
+        json.dumps(entity_names, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    candidates = [
+        _build_bootstrap_chart_candidate(
+            database=database,
+            chart_identity=entity_name,
+            config_name=config_name,
+            config_version=config_version,
+            source_kind="odata_metadata",
+            derivation_method="odata_entity_name",
+            confidence="high",
+            evidence={
+                "mode": BOOTSTRAP_SOURCE_MODE_ODATA,
+                "entity_name": entity_name,
+                "chart_identity": entity_name,
+                "chart_identity_source": "odata_metadata_entity_set",
+                "metadata_entity_fingerprint": entity_fingerprint,
+            },
+            diagnostics=[],
+        )
+        for entity_name in entity_names
+    ]
+    return candidates, diagnostics
+
+
+def _extract_odata_chart_entity_names_from_csdl(xml_payload: str) -> list[str]:
+    root = ET.fromstring(xml_payload)
+    entity_names: set[str] = set()
+    for entity_set in root.findall(".//{*}EntitySet"):
+        entity_set_name = _derive_chart_identity_from_source_entity_name(str(entity_set.get("Name") or ""))
+        if entity_set_name:
+            entity_names.add(entity_set_name)
+
+    if entity_names:
+        return sorted(entity_names)
+
+    for entity_type in root.findall(".//{*}EntityType"):
+        entity_type_name = _derive_chart_identity_from_source_entity_name(str(entity_type.get("Name") or ""))
+        if entity_type_name and not entity_type_name.endswith("_RowType"):
+            entity_names.add(entity_type_name)
+    return sorted(entity_names)
 
 
 def _default_preflight(
@@ -1193,6 +1352,11 @@ def _build_bootstrap_chart_candidate(
                 "row_source_credential_strategy": "",
                 "row_source_diagnostics": [],
             }
+    elif source_kind == "odata_metadata" and normalized_identity.startswith("ChartOfAccounts_"):
+        row_source_payload = build_standard_chart_odata_row_source(
+            chart_identity=normalized_identity,
+            status=CHART_ROW_SOURCE_STATUS_NEEDS_PROBE,
+        )
     return sanitize_master_data_sync_value(
         {
             "chart_identity": normalized_identity,

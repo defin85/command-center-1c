@@ -318,6 +318,145 @@ def test_chart_discovery_returns_candidates_from_odata_config_metadata_catalog_a
 
 
 @pytest.mark.django_db
+def test_chart_discovery_uses_live_odata_metadata_for_standard_chart_entity(
+    monkeypatch,
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(
+        tenant=default_tenant,
+        name=f"chart-live-odata-metadata-{uuid4().hex[:8]}",
+    )
+    _set_business_configuration_profile(database=database)
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+    reference_rows = [
+        {"Ref_Key": "src-10-01", "Code": "10.01", "Description": "Materials"},
+        {"Ref_Key": "src-60-01", "Code": "60.01", "Description": "Suppliers"},
+    ]
+
+    class _FakeMetadataResponse:
+        status_code = 200
+        text = """<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema xmlns="http://docs.oasis-open.org/odata/ns/edm" Namespace="StandardODATA">
+      <EntityType Name="ChartOfAccounts_Main">
+        <Property Name="Ref_Key" Type="Edm.Guid" Nullable="false" />
+        <Property Name="Code" Type="Edm.String" Nullable="false" />
+        <Property Name="Description" Type="Edm.String" Nullable="false" />
+      </EntityType>
+      <EntityContainer Name="DefaultContainer">
+        <EntitySet Name="ChartOfAccounts_Main" EntityType="StandardODATA.ChartOfAccounts_Main" />
+      </EntityContainer>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>
+"""
+
+    class _FakeODataMetadataAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def fetch_metadata(self):
+            return _FakeMetadataResponse()
+
+        def close(self) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            self.close()
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, entity_name: str, **kwargs):
+            assert entity_name == "ChartOfAccounts_Main"
+            skip = int(kwargs.get("skip") or 0)
+            top = int(kwargs.get("top") or len(reference_rows))
+            return reference_rows[skip : skip + top]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataMetadataAdapter",
+        _FakeODataMetadataAdapter,
+    )
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    discovery_response = admin_client.get(
+        "/api/v2/pools/master-data/chart-import/discovery/",
+        {"database_id": str(database.id)},
+    )
+
+    assert discovery_response.status_code == 200
+    discovery_payload = discovery_response.json()
+    assert {
+        diagnostic["code"]
+        for diagnostic in discovery_payload["diagnostics"]
+    }.isdisjoint({"BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING", "CHART_DISCOVERY_NO_CANDIDATES"})
+    candidate = discovery_payload["candidates"][0]
+    assert candidate["source_kind"] == "odata_metadata"
+    assert candidate["derivation_method"] == "odata_entity_name"
+    assert candidate["chart_identity"] == "ChartOfAccounts_Main"
+    assert candidate["row_source_status"] == "ready"
+    assert candidate["initial_load_ready"] is True
+    assert candidate["row_source_entity_name"] == "ChartOfAccounts_Main"
+    assert candidate["row_source_field_mapping"] == {
+        "canonical_id": "Ref_Key",
+        "source_ref": "Ref_Key",
+        "code": "Code",
+        "name": "Description",
+    }
+
+    source_response = admin_client.post(
+        "/api/v2/pools/master-data/chart-import/sources/upsert/",
+        {
+            "database_id": str(database.id),
+            "chart_identity": CHART_IDENTITY,
+            "discovery_provenance": candidate,
+        },
+        format="json",
+    )
+    assert source_response.status_code == 200
+    source = source_response.json()["source"]
+    assert source["metadata"]["row_source"]["row_source_entity_name"] == "ChartOfAccounts_Main"
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
+    materialize = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
+    assert materialize["snapshot"]["materialized_count"] == 2
+
+    list_response = admin_client.get(
+        "/api/v2/pools/master-data/gl-accounts/",
+        {"chart_identity": CHART_IDENTITY, "limit": 10},
+    )
+    assert list_response.status_code == 200
+    assert [
+        (row["code"], row["name"])
+        for row in list_response.json()["gl_accounts"]
+    ] == [
+        ("10.01", "Materials"),
+        ("60.01", "Suppliers"),
+    ]
+
+
+@pytest.mark.django_db
 def test_chart_discovery_does_not_expose_probe_rows_or_credentials(
     monkeypatch,
     admin_client: APIClient,
@@ -343,8 +482,6 @@ def test_chart_discovery_does_not_expose_probe_rows_or_credentials(
         },
     )
     _set_business_configuration_profile(database=database)
-    database.refresh_from_db()
-    metadata_before_discovery = dict(database.metadata or {})
     InfobaseUserMapping.objects.create(
         database=database,
         ib_username="svc-user",
@@ -411,8 +548,6 @@ def test_chart_source_upsert_persists_selected_row_source_provenance(
         },
     )
     _set_business_configuration_profile(database=database)
-    database.refresh_from_db()
-    metadata_before_discovery = dict(database.metadata or {})
     InfobaseUserMapping.objects.create(
         database=database,
         ib_username="svc-user",
@@ -636,6 +771,131 @@ def test_chart_materialization_reads_full_rows_from_chart_scoped_odata_row_sourc
 
 
 @pytest.mark.django_db
+def test_chart_import_e2e_exposes_reference_chart_accounts_via_master_data_api(
+    monkeypatch,
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(
+        tenant=default_tenant,
+        name=f"chart-reference-list-{uuid4().hex[:8]}",
+        metadata={
+            "bootstrap_import_source": {
+                "entities": {
+                    "gl_account": {
+                        "entity_name": "ChartOfAccounts_Main",
+                        "field_mapping": {
+                            "canonical_id": "Ref_Key",
+                            "source_ref": "Ref_Key",
+                            "code": "Code",
+                            "name": "Description",
+                        },
+                    }
+                }
+            }
+        },
+    )
+    _set_business_configuration_profile(database=database)
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+    reference_rows = [
+        {"Ref_Key": "src-60-01", "Code": "60.01", "Description": "Suppliers"},
+        {"Ref_Key": "src-10-01", "Code": "10.01", "Description": "Materials"},
+        {"Ref_Key": "src-41-01", "Code": "41.01", "Description": "Goods"},
+    ]
+    calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, entity_name: str, **kwargs):
+            calls.append({"entity_name": entity_name, **kwargs})
+            assert entity_name == "ChartOfAccounts_Main"
+            skip = int(kwargs.get("skip") or 0)
+            top = int(kwargs.get("top") or len(reference_rows))
+            return reference_rows[skip : skip + top]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    discovery_response = admin_client.get(
+        "/api/v2/pools/master-data/chart-import/discovery/",
+        {"database_id": str(database.id)},
+    )
+    assert discovery_response.status_code == 200
+    candidate = discovery_response.json()["candidates"][0]
+    assert candidate["chart_identity"] == CHART_IDENTITY
+    assert candidate["row_source_status"] == "ready"
+    assert candidate["initial_load_ready"] is True
+    candidate["row_source_page_size"] = 2
+
+    source_response = admin_client.post(
+        "/api/v2/pools/master-data/chart-import/sources/upsert/",
+        {
+            "database_id": str(database.id),
+            "chart_identity": CHART_IDENTITY,
+            "discovery_provenance": candidate,
+        },
+        format="json",
+    )
+    assert source_response.status_code == 200
+    source = source_response.json()["source"]
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    dry_run = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
+    assert dry_run["counters"]["rows_total"] == 3
+    assert dry_run["counters"]["created_count"] == 3
+    materialize = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
+    assert materialize["snapshot"]["materialized_count"] == 3
+
+    list_response = admin_client.get(
+        "/api/v2/pools/master-data/gl-accounts/",
+        {"chart_identity": CHART_IDENTITY, "limit": 10},
+    )
+
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert payload["count"] == 3
+    assert payload["limit"] == 10
+    assert payload["offset"] == 0
+    assert [
+        (row["code"], row["name"], row["chart_identity"])
+        for row in payload["gl_accounts"]
+    ] == [
+        ("10.01", "Materials", CHART_IDENTITY),
+        ("41.01", "Goods", CHART_IDENTITY),
+        ("60.01", "Suppliers", CHART_IDENTITY),
+    ]
+    assert all(row["canonical_id"].startswith("gl-account-") for row in payload["gl_accounts"])
+    assert {row["canonical_id"] for row in payload["gl_accounts"]}.isdisjoint(
+        {row["Ref_Key"] for row in reference_rows}
+    )
+    assert {
+        row["metadata"]["chart_materialization"]["source_ref"]
+        for row in payload["gl_accounts"]
+    } == {"src-10-01", "src-41-01", "src-60-01"}
+    assert any(
+        call.get("entity_name") == "ChartOfAccounts_Main"
+        and call.get("top") == 2
+        and call.get("skip") == 2
+        for call in calls
+    )
+
+
+@pytest.mark.django_db
 def test_manual_chart_source_snapshots_compatible_global_mapping_before_initial_load(
     monkeypatch,
     admin_client: APIClient,
@@ -719,6 +979,69 @@ def test_manual_chart_source_snapshots_compatible_global_mapping_before_initial_
     assert materialize["snapshot"]["materialized_count"] == 1
     assert set(PoolMasterGLAccount.objects.filter(tenant=default_tenant).values_list("code", flat=True)) == {"10.01"}
     assert {call["entity_name"] for call in calls} == {"ChartOfAccounts_Main"}
+
+
+@pytest.mark.django_db
+def test_manual_chart_source_snapshots_standard_chart_row_source_for_live_initial_load(
+    monkeypatch,
+    admin_client: APIClient,
+    default_tenant: Tenant,
+) -> None:
+    database = _create_database(
+        tenant=default_tenant,
+        name=f"chart-standard-manual-{uuid4().hex[:8]}",
+    )
+    _set_business_configuration_profile(database=database)
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+    calls: list[dict[str, object]] = []
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, entity_name: str, **kwargs):
+            calls.append({"entity_name": entity_name, **kwargs})
+            if int(kwargs.get("skip") or 0) > 0:
+                return []
+            return [{"Ref_Key": "gl-10-01", "Code": "10.01", "Description": "Materials"}]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    source = _upsert_chart_source(client=admin_client, database_id=str(database.id))
+
+    row_source = source["metadata"]["row_source"]
+    assert row_source["row_source_status"] == "ready"
+    assert row_source["row_source_entity_name"] == CHART_IDENTITY
+    assert row_source["row_source_derivation_method"] == "standard_chartofaccounts_manual_override_probe"
+    assert row_source["row_source_field_mapping"] == {
+        "canonical_id": "Ref_Key",
+        "source_ref": "Ref_Key",
+        "code": "Code",
+        "name": "Description",
+    }
+    assert source["metadata"]["source_revision"]["row_source_evidence_fingerprint"] == row_source["row_source_evidence_fingerprint"]
+
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="preflight")
+    _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="dry_run")
+    materialize = _create_chart_job(client=admin_client, chart_source_id=source["id"], mode="materialize")
+
+    assert materialize["snapshot"]["materialized_count"] == 1
+    assert set(PoolMasterGLAccount.objects.filter(tenant=default_tenant).values_list("code", flat=True)) == {"10.01"}
+    assert any(call["entity_name"] == CHART_IDENTITY for call in calls)
 
 
 @pytest.mark.django_db

@@ -25,7 +25,6 @@ from .master_data_bootstrap_import_source_adapter import (
     CHART_ROW_SOURCE_STATUS_READY,
     CHART_ROW_SOURCE_STATUS_UNAVAILABLE,
     PoolMasterDataBootstrapSourcePreflightResult,
-    STANDARD_CHART_ROW_SOURCE_FIELD_MAPPING,
     STANDARD_CHART_ROW_SOURCE_ORDER_BY,
     build_standard_chart_odata_row_source,
     discover_pool_master_data_bootstrap_source_chart_candidates,
@@ -1802,6 +1801,9 @@ def _build_chart_source_metadata(
         ) or _build_compatible_global_bootstrap_row_source_for_database(
             database=database,
             chart_identity=chart_identity,
+        ) or _build_standard_chart_row_source_for_database(
+            database=database,
+            chart_identity=chart_identity,
         )
     if provenance:
         extra["chart_discovery"] = provenance
@@ -1885,6 +1887,78 @@ def _build_chart_row_source_metadata(
             if isinstance(item, Mapping) and str(item.get("code") or "")
         ],
     }
+    return sanitize_master_data_sync_value(row_source)
+
+
+def _build_standard_chart_row_source_for_database(
+    *,
+    database: Database,
+    chart_identity: str,
+) -> dict[str, Any]:
+    normalized_chart_identity = str(chart_identity or "").strip()
+    if not normalized_chart_identity.startswith("ChartOfAccounts_"):
+        return {}
+    row_source = build_standard_chart_odata_row_source(
+        chart_identity=normalized_chart_identity,
+        status=CHART_ROW_SOURCE_STATUS_NEEDS_PROBE,
+    )
+    try:
+        preflight = run_pool_master_data_chart_row_source_preflight(
+            tenant_id=str(database.tenant_id),
+            database=database,
+            row_source=row_source,
+        )
+        errors = list(preflight.errors or [])
+        credential_strategy = str(preflight.credential_strategy or "")
+    except Exception as exc:  # noqa: BLE001
+        errors = [
+            {
+                "code": CHART_ROW_SOURCE_PROBE_FAILED,
+                "detail": sanitize_master_data_sync_text(str(exc) or "Chart row-source probe failed."),
+                "path": "row_source.entity_probe",
+            }
+        ]
+        credential_strategy = ""
+
+    if not errors:
+        status = CHART_ROW_SOURCE_STATUS_READY
+    elif any(str(error.get("code") or "") == CHART_ROW_SOURCE_MAPPING_INCOMPLETE for error in errors):
+        status = CHART_ROW_SOURCE_STATUS_NEEDS_MAPPING
+    elif any(str(error.get("code") or "") == CHART_ROW_SOURCE_NOT_READY for error in errors):
+        status = CHART_ROW_SOURCE_STATUS_NEEDS_PROBE
+    else:
+        status = CHART_ROW_SOURCE_STATUS_UNAVAILABLE
+
+    row_source.update(
+        {
+            "row_source_status": status,
+            "row_source_derivation_method": "standard_chartofaccounts_manual_override_probe",
+            "row_source_credential_strategy": credential_strategy,
+            "row_source_diagnostics": errors,
+            "chart_identity": normalized_chart_identity,
+            "database_id": str(database.id),
+            "diagnostic_codes": [
+                str(error.get("code") or "")
+                for error in errors
+                if str(error.get("code") or "")
+            ],
+        }
+    )
+    row_source["row_source_evidence_fingerprint"] = _build_source_evidence_fingerprint(
+        {
+            "database_id": str(database.id),
+            "chart_identity": normalized_chart_identity,
+            "row_source_kind": str(row_source.get("row_source_kind") or ""),
+            "row_source_entity_name": str(row_source.get("row_source_entity_name") or ""),
+            "row_source_field_mapping": dict(row_source.get("row_source_field_mapping") or {}),
+            "row_source_select_fields": list(row_source.get("row_source_select_fields") or []),
+            "row_source_order_by": list(row_source.get("row_source_order_by") or []),
+            "row_source_status": status,
+            "credential_strategy": credential_strategy,
+            "diagnostic_codes": list(row_source.get("diagnostic_codes") or []),
+            "derivation_method": str(row_source.get("row_source_derivation_method") or ""),
+        }
+    )
     return sanitize_master_data_sync_value(row_source)
 
 
