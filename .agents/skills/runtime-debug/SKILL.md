@@ -1,6 +1,6 @@
 ---
 name: runtime-debug
-description: Use when checking local runtimes, probing health, restarting frontend or backend services, and confirming recovery with targeted evals and probes.
+description: "Use to inspect, restart, and verify local frontend/backend runtimes with targeted probes."
 ---
 
 # Runtime Debug

@@ -1,6 +1,6 @@
 ---
 name: openspec-change-delivery
-description: Use when implementing an approved OpenSpec change end-to-end through execution matrix, Beads tracking, targeted verification, and final Requirement -> Code -> Test handoff.
+description: "Use to deliver an approved OpenSpec change through execution matrix, Beads, checks, and handoff."
 ---
 
 # OpenSpec Change Delivery

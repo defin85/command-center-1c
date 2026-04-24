@@ -1,0 +1,6 @@
+interface:
+  display_name: "UI Observability"
+  short_description: "Debug UI action journal"
+  default_prompt: "Use $ui-action-observability."
+policy:
+  allow_implicit_invocation: true

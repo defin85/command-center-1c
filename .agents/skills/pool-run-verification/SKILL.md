@@ -1,6 +1,6 @@
 ---
 name: pool-run-verification
-description: Use when verifying the full pool run flow on a live contour, including publication, terminal report status, and OData document confirmation with number and date.
+description: "Use to verify the full pool run flow on a live contour through report and OData evidence."
 ---
 
 # Pool Run Verification

@@ -1,6 +1,6 @@
 ---
 name: ui-action-observability
-description: Use when debugging frontend incidents through the shipped UI action journal bundle, request_id/ui_action_id correlation, WebSocket churn diagnostics, or when extending this observability wiring in frontend and orchestrator.
+description: "Use for shipped UI action journal, request correlation, WebSocket churn, or frontend observability work."
 ---
 
 # UI Action Observability

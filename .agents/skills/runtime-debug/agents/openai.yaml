@@ -1,0 +1,6 @@
+interface:
+  display_name: "Runtime Debug"
+  short_description: "Probe and recover runtimes"
+  default_prompt: "Use $runtime-debug."
+policy:
+  allow_implicit_invocation: true

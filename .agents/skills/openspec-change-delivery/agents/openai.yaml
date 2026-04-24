@@ -1,0 +1,6 @@
+interface:
+  display_name: "OpenSpec Delivery"
+  short_description: "Deliver approved OpenSpec work"
+  default_prompt: "Use $openspec-change-delivery."
+policy:
+  allow_implicit_invocation: true

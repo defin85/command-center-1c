@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pool Run Verify"
+  short_description: "Verify live pool run flow"
+  default_prompt: "Use $pool-run-verification."
+policy:
+  allow_implicit_invocation: true
