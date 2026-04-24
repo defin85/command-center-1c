@@ -407,6 +407,11 @@ urlpatterns = [
         name='pools-master-data-sync-launch-get',
     ),
     path(
+        'pools/master-data/chart-import/discovery/',
+        intercompany_pools_master_data_chart.discover_pool_master_data_chart_candidates_endpoint,
+        name='pools-master-data-chart-import-discovery',
+    ),
+    path(
         'pools/master-data/chart-import/sources/',
         intercompany_pools_master_data_chart.list_pool_master_data_chart_sources_endpoint,
         name='pools-master-data-chart-import-sources-list',

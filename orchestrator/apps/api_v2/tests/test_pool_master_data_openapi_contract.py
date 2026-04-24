@@ -78,6 +78,10 @@ def test_pool_master_data_paths_and_operation_ids_are_present() -> None:
             "get",
             "v2_pools_master_data_chart_import_sources_list",
         ),
+        "/api/v2/pools/master-data/chart-import/discovery/": (
+            "get",
+            "v2_pools_master_data_chart_import_discovery_retrieve",
+        ),
         "/api/v2/pools/master-data/chart-import/sources/upsert/": (
             "post",
             "v2_pools_master_data_chart_import_sources_upsert",
@@ -217,10 +221,18 @@ def test_pool_master_data_chart_contract_exposes_source_and_follower_modes() -> 
         "verify_followers",
         "backfill_bindings",
     ]
+    assert "materialize_review" in create_schema["properties"]
 
     source_schema = _load_openapi_source_schema("ChartSource")
     candidate_items = source_schema["properties"]["candidate_databases"]["items"]["$ref"]
     assert candidate_items == "./ChartSourceCandidateDatabase.yaml"
+
+    upsert_schema = _load_openapi_source_schema("ChartSourceUpsertRequest")
+    assert "discovery_provenance" in upsert_schema["properties"]
+    assert "manual_override_reason" in upsert_schema["properties"]
+
+    discovery_schema = _load_openapi_source_schema("ChartDiscoveryResponse")
+    assert discovery_schema["properties"]["candidates"]["items"]["$ref"] == "./ChartDiscoveryCandidate.yaml"
 
     follower_schema = _load_openapi_source_schema("ChartFollowerStatus")
     assert follower_schema["properties"]["bindings_remediation_href"]["nullable"] is True

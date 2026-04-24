@@ -16,7 +16,9 @@ properties:
     items:
       type: string
       maxLength: 64
+  materialize_review:
+    type: object
+    additionalProperties: true
 required:
   - chart_source_id
   - mode
-

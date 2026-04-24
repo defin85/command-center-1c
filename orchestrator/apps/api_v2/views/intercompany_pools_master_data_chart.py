@@ -23,6 +23,7 @@ from apps.intercompany_pools.master_data_chart_materialization_service import (
     CHART_SOURCE_PREFLIGHT_FAILED,
     CHART_SOURCE_ROWS_EMPTY,
     create_pool_master_data_chart_job,
+    discover_pool_master_data_chart_candidates,
     get_pool_master_data_chart_job,
     list_pool_master_data_chart_jobs,
     list_pool_master_data_chart_sources,
@@ -131,6 +132,34 @@ _CHART_JOB_MODE_CHOICES = [choice for choice, _label in PoolMasterDataChartMater
 class ChartSourceUpsertRequestSerializer(serializers.Serializer):
     database_id = serializers.CharField(max_length=64)
     chart_identity = serializers.CharField(max_length=255)
+    discovery_provenance = serializers.JSONField(required=False)
+    manual_override_reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    discovery_diagnostics = serializers.JSONField(required=False)
+
+    def validate(self, attrs):
+        provenance = attrs.get("discovery_provenance")
+        reason = str(attrs.get("manual_override_reason") or "").strip()
+        chart_identity = str(attrs.get("chart_identity") or "").strip()
+        if isinstance(provenance, dict):
+            provenance_identity = str(provenance.get("chart_identity") or "").strip()
+            if provenance_identity and provenance_identity != chart_identity:
+                raise serializers.ValidationError(
+                    {"discovery_provenance": "Candidate chart_identity must match payload chart_identity."}
+                )
+            is_complete = provenance.get("is_complete")
+            if is_complete is False and not reason:
+                raise serializers.ValidationError(
+                    {"manual_override_reason": "Manual override reason is required for incomplete discovery candidates."}
+                )
+        if not isinstance(provenance, dict) and not reason:
+            raise serializers.ValidationError(
+                {"manual_override_reason": "Manual override reason is required when discovery provenance is absent."}
+            )
+        return attrs
+
+
+class ChartDiscoveryQuerySerializer(serializers.Serializer):
+    database_id = serializers.CharField(max_length=64)
 
 
 class ChartSourceListQuerySerializer(serializers.Serializer):
@@ -266,6 +295,7 @@ class ChartJobCreateRequestSerializer(serializers.Serializer):
         required=False,
         allow_empty=True,
     )
+    materialize_review = serializers.JSONField(required=False)
 
 
 class ChartJobListQuerySerializer(serializers.Serializer):
@@ -274,6 +304,34 @@ class ChartJobListQuerySerializer(serializers.Serializer):
     status = serializers.CharField(required=False, allow_blank=True)
     limit = serializers.IntegerField(required=False, min_value=1, max_value=200, default=50)
     offset = serializers.IntegerField(required=False, min_value=0, default=0)
+
+
+class ChartDiscoveryCandidateSerializer(serializers.Serializer):
+    chart_identity = serializers.CharField(allow_blank=True)
+    name = serializers.CharField()
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    source_database_id = serializers.CharField()
+    source_database_name = serializers.CharField()
+    source_kind = serializers.CharField()
+    derivation_method = serializers.CharField()
+    confidence = serializers.CharField()
+    metadata_hash = serializers.CharField(allow_blank=True)
+    catalog_version = serializers.CharField(allow_blank=True)
+    source_evidence_fingerprint = serializers.CharField()
+    diagnostics = serializers.JSONField(required=False)
+    warnings = serializers.JSONField(required=False)
+    is_complete = serializers.BooleanField()
+
+
+class ChartDiscoveryResponseSerializer(serializers.Serializer):
+    database_id = serializers.CharField()
+    database_name = serializers.CharField()
+    cluster_id = serializers.UUIDField(required=False, allow_null=True)
+    config_name = serializers.CharField()
+    config_version = serializers.CharField()
+    candidates = ChartDiscoveryCandidateSerializer(many=True)
+    diagnostics = serializers.JSONField(required=False)
 
 
 class ChartJobResponseSerializer(serializers.Serializer):
@@ -331,6 +389,52 @@ def list_pool_master_data_chart_sources_endpoint(request):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_master_data_chart_import_discovery_retrieve",
+    summary="Discover chart import candidates for a reference database",
+    parameters=[ChartDiscoveryQuerySerializer],
+    responses={
+        200: ChartDiscoveryResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+        (409, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def discover_pool_master_data_chart_candidates_endpoint(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _validation_problem(detail="X-CC1C-Tenant-ID is required.")
+
+    serializer = ChartDiscoveryQuerySerializer(data=request.query_params)
+    if not serializer.is_valid():
+        return _validation_problem(detail="Invalid query parameters.", errors=serializer.errors)
+    payload = serializer.validated_data
+
+    tenant, tenant_error = _resolve_tenant_or_problem(tenant_id=str(tenant_id))
+    if tenant_error is not None:
+        return tenant_error
+    database, database_error = _resolve_database_or_problem(
+        tenant_id=str(tenant_id),
+        database_id=str(payload.get("database_id")),
+    )
+    if database_error is not None:
+        return database_error
+
+    try:
+        result = discover_pool_master_data_chart_candidates(
+            tenant=tenant,
+            database=database,
+        )
+    except (LookupError, ValueError) as exc:
+        return _chart_exception_to_response(exc)
+
+    return Response(result, status=http_status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["v2"],
     operation_id="v2_pools_master_data_chart_import_sources_upsert",
     summary="Upsert chart import authoritative source",
     request=ChartSourceUpsertRequestSerializer,
@@ -370,6 +474,10 @@ def upsert_pool_master_data_chart_source_endpoint(request):
             tenant=tenant,
             database=database,
             chart_identity=str(payload.get("chart_identity")),
+            discovery_provenance=payload.get("discovery_provenance"),
+            manual_override_reason=str(payload.get("manual_override_reason") or ""),
+            discovery_diagnostics=payload.get("discovery_diagnostics"),
+            requested_by_username=str(getattr(request.user, "username", "") or ""),
         )
     except (LookupError, ValueError) as exc:
         return _chart_exception_to_response(exc)
@@ -440,6 +548,7 @@ def pool_master_data_chart_jobs_endpoint(request):
                 mode=str(payload.get("mode")),
                 database_ids=list(payload.get("database_ids") or []),
                 requested_by_username=str(getattr(request.user, "username", "") or ""),
+                materialize_review=payload.get("materialize_review"),
             )
         except (LookupError, ValueError) as exc:
             return _chart_exception_to_response(exc)

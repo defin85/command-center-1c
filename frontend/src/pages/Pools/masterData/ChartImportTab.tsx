@@ -4,6 +4,7 @@ import {
   App as AntApp,
   Button,
   Card,
+  Checkbox,
   Descriptions,
   Empty,
   Form,
@@ -18,12 +19,14 @@ import type { ColumnsType } from 'antd/es/table'
 
 import {
   createPoolMasterDataChartJob,
+  discoverPoolMasterDataChartCandidates,
   getPoolMasterDataChartJob,
   listPoolMasterDataChartJobs,
   listPoolMasterDataChartSources,
   listPoolTargetDatabases,
   upsertPoolMasterDataChartSource,
   type ListPoolMasterDataChartJobsParams,
+  type PoolMasterDataChartDiscoveryCandidate,
   type PoolMasterDataChartFollowerStatus,
   type PoolMasterDataChartJob,
   type PoolMasterDataChartMaterializationMode,
@@ -55,7 +58,9 @@ const FOLLOWER_VERDICT_COLOR: Record<string, string> = {
 
 type ChartImportFormValues = {
   database_id?: string
+  chart_candidate_key?: string
   chart_identity?: string
+  manual_override_reason?: string
 }
 
 type ChartImportTabProps = {
@@ -88,6 +93,25 @@ function summarizeCounters(counters: Record<string, unknown> | undefined): strin
   return parts.length > 0 ? parts.join(' ') : '-'
 }
 
+function getChartCandidateKey(candidate: PoolMasterDataChartDiscoveryCandidate): string {
+  return candidate.source_evidence_fingerprint || `${candidate.chart_identity}:${candidate.derivation_method}`
+}
+
+function readSourceRevisionToken(job: PoolMasterDataChartJob | null): string {
+  const countersToken = typeof job?.counters?.source_revision_token === 'string'
+    ? job.counters.source_revision_token
+    : ''
+  if (countersToken) {
+    return countersToken
+  }
+  const revision = job?.diagnostics?.source_revision
+  if (revision && typeof revision === 'object' && 'token' in revision) {
+    const value = (revision as Record<string, unknown>).token
+    return typeof value === 'string' ? value : ''
+  }
+  return ''
+}
+
 export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   const { message } = AntApp.useApp()
   const { t } = usePoolsTranslation()
@@ -99,11 +123,17 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<PoolMasterDataChartJob | null>(null)
   const [targetDatabaseIds, setTargetDatabaseIds] = useState<string[]>([])
+  const [chartCandidates, setChartCandidates] = useState<PoolMasterDataChartDiscoveryCandidate[]>([])
+  const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<Array<Record<string, unknown>>>([])
+  const [manualOverride, setManualOverride] = useState(false)
+  const [reviewedDryRunJobId, setReviewedDryRunJobId] = useState<string | null>(null)
   const [loadingTargets, setLoadingTargets] = useState(false)
+  const [loadingDiscovery, setLoadingDiscovery] = useState(false)
   const [loadingSources, setLoadingSources] = useState(false)
   const [loadingJobs, setLoadingJobs] = useState(false)
   const [loadingJobDetail, setLoadingJobDetail] = useState(false)
   const [savingSource, setSavingSource] = useState(false)
+  const [preparingInitialLoad, setPreparingInitialLoad] = useState(false)
   const [runningMode, setRunningMode] = useState<PoolMasterDataChartMaterializationMode | null>(null)
 
   const glAccountRegistryEntry = useMemo(
@@ -114,7 +144,16 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
     () => sources.find((source) => source.id === selectedSourceId) ?? null,
     [selectedSourceId, sources]
   )
+  const selectedCandidateKey = Form.useWatch('chart_candidate_key', form)
+  const selectedCandidate = useMemo(
+    () => chartCandidates.find((candidate) => getChartCandidateKey(candidate) === selectedCandidateKey) ?? null,
+    [chartCandidates, selectedCandidateKey]
+  )
   const candidateDatabases = selectedSource?.candidate_databases ?? []
+  const latestSuccessfulDryRun = useMemo(
+    () => jobs.find((job) => job.mode === 'dry_run' && job.status === 'succeeded') ?? null,
+    [jobs]
+  )
   const successfulModes = useMemo(
     () => new Set(
       jobs
@@ -128,6 +167,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   const hasSuccessfulMaterialization = successfulModes.has('materialize')
   const hasSnapshot = Boolean(selectedSource?.latest_snapshot)
   const hasFollowerTargets = targetDatabaseIds.length > 0 || candidateDatabases.length > 0
+  const hasReviewedDryRun = Boolean(latestSuccessfulDryRun && reviewedDryRunJobId === latestSuccessfulDryRun.id)
 
   const getModeLabel = useCallback((mode: string) => {
     if (mode === 'preflight') return t('masterData.chartImportTab.mode.preflight')
@@ -150,6 +190,39 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
       setLoadingTargets(false)
     }
   }, [message, t])
+
+  const loadDiscovery = useCallback(async (databaseId: string) => {
+    const normalizedDatabaseId = String(databaseId || '').trim()
+    if (!normalizedDatabaseId) {
+      setChartCandidates([])
+      setDiscoveryDiagnostics([])
+      form.setFieldsValue({ chart_candidate_key: undefined, chart_identity: undefined })
+      return
+    }
+    setLoadingDiscovery(true)
+    try {
+      const response = await discoverPoolMasterDataChartCandidates(normalizedDatabaseId)
+      setChartCandidates(response.candidates)
+      setDiscoveryDiagnostics(response.diagnostics)
+      const currentIdentity = String(form.getFieldValue('chart_identity') || '').trim()
+      const selectedByIdentity = response.candidates.find((candidate) => (
+        candidate.is_complete && candidate.chart_identity === currentIdentity
+      ))
+      const firstComplete = response.candidates.find((candidate) => candidate.is_complete)
+      const candidate = selectedByIdentity ?? firstComplete ?? null
+      form.setFieldsValue({
+        chart_candidate_key: candidate ? getChartCandidateKey(candidate) : undefined,
+        chart_identity: candidate?.chart_identity ?? (manualOverride ? currentIdentity : undefined),
+      })
+    } catch (error) {
+      setChartCandidates([])
+      setDiscoveryDiagnostics([])
+      const resolved = resolveApiError(error, t('masterData.chartImportTab.messages.failedToDiscoverCharts'))
+      message.error(resolved.message)
+    } finally {
+      setLoadingDiscovery(false)
+    }
+  }, [form, manualOverride, message, t])
 
   const loadSources = useCallback(async () => {
     setLoadingSources(true)
@@ -236,9 +309,19 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
   }, [loadJobDetail, selectedJobId])
 
   useEffect(() => {
+    if (!latestSuccessfulDryRun || reviewedDryRunJobId === latestSuccessfulDryRun.id) {
+      return
+    }
+    setReviewedDryRunJobId(null)
+  }, [latestSuccessfulDryRun, reviewedDryRunJobId])
+
+  useEffect(() => {
     if (!selectedSource) {
       form.resetFields()
       setTargetDatabaseIds([])
+      setChartCandidates([])
+      setDiscoveryDiagnostics([])
+      setReviewedDryRunJobId(null)
       return
     }
     form.setFieldsValue({
@@ -246,31 +329,107 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
       chart_identity: selectedSource.chart_identity,
     })
     setTargetDatabaseIds(selectedSource.candidate_databases.map((item) => item.database_id))
-  }, [form, selectedSource])
+    void loadDiscovery(selectedSource.database_id)
+  }, [form, loadDiscovery, selectedSource])
 
-  const handleUpsertSource = async () => {
+  const saveSourceFromForm = useCallback(async (): Promise<PoolMasterDataChartSource | null> => {
     let values: ChartImportFormValues
     try {
       values = await form.validateFields()
     } catch {
-      return
+      return null
+    }
+    const candidate = selectedCandidate
+    if (!manualOverride && !candidate) {
+      message.warning(t('masterData.chartImportTab.messages.selectChartCandidate'))
+      return null
+    }
+    if (!manualOverride && candidate && !candidate.is_complete) {
+      message.warning(t('masterData.chartImportTab.messages.discoveryCandidateIncomplete'))
+      return null
     }
     setSavingSource(true)
     try {
       const response = await upsertPoolMasterDataChartSource({
         database_id: String(values.database_id || '').trim(),
-        chart_identity: String(values.chart_identity || '').trim(),
+        chart_identity: manualOverride
+          ? String(values.chart_identity || '').trim()
+          : String(candidate?.chart_identity || '').trim(),
+        discovery_provenance: !manualOverride && candidate
+          ? candidate as unknown as Record<string, unknown>
+          : undefined,
+        manual_override_reason: manualOverride
+          ? String(values.manual_override_reason || '').trim()
+          : undefined,
+        discovery_diagnostics: manualOverride
+          ? discoveryDiagnostics
+          : undefined,
       })
       message.success(t('masterData.chartImportTab.messages.sourceSaved'))
       setSelectedSourceId(response.source.id)
       await loadSources()
+      return response.source
     } catch (error) {
       const resolved = resolveApiError(error, t('masterData.chartImportTab.messages.failedToSaveSource'))
       message.error(resolved.message)
+      return null
     } finally {
       setSavingSource(false)
     }
+  }, [
+    discoveryDiagnostics,
+    form,
+    loadSources,
+    manualOverride,
+    message,
+    selectedCandidate,
+    t,
+  ])
+
+  const handleUpsertSource = async () => {
+    await saveSourceFromForm()
   }
+
+  const handlePrepareInitialLoad = useCallback(async () => {
+    const source = await saveSourceFromForm()
+    if (!source) {
+      return
+    }
+    setPreparingInitialLoad(true)
+    try {
+      const preflight = await createPoolMasterDataChartJob({
+        chart_source_id: source.id,
+        mode: 'preflight',
+      })
+      const dryRun = await createPoolMasterDataChartJob({
+        chart_source_id: source.id,
+        mode: 'dry_run',
+      })
+      setReviewedDryRunJobId(null)
+      setSelectedJobId(dryRun.job.id)
+      setSelectedJob(dryRun.job)
+      await Promise.all([
+        loadSources(),
+        loadJobs({ chart_source_id: source.id }),
+      ])
+      message.success(t('masterData.chartImportTab.messages.initialLoadReady', {
+        preflight: getModeLabel(preflight.job.mode),
+        dryRun: getModeLabel(dryRun.job.mode),
+      }))
+    } catch (error) {
+      const resolved = resolveApiError(error, t('masterData.chartImportTab.messages.failedToPrepareInitialLoad'))
+      message.error(resolved.message)
+    } finally {
+      setPreparingInitialLoad(false)
+    }
+  }, [
+    getModeLabel,
+    loadJobs,
+    loadSources,
+    message,
+    saveSourceFromForm,
+    t,
+  ])
 
   const runJob = useCallback(async (mode: PoolMasterDataChartMaterializationMode) => {
     if (!selectedSource) {
@@ -285,6 +444,10 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
       message.warning(t('masterData.chartImportTab.messages.runDryRunFirst'))
       return
     }
+    if (mode === 'materialize' && !hasReviewedDryRun) {
+      message.warning(t('masterData.chartImportTab.messages.reviewDryRunFirst'))
+      return
+    }
     if ((mode === 'verify_followers' || mode === 'backfill_bindings') && !hasSnapshot) {
       message.warning(t('masterData.chartImportTab.messages.materializeFirst'))
       return
@@ -296,13 +459,24 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
 
     setRunningMode(mode)
     try {
-      const response = await createPoolMasterDataChartJob({
+      const jobPayload: Parameters<typeof createPoolMasterDataChartJob>[0] = {
         chart_source_id: selectedSource.id,
         mode,
         database_ids: mode === 'verify_followers' || mode === 'backfill_bindings'
           ? targetDatabaseIds
           : undefined,
-      })
+      }
+      if (mode === 'materialize' && latestSuccessfulDryRun) {
+        jobPayload.materialize_review = {
+          dry_run_job_id: latestSuccessfulDryRun.id,
+          source_revision_token: readSourceRevisionToken(latestSuccessfulDryRun),
+          reviewed_counters: latestSuccessfulDryRun.counters,
+        }
+      }
+      const response = await createPoolMasterDataChartJob(jobPayload)
+      if (mode === 'dry_run') {
+        setReviewedDryRunJobId(null)
+      }
       setSelectedJobId(response.job.id)
       setSelectedJob(response.job)
       await Promise.all([
@@ -320,8 +494,10 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
     getModeLabel,
     hasFollowerTargets,
     hasSnapshot,
+    hasReviewedDryRun,
     hasSuccessfulDryRun,
     hasSuccessfulPreflight,
+    latestSuccessfulDryRun,
     loadJobs,
     loadSources,
     message,
@@ -529,18 +705,94 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
                 placeholder={t('masterData.chartImportTab.placeholders.selectDatabase')}
                 data-testid="chart-import-source-database-select"
                 optionFilterProp="label"
+                onChange={(value) => {
+                  form.setFieldsValue({
+                    chart_candidate_key: undefined,
+                    chart_identity: undefined,
+                    manual_override_reason: undefined,
+                  })
+                  setReviewedDryRunJobId(null)
+                  void loadDiscovery(value)
+                }}
               />
             </Form.Item>
             <Form.Item
-              label={t('masterData.chartImportTab.fields.chartIdentity')}
-              name="chart_identity"
-              rules={[{ required: true, message: t('masterData.chartImportTab.validation.enterChartIdentity') }]}
+              label={t('masterData.chartImportTab.fields.chartCandidate')}
+              name="chart_candidate_key"
+              rules={manualOverride ? [] : [{ required: true, message: t('masterData.chartImportTab.validation.selectChartCandidate') }]}
             >
-              <Input
-                placeholder={t('masterData.chartImportTab.placeholders.chartIdentity')}
-                data-testid="chart-import-source-chart-identity-input"
+              <Select
+                loading={loadingDiscovery}
+                disabled={manualOverride}
+                options={chartCandidates.map((candidate) => ({
+                  value: getChartCandidateKey(candidate),
+                  label: `${candidate.name || candidate.chart_identity} · ${candidate.derivation_method}`,
+                  disabled: !candidate.is_complete,
+                }))}
+                placeholder={t('masterData.chartImportTab.placeholders.selectChartCandidate')}
+                data-testid="chart-import-chart-candidate-select"
+                onChange={(value) => {
+                  const candidate = chartCandidates.find((item) => getChartCandidateKey(item) === value)
+                  form.setFieldsValue({ chart_identity: candidate?.chart_identity })
+                }}
               />
             </Form.Item>
+            {selectedCandidate ? (
+              <Space size={8} wrap data-testid="chart-import-selected-candidate-evidence">
+                <Tag color={selectedCandidate.confidence === 'high' ? 'success' : 'processing'}>
+                  {selectedCandidate.confidence}
+                </Tag>
+                <Tag>{selectedCandidate.source_kind}</Tag>
+                <Text code>{selectedCandidate.chart_identity}</Text>
+                <Text type="secondary">{selectedCandidate.source_evidence_fingerprint.slice(0, 12)}</Text>
+              </Space>
+            ) : null}
+            {discoveryDiagnostics.length > 0 ? (
+              <Alert
+                type={chartCandidates.some((candidate) => candidate.is_complete) ? 'info' : 'warning'}
+                showIcon
+                message={t('masterData.chartImportTab.alerts.discoveryDiagnostics')}
+                description={discoveryDiagnostics.map((item) => String(item.detail ?? item.code ?? '')).filter(Boolean).join(' ')}
+              />
+            ) : null}
+            <Checkbox
+              checked={manualOverride}
+              onChange={(event) => {
+                setManualOverride(event.target.checked)
+                form.setFieldsValue({
+                  chart_identity: event.target.checked ? form.getFieldValue('chart_identity') : selectedCandidate?.chart_identity,
+                  manual_override_reason: undefined,
+                })
+              }}
+              data-testid="chart-import-manual-override"
+            >
+              {t('masterData.chartImportTab.fields.manualOverride')}
+            </Checkbox>
+            {manualOverride ? (
+              <>
+                <Form.Item
+                  label={t('masterData.chartImportTab.fields.chartIdentity')}
+                  name="chart_identity"
+                  rules={[{ required: true, message: t('masterData.chartImportTab.validation.enterChartIdentity') }]}
+                >
+                  <Input
+                    placeholder={t('masterData.chartImportTab.placeholders.chartIdentity')}
+                    data-testid="chart-import-source-chart-identity-input"
+                  />
+                </Form.Item>
+                <Form.Item
+                  label={t('masterData.chartImportTab.fields.manualOverrideReason')}
+                  name="manual_override_reason"
+                  rules={[{ required: true, message: t('masterData.chartImportTab.validation.enterManualOverrideReason') }]}
+                >
+                  <Input.TextArea
+                    rows={3}
+                    placeholder={t('masterData.chartImportTab.placeholders.manualOverrideReason')}
+                    data-testid="chart-import-manual-override-reason"
+                  />
+                </Form.Item>
+              </>
+            ) : null}
             <Space size={8} wrap>
               <Button
                 type="primary"
@@ -549,6 +801,20 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
                 data-testid="chart-import-upsert-source"
               >
                 {t('masterData.chartImportTab.actions.saveSource')}
+              </Button>
+              <Button
+                loading={loadingDiscovery}
+                onClick={() => { void loadDiscovery(String(form.getFieldValue('database_id') || '')) }}
+                data-testid="chart-import-discover-candidates"
+              >
+                {t('masterData.chartImportTab.actions.discoverCharts')}
+              </Button>
+              <Button
+                loading={preparingInitialLoad}
+                onClick={() => { void handlePrepareInitialLoad() }}
+                data-testid="chart-import-prepare-initial-load"
+              >
+                {t('masterData.chartImportTab.actions.prepareInitialLoad')}
               </Button>
               <Button
                 onClick={() => { void loadSources() }}
@@ -574,6 +840,16 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
             placeholder={t('masterData.chartImportTab.placeholders.selectFollowerDatabases')}
             data-testid="chart-import-target-databases-select"
           />
+          <Checkbox
+            disabled={!latestSuccessfulDryRun}
+            checked={hasReviewedDryRun}
+            onChange={(event) => {
+              setReviewedDryRunJobId(event.target.checked && latestSuccessfulDryRun ? latestSuccessfulDryRun.id : null)
+            }}
+            data-testid="chart-import-review-dry-run"
+          >
+            {t('masterData.chartImportTab.fields.reviewDryRun')}
+          </Checkbox>
           <Space size={8} wrap>
             <Button
               type="primary"
@@ -593,7 +869,7 @@ export function ChartImportTab({ registryEntries }: ChartImportTabProps) {
               {t('masterData.chartImportTab.actions.runDryRun')}
             </Button>
             <Button
-              disabled={!selectedSource || !hasSuccessfulDryRun}
+              disabled={!selectedSource || !hasSuccessfulDryRun || !hasReviewedDryRun}
               loading={runningMode === 'materialize'}
               onClick={() => { void runJob('materialize') }}
               data-testid="chart-import-run-materialize"

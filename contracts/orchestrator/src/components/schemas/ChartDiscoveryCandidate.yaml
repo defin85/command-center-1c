@@ -1,0 +1,52 @@
+type: object
+properties:
+  chart_identity:
+    type: string
+  name:
+    type: string
+  config_name:
+    type: string
+  config_version:
+    type: string
+  source_database_id:
+    type: string
+  source_database_name:
+    type: string
+  source_kind:
+    type: string
+  derivation_method:
+    type: string
+  confidence:
+    type: string
+  metadata_hash:
+    type: string
+  catalog_version:
+    type: string
+  source_evidence_fingerprint:
+    type: string
+  diagnostics:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  warnings:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
+  is_complete:
+    type: boolean
+required:
+  - chart_identity
+  - name
+  - config_name
+  - config_version
+  - source_database_id
+  - source_database_name
+  - source_kind
+  - derivation_method
+  - confidence
+  - metadata_hash
+  - catalog_version
+  - source_evidence_fingerprint
+  - is_complete

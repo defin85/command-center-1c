@@ -2030,6 +2030,34 @@ export type PoolMasterDataChartSourceCandidateDatabase = {
   cluster_id: string | null
 }
 
+export type PoolMasterDataChartDiscoveryCandidate = {
+  chart_identity: string
+  name: string
+  config_name: string
+  config_version: string
+  source_database_id: string
+  source_database_name: string
+  source_kind: string
+  derivation_method: string
+  confidence: string
+  metadata_hash: string
+  catalog_version: string
+  source_evidence_fingerprint: string
+  diagnostics: Array<Record<string, unknown>>
+  warnings: Array<Record<string, unknown>>
+  is_complete: boolean
+}
+
+export type PoolMasterDataChartDiscoveryResponse = {
+  database_id: string
+  database_name: string
+  cluster_id: string | null
+  config_name: string
+  config_version: string
+  candidates: PoolMasterDataChartDiscoveryCandidate[]
+  diagnostics: Array<Record<string, unknown>>
+}
+
 export type PoolMasterDataChartSnapshot = {
   id: string
   tenant_id: string
@@ -2164,12 +2192,16 @@ export type ListPoolMasterDataBootstrapCollectionsParams = {
 export type UpsertPoolMasterDataChartSourcePayload = {
   database_id: string
   chart_identity: string
+  discovery_provenance?: Record<string, unknown>
+  manual_override_reason?: string
+  discovery_diagnostics?: Array<Record<string, unknown>>
 }
 
 export type CreatePoolMasterDataChartJobPayload = {
   chart_source_id: string
   mode: PoolMasterDataChartMaterializationMode
   database_ids?: string[]
+  materialize_review?: Record<string, unknown>
 }
 
 export type ListPoolMasterDataChartSourcesParams = {
@@ -3014,6 +3046,27 @@ export async function upsertPoolMasterDataChartSource(
     { skipGlobalError: true }
   )
   return response.data
+}
+
+export async function discoverPoolMasterDataChartCandidates(
+  databaseId: string
+): Promise<PoolMasterDataChartDiscoveryResponse> {
+  const response = await apiClient.get<PoolMasterDataChartDiscoveryResponse>(
+    '/api/v2/pools/master-data/chart-import/discovery/',
+    {
+      params: { database_id: databaseId },
+      skipGlobalError: true,
+    }
+  )
+  return {
+    database_id: response.data.database_id,
+    database_name: response.data.database_name,
+    cluster_id: response.data.cluster_id ?? null,
+    config_name: response.data.config_name,
+    config_version: response.data.config_version,
+    candidates: response.data.candidates ?? [],
+    diagnostics: response.data.diagnostics ?? [],
+  }
 }
 
 export async function listPoolMasterDataChartSources(

@@ -210,3 +210,83 @@ def test_source_fetch_rows_reads_full_odata_pages_with_mapping(monkeypatch) -> N
     assert len(fetch_calls) == 3
     assert fetch_calls[1]["skip"] == 0
     assert fetch_calls[2]["skip"] == 2
+
+
+@pytest.mark.django_db
+def test_source_fetch_rows_stamps_gl_account_chart_identity_from_chart_entity_name(monkeypatch) -> None:
+    tenant = Tenant.objects.create(slug=f"bootstrap-source-chart-{uuid4().hex[:8]}", name="Bootstrap Source Chart")
+    database = _create_database(
+        tenant=tenant,
+        name=f"bootstrap-source-chart-db-{uuid4().hex[:8]}",
+        metadata={
+            "bootstrap_import_source": {
+                "page_size": 50,
+                "entities": {
+                    "gl_account": {
+                        "entity_name": "ChartOfAccounts_Main",
+                        "field_mapping": {
+                            "canonical_id": "Ref_Key",
+                            "code": "Code",
+                            "name": "Description",
+                        },
+                    }
+                },
+            }
+        },
+    )
+    InfobaseUserMapping.objects.create(
+        database=database,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+
+    class _FakeODataClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def health_check(self) -> bool:
+            return True
+
+        def get_entities(self, *_args, **kwargs):
+            if int(kwargs.get("skip") or 0) > 0:
+                return []
+            return [
+                {
+                    "Ref_Key": "gl-10-01",
+                    "Code": "10.01",
+                    "Description": "Materials",
+                }
+            ]
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "apps.intercompany_pools.master_data_bootstrap_import_source_adapter.ODataClient",
+        _FakeODataClient,
+    )
+
+    preflight = run_pool_master_data_bootstrap_source_preflight(
+        tenant_id=str(tenant.id),
+        database=database,
+        entity_scope=["gl_account"],
+        actor_id="",
+    )
+    assert preflight.ok is True
+
+    rows = fetch_pool_master_data_bootstrap_source_rows(
+        tenant_id=str(tenant.id),
+        database=database,
+        entity_type="gl_account",
+        actor_id="",
+    )
+
+    assert rows == [
+        {
+            "canonical_id": "gl-10-01",
+            "code": "10.01",
+            "name": "Materials",
+            "chart_identity": "ChartOfAccounts_Main",
+        }
+    ]

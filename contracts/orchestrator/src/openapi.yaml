@@ -236,6 +236,8 @@ paths:
     $ref: paths/api_v2_pools_master-data_dedupe-review_{id}_.yaml
   /api/v2/pools/master-data/dedupe-review/{id}/actions/:
     $ref: paths/api_v2_pools_master-data_dedupe-review_{id}_actions_.yaml
+  /api/v2/pools/master-data/chart-import/discovery/:
+    $ref: paths/api_v2_pools_master-data_chart-import_discovery_.yaml
   /api/v2/pools/master-data/chart-import/sources/:
     $ref: paths/api_v2_pools_master-data_chart-import_sources_.yaml
   /api/v2/pools/master-data/chart-import/sources/upsert/:

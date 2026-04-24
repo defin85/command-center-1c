@@ -17,6 +17,7 @@ from apps.tenancy.models import Tenant
 from .business_configuration_profile import get_business_configuration_profile
 from .master_data_bindings import upsert_pool_master_data_binding
 from .master_data_bootstrap_import_source_adapter import (
+    discover_pool_master_data_bootstrap_source_chart_candidates,
     fetch_pool_master_data_bootstrap_source_rows,
     run_pool_master_data_bootstrap_source_preflight,
 )
@@ -34,6 +35,7 @@ from .models import (
     PoolMasterDataChartSource,
     PoolMasterDataChartSourceStatus,
     PoolMasterGLAccount,
+    PoolODataMetadataCatalogSnapshot,
 )
 
 
@@ -49,6 +51,8 @@ CHART_SOURCE_PREFLIGHT_FAILED = "CHART_SOURCE_PREFLIGHT_FAILED"
 CHART_JOB_NOT_FOUND = "CHART_JOB_NOT_FOUND"
 CHART_JOB_MODE_INVALID = "CHART_JOB_MODE_INVALID"
 CHART_JOB_PREREQUISITE_MISSING = "CHART_JOB_PREREQUISITE_MISSING"
+CHART_DISCOVERY_NO_CANDIDATES = "CHART_DISCOVERY_NO_CANDIDATES"
+CHART_DISCOVERY_METADATA_SNAPSHOT_UNAVAILABLE = "CHART_DISCOVERY_METADATA_SNAPSHOT_UNAVAILABLE"
 
 _CHART_PROVENANCE_KEY = "chart_materialization"
 _TERMINAL_JOB_STATUSES = {
@@ -81,12 +85,85 @@ def list_pool_master_data_chart_sources(
     return rows, total
 
 
+def discover_pool_master_data_chart_candidates(
+    *,
+    tenant: Tenant,
+    database: Database,
+) -> dict[str, Any]:
+    if str(database.tenant_id) != str(tenant.id):
+        raise ValueError(
+            f"{CHART_SOURCE_DATABASE_TENANT_MISMATCH}: database '{database.id}' does not belong to tenant '{tenant.id}'"
+        )
+
+    profile = _require_business_profile(database=database)
+    diagnostics: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+
+    bootstrap_candidates, bootstrap_diagnostics = discover_pool_master_data_bootstrap_source_chart_candidates(
+        database=database,
+        config_name=str(profile["config_name"]),
+        config_version=str(profile["config_version"]),
+    )
+    candidates.extend(bootstrap_candidates)
+    diagnostics.extend(bootstrap_diagnostics)
+
+    metadata_snapshot = _resolve_current_metadata_catalog_snapshot(
+        tenant=tenant,
+        database=database,
+        config_name=str(profile["config_name"]),
+        config_version=str(profile["config_version"]),
+    )
+    if metadata_snapshot is None:
+        diagnostics.append(
+            {
+                "code": CHART_DISCOVERY_METADATA_SNAPSHOT_UNAVAILABLE,
+                "detail": "Current metadata catalog snapshot is unavailable for selected database.",
+                "path": "metadata_catalog.current_snapshot",
+            }
+        )
+    else:
+        metadata_candidates, metadata_diagnostics = _discover_chart_candidates_from_metadata_snapshot(
+            database=database,
+            snapshot=metadata_snapshot,
+            config_name=str(profile["config_name"]),
+            config_version=str(profile["config_version"]),
+        )
+        candidates.extend(metadata_candidates)
+        diagnostics.extend(metadata_diagnostics)
+
+    merged_candidates = _merge_chart_discovery_candidates(candidates)
+    if not any(bool(candidate.get("is_complete")) for candidate in merged_candidates):
+        diagnostics.append(
+            {
+                "code": CHART_DISCOVERY_NO_CANDIDATES,
+                "detail": "No complete chart candidates were discovered for selected database.",
+                "path": "chart_identity",
+            }
+        )
+
+    return sanitize_master_data_sync_value(
+        {
+            "database_id": str(database.id),
+            "database_name": str(database.name or ""),
+            "cluster_id": str(database.cluster_id) if getattr(database, "cluster_id", None) else None,
+            "config_name": str(profile["config_name"]),
+            "config_version": str(profile["config_version"]),
+            "candidates": merged_candidates,
+            "diagnostics": diagnostics,
+        }
+    )
+
+
 def upsert_pool_master_data_chart_source(
     *,
     tenant: Tenant,
     database: Database,
     chart_identity: str,
     existing_source: PoolMasterDataChartSource | None = None,
+    discovery_provenance: Mapping[str, Any] | None = None,
+    manual_override_reason: str = "",
+    discovery_diagnostics: Any | None = None,
+    requested_by_username: str = "",
 ) -> tuple[PoolMasterDataChartSource, bool]:
     if str(database.tenant_id) != str(tenant.id):
         raise ValueError(
@@ -96,6 +173,25 @@ def upsert_pool_master_data_chart_source(
     if not normalized_chart_identity:
         raise ValueError(f"{CHART_SOURCE_CHART_IDENTITY_REQUIRED}: chart_identity is required")
     profile = _require_business_profile(database=database)
+    source = existing_source
+    if source is None:
+        source = PoolMasterDataChartSource.objects.filter(
+            tenant=tenant,
+            chart_identity=normalized_chart_identity,
+            config_name=str(profile["config_name"]),
+            config_version=str(profile["config_version"]),
+        ).first()
+    base_metadata = dict(source.metadata or {}) if source is not None else {}
+    source_metadata = _build_chart_source_metadata(
+        base_metadata=base_metadata,
+        database=database,
+        chart_identity=normalized_chart_identity,
+        profile=profile,
+        discovery_provenance=discovery_provenance,
+        manual_override_reason=manual_override_reason,
+        discovery_diagnostics=discovery_diagnostics,
+        requested_by_username=requested_by_username,
+    )
     payload = {
         "tenant": tenant,
         "database": database,
@@ -105,28 +201,10 @@ def upsert_pool_master_data_chart_source(
         "status": PoolMasterDataChartSourceStatus.ACTIVE,
         "last_error_code": "",
         "last_error": "",
-        "metadata": _merge_source_metadata(
-            existing_source.metadata if existing_source is not None else {},
-            {
-                "business_configuration_profile": {
-                    "config_name": str(profile["config_name"]),
-                    "config_version": str(profile["config_version"]),
-                    "verification_status": str(profile.get("verification_status") or ""),
-                    "verified_at": str(profile.get("verified_at") or ""),
-                }
-            },
-        ),
+        "metadata": source_metadata,
     }
 
     with transaction.atomic():
-        source = existing_source
-        if source is None:
-            source = PoolMasterDataChartSource.objects.filter(
-                tenant=tenant,
-                chart_identity=normalized_chart_identity,
-                config_name=str(profile["config_name"]),
-                config_version=str(profile["config_version"]),
-            ).first()
         created = source is None
         if created:
             source = PoolMasterDataChartSource.objects.create(**payload)
@@ -186,13 +264,18 @@ def create_pool_master_data_chart_job(
     mode: str,
     database_ids: Iterable[str] | None = None,
     requested_by_username: str = "",
+    materialize_review: Mapping[str, Any] | None = None,
 ) -> PoolMasterDataChartMaterializationJob:
     normalized_mode = _normalize_job_mode(mode)
     if str(chart_source.tenant_id) != str(tenant.id):
         raise ValueError(
             f"{CHART_SOURCE_DATABASE_TENANT_MISMATCH}: chart source '{chart_source.id}' does not belong to tenant '{tenant.id}'"
         )
-    _require_chart_job_prerequisites(source=chart_source, mode=normalized_mode)
+    _require_chart_job_prerequisites(
+        source=chart_source,
+        mode=normalized_mode,
+        materialize_review=materialize_review,
+    )
     normalized_database_ids = [
         str(item).strip()
         for item in (database_ids or [])
@@ -213,6 +296,9 @@ def create_pool_master_data_chart_job(
             "mode": normalized_mode,
             "chart_source_id": str(chart_source.id),
             "database_ids": normalized_database_ids,
+            "materialize_review": sanitize_master_data_sync_value(dict(materialize_review or {}))
+            if normalized_mode == PoolMasterDataChartMaterializationMode.MATERIALIZE
+            else {},
         },
     )
     return _execute_chart_job(job=job)
@@ -359,11 +445,14 @@ def _execute_chart_job(job: PoolMasterDataChartMaterializationJob) -> PoolMaster
 
     try:
         preflight = _run_chart_source_preflight(source=job.chart_source)
+        source_revision = _build_source_revision_context(source=job.chart_source)
         if not bool(preflight.get("ok")):
             first_error = (preflight.get("errors") or [{}])[0] if isinstance(preflight.get("errors"), list) else {}
             job.counters = {
                 "source_ok": False,
                 "candidate_follower_count": int(preflight.get("candidate_follower_count") or 0),
+                "source_revision_token": str(source_revision.get("token") or ""),
+                "source_evidence_fingerprint": str(source_revision.get("source_evidence_fingerprint") or ""),
             }
             job.diagnostics = preflight
             raise ValueError(
@@ -374,17 +463,35 @@ def _execute_chart_job(job: PoolMasterDataChartMaterializationJob) -> PoolMaster
             job.counters = sanitize_master_data_sync_value({
                 "source_ok": bool(preflight.get("ok")),
                 "candidate_follower_count": int(preflight.get("candidate_follower_count") or 0),
+                "source_revision_token": str(source_revision.get("token") or ""),
+                "source_evidence_fingerprint": str(source_revision.get("source_evidence_fingerprint") or ""),
             })
             job.diagnostics = sanitize_master_data_sync_value(preflight)
         elif job.mode == PoolMasterDataChartMaterializationMode.DRY_RUN:
             rows = _load_source_gl_account_rows(source=job.chart_source)
-            job.counters = sanitize_master_data_sync_value(_build_dry_run_summary(source=job.chart_source, rows=rows))
+            job.counters = sanitize_master_data_sync_value(
+                _merge_source_metadata(
+                    _build_dry_run_summary(source=job.chart_source, rows=rows),
+                    {
+                        "source_revision_token": str(source_revision.get("token") or ""),
+                        "source_evidence_fingerprint": str(source_revision.get("source_evidence_fingerprint") or ""),
+                    },
+                )
+            )
             job.diagnostics = sanitize_master_data_sync_value(preflight)
         elif job.mode == PoolMasterDataChartMaterializationMode.MATERIALIZE:
             rows = _load_source_gl_account_rows(source=job.chart_source)
             snapshot, counters = _materialize_chart_snapshot(source=job.chart_source, rows=rows)
             job.snapshot = snapshot
-            job.counters = sanitize_master_data_sync_value(counters)
+            job.counters = sanitize_master_data_sync_value(
+                _merge_source_metadata(
+                    counters,
+                    {
+                        "source_revision_token": str(source_revision.get("token") or ""),
+                        "source_evidence_fingerprint": str(source_revision.get("source_evidence_fingerprint") or ""),
+                    },
+                )
+            )
             job.diagnostics = sanitize_master_data_sync_value(preflight)
         elif job.mode in {
             PoolMasterDataChartMaterializationMode.VERIFY_FOLLOWERS,
@@ -464,6 +571,7 @@ def _run_chart_source_preflight(*, source: PoolMasterDataChartSource) -> dict[st
         database=source.database,
         entity_scope=["gl_account"],
     )
+    source_revision = _build_source_revision_context(source=source)
     serialized = {
         "ok": bool(preflight.ok),
         "chart_source_id": str(source.id),
@@ -471,6 +579,7 @@ def _run_chart_source_preflight(*, source: PoolMasterDataChartSource) -> dict[st
         "chart_identity": str(source.chart_identity or ""),
         "config_name": str(source.config_name or ""),
         "config_version": str(source.config_version or ""),
+        "source_revision": source_revision,
         "candidate_follower_count": len(_resolve_compatible_databases(source=source)),
         "coverage": dict(preflight.coverage or {}),
         "credential_strategy": str(preflight.credential_strategy or ""),
@@ -1042,6 +1151,333 @@ def _require_business_profile(*, database: Database) -> dict[str, Any]:
     }
 
 
+def _resolve_current_metadata_catalog_snapshot(
+    *,
+    tenant: Tenant,
+    database: Database,
+    config_name: str,
+    config_version: str,
+) -> PoolODataMetadataCatalogSnapshot | None:
+    return (
+        PoolODataMetadataCatalogSnapshot.objects.filter(
+            tenant=tenant,
+            database=database,
+            config_name=str(config_name or "").strip(),
+            config_version=str(config_version or "").strip(),
+            is_current=True,
+        )
+        .order_by("-fetched_at", "-created_at")
+        .first()
+    )
+
+
+def _discover_chart_candidates_from_metadata_snapshot(
+    *,
+    database: Database,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    config_name: str,
+    config_version: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    contexts = _collect_metadata_catalog_chart_identity_contexts(payload=dict(snapshot.payload or {}))
+    candidates: list[dict[str, Any]] = []
+    diagnostics: list[dict[str, Any]] = []
+    if not contexts:
+        diagnostics.append(
+            {
+                "code": "CHART_DISCOVERY_METADATA_CHART_FIELD_MISSING",
+                "detail": "Metadata catalog snapshot does not contain chart-of-accounts field types.",
+                "path": "metadata_catalog.payload",
+            }
+        )
+        return candidates, diagnostics
+
+    contexts_by_identity: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for context in contexts:
+        identity = str(context.get("chart_identity") or "").strip()
+        if identity:
+            contexts_by_identity[identity].append(context)
+
+    for identity, identity_contexts in sorted(contexts_by_identity.items()):
+        candidates.append(
+            _build_metadata_catalog_chart_candidate(
+                database=database,
+                chart_identity=identity,
+                config_name=config_name,
+                config_version=config_version,
+                snapshot=snapshot,
+                contexts=identity_contexts,
+            )
+        )
+    return candidates, diagnostics
+
+
+def _collect_metadata_catalog_chart_identity_contexts(*, payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    contexts: list[dict[str, Any]] = []
+
+    def _collect_fields(*, fields: Any, path_prefix: str, owner_name: str) -> None:
+        if not isinstance(fields, list):
+            return
+        for field in fields:
+            if not isinstance(field, Mapping):
+                continue
+            field_type = str(field.get("type") or "").strip()
+            identity = _extract_chart_identity_from_type_token(field_type)
+            if not identity:
+                continue
+            contexts.append(
+                {
+                    "chart_identity": identity,
+                    "owner": owner_name,
+                    "field": str(field.get("name") or "").strip(),
+                    "field_type": field_type,
+                    "path": path_prefix,
+                }
+            )
+
+    for section_name in ("documents", "information_registers", "accounting_registers"):
+        section = payload.get(section_name)
+        if not isinstance(section, list):
+            continue
+        for entity in section:
+            if not isinstance(entity, Mapping):
+                continue
+            owner_name = str(entity.get("entity_name") or entity.get("display_name") or "").strip()
+            _collect_fields(
+                fields=entity.get("fields"),
+                path_prefix=f"{section_name}.{owner_name}.fields",
+                owner_name=owner_name,
+            )
+            table_parts = entity.get("table_parts")
+            if isinstance(table_parts, list):
+                for table_part in table_parts:
+                    if not isinstance(table_part, Mapping):
+                        continue
+                    table_part_name = str(table_part.get("name") or "").strip()
+                    _collect_fields(
+                        fields=table_part.get("row_fields"),
+                        path_prefix=f"{section_name}.{owner_name}.table_parts.{table_part_name}.row_fields",
+                        owner_name=f"{owner_name}.{table_part_name}",
+                    )
+            functions = entity.get("functions")
+            if isinstance(functions, list):
+                for function in functions:
+                    if not isinstance(function, Mapping):
+                        continue
+                    return_identity = _extract_chart_identity_from_type_token(
+                        str(function.get("return_type") or "").strip()
+                    )
+                    if return_identity:
+                        contexts.append(
+                            {
+                                "chart_identity": return_identity,
+                                "owner": owner_name,
+                                "field": str(function.get("name") or "").strip(),
+                                "field_type": str(function.get("return_type") or "").strip(),
+                                "path": f"{section_name}.{owner_name}.functions",
+                            }
+                        )
+
+    return contexts
+
+
+def _extract_chart_identity_from_type_token(type_token: str) -> str:
+    token = str(type_token or "").strip()
+    if not token:
+        return ""
+    if token.endswith(")"):
+        token = token.rstrip(")")
+    if "(" in token:
+        token = token.rsplit("(", 1)[-1]
+    token = token.split("/")[-1].split(".")[-1]
+    if token.startswith("ChartOfAccounts_"):
+        return token
+    return ""
+
+
+def _build_metadata_catalog_chart_candidate(
+    *,
+    database: Database,
+    chart_identity: str,
+    config_name: str,
+    config_version: str,
+    snapshot: PoolODataMetadataCatalogSnapshot,
+    contexts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    fingerprint = _build_source_evidence_fingerprint(
+        {
+            "source": "metadata_catalog",
+            "database_id": str(database.id),
+            "chart_identity": str(chart_identity or "").strip(),
+            "config_name": str(config_name or "").strip(),
+            "config_version": str(config_version or "").strip(),
+            "metadata_hash": str(snapshot.metadata_hash or ""),
+            "catalog_version": str(snapshot.catalog_version or ""),
+            "contexts": contexts,
+        }
+    )
+    return sanitize_master_data_sync_value(
+        {
+            "chart_identity": str(chart_identity or "").strip(),
+            "name": str(chart_identity or "").strip(),
+            "config_name": str(config_name or "").strip(),
+            "config_version": str(config_version or "").strip(),
+            "source_database_id": str(database.id),
+            "source_database_name": str(database.name or ""),
+            "source_kind": "metadata_catalog",
+            "derivation_method": "metadata_catalog_field_type",
+            "confidence": "medium",
+            "metadata_hash": str(snapshot.metadata_hash or ""),
+            "catalog_version": str(snapshot.catalog_version or ""),
+            "source_evidence_fingerprint": fingerprint,
+            "diagnostics": [],
+            "warnings": [],
+            "is_complete": bool(chart_identity and config_name and config_version),
+        }
+    )
+
+
+def _merge_chart_discovery_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_key: dict[str, dict[str, Any]] = {}
+    for candidate in candidates:
+        identity = str(candidate.get("chart_identity") or "").strip()
+        key = identity or str(candidate.get("source_evidence_fingerprint") or "")
+        if not key:
+            key = str(len(by_key))
+        existing = by_key.get(key)
+        if existing is None:
+            by_key[key] = sanitize_master_data_sync_value(dict(candidate))
+            continue
+        diagnostics = list(existing.get("diagnostics") or [])
+        diagnostics.extend(list(candidate.get("diagnostics") or []))
+        warnings = list(existing.get("warnings") or [])
+        warnings.extend(list(candidate.get("warnings") or []))
+        methods = {
+            str(existing.get("derivation_method") or "").strip(),
+            str(candidate.get("derivation_method") or "").strip(),
+        }
+        existing["derivation_method"] = "+".join(sorted(method for method in methods if method))
+        existing["diagnostics"] = diagnostics
+        existing["warnings"] = warnings
+        existing["confidence"] = _stronger_confidence(
+            str(existing.get("confidence") or ""),
+            str(candidate.get("confidence") or ""),
+        )
+        if not str(existing.get("metadata_hash") or "").strip() and str(candidate.get("metadata_hash") or "").strip():
+            existing["metadata_hash"] = str(candidate.get("metadata_hash") or "")
+        if not str(existing.get("catalog_version") or "").strip() and str(candidate.get("catalog_version") or "").strip():
+            existing["catalog_version"] = str(candidate.get("catalog_version") or "")
+        if not str(existing.get("source_evidence_fingerprint") or "").strip():
+            existing["source_evidence_fingerprint"] = str(candidate.get("source_evidence_fingerprint") or "")
+        existing["is_complete"] = bool(existing.get("is_complete") or candidate.get("is_complete"))
+    return sorted(
+        (sanitize_master_data_sync_value(candidate) for candidate in by_key.values()),
+        key=lambda item: (not bool(item.get("is_complete")), str(item.get("chart_identity") or ""), str(item.get("source_kind") or "")),
+    )
+
+
+def _stronger_confidence(left: str, right: str) -> str:
+    order = {"blocked": 0, "low": 1, "medium": 2, "high": 3}
+    return left if order.get(left, 0) >= order.get(right, 0) else right
+
+
+def _build_chart_source_metadata(
+    *,
+    base_metadata: Mapping[str, Any],
+    database: Database,
+    chart_identity: str,
+    profile: Mapping[str, Any],
+    discovery_provenance: Mapping[str, Any] | None,
+    manual_override_reason: str,
+    discovery_diagnostics: Any | None,
+    requested_by_username: str,
+) -> dict[str, Any]:
+    now = timezone.now().isoformat()
+    provenance = sanitize_master_data_sync_value(dict(discovery_provenance or {}))
+    diagnostics = sanitize_master_data_sync_value(discovery_diagnostics or [])
+    manual_reason = sanitize_master_data_sync_text(str(manual_override_reason or "").strip())
+    extra: dict[str, Any] = {
+        "business_configuration_profile": {
+            "config_name": str(profile.get("config_name") or ""),
+            "config_version": str(profile.get("config_version") or ""),
+            "verification_status": str(profile.get("verification_status") or ""),
+            "verified_at": str(profile.get("verified_at") or ""),
+        }
+    }
+    if provenance:
+        extra["chart_discovery"] = provenance
+    if manual_reason:
+        extra["manual_override"] = {
+            "reason": manual_reason,
+            "actor": str(requested_by_username or "").strip(),
+            "at": now,
+            "discovery_diagnostics": diagnostics,
+        }
+
+    merged_without_revision = _merge_source_metadata(base_metadata, extra)
+    if not provenance:
+        merged_without_revision.pop("chart_discovery", None)
+    if not manual_reason:
+        merged_without_revision.pop("manual_override", None)
+    revision_payload = {
+        "database_id": str(database.id),
+        "chart_identity": str(chart_identity or "").strip(),
+        "config_name": str(profile.get("config_name") or ""),
+        "config_version": str(profile.get("config_version") or ""),
+        "chart_discovery": provenance,
+        "manual_override": merged_without_revision.get("manual_override") or {},
+    }
+    revision_token = _build_source_evidence_fingerprint(revision_payload)
+    previous_revision = dict((base_metadata.get("source_revision") if isinstance(base_metadata, Mapping) else {}) or {})
+    revision_at = str(previous_revision.get("updated_at") or "")
+    if str(previous_revision.get("token") or "") != revision_token:
+        revision_at = now
+    merged_without_revision["source_revision"] = {
+        "token": revision_token,
+        "updated_at": revision_at or now,
+        "source_evidence_fingerprint": _read_source_evidence_fingerprint(provenance),
+    }
+    return sanitize_master_data_sync_value(merged_without_revision)
+
+
+def _build_source_revision_context(*, source: PoolMasterDataChartSource) -> dict[str, Any]:
+    metadata = dict(source.metadata or {})
+    revision = dict(metadata.get("source_revision") or {})
+    token = str(revision.get("token") or "").strip()
+    if not token:
+        token = _build_source_evidence_fingerprint(
+            {
+                "database_id": str(source.database_id),
+                "chart_identity": str(source.chart_identity or ""),
+                "config_name": str(source.config_name or ""),
+                "config_version": str(source.config_version or ""),
+                "chart_discovery": dict(metadata.get("chart_discovery") or {}),
+                "manual_override": dict(metadata.get("manual_override") or {}),
+            }
+        )
+    return sanitize_master_data_sync_value(
+        {
+            "token": token,
+            "updated_at": str(revision.get("updated_at") or source.updated_at or source.created_at or ""),
+            "source_evidence_fingerprint": str(
+                revision.get("source_evidence_fingerprint")
+                or _read_source_evidence_fingerprint(dict(metadata.get("chart_discovery") or {}))
+            ),
+        }
+    )
+
+
+def _read_source_evidence_fingerprint(provenance: Mapping[str, Any] | None) -> str:
+    if not isinstance(provenance, Mapping):
+        return ""
+    return str(provenance.get("source_evidence_fingerprint") or "").strip()
+
+
+def _build_source_evidence_fingerprint(payload: Mapping[str, Any]) -> str:
+    sanitized = sanitize_master_data_sync_value(dict(payload or {}))
+    serialized = json.dumps(sanitized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 def _build_gl_account_metadata(
     *,
     existing_metadata: Mapping[str, Any] | None,
@@ -1129,7 +1565,12 @@ def _normalize_job_mode(mode: str) -> str:
     return normalized
 
 
-def _require_chart_job_prerequisites(*, source: PoolMasterDataChartSource, mode: str) -> None:
+def _require_chart_job_prerequisites(
+    *,
+    source: PoolMasterDataChartSource,
+    mode: str,
+    materialize_review: Mapping[str, Any] | None = None,
+) -> None:
     if mode == PoolMasterDataChartMaterializationMode.PREFLIGHT:
         return
 
@@ -1154,6 +1595,8 @@ def _require_chart_job_prerequisites(*, source: PoolMasterDataChartSource, mode:
         )
 
     if mode == PoolMasterDataChartMaterializationMode.MATERIALIZE:
+        if materialize_review is not None:
+            _require_materialize_review(source=source, materialize_review=materialize_review)
         if not _has_successful_stage(PoolMasterDataChartMaterializationMode.PREFLIGHT):
             raise ValueError(
                 f"{CHART_JOB_PREREQUISITE_MISSING}: successful preflight is required before materialize for this authoritative source"
@@ -1162,6 +1605,80 @@ def _require_chart_job_prerequisites(*, source: PoolMasterDataChartSource, mode:
             raise ValueError(
                 f"{CHART_JOB_PREREQUISITE_MISSING}: successful dry_run is required before materialize for this authoritative source"
             )
+        if materialize_review is None:
+            _require_materialize_review(source=source, materialize_review=materialize_review)
+
+
+def _require_materialize_review(
+    *,
+    source: PoolMasterDataChartSource,
+    materialize_review: Mapping[str, Any] | None,
+) -> None:
+    if not isinstance(materialize_review, Mapping):
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: materialize requires an explicit reviewed dry_run reference"
+        )
+
+    dry_run_job_id = str(
+        materialize_review.get("dry_run_job_id")
+        or materialize_review.get("reviewed_dry_run_job_id")
+        or ""
+    ).strip()
+    if not dry_run_job_id:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: materialize requires reviewed dry_run job id"
+        )
+
+    dry_run_job = PoolMasterDataChartMaterializationJob.objects.filter(
+        tenant_id=source.tenant_id,
+        chart_source_id=source.id,
+        id=dry_run_job_id,
+        mode=PoolMasterDataChartMaterializationMode.DRY_RUN,
+        status=PoolMasterDataChartMaterializationJobStatus.SUCCEEDED,
+    ).first()
+    if dry_run_job is None:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: reviewed dry_run job does not exist or did not succeed"
+        )
+
+    source_revision_cutoff = source.updated_at or source.created_at
+    if source_revision_cutoff is not None and dry_run_job.created_at < source_revision_cutoff:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: source evidence changed after reviewed dry_run; run preflight and dry_run again"
+        )
+
+    current_revision = _build_source_revision_context(source=source)
+    current_token = str(current_revision.get("token") or "").strip()
+    reviewed_token = str(
+        materialize_review.get("source_revision_token")
+        or materialize_review.get("reviewed_source_revision_token")
+        or ""
+    ).strip()
+    dry_run_token = _read_job_source_revision_token(job=dry_run_job)
+    if not dry_run_token:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: reviewed dry_run job does not contain source revision evidence"
+        )
+    if dry_run_token != current_token:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: source evidence changed after reviewed dry_run; run preflight and dry_run again"
+        )
+    if reviewed_token and reviewed_token != current_token:
+        raise ValueError(
+            f"{CHART_JOB_PREREQUISITE_MISSING}: materialize review points to stale source evidence"
+        )
+
+
+def _read_job_source_revision_token(*, job: PoolMasterDataChartMaterializationJob) -> str:
+    counters = dict(job.counters or {})
+    token = str(counters.get("source_revision_token") or "").strip()
+    if token:
+        return token
+    diagnostics = dict(job.diagnostics or {})
+    revision = diagnostics.get("source_revision")
+    if isinstance(revision, Mapping):
+        return str(revision.get("token") or "").strip()
+    return ""
 
 
 def _append_job_audit(
@@ -1231,6 +1748,8 @@ def _resolve_chart_job_error(exc: Exception) -> tuple[str, str, dict[str, Any]]:
 
 
 __all__ = [
+    "CHART_DISCOVERY_METADATA_SNAPSHOT_UNAVAILABLE",
+    "CHART_DISCOVERY_NO_CANDIDATES",
     "CHART_JOB_NOT_FOUND",
     "CHART_JOB_PREREQUISITE_MISSING",
     "CHART_SOURCE_BUSINESS_PROFILE_MISMATCH",
@@ -1242,6 +1761,7 @@ __all__ = [
     "CHART_SOURCE_PREFLIGHT_FAILED",
     "CHART_SOURCE_ROWS_EMPTY",
     "create_pool_master_data_chart_job",
+    "discover_pool_master_data_chart_candidates",
     "get_pool_master_data_chart_job",
     "list_pool_master_data_chart_jobs",
     "list_pool_master_data_chart_sources",

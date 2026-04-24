@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -47,6 +49,8 @@ class _ResolvedMappingCredentials:
 class _BootstrapSourceEntityConfig:
     entity_type: str
     entity_name: str
+    chart_identity: str
+    chart_identity_source: str
     field_mapping: dict[str, str]
     select_fields: list[str]
     filter_query: str
@@ -137,6 +141,142 @@ def fetch_pool_master_data_bootstrap_source_rows(
         entity_type=normalized_entity_type,
         actor_id=str(actor_id or "").strip(),
     )
+
+
+def discover_pool_master_data_bootstrap_source_chart_candidates(
+    *,
+    database: Database,
+    config_name: str,
+    config_version: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    source_mode = _resolve_source_mode(database=database)
+    diagnostics: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+
+    if source_mode == BOOTSTRAP_SOURCE_MODE_METADATA_ROWS:
+        metadata = database.metadata if isinstance(database.metadata, dict) else {}
+        rows_by_entity = metadata.get("bootstrap_import_rows")
+        raw_rows = rows_by_entity.get("gl_account") if isinstance(rows_by_entity, Mapping) else None
+        if not isinstance(raw_rows, list):
+            diagnostics.append(
+                _error(
+                    code="CHART_DISCOVERY_METADATA_ROWS_MISSING",
+                    detail="Metadata rows do not contain GLAccount rows.",
+                    path="metadata.bootstrap_import_rows.gl_account",
+                )
+            )
+            return candidates, diagnostics
+
+        identities = sorted(
+            {
+                str(row.get("chart_identity") or "").strip()
+                for row in raw_rows
+                if isinstance(row, Mapping) and str(row.get("chart_identity") or "").strip()
+            }
+        )
+        if not identities:
+            diagnostics.append(
+                _error(
+                    code="CHART_DISCOVERY_CHART_IDENTITY_MISSING",
+                    detail="Metadata GLAccount rows do not contain chart_identity.",
+                    path="metadata.bootstrap_import_rows.gl_account[].chart_identity",
+                )
+            )
+            candidates.append(
+                _build_bootstrap_chart_candidate(
+                    database=database,
+                    chart_identity="",
+                    config_name=config_name,
+                    config_version=config_version,
+                    source_kind="metadata_rows",
+                    derivation_method="metadata_rows",
+                    confidence="blocked",
+                    evidence={"mode": source_mode, "row_count": len(raw_rows), "missing": "chart_identity"},
+                    diagnostics=diagnostics,
+                )
+            )
+            return candidates, diagnostics
+
+        for identity in identities:
+            candidates.append(
+                _build_bootstrap_chart_candidate(
+                    database=database,
+                    chart_identity=identity,
+                    config_name=config_name,
+                    config_version=config_version,
+                    source_kind="metadata_rows",
+                    derivation_method="metadata_rows",
+                    confidence="medium",
+                    evidence={"mode": source_mode, "row_count": len(raw_rows), "chart_identity": identity},
+                    diagnostics=[],
+                )
+            )
+        return candidates, diagnostics
+
+    entity_configs = _resolve_odata_source_entity_configs(database=database)
+    config = entity_configs.get(PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT)
+    if config is None:
+        diagnostics.append(
+            _error(
+                code=BOOTSTRAP_SOURCE_ENTITY_COVERAGE_MISSING,
+                detail="Bootstrap source mapping does not cover GLAccount.",
+                path="metadata.bootstrap_import_source.entities.gl_account",
+            )
+        )
+        return candidates, diagnostics
+
+    if config.chart_identity:
+        candidates.append(
+            _build_bootstrap_chart_candidate(
+                database=database,
+                chart_identity=config.chart_identity,
+                config_name=config_name,
+                config_version=config_version,
+                source_kind="bootstrap_source_config",
+                derivation_method=config.chart_identity_source or "bootstrap_source_config",
+                confidence="high",
+                evidence={
+                    "mode": source_mode,
+                    "entity_name": config.entity_name,
+                    "chart_identity": config.chart_identity,
+                    "chart_identity_source": config.chart_identity_source,
+                    "field_mapping": config.field_mapping,
+                    "select_fields": config.select_fields,
+                    "filter_query": config.filter_query,
+                },
+                diagnostics=[],
+            )
+        )
+        return candidates, diagnostics
+
+    mapping_error = _validate_source_mapping_config(config=config)
+    diagnostics.append(
+        _error(
+            code="CHART_DISCOVERY_CHART_IDENTITY_MISSING",
+            detail=mapping_error
+            or "GLAccount bootstrap source mapping does not provide a stable chart_identity.",
+            path="metadata.bootstrap_import_source.entities.gl_account",
+        )
+    )
+    candidates.append(
+        _build_bootstrap_chart_candidate(
+            database=database,
+            chart_identity="",
+            config_name=config_name,
+            config_version=config_version,
+            source_kind="bootstrap_source_config",
+            derivation_method="bootstrap_source_config",
+            confidence="blocked",
+            evidence={
+                "mode": source_mode,
+                "entity_name": config.entity_name,
+                "field_mapping": config.field_mapping,
+                "missing": "chart_identity",
+            },
+            diagnostics=diagnostics,
+        )
+    )
+    return candidates, diagnostics
 
 
 def _default_preflight(
@@ -400,6 +540,12 @@ def _map_source_rows(
         payload: dict[str, Any] = {}
         for target_key, source_key in config.field_mapping.items():
             payload[target_key] = raw_row.get(source_key)
+        if (
+            config.entity_type == PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT
+            and config.chart_identity
+            and not str(payload.get("chart_identity") or "").strip()
+        ):
+            payload["chart_identity"] = config.chart_identity
         normalized_rows.append(sanitize_master_data_sync_value(payload))
     return normalized_rows
 
@@ -505,6 +651,14 @@ def _resolve_odata_source_entity_configs(*, database: Database) -> dict[str, _Bo
         entity_name = str(raw_config.get("entity_name") or "").strip()
         if not entity_name:
             continue
+        explicit_chart_identity = _normalize_chart_identity_config(raw_config.get("chart_identity"))
+        derived_chart_identity = _derive_chart_identity_from_source_entity_name(entity_name)
+        chart_identity = explicit_chart_identity or derived_chart_identity
+        chart_identity_source = ""
+        if explicit_chart_identity:
+            chart_identity_source = "explicit_source_mapping_metadata"
+        elif derived_chart_identity:
+            chart_identity_source = "odata_entity_name"
         field_mapping = _normalize_field_mapping(raw_config.get("field_mapping"))
         select_fields = _normalize_select_fields(raw_config.get("select_fields"))
         if not select_fields:
@@ -512,6 +666,8 @@ def _resolve_odata_source_entity_configs(*, database: Database) -> dict[str, _Bo
         resolved[entity_type] = _BootstrapSourceEntityConfig(
             entity_type=entity_type,
             entity_name=entity_name,
+            chart_identity=chart_identity,
+            chart_identity_source=chart_identity_source,
             field_mapping=field_mapping,
             select_fields=select_fields,
             filter_query=str(raw_config.get("filter_query") or "").strip(),
@@ -562,6 +718,9 @@ def _required_source_fields_for_entity(*, entity_type: str) -> set[str]:
 
 def _validate_source_mapping_config(*, config: _BootstrapSourceEntityConfig) -> str | None:
     required_fields = _required_source_fields_for_entity(entity_type=config.entity_type)
+    if config.entity_type == PoolMasterDataBootstrapImportEntityType.GL_ACCOUNT and config.chart_identity:
+        required_fields = set(required_fields)
+        required_fields.discard("chart_identity")
     missing = sorted(field for field in required_fields if field not in config.field_mapping)
     if missing:
         return (
@@ -597,6 +756,73 @@ def _safe_page_size(value: Any, *, default: int) -> int:
     return max(1, min(page_size, 1000))
 
 
+def _normalize_chart_identity_config(value: Any) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    return _derive_chart_identity_from_source_entity_name(token) or token
+
+
+def _derive_chart_identity_from_source_entity_name(entity_name: str) -> str:
+    token = str(entity_name or "").strip()
+    if not token:
+        return ""
+    if token.endswith(")"):
+        token = token.rstrip(")")
+    if "(" in token:
+        token = token.rsplit("(", 1)[-1]
+    token = token.split("/")[-1].split(".")[-1]
+    if token.startswith("ChartOfAccounts_"):
+        return token
+    return ""
+
+
+def _build_bootstrap_chart_candidate(
+    *,
+    database: Database,
+    chart_identity: str,
+    config_name: str,
+    config_version: str,
+    source_kind: str,
+    derivation_method: str,
+    confidence: str,
+    evidence: Mapping[str, Any],
+    diagnostics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    normalized_identity = str(chart_identity or "").strip()
+    evidence_payload = sanitize_master_data_sync_value(
+        {
+            "source": source_kind,
+            "database_id": str(database.id),
+            "chart_identity": normalized_identity,
+            "config_name": str(config_name or "").strip(),
+            "config_version": str(config_version or "").strip(),
+            "evidence": dict(evidence or {}),
+        }
+    )
+    serialized = json.dumps(evidence_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return sanitize_master_data_sync_value(
+        {
+            "chart_identity": normalized_identity,
+            "name": normalized_identity or "GLAccount source mapping",
+            "config_name": str(config_name or "").strip(),
+            "config_version": str(config_version or "").strip(),
+            "source_database_id": str(database.id),
+            "source_database_name": str(database.name or ""),
+            "source_kind": source_kind,
+            "derivation_method": derivation_method,
+            "confidence": confidence,
+            "metadata_hash": "",
+            "catalog_version": "",
+            "source_evidence_fingerprint": fingerprint,
+            "diagnostics": list(diagnostics or []),
+            "warnings": [],
+            "is_complete": bool(normalized_identity and config_name and config_version),
+        }
+    )
+
+
 def _normalize_entity_scope(entity_scope: list[str]) -> list[str]:
     return [_normalize_entity_type(value) for value in entity_scope]
 
@@ -630,6 +856,7 @@ __all__ = [
     "BOOTSTRAP_SOURCE_UNAVAILABLE",
     "PoolMasterDataBootstrapSourcePreflightResult",
     "configure_pool_master_data_bootstrap_source_callbacks",
+    "discover_pool_master_data_bootstrap_source_chart_candidates",
     "fetch_pool_master_data_bootstrap_source_rows",
     "reset_pool_master_data_bootstrap_source_callbacks",
     "run_pool_master_data_bootstrap_source_preflight",

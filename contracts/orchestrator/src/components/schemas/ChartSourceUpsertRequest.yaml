@@ -6,7 +6,17 @@ properties:
   chart_identity:
     type: string
     maxLength: 255
+  discovery_provenance:
+    type: object
+    additionalProperties: true
+  manual_override_reason:
+    type: string
+    maxLength: 1000
+  discovery_diagnostics:
+    type: array
+    items:
+      type: object
+      additionalProperties: true
 required:
   - database_id
   - chart_identity
-

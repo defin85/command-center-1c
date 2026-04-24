@@ -5931,6 +5931,55 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetailsError'
           description: ''
+  /api/v2/pools/master-data/chart-import/discovery/:
+    get:
+      operationId: v2_pools_master_data_chart_import_discovery_retrieve
+      summary: Discover chart import candidates for a reference database
+      tags:
+        - v2
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: database_id
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 64
+        - name: X-CC1C-Tenant-ID
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional tenant context selector. If omitted, tenant is resolved via user preference or first membership. For staff users, omission may return cross-tenant results on some endpoints.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartDiscoveryResponse'
+          description: ''
+        '400':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '401':
+          description: Unauthorized
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailsError'
+          description: ''
   /api/v2/pools/master-data/chart-import/sources/:
     get:
       operationId: v2_pools_master_data_chart_import_sources_list
@@ -21517,6 +21566,89 @@ components:
           additionalProperties: true
       required:
         - action
+    ChartDiscoveryCandidate:
+      type: object
+      properties:
+        chart_identity:
+          type: string
+        name:
+          type: string
+        config_name:
+          type: string
+        config_version:
+          type: string
+        source_database_id:
+          type: string
+        source_database_name:
+          type: string
+        source_kind:
+          type: string
+        derivation_method:
+          type: string
+        confidence:
+          type: string
+        metadata_hash:
+          type: string
+        catalog_version:
+          type: string
+        source_evidence_fingerprint:
+          type: string
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        warnings:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        is_complete:
+          type: boolean
+      required:
+        - chart_identity
+        - name
+        - config_name
+        - config_version
+        - source_database_id
+        - source_database_name
+        - source_kind
+        - derivation_method
+        - confidence
+        - metadata_hash
+        - catalog_version
+        - source_evidence_fingerprint
+        - is_complete
+    ChartDiscoveryResponse:
+      type: object
+      properties:
+        database_id:
+          type: string
+        database_name:
+          type: string
+        cluster_id:
+          type: string
+          format: uuid
+          nullable: true
+        config_name:
+          type: string
+        config_version:
+          type: string
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartDiscoveryCandidate'
+        diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+        - database_id
+        - database_name
+        - config_name
+        - config_version
+        - candidates
     ChartSnapshot:
       type: object
       properties:
@@ -21741,6 +21873,17 @@ components:
         chart_identity:
           type: string
           maxLength: 255
+        discovery_provenance:
+          type: object
+          additionalProperties: true
+        manual_override_reason:
+          type: string
+          maxLength: 1000
+        discovery_diagnostics:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
       required:
         - database_id
         - chart_identity
@@ -21941,6 +22084,9 @@ components:
           items:
             type: string
             maxLength: 64
+        materialize_review:
+          type: object
+          additionalProperties: true
       required:
         - chart_source_id
         - mode

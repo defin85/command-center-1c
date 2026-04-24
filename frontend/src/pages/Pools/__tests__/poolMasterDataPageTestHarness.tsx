@@ -46,6 +46,7 @@ const mockUpsertMasterDataBinding = vi.fn()
 const mockGetPoolMasterDataRegistry = vi.fn()
 const mockListPoolTargetClusters = vi.fn()
 const mockListPoolTargetDatabases = vi.fn()
+const mockDiscoverPoolMasterDataChartCandidates = vi.fn()
 const mockUpsertPoolMasterDataChartSource = vi.fn()
 const mockListPoolMasterDataChartSources = vi.fn()
 const mockCreatePoolMasterDataChartJob = vi.fn()
@@ -255,6 +256,25 @@ const buildChartSource = (overrides: Record<string, unknown> = {}) => ({
   ],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:01:00Z',
+  ...overrides,
+})
+
+const buildChartDiscoveryCandidate = (overrides: Record<string, unknown> = {}) => ({
+  chart_identity: 'ChartOfAccounts_Main',
+  name: 'Main Chart',
+  config_name: 'Accounting Enterprise',
+  config_version: '3.0.1',
+  source_database_id: 'db-1',
+  source_database_name: 'Main DB',
+  source_kind: 'bootstrap_source_config',
+  derivation_method: 'odata_entity_name',
+  confidence: 'high',
+  metadata_hash: '',
+  catalog_version: '',
+  source_evidence_fingerprint: 'evidence-main',
+  diagnostics: [],
+  warnings: [],
+  is_complete: true,
   ...overrides,
 })
 
@@ -689,6 +709,7 @@ vi.mock('../../../api/intercompanyPools', () => ({
   getPoolMasterDataRegistry: (...args: unknown[]) => mockGetPoolMasterDataRegistry(...args),
   listPoolTargetClusters: (...args: unknown[]) => mockListPoolTargetClusters(...args),
   listPoolTargetDatabases: (...args: unknown[]) => mockListPoolTargetDatabases(...args),
+  discoverPoolMasterDataChartCandidates: (...args: unknown[]) => mockDiscoverPoolMasterDataChartCandidates(...args),
   upsertPoolMasterDataChartSource: (...args: unknown[]) => mockUpsertPoolMasterDataChartSource(...args),
   listPoolMasterDataChartSources: (...args: unknown[]) => mockListPoolMasterDataChartSources(...args),
   createPoolMasterDataChartJob: (...args: unknown[]) => mockCreatePoolMasterDataChartJob(...args),
@@ -782,6 +803,7 @@ export function setupPoolMasterDataPageTestSuite() {
     mockGetPoolMasterDataRegistry.mockReset()
     mockListPoolTargetClusters.mockReset()
     mockListPoolTargetDatabases.mockReset()
+    mockDiscoverPoolMasterDataChartCandidates.mockReset()
     mockUpsertPoolMasterDataChartSource.mockReset()
     mockListPoolMasterDataChartSources.mockReset()
     mockCreatePoolMasterDataChartJob.mockReset()
@@ -1180,6 +1202,15 @@ export function setupPoolMasterDataPageTestSuite() {
         cluster_all_eligibility_state: 'eligible',
       },
     ])
+    mockDiscoverPoolMasterDataChartCandidates.mockResolvedValue({
+      database_id: 'db-1',
+      database_name: 'Main DB',
+      cluster_id: 'cluster-1',
+      config_name: 'Accounting Enterprise',
+      config_version: '3.0.1',
+      candidates: [buildChartDiscoveryCandidate()],
+      diagnostics: [],
+    })
     mockUpsertPoolMasterDataChartSource.mockResolvedValue({
       source: buildChartSource(),
     })
@@ -3434,8 +3465,24 @@ export function registerPoolMasterDataChartImportTests() {
                       updated_count: 1,
                       unchanged_count: 0,
                       retired_count: 0,
+                      source_revision_token: 'revision-v1',
+                      source_evidence_fingerprint: 'evidence-main',
                     }
-                  : { source_ok: true },
+                  : mode === 'dry_run'
+                    ? {
+                        rows_total: 2,
+                        created_count: 1,
+                        updated_count: 1,
+                        unchanged_count: 0,
+                        retired_count: 0,
+                        source_revision_token: 'revision-v1',
+                        source_evidence_fingerprint: 'evidence-main',
+                      }
+                    : {
+                        source_ok: true,
+                        source_revision_token: 'revision-v1',
+                        source_evidence_fingerprint: 'evidence-main',
+                      },
           follower_statuses: followerStatuses,
         })
         createdJobs.unshift(job)
@@ -3481,13 +3528,18 @@ export function registerPoolMasterDataChartImportTests() {
       expect(screen.getByRole('button', { name: 'Open Sync zone' })).toBeInTheDocument()
       expect(screen.getByText('No chart job is selected yet.')).toBeInTheDocument()
       expect(await screen.findByTestId('pool-master-data-chart-import-selected-source-id')).toHaveTextContent('chart-source-1')
+      expect(await screen.findByTestId('chart-import-selected-candidate-evidence')).toHaveTextContent('ChartOfAccounts_Main')
 
       fireEvent.click(screen.getByTestId('chart-import-upsert-source'))
       await waitFor(() =>
-        expect(mockUpsertPoolMasterDataChartSource).toHaveBeenCalledWith({
+        expect(mockUpsertPoolMasterDataChartSource).toHaveBeenCalledWith(expect.objectContaining({
           database_id: 'db-1',
           chart_identity: 'ChartOfAccounts_Main',
-        }),
+          discovery_provenance: expect.objectContaining({
+            chart_identity: 'ChartOfAccounts_Main',
+            source_evidence_fingerprint: 'evidence-main',
+          }),
+        })),
       )
 
       fireEvent.click(screen.getByTestId('chart-import-run-preflight'))
@@ -3509,6 +3561,10 @@ export function registerPoolMasterDataChartImportTests() {
         }),
       )
 
+      await waitFor(() =>
+        expect(screen.getByTestId('chart-import-review-dry-run')).not.toHaveClass('ant-checkbox-wrapper-disabled'),
+      )
+      fireEvent.click(screen.getByTestId('chart-import-review-dry-run'))
       await waitFor(() => expect(screen.getByTestId('chart-import-run-materialize')).toBeEnabled())
       fireEvent.click(screen.getByTestId('chart-import-run-materialize'))
       await waitFor(() =>
@@ -3516,6 +3572,10 @@ export function registerPoolMasterDataChartImportTests() {
           chart_source_id: 'chart-source-1',
           mode: 'materialize',
           database_ids: undefined,
+          materialize_review: expect.objectContaining({
+            dry_run_job_id: 'job-dry_run',
+            source_revision_token: 'revision-v1',
+          }),
         }),
       )
 
