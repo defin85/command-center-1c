@@ -48,6 +48,15 @@ class DeployServerConfigContractTests(unittest.TestCase):
         self.assertIn("SESSION_COOKIE_SECURE = False", settings_text)
         self.assertIn("CSRF_COOKIE_SECURE = False", settings_text)
 
+    def test_native_prometheus_scrapes_prod_worker_workflows_port(self) -> None:
+        prometheus_text = (
+            ROOT / "infrastructure/monitoring/prometheus/prometheus-native.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("job_name: 'worker-workflows'", prometheus_text)
+        self.assertIn("targets: ['localhost:9192']", prometheus_text)
+        self.assertNotIn("targets: ['localhost:9092']", prometheus_text)
+
 
 if __name__ == "__main__":
     unittest.main()

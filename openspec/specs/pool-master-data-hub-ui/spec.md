@@ -14,15 +14,16 @@ TBD - created by archiving change add-06-pool-master-data-hub-ui. Update Purpose
 - `GLAccount`;
 - `GLAccountSet`;
 - `Bindings`;
+- `Chart Import`;
 - `Sync`;
 - `Bootstrap Import`.
 
 Workspace ДОЛЖЕН (SHALL) быть доступен из основного меню Pools, работать в рамках текущего tenant context и расширяться внутри canonical platform shell, а не через второй parallel page foundation.
 
-#### Scenario: Оператор открывает sync zone внутри master-data workspace
+#### Scenario: Оператор открывает chart import zone внутри master-data workspace
 - **GIVEN** пользователь имеет доступ к Pools и выбран tenant context
 - **WHEN** пользователь открывает `/pools/master-data`
-- **THEN** система показывает рабочую зону `Sync` вместе с остальными master-data зонами
+- **THEN** система показывает рабочую зону `Chart Import` вместе с остальными master-data зонами
 - **AND** оператор остаётся внутри canonical workspace shell без второго route-level foundation
 
 ### Requirement: Master-data API MUST использовать Problem Details контракт для ошибок
@@ -215,14 +216,14 @@ UI master-data workspace MUST предоставлять оператору read
 
 ### Requirement: Workspace MUST показывать capability-gated sync и revision states для reusable accounts
 Система ДОЛЖНА (SHALL) явно показывать оператору shipped capability state reusable accounts:
-- `GLAccount` как bootstrap-capable entity без generic mutating outbound/bidirectional sync actions;
+- `GLAccount` как chart-import/bootstrap-capable entity без generic mutating outbound/bidirectional sync actions;
 - `GLAccountSet` как profile с draft/publish/revision lifecycle и non-actionable sync state.
 
-#### Scenario: UI не показывает mutating sync controls для GLAccountSet
-- **GIVEN** оператор открывает sync-oriented surface reusable-data workspace
-- **WHEN** система строит список доступных действий из generated capability policy
-- **THEN** `GLAccountSet` не появляется как mutating sync entity
-- **AND** оператор видит его как profile/revision state, а не как direct target sync object
+#### Scenario: UI не подменяет canonical chart import generic sync semantics
+- **GIVEN** оператор работает с reusable account surfaces в `/pools/master-data`
+- **WHEN** система показывает доступные lifecycle actions для `GLAccount`
+- **THEN** UI разделяет `Chart Import` и `Bootstrap Import` от generic `Sync`
+- **AND** оператор не получает ложный сигнал, будто полный canonical chart-of-accounts нужно заводить через mutating sync launcher
 
 ### Requirement: Shared reusable-data UI helpers MUST оставаться registry-driven и fail-closed
 Система ДОЛЖНА (SHALL) строить operator-facing entity captions, bootstrap defaults, token catalogs и binding scope presentation из generated reusable-data registry contract, а не из raw `entity_type` строк или string-specific frontend conventions.
@@ -406,4 +407,130 @@ UI ДОЛЖЕН (SHALL) явно объяснять, что:
 - **WHEN** оператор изучает eligibility diagnostics в `Launch Sync` drawer
 - **THEN** UI подсказывает, что one-off запуск для таких баз выполняется через `database_set`
 - **AND** launcher не пытается silently включить их в `cluster_all`
+
+### Requirement: Chart Import zone MUST предоставлять authoritative-source materialization lifecycle
+Система ДОЛЖНА (SHALL) в `/pools/master-data` предоставлять отдельную зону `Chart Import` для canonical chart-of-accounts materialization.
+
+Зона ДОЛЖНА (SHALL) поддерживать как минимум:
+- inspect authoritative source по compatibility class;
+- `preflight`;
+- `dry-run`;
+- `materialize`;
+- `verify followers` и/или `backfill bindings`.
+
+Система НЕ ДОЛЖНА (SHALL NOT) прятать этот lifecycle внутри generic `Sync` drawer или внутри `GLAccountSet` profile editor.
+
+#### Scenario: Оператор проходит staged lifecycle chart materialization
+- **GIVEN** для compatibility class настроен authoritative source
+- **WHEN** оператор открывает `Chart Import`
+- **THEN** UI показывает staged lifecycle `preflight -> dry-run -> materialize -> verify/backfill`
+- **AND** summary/results читаются как отдельный operator-facing chart workflow, а не как sync launch history
+
+### Requirement: Chart Import diagnostics MUST вести в Bindings remediation для follower failures
+Система ДОЛЖНА (SHALL) при fail-closed follower verify/backfill показывать machine-readable diagnostics и handoff в `Bindings` workspace.
+
+Handoff ДОЛЖЕН (SHALL) сохранять database-scoped remediation context как минимум для:
+- `entityType=gl_account`;
+- `databaseId=<target database>`;
+- при наличии `canonicalId=<canonical account>`.
+
+#### Scenario: Follower verify failure ведёт оператора в chart-scoped bindings remediation
+- **GIVEN** `Chart Import` verify/backfill завершился ambiguity, stale или missing-binding failure для follower database
+- **WHEN** оператор открывает detail проблемного follower outcome
+- **THEN** UI показывает operator-facing причину блокировки
+- **AND** предоставляет deep-link в `Bindings` workspace с сохранённым database/entity remediation context
+
+### Requirement: Chart Import UI MUST distinguish identity discovery from row-source readiness
+Система ДОЛЖНА (SHALL) в `Chart Import` показывать оператору отдельно:
+- обнаруженный `chart_identity`;
+- readiness источника строк для initial load;
+- row-source mapping/probe evidence.
+
+UI НЕ ДОЛЖЕН (SHALL NOT) показывать metadata-only candidate как готовый к полной загрузке плана счетов.
+
+UI НЕ ДОЛЖЕН (SHALL NOT) показывать raw credentials, authorization headers или raw chart row payload из probe/provenance/diagnostics.
+
+#### Scenario: Load-ready candidate показывает row-source evidence
+- **GIVEN** discovery вернул candidate с `row_source_status=ready`
+- **WHEN** UI показывает candidate
+- **THEN** оператор видит OData entity, key/code/name mapping и evidence fingerprint
+- **AND** `Prepare Initial Load` доступен после выбора candidate
+- **AND** UI не показывает secrets или raw chart rows
+
+#### Scenario: Identity-only candidate блокирует initial load
+- **GIVEN** discovery вернул candidate с `chart_identity`, но без готового row source
+- **WHEN** оператор выбирает candidate
+- **THEN** UI показывает, что metadata snapshot не содержит строки плана счетов
+- **AND** `Prepare Initial Load` disabled
+- **AND** UI показывает remediation path: probe OData, configure mapping, or use advanced override with explicit row source
+
+### Requirement: Chart Import UI MUST require reviewed row-source mapping before initial load
+Система ДОЛЖНА (SHALL) перед `Prepare Initial Load` показывать operator-reviewed row-source mapping для selected candidate.
+
+Для standard `ChartOfAccounts_*` mapping UI МОЖЕТ (MAY) auto-populate deterministic fields, но ДОЛЖЕН (SHALL) показывать их до запуска `preflight/dry-run`.
+
+Manual `chart_identity` override НЕ ДОЛЖЕН (SHALL NOT) обходить row-source readiness gate.
+
+#### Scenario: Оператор подтверждает auto-discovered OData mapping
+- **GIVEN** selected candidate load-ready
+- **WHEN** оператор готовит initial load
+- **THEN** UI показывает mapping `Ref_Key`, `Code`, `Description`
+- **AND** source setup сохраняет row-source provenance вместе с chart candidate
+- **AND** дальнейший materialize использует тот же reviewed source evidence
+
+#### Scenario: Manual override требует row-source mapping
+- **GIVEN** оператор включил advanced manual override
+- **WHEN** он вводит `chart_identity`
+- **THEN** UI всё равно требует готовый row source или explicit mapping/probe
+- **AND** initial load не стартует только на основании free-text `chart_identity`
+
+### Requirement: Chart Import UI MUST make reference database and discovered chart selection the primary setup path
+Система ДОЛЖНА (SHALL) в зоне `Chart Import` показывать primary setup flow как выбор эталонной ИБ и discovered chart candidate, а не как free-text ввод `chart_identity`.
+
+UI ДОЛЖЕН (SHALL) показывать для candidate:
+- `chart_identity`;
+- display name;
+- compatibility markers;
+- derivation/confidence;
+- source evidence version/fingerprint;
+- blocking diagnostics, если candidate incomplete.
+
+#### Scenario: Оператор выбирает план счетов из обнаруженных candidates
+- **GIVEN** оператор открыл `Chart Import`
+- **WHEN** он выбирает reference database
+- **THEN** UI загружает discovered chart candidates для этой database
+- **AND** оператор выбирает candidate из списка
+- **AND** free-text `chart_identity` не является основным required input
+- **AND** UI показывает, из какой source evidence version получен candidate
+
+#### Scenario: Incomplete candidate не выглядит готовым к загрузке
+- **GIVEN** discovery вернул diagnostic вместо usable candidate
+- **WHEN** UI показывает результат discovery
+- **THEN** primary initial-load action заблокирован
+- **AND** оператор видит machine-readable причину и возможный remediation path
+
+### Requirement: Chart Import UI MUST provide guided initial load from the selected reference database
+Система ДОЛЖНА (SHALL) в `Chart Import` предоставить guided initial-load action, который ведёт оператора от выбранной эталонной ИБ и chart candidate до materialize review.
+
+UI ДОЛЖЕН (SHALL) явно разделять стадии:
+- source setup;
+- preflight;
+- dry-run counters;
+- operator review;
+- materialize result.
+
+UI НЕ ДОЛЖЕН (SHALL NOT) скрывать первичную загрузку плана счетов за generic `Sync` launcher или за legacy `Bootstrap Import`.
+
+#### Scenario: Guided initial load требует review перед materialize
+- **GIVEN** discovery candidate выбран
+- **WHEN** оператор запускает initial load
+- **THEN** UI показывает preflight и dry-run results
+- **AND** materialize action доступен только после dry-run success и явного operator review
+- **AND** stale source/discovery evidence state требует повторного dry-run вместо materialize
+
+#### Scenario: Manual override остаётся advanced path
+- **GIVEN** discovery не дал usable result
+- **WHEN** оператор открывает advanced manual override
+- **THEN** UI требует `chart_identity` и override reason
+- **AND** показывает, что этот path будет проверен fail-closed preflight/dry-run стадиями
 

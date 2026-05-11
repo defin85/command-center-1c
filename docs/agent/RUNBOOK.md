@@ -27,6 +27,27 @@ bd prime
 ./debug/probe.sh all
 ```
 
+## Production Server Status
+
+Production SSH target is configured locally as aliases `cc1c-prod` and `command-center-1c-prod`.
+Use the alias in agent/operator commands instead of spelling raw host, port, and user.
+
+Read-only stack snapshot:
+
+```bash
+ssh cc1c-prod 'printf "time=%s\n" "$(date -Is)"; readlink -f /opt/command-center-1c/current; systemctl is-active cc1c-orchestrator cc1c-api-gateway cc1c-worker-ops cc1c-worker-workflows cc1c-event-subscriber cc1c-pool-outbox-dispatcher nginx redis-server postgresql clickhouse-server; df -h / /opt /var/lib/clickhouse'
+```
+
+Local service health on the host:
+
+```bash
+ssh cc1c-prod 'for url in http://127.0.0.1:8200/health http://127.0.0.1:8180/health http://127.0.0.1:9191/health http://127.0.0.1:9192/health; do code=$(curl --noproxy "*" -sS -o /tmp/cc1c-health-body -w "%{http_code}" --max-time 5 "$url" || true); body=$(head -c 180 /tmp/cc1c-health-body 2>/dev/null | tr "\n" " "); printf "%s http=%s body=%s\n" "$url" "$code" "$body"; done'
+```
+
+Notes:
+- `cc1c-worker-workflows` exposes live health on `9192` on the production host.
+- Public raw app ports are not the production health proof; verify app services through local host probes over SSH.
+
 ## Pool Factual Monitoring
 
 - Quick entry for a fresh session:

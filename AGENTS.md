@@ -33,6 +33,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 - Для product/domain context используй `docs/agent/DOMAIN_MAP.md`.
 - Для validation profiles и canonical checks используй `docs/agent/VERIFY.md`.
 - Для runtime start/restart/eval используй `docs/agent/RUNBOOK.md` и `DEBUG.md`.
+- Для production server status/deploy diagnostics используй SSH alias `cc1c-prod` (также `command-center-1c-prod`); точные health-команды держи в `docs/agent/RUNBOOK.md`.
 - Для manual Hindsight workflow и note taxonomy используй `docs/agent/MEMORY.md`.
 - Machine-readable entry points: `.codex/config.toml`, `./debug/runtime-inventory.sh --json`, `frontend/package.json`, `scripts/dev/*`.
 
