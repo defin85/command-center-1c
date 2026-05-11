@@ -2072,6 +2072,18 @@ const pools = {
         failClosedTitle: 'Fail-closed canonical intake',
         failClosedDescription: 'This drawer creates canonical receipt/sale batches through the shipped schema-template path only. Unsupported source classes are rejected on the public boundary.',
       },
+      kvo17Preview: {
+        title: 'KVO17 split preview',
+        description: 'Review rule revision, source identity, branch totals, and diagnostics before publication.',
+        blockedTitle: 'KVO17 split preview is blocked',
+        classifierRevision: 'Rule revision',
+        threshold: 'Threshold',
+        sourceDocument: 'Source document',
+        sourceSupplier: 'Source supplier',
+        branchSummary: 'KVO {{kvo}} · rows {{rows}} · amount {{amount}} · VAT {{vat}}',
+        diagnosticsTitle: 'Diagnostics',
+        noDiagnostics: 'No duplicate-source diagnostics.',
+      },
       messages: {
         failedToReadFile: 'Failed to read {{fileName}}',
         loadedJsonPayload: 'Loaded JSON payload from {{fileName}}',

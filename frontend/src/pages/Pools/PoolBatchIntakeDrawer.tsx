@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Alert, App as AntApp, Button, Form, Input, Radio, Select, Space, Typography, Upload } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, App as AntApp, Button, Descriptions, Form, Input, Radio, Select, Space, Tag, Typography, Upload } from 'antd'
 import { UploadOutlined } from '@ant-design/icons'
 
 import {
@@ -12,6 +12,13 @@ import {
 import { DrawerFormShell } from '../../components/platform/DrawerFormShell'
 import { usePoolsTranslation } from '../../i18n'
 import { resolveApiError } from './masterData/errorUtils'
+import {
+  PURCHASE_KVO01_SLOT,
+  PURCHASE_KVO17_SLOT,
+  buildKvo17PurchaseSplitPreview,
+  isKvo17PurchaseSplitSchemaTemplate,
+  type Kvo17PurchaseSplitPreview,
+} from './kvo17PurchaseSplitPreview'
 
 
 const { Text } = Typography
@@ -203,6 +210,32 @@ export function PoolBatchIntakeDrawer({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const batchKind = Form.useWatch('batch_kind', form) ?? initialValues.batchKind
   const uploadedFileName = Form.useWatch('uploaded_file_name', form)
+  const selectedSchemaTemplateId = Form.useWatch('schema_template_id', form)
+  const sourcePayloadJson = Form.useWatch('source_payload_json', form)
+  const selectedSchemaTemplate = useMemo(
+    () => schemaTemplates.find((item) => item.id === selectedSchemaTemplateId) ?? null,
+    [schemaTemplates, selectedSchemaTemplateId],
+  )
+  const kvo17PreviewState = useMemo(() => {
+    if (!isKvo17PurchaseSplitSchemaTemplate(selectedSchemaTemplate)) {
+      return null
+    }
+    const rawPayloadJson = sourcePayloadJson?.trim() || ''
+    if (!rawPayloadJson) {
+      return { preview: null, error: t('runs.batchIntake.validation.sourcePayloadRequired') }
+    }
+    try {
+      return {
+        preview: buildKvo17PurchaseSplitPreview(parseBatchPayloadJson(rawPayloadJson, t)),
+        error: null,
+      }
+    } catch (error) {
+      return {
+        preview: null,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }, [selectedSchemaTemplate, sourcePayloadJson, t])
 
   useEffect(() => {
     if (!open) {
@@ -294,6 +327,7 @@ export function PoolBatchIntakeDrawer({
       subtitle={t('runs.batchIntake.subtitle', { poolLabel })}
       submitText={t('runs.batchIntake.submit')}
       confirmLoading={submitting}
+      submitDisabled={Boolean(kvo17PreviewState?.error)}
       submitButtonTestId="pool-runs-batch-intake-submit"
       drawerTestId="pool-runs-batch-intake-drawer"
       width={880}
@@ -390,6 +424,13 @@ export function PoolBatchIntakeDrawer({
               autoSize={{ minRows: 6, maxRows: 14 }}
             />
           </Form.Item>
+          {kvo17PreviewState ? (
+            <Kvo17PurchaseSplitPreviewPanel
+              preview={kvo17PreviewState.preview}
+              error={kvo17PreviewState.error}
+              t={t}
+            />
+          ) : null}
           <Form.Item name="xlsx_base64" hidden>
             <Input />
           </Form.Item>
@@ -413,5 +454,86 @@ export function PoolBatchIntakeDrawer({
         </Form>
       </Space>
     </DrawerFormShell>
+  )
+}
+
+function Kvo17PurchaseSplitPreviewPanel({
+  preview,
+  error,
+  t,
+}: {
+  preview: Kvo17PurchaseSplitPreview | null
+  error: string | null
+  t: PoolsTranslate
+}) {
+  if (error) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        data-testid="pool-runs-batch-intake-kvo17-preview-error"
+        message={t('runs.batchIntake.kvo17Preview.blockedTitle')}
+        description={error}
+      />
+    )
+  }
+  if (!preview) {
+    return null
+  }
+  const kvo01 = preview.branches[PURCHASE_KVO01_SLOT]
+  const kvo17 = preview.branches[PURCHASE_KVO17_SLOT]
+
+  return (
+    <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid="pool-runs-batch-intake-kvo17-preview">
+      <Alert
+        type={preview.diagnostics.length > 0 ? 'warning' : 'success'}
+        showIcon
+        message={t('runs.batchIntake.kvo17Preview.title')}
+        description={t('runs.batchIntake.kvo17Preview.description')}
+      />
+      <Descriptions size="small" column={{ xs: 1, sm: 2 }}>
+        <Descriptions.Item label={t('runs.batchIntake.kvo17Preview.classifierRevision')}>
+          <Text code>{preview.classifierRevision}</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo17Preview.threshold')}>
+          <Text>{preview.thresholdAmount} RUB</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo17Preview.sourceDocument')}>
+          <Text>{preview.sourceDocumentIdentity.number} · {preview.sourceDocumentIdentity.date}</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo17Preview.sourceSupplier')}>
+          <Text>{preview.sourceSupplierProvenance.name} · {preview.sourceSupplierProvenance.ref}</Text>
+        </Descriptions.Item>
+      </Descriptions>
+      <Space size={[8, 8]} wrap>
+        <Tag color="blue" data-testid="pool-runs-batch-intake-kvo17-preview-kvo01">
+          {t('runs.batchIntake.kvo17Preview.branchSummary', {
+            kvo: kvo01.kvo,
+            rows: kvo01.rowCount,
+            amount: kvo01.totalAmount,
+            vat: kvo01.totalVatAmount,
+          })}
+        </Tag>
+        <Tag color="green" data-testid="pool-runs-batch-intake-kvo17-preview-kvo17">
+          {t('runs.batchIntake.kvo17Preview.branchSummary', {
+            kvo: kvo17.kvo,
+            rows: kvo17.rowCount,
+            amount: kvo17.totalAmount,
+            vat: kvo17.totalVatAmount,
+          })}
+        </Tag>
+      </Space>
+      {preview.diagnostics.length > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          data-testid="pool-runs-batch-intake-kvo17-preview-diagnostics"
+          message={t('runs.batchIntake.kvo17Preview.diagnosticsTitle')}
+          description={preview.diagnostics.map((item) => item.detail).join(' ')}
+        />
+      ) : (
+        <Text type="secondary">{t('runs.batchIntake.kvo17Preview.noDiagnostics')}</Text>
+      )}
+    </Space>
   )
 }
