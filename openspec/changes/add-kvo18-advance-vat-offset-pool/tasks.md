@@ -25,3 +25,10 @@
 - [x] 4.2 Add document policy compile tests for ПКО, advance invoice КВО 01, offset КВО 18, and technical realization state.
 - [x] 4.3 Add frontend/operator tests for staged controls, blocked states, and evidence display.
 - [x] 4.4 Run relevant pool backend tests, frontend focused tests, contract validation, and `openspec validate add-kvo18-advance-vat-offset-pool --strict --no-interactive`.
+
+## 5. Review Blocker Closure
+
+- [x] 5.1 Wire KVO 18 schema-template intake into the public `POST /pool-batches` path with lineage metadata and duplicate row identity fail-closed behavior.
+- [x] 5.2 Publish KVO 18 staged workflow aliases through the pool runtime template registry and route them through pool-domain runtime execution.
+- [x] 5.3 Bind ready KVO 18 UI staged controls to bounded stage submit metadata and block submit/stage actions on blocking diagnostics.
+- [x] 5.4 Re-run focused backend/frontend gates plus strict OpenSpec validation for the blocker closure.

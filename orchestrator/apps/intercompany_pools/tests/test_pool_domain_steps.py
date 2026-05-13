@@ -190,6 +190,57 @@ def _build_slot_snapshot(
     }
 
 
+@pytest.mark.django_db
+def test_execute_pool_runtime_step_records_kvo18_bounded_stage_context() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.SAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "batch_id": str(uuid4()),
+            "start_organization_id": str(uuid4()),
+            "kvo18_advance_vat_offset": {
+                "policy_revision": "kvo18_advance_vat_offset_policy.v1",
+                "stage_intent": "cash_receipt_order",
+                "content_hash": "a" * 64,
+                "stages": {
+                    "cash_receipt_order": {
+                        "state": "ready",
+                        "prerequisites": [],
+                        "produces": ["cash_receipt_order_ref"],
+                    },
+                    "advance_invoice_kvo01": {
+                        "state": "blocked",
+                        "prerequisites": ["cash_receipt_order"],
+                        "produces": ["advance_invoice_ref"],
+                    },
+                },
+            },
+        },
+    )
+    execution = _attach_execution(run=run, input_context={"pool_run_id": str(run.id)})
+
+    cash_result = execute_pool_runtime_step(
+        operation_type="pool.kvo18_advance_vat_offset.cash_receipt_order",
+        rendered_data={},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    invoice_result = execute_pool_runtime_step(
+        operation_type="pool.kvo18_advance_vat_offset.advance_invoice",
+        rendered_data={},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    persisted_context = WorkflowExecution.objects.get(id=execution.id).input_context
+    assert cash_result["status"] == "ready"
+    assert cash_result["stage_slot"] == "cash_receipt_order"
+    assert cash_result["produces"] == ["cash_receipt_order_ref"]
+    assert invoice_result["status"] == "skipped"
+    assert invoice_result["reason"] == "stage_intent_mismatch"
+    assert persisted_context["kvo18_advance_vat_offset_stage_cash_receipt_order"]["status"] == "ready"
+
+
 def _attach_active_topology(
     *,
     run: PoolRun,

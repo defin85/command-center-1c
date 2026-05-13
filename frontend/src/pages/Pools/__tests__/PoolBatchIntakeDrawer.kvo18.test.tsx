@@ -1,10 +1,22 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { App as AntApp, ConfigProvider } from 'antd'
 
 import { changeLanguage, ensureNamespaces } from '../../../i18n/runtime'
 import type { PoolSchemaTemplate } from '../../../api/intercompanyPools'
 import { PoolBatchIntakeDrawer } from '../PoolBatchIntakeDrawer'
+
+const apiMocks = vi.hoisted(() => ({
+  createPoolBatch: vi.fn(),
+}))
+
+vi.mock('../../../api/intercompanyPools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/intercompanyPools')>()
+  return {
+    ...actual,
+    createPoolBatch: apiMocks.createPoolBatch,
+  }
+})
 
 const kvo18Template: PoolSchemaTemplate = {
   id: 'schema-kvo18',
@@ -25,6 +37,16 @@ describe('PoolBatchIntakeDrawer KVO18 preview', () => {
   beforeAll(async () => {
     await ensureNamespaces('en', 'pools')
     await changeLanguage('en')
+  })
+
+  beforeEach(() => {
+    apiMocks.createPoolBatch.mockReset()
+    apiMocks.createPoolBatch.mockResolvedValue({
+      batch: { id: 'batch-1' },
+      settlement: { id: 'settlement-1' },
+      run: { id: 'run-1' },
+      created: true,
+    })
   })
 
   it('renders staged controls, technical state, and KVO evidence before submit', async () => {
@@ -57,6 +79,37 @@ describe('PoolBatchIntakeDrawer KVO18 preview', () => {
     )
   })
 
+  it('submits ready cash receipt stage with bounded KVO18 stage metadata', async () => {
+    const onCreated = vi.fn()
+    renderDrawer({ onCreated })
+
+    await selectOption('pool-runs-batch-intake-schema-template', 'kvo18-advance-vat-offset-intake - KVO18 Advance VAT Offset')
+    fireEvent.change(screen.getByTestId('pool-runs-batch-intake-source-payload'), {
+      target: {
+        value: JSON.stringify({
+          rows: [
+            buildAdvanceRow({ row_id: 'advance-1', amount: '1200.00', vat_amount: '200.00' }),
+            buildAdvanceRow({ row_id: 'advance-2', amount: '600.00', vat_amount: '100.00' }),
+          ],
+        }),
+      },
+    })
+
+    fireEvent.click(await screen.findByTestId('pool-runs-batch-intake-kvo18-stage-cash_receipt_order'))
+
+    await waitFor(() => {
+      expect(apiMocks.createPoolBatch).toHaveBeenCalledTimes(1)
+    })
+    expect(apiMocks.createPoolBatch.mock.calls[0][0]).toMatchObject({
+      batch_kind: 'receipt',
+      source_metadata: {
+        kvo18_stage_intent: 'cash_receipt_order',
+        kvo18_policy_revision: 'kvo18_advance_vat_offset_policy.v1',
+      },
+    })
+    expect(onCreated).toHaveBeenCalledTimes(1)
+  })
+
   it('blocks submit when required KVO18 fields are missing', async () => {
     renderDrawer()
 
@@ -79,7 +132,7 @@ describe('PoolBatchIntakeDrawer KVO18 preview', () => {
     })
   })
 
-  it('shows duplicate-row diagnostics without hiding staged controls', async () => {
+  it('blocks submit and stage action when duplicate row diagnostics are present', async () => {
     renderDrawer()
 
     await selectOption('pool-runs-batch-intake-schema-template', 'kvo18-advance-vat-offset-intake - KVO18 Advance VAT Offset')
@@ -97,7 +150,8 @@ describe('PoolBatchIntakeDrawer KVO18 preview', () => {
     expect(await screen.findByTestId('pool-runs-batch-intake-kvo18-preview-diagnostics')).toHaveTextContent(
       'Duplicate KVO18 advance VAT offset row_id.',
     )
-    expect(screen.getByTestId('pool-runs-batch-intake-kvo18-stage-cash_receipt_order')).toBeEnabled()
+    expect(screen.getByTestId('pool-runs-batch-intake-kvo18-stage-cash_receipt_order')).toBeDisabled()
+    expect(screen.getByTestId('pool-runs-batch-intake-submit')).toBeDisabled()
     expect(screen.getByTestId('pool-runs-batch-intake-kvo18-preview-summary')).toHaveTextContent(
       'rows 2 · amount 1800.00 · VAT 300.00',
     )
@@ -120,7 +174,7 @@ function buildAdvanceRow(overrides: Record<string, string> = {}) {
   }
 }
 
-function renderDrawer() {
+function renderDrawer(overrides: { onCreated?: Parameters<typeof PoolBatchIntakeDrawer>[0]['onCreated'] } = {}) {
   return render(
     <ConfigProvider>
       <AntApp>
@@ -140,7 +194,7 @@ function renderDrawer() {
             startOrganizationId: 'org-1',
           }}
           onClose={vi.fn()}
-          onCreated={vi.fn()}
+          onCreated={overrides.onCreated ?? vi.fn()}
         />
       </AntApp>
     </ConfigProvider>,

@@ -45,6 +45,7 @@ from apps.intercompany_pools.kvo18_advance_vat_offset_scheme import (
     build_kvo18_advance_vat_offset_scheme_metadata,
     build_kvo18_advance_vat_offset_topology_template_payload,
     ensure_kvo18_advance_vat_offset_scheme_assets,
+    ensure_kvo18_advance_vat_offset_workflow_template,
 )
 from apps.intercompany_pools.models import (
     BindingProfile,
@@ -56,6 +57,8 @@ from apps.intercompany_pools.models import (
 from apps.intercompany_pools.workflow_binding_attachments_store import (
     upsert_pool_workflow_binding_attachment,
 )
+from apps.intercompany_pools.runtime_template_registry import sync_pool_runtime_template_registry
+from apps.templates.template_runtime import resolve_runtime_template
 from apps.templates.workflow.models import DecisionTable
 from apps.tenancy.models import Tenant
 
@@ -275,6 +278,32 @@ def test_kvo18_topology_template_links_staged_slots_to_policy_slots() -> None:
         (ADVANCE_OFFSET_KVO18_SLOT, ADVANCE_OFFSET_KVO18_SLOT),
         (DECLARATION_EVIDENCE_SLOT, DECLARATION_EVIDENCE_SLOT),
     }
+
+
+@pytest.mark.django_db
+def test_kvo18_workflow_template_aliases_are_published_runtime_operations() -> None:
+    sync_pool_runtime_template_registry()
+    workflow_template = ensure_kvo18_advance_vat_offset_workflow_template()
+    dag_structure = workflow_template.dag_structure
+    nodes = dag_structure.nodes if hasattr(dag_structure, "nodes") else dag_structure["nodes"]
+
+    aliases = [
+        getattr(node, "template_id", "") or node["template_id"]
+        for node in nodes
+        if (getattr(node, "type", None) or node.get("type")) == "operation"
+    ]
+
+    assert aliases == [
+        "pool.kvo18_advance_vat_offset.normalize",
+        "pool.kvo18_advance_vat_offset.cash_receipt_order",
+        "pool.kvo18_advance_vat_offset.advance_invoice",
+        "pool.kvo18_advance_vat_offset.offset",
+        "pool.kvo18_advance_vat_offset.declaration_evidence",
+    ]
+    for alias in aliases:
+        runtime_template = resolve_runtime_template(template_alias=alias)
+        assert runtime_template.operation_type == alias
+        assert runtime_template.target_entity == "pool_run"
 
 
 @pytest.mark.django_db

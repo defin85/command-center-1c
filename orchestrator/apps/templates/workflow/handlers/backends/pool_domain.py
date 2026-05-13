@@ -44,6 +44,11 @@ class PoolDomainBackend(AbstractOperationBackend):
         "pool.master_data_sync.finalize",
         "pool.master_data_sync.launch",
         "pool.master_data_bootstrap.collection.stage",
+        "pool.kvo18_advance_vat_offset.normalize",
+        "pool.kvo18_advance_vat_offset.cash_receipt_order",
+        "pool.kvo18_advance_vat_offset.advance_invoice",
+        "pool.kvo18_advance_vat_offset.offset",
+        "pool.kvo18_advance_vat_offset.declaration_evidence",
     }
 
     BACKEND_NAME = "pool_domain"

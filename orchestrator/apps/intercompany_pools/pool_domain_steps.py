@@ -78,6 +78,14 @@ _OP_RECONCILIATION = "pool.reconciliation_report"
 _OP_APPROVAL_GATE = "pool.approval_gate"
 _OP_MASTER_DATA_GATE = "pool.master_data_gate"
 _OP_PUBLICATION = "pool.publication_odata"
+_KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY = "kvo18_advance_vat_offset"
+_OP_KVO18_NORMALIZE = "pool.kvo18_advance_vat_offset.normalize"
+_KVO18_STAGE_SLOT_BY_OPERATION = {
+    "pool.kvo18_advance_vat_offset.cash_receipt_order": "cash_receipt_order",
+    "pool.kvo18_advance_vat_offset.advance_invoice": "advance_invoice_kvo01",
+    "pool.kvo18_advance_vat_offset.offset": "advance_offset_kvo18",
+    "pool.kvo18_advance_vat_offset.declaration_evidence": "declaration_evidence",
+}
 POOL_RUNTIME_PUBLICATION_PATH_DISABLED = "POOL_RUNTIME_PUBLICATION_PATH_DISABLED"
 POOL_RUNTIME_RETRY_PAYLOAD_INVALID = "POOL_RUNTIME_RETRY_PAYLOAD_INVALID"
 POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
@@ -124,6 +132,14 @@ def execute_pool_runtime_step(
             execution=execution,
             execution_context=execution_context,
             rendered_data=rendered_data,
+        )
+
+    if operation_type == _OP_KVO18_NORMALIZE or operation_type in _KVO18_STAGE_SLOT_BY_OPERATION:
+        return _execute_kvo18_advance_vat_offset_step(
+            run=run,
+            execution=execution,
+            execution_context=execution_context,
+            operation_type=operation_type,
         )
 
     raise ValueError(f"POOL_RUNTIME_STEP_UNSUPPORTED: unsupported operation_type '{operation_type}'")
@@ -201,6 +217,71 @@ def _execute_prepare_input(
         "approval_state": approval_state,
         "publication_step_state": publication_step_state,
     }
+
+
+def _execute_kvo18_advance_vat_offset_step(
+    *,
+    run: PoolRun,
+    execution: Any,
+    execution_context: dict[str, Any],
+    operation_type: str,
+) -> dict[str, Any]:
+    del execution_context
+
+    run_input = _run_input(run)
+    kvo18_context = run_input.get(_KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY)
+    if not isinstance(kvo18_context, Mapping):
+        raise ValueError("KVO18_RUNTIME_CONTEXT_MISSING: run_input is missing KVO18 advance VAT offset context")
+
+    if operation_type == _OP_KVO18_NORMALIZE:
+        result = {
+            "step": "kvo18_advance_vat_offset.normalize",
+            "status": "normalized",
+            "pool_run_id": str(run.id),
+            "policy_revision": str(kvo18_context.get("policy_revision") or "").strip(),
+            "content_hash": str(kvo18_context.get("content_hash") or "").strip(),
+        }
+        _update_execution_context(
+            execution=execution,
+            updates={"kvo18_advance_vat_offset_normalized": result},
+        )
+        return result
+
+    stage_slot = _KVO18_STAGE_SLOT_BY_OPERATION[operation_type]
+    stages = kvo18_context.get("stages")
+    stage = stages.get(stage_slot) if isinstance(stages, Mapping) else None
+    if not isinstance(stage, Mapping):
+        raise ValueError(f"KVO18_STAGE_CONTEXT_MISSING: stage '{stage_slot}' is missing from KVO18 context")
+
+    stage_intent = str(kvo18_context.get("stage_intent") or "").strip()
+    stage_state = str(stage.get("state") or "").strip()
+    if stage_intent and stage_intent != stage_slot:
+        status = "skipped"
+        reason = "stage_intent_mismatch"
+    elif stage_state != "ready":
+        status = "blocked"
+        reason = "prerequisites_not_satisfied"
+    else:
+        status = "ready"
+        reason = ""
+
+    result = {
+        "step": f"kvo18_advance_vat_offset.{stage_slot}",
+        "status": status,
+        "reason": reason,
+        "pool_run_id": str(run.id),
+        "stage_slot": stage_slot,
+        "stage_intent": stage_intent,
+        "prerequisites": list(stage.get("prerequisites") or []),
+        "produces": list(stage.get("produces") or []),
+        "policy_revision": str(kvo18_context.get("policy_revision") or "").strip(),
+        "content_hash": str(kvo18_context.get("content_hash") or "").strip(),
+    }
+    _update_execution_context(
+        execution=execution,
+        updates={f"kvo18_advance_vat_offset_stage_{stage_slot}": result},
+    )
+    return result
 
 
 def _execute_distribution_top_down(

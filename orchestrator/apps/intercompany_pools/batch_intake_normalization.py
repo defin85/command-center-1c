@@ -10,7 +10,19 @@ from typing import Any, Callable, Mapping
 from django.core.exceptions import ValidationError
 
 from .batch_intake_parsers import parse_pool_schema_template_amount, parse_pool_schema_template_rows
+from .kvo18_advance_vat_offset_intake import (
+    KVO18_ADVANCE_VAT_OFFSET_INTAKE_SCHEMA_VERSION,
+    KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS,
+    normalize_kvo18_advance_vat_offset_batch,
+)
+from .kvo18_advance_vat_offset_preview import build_kvo18_advance_vat_offset_preview
+from .kvo18_advance_vat_offset_scheme import (
+    KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE,
+    KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+)
 from .models import OrganizationPool, PoolBatchKind, PoolBatchSourceType, PoolSchemaTemplate
+
+KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY = "kvo18_advance_vat_offset"
 
 
 @dataclass(frozen=True)
@@ -118,6 +130,20 @@ def _normalize_schema_template_upload(
     del integration_reference
 
     template = _validate_schema_template(pool=pool, schema_template=schema_template)
+    if _is_kvo18_advance_vat_offset_template(template):
+        return _normalize_kvo18_advance_vat_offset_schema_template_upload(
+            pool=pool,
+            batch_kind=batch_kind,
+            source_type=source_type,
+            period_start=period_start,
+            period_end=period_end,
+            template=template,
+            json_payload=json_payload,
+            raw_payload_ref=raw_payload_ref,
+            source_reference=source_reference,
+            source_metadata=source_metadata,
+        )
+
     rows = parse_pool_schema_template_rows(
         template=template,
         json_payload=json_payload,
@@ -197,6 +223,105 @@ def _normalize_schema_template_upload(
             "normalized_rows": len(lines),
             "total_amount_with_vat": total_amount_with_vat.quantize(quantizer),
         },
+    )
+
+
+def _normalize_kvo18_advance_vat_offset_schema_template_upload(
+    *,
+    pool: OrganizationPool,
+    batch_kind: str,
+    source_type: str,
+    period_start: date,
+    period_end: date | None,
+    template: PoolSchemaTemplate,
+    json_payload: Any | None,
+    raw_payload_ref: str,
+    source_reference: str,
+    source_metadata: dict[str, Any],
+) -> CanonicalPoolBatchNormalizationResult:
+    kvo18_batch = normalize_kvo18_advance_vat_offset_batch(
+        json_payload=json_payload,
+        source_reference=source_reference,
+        raw_payload_ref=raw_payload_ref,
+        source_metadata=source_metadata,
+    )
+    preview = build_kvo18_advance_vat_offset_preview(batch=kvo18_batch)
+    blocking_diagnostics = [
+        diagnostic
+        for diagnostic in preview.diagnostics
+        if str(diagnostic.get("severity") or "").strip().lower() == "error"
+    ]
+    if blocking_diagnostics:
+        details = "; ".join(
+            str(diagnostic.get("detail") or diagnostic.get("code") or "")
+            for diagnostic in blocking_diagnostics
+        )
+        raise ValidationError(details or "KVO18 advance VAT offset intake has blocking diagnostics.")
+
+    lines = [
+        CanonicalPoolBatchLine(
+            line_no=row.line_no,
+            organization_inn=row.counterparty_ref,
+            amount_with_vat=row.amount,
+            external_id=row.row_id,
+            vat_amount=row.vat_amount,
+        )
+        for row in kvo18_batch.rows
+    ]
+    kvo18_preview = preview.as_dict()
+    stage_intent = str(source_metadata.get("kvo18_stage_intent") or "").strip()
+    kvo18_metadata = {
+        "policy_revision": preview.policy_revision,
+        "content_hash": kvo18_batch.content_hash,
+        "document_policy_slots": list(KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS),
+        "stage_intent": stage_intent,
+        "stages": kvo18_preview["stages"],
+        "technical_realization_policy": kvo18_preview["technical_realization_policy"],
+        "evidence_requirements": kvo18_preview["evidence_requirements"],
+        "rows": kvo18_preview["rows"],
+        "diagnostics": kvo18_preview["diagnostics"],
+    }
+    normalized_source_metadata = dict(source_metadata)
+    normalized_source_metadata[KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY] = kvo18_metadata
+
+    summary = kvo18_batch.normalization_summary()
+    total_amount = summary["total_amount"]
+    total_vat_amount = summary["total_vat_amount"]
+    provenance = CanonicalPoolBatchProvenance(
+        batch_kind=batch_kind,
+        source_type=source_type,
+        source_reference=source_reference,
+        raw_payload_ref=raw_payload_ref,
+        content_hash=kvo18_batch.content_hash,
+        source_metadata=normalized_source_metadata,
+        schema_reference={
+            "template_id": str(template.id),
+            "template_code": template.code,
+        },
+        integration_reference=None,
+    )
+    return CanonicalPoolBatchNormalizationResult(
+        pool_id=str(pool.id),
+        period_start=period_start,
+        period_end=period_end,
+        provenance=provenance,
+        lines=lines,
+        normalization_summary={
+            **summary,
+            "total_amount_with_vat": total_amount,
+            "total_vat_amount": total_vat_amount,
+            "kvo18_policy_revision": preview.policy_revision,
+        },
+    )
+
+
+def _is_kvo18_advance_vat_offset_template(template: PoolSchemaTemplate) -> bool:
+    metadata = template.metadata if isinstance(template.metadata, Mapping) else {}
+    schema = template.schema if isinstance(template.schema, Mapping) else {}
+    return (
+        template.code == KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE
+        or metadata.get("scheme_code") == KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE
+        or schema.get("version") == KVO18_ADVANCE_VAT_OFFSET_INTAKE_SCHEMA_VERSION
     )
 
 

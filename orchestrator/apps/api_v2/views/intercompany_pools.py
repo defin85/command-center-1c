@@ -114,7 +114,10 @@ from apps.intercompany_pools.publication_policy import (
     MAX_RETRY_INTERVAL_SECONDS,
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_preview
-from apps.intercompany_pools.batch_intake_normalization import normalize_pool_batch_intake
+from apps.intercompany_pools.batch_intake_normalization import (
+    KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY,
+    normalize_pool_batch_intake,
+)
 from apps.intercompany_pools.factual_review_queue import (
     FACTUAL_REVIEW_ACTION_ATTRIBUTE,
     FACTUAL_REVIEW_ACTION_RECONCILE,
@@ -2931,6 +2934,16 @@ def _decimal_to_api_string(value: Any) -> str:
         return "0.00"
 
 
+def _json_safe_pool_batch_summary(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return _decimal_to_api_string(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_pool_batch_summary(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe_pool_batch_summary(item) for item in value]
+    return value
+
+
 def _decode_batch_xlsx_payload(raw_value: str | None) -> bytes | None:
     token = str(raw_value or "").strip()
     if not token:
@@ -2965,6 +2978,9 @@ def _create_pool_batch_and_settlement(
     created_by,
 ) -> tuple[PoolBatch, PoolBatchSettlement]:
     total_amount = Decimal(str(normalized_batch.normalization_summary.get("total_amount_with_vat") or "0.00"))
+    normalization_summary = _json_safe_pool_batch_summary(
+        dict(normalized_batch.normalization_summary)
+    )
     batch = PoolBatch.objects.create(
         tenant=pool.tenant,
         pool=pool,
@@ -2979,7 +2995,7 @@ def _create_pool_batch_and_settlement(
         content_hash=normalized_batch.provenance.content_hash,
         source_metadata=_build_pool_batch_source_metadata(normalized_batch=normalized_batch),
         normalization_summary={
-            **dict(normalized_batch.normalization_summary),
+            **normalization_summary,
             "total_amount_with_vat": _decimal_to_api_string(total_amount),
         },
         created_by=created_by,
@@ -2998,6 +3014,32 @@ def _create_pool_batch_and_settlement(
         },
     )
     return batch, settlement
+
+
+def _build_batch_backed_top_down_run_input(
+    *,
+    batch: PoolBatch,
+    start_organization: Organization,
+    normalized_batch,
+) -> dict[str, Any]:
+    run_input: dict[str, Any] = {
+        "batch_id": str(batch.id),
+        "start_organization_id": str(start_organization.id),
+    }
+    source_metadata = normalized_batch.provenance.source_metadata
+    kvo18_metadata = (
+        source_metadata.get(KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY)
+        if isinstance(source_metadata, Mapping)
+        else None
+    )
+    if isinstance(kvo18_metadata, Mapping):
+        run_input[KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY] = {
+            "policy_revision": str(kvo18_metadata.get("policy_revision") or "").strip(),
+            "stage_intent": str(kvo18_metadata.get("stage_intent") or "").strip(),
+            "content_hash": str(kvo18_metadata.get("content_hash") or "").strip(),
+            "document_policy_slots": list(kvo18_metadata.get("document_policy_slots") or []),
+        }
+    return run_input
 
 
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
@@ -6252,15 +6294,22 @@ def list_or_create_pool_batches(request):
             )
 
             if data["batch_kind"] == PoolBatchKind.RECEIPT:
+                requested_run_input = _build_batch_backed_top_down_run_input(
+                    batch=batch,
+                    start_organization=requested_start_organization,
+                    normalized_batch=normalized_batch,
+                )
                 source_batch, start_organization = _resolve_batch_backed_top_down_scope(
                     tenant_id=tenant_id,
                     pool=pool,
                     period_start=data["period_start"],
                     period_end=data.get("period_end"),
-                    run_input={
-                        "batch_id": str(batch.id),
-                        "start_organization_id": str(data["start_organization_id"]),
-                    },
+                    run_input=requested_run_input,
+                )
+                run_input = _build_batch_backed_top_down_run_input(
+                    batch=batch,
+                    start_organization=start_organization,
+                    normalized_batch=normalized_batch,
                 )
                 run_result = upsert_pool_run(
                     tenant=pool.tenant,
@@ -6271,10 +6320,7 @@ def list_or_create_pool_batches(request):
                     workflow_binding_id=resolved_workflow_binding.binding_id,
                     workflow_binding_revision=resolved_workflow_binding.revision,
                     binding_profile_revision_id=resolved_workflow_binding.binding_profile_revision_id,
-                    run_input={
-                        "batch_id": str(batch.id),
-                        "start_organization_id": str(start_organization.id),
-                    },
+                    run_input=run_input,
                     source_batch=source_batch,
                     start_organization=start_organization,
                     mode=PoolRunMode.SAFE,

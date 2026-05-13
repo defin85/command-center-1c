@@ -53,6 +53,11 @@ type BatchIntakeFormValues = {
   uploaded_file_name?: string
 }
 
+type BatchIntakeSubmitOptions = {
+  kvo18StageIntent?: Kvo18StageSlot
+  kvo18Preview?: Kvo18AdvanceVatOffsetPreview | null
+}
+
 type PoolsTranslate = ReturnType<typeof usePoolsTranslation>['t']
 
 type PoolBatchIntakeDrawerProps = {
@@ -144,8 +149,10 @@ function requireTrimmedValue(
 function buildPoolBatchCreatePayload(
   values: BatchIntakeFormValues,
   poolId: string,
-  t: PoolsTranslate
+  t: PoolsTranslate,
+  options: BatchIntakeSubmitOptions = {},
 ): PoolBatchCreatePayload {
+  const sourceMetadata = buildKvo18StageSourceMetadata(options)
   const payloadBase = {
     pool_id: poolId,
     source_type: 'schema_template_upload' as const,
@@ -154,6 +161,7 @@ function buildPoolBatchCreatePayload(
     period_end: values.period_end?.trim() || null,
     source_reference: values.source_reference?.trim() || '',
     raw_payload_ref: values.raw_payload_ref?.trim() || '',
+    ...(sourceMetadata ? { source_metadata: sourceMetadata } : {}),
   }
   const xlsxBase64 = values.xlsx_base64?.trim() || ''
 
@@ -198,6 +206,18 @@ function buildPoolBatchCreatePayload(
     ...payloadBase,
     batch_kind: 'sale',
     json_payload: parseBatchPayloadJson(rawPayloadJson, t),
+  }
+}
+
+function buildKvo18StageSourceMetadata(
+  options: BatchIntakeSubmitOptions,
+): Record<string, unknown> | null {
+  if (!options.kvo18StageIntent) {
+    return null
+  }
+  return {
+    kvo18_stage_intent: options.kvo18StageIntent,
+    kvo18_policy_revision: options.kvo18Preview?.policyRevision ?? '',
   }
 }
 
@@ -266,6 +286,7 @@ export function PoolBatchIntakeDrawer({
       }
     }
   }, [selectedSchemaTemplate, sourcePayloadJson, t])
+  const kvo18HasBlockingDiagnostics = Boolean(kvo18PreviewState?.preview?.diagnostics.length)
 
   useEffect(() => {
     if (!open) {
@@ -310,7 +331,7 @@ export function PoolBatchIntakeDrawer({
     return false
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (options: BatchIntakeSubmitOptions = {}) => {
     if (!poolId) {
       setSubmitError(t('runs.batchIntake.messages.selectPoolBeforeCreate'))
       return
@@ -326,7 +347,7 @@ export function PoolBatchIntakeDrawer({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      const payload = buildPoolBatchCreatePayload(values, poolId, t)
+      const payload = buildPoolBatchCreatePayload(values, poolId, t, options)
       const response = await createPoolBatch(payload)
       await onCreated(response, {
         batchKind: values.batch_kind,
@@ -357,7 +378,7 @@ export function PoolBatchIntakeDrawer({
       subtitle={t('runs.batchIntake.subtitle', { poolLabel })}
       submitText={t('runs.batchIntake.submit')}
       confirmLoading={submitting}
-      submitDisabled={Boolean(kvo17PreviewState?.error || kvo18PreviewState?.error)}
+      submitDisabled={Boolean(kvo17PreviewState?.error || kvo18PreviewState?.error || kvo18HasBlockingDiagnostics)}
       submitButtonTestId="pool-runs-batch-intake-submit"
       drawerTestId="pool-runs-batch-intake-drawer"
       width={880}
@@ -466,6 +487,13 @@ export function PoolBatchIntakeDrawer({
               preview={kvo18PreviewState.preview}
               error={kvo18PreviewState.error}
               t={t}
+              stageActionsDisabled={submitting || kvo18HasBlockingDiagnostics}
+              onStageSubmit={(slotKey) => {
+                void handleSubmit({
+                  kvo18StageIntent: slotKey,
+                  kvo18Preview: kvo18PreviewState.preview,
+                })
+              }}
             />
           ) : null}
           <Form.Item name="xlsx_base64" hidden>
@@ -579,10 +607,14 @@ function Kvo18AdvanceVatOffsetPreviewPanel({
   preview,
   error,
   t,
+  stageActionsDisabled,
+  onStageSubmit,
 }: {
   preview: Kvo18AdvanceVatOffsetPreview | null
   error: string | null
   t: PoolsTranslate
+  stageActionsDisabled: boolean
+  onStageSubmit: (slotKey: Kvo18StageSlot) => void
 }) {
   if (error) {
     return (
@@ -639,7 +671,8 @@ function Kvo18AdvanceVatOffsetPreviewPanel({
               key={slotKey}
               size="small"
               type={stage.state === 'ready' ? 'primary' : 'default'}
-              disabled={stage.state !== 'ready'}
+              disabled={stage.state !== 'ready' || stageActionsDisabled}
+              onClick={() => onStageSubmit(slotKey)}
               data-testid={`pool-runs-batch-intake-kvo18-stage-${slotKey}`}
             >
               {stage.label}

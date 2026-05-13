@@ -138,6 +138,41 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         description="System-managed pool runtime step: bounded factual read/reconcile source sync.",
         display_order=75,
     ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.kvo18_advance_vat_offset.normalize",
+        label="KVO18 Advance VAT Offset Normalize",
+        step_id="kvo18_advance_vat_offset.normalize",
+        description="System-managed KVO18 advance VAT offset step: normalize staged advance rows.",
+        display_order=80,
+    ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.kvo18_advance_vat_offset.cash_receipt_order",
+        label="KVO18 Advance VAT Offset Cash Receipt Order",
+        step_id="kvo18_advance_vat_offset.cash_receipt_order",
+        description="System-managed KVO18 advance VAT offset step: cash receipt order stage.",
+        display_order=82,
+    ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.kvo18_advance_vat_offset.advance_invoice",
+        label="KVO18 Advance VAT Offset Advance Invoice",
+        step_id="kvo18_advance_vat_offset.advance_invoice",
+        description="System-managed KVO18 advance VAT offset step: advance invoice KVO01 stage.",
+        display_order=84,
+    ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.kvo18_advance_vat_offset.offset",
+        label="KVO18 Advance VAT Offset",
+        step_id="kvo18_advance_vat_offset.offset",
+        description="System-managed KVO18 advance VAT offset step: technical offset KVO18 stage.",
+        display_order=86,
+    ),
+    PoolRuntimeTemplateSpec(
+        alias="pool.kvo18_advance_vat_offset.declaration_evidence",
+        label="KVO18 Advance VAT Offset Declaration Evidence",
+        step_id="kvo18_advance_vat_offset.declaration_evidence",
+        description="System-managed KVO18 advance VAT offset step: declaration evidence stage.",
+        display_order=88,
+    ),
 )
 
 

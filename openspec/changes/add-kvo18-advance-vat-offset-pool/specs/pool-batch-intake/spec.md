@@ -14,7 +14,7 @@ Each normalized operation row ДОЛЖЕН (SHALL) contain:
 - deterministic row identity;
 - optional source reference.
 
-Intake ДОЛЖЕН (SHALL) fail closed before ПКО or invoice creation if required fields are missing or cannot be mapped.
+Intake ДОЛЖЕН (SHALL) work through the public `schema_template_upload` batch path and fail closed before ПКО or invoice creation if required fields are missing, cannot be mapped, or row identity is duplicated.
 
 #### Scenario: Operator enters advance rows for KVO 18 workflow
 - **GIVEN** operator enters counterparty, contract, amount and VAT rate for one or more advance operations
@@ -27,6 +27,18 @@ Intake ДОЛЖЕН (SHALL) fail closed before ПКО or invoice creation if req
 - **WHEN** operator starts intake for the КВО 18 pool
 - **THEN** intake fails before document creation
 - **AND** diagnostic output identifies the missing contract mapping
+
+#### Scenario: Uploaded KVO 18 schema template starts a staged receipt batch
+- **GIVEN** operator selected the public КВО 18 advance VAT schema template and a compatible top-down workflow binding
+- **WHEN** the operator submits advance rows through the canonical batch intake endpoint
+- **THEN** system creates a receipt `PoolBatch` with КВО 18 policy metadata, staged slots, row lineage, and total amount/VAT summary
+- **AND** the linked run input records the selected stage intent, policy revision, content hash, and document policy slots
+
+#### Scenario: Duplicate row identity blocks KVO 18 intake
+- **GIVEN** two uploaded advance rows contain the same deterministic row identity
+- **WHEN** operator submits the КВО 18 intake
+- **THEN** intake fails before document creation
+- **AND** diagnostics identify the duplicate row identity
 
 ### Requirement: KVO 18 advance VAT pool MUST track per-stage row state
 

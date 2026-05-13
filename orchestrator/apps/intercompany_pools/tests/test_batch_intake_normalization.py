@@ -16,6 +16,37 @@ from apps.intercompany_pools.models import (
 from apps.tenancy.models import Tenant
 
 
+def _kvo18_advance_rows() -> list[dict[str, str]]:
+    return [
+        {
+            "counterparty_ref": "counterparty-001",
+            "counterparty_name": "Buyer One",
+            "contract_ref": "contract-001",
+            "contract_name": "Advance Contract",
+            "operation_date": "2026-01-15",
+            "amount": "1200.00",
+            "vat_rate": "20%",
+            "vat_amount": "200.00",
+            "currency": "RUB",
+            "row_id": "advance-1",
+            "source_reference": "upload://advance-1",
+        },
+        {
+            "counterparty_ref": "counterparty-001",
+            "counterparty_name": "Buyer One",
+            "contract_ref": "contract-001",
+            "contract_name": "Advance Contract",
+            "operation_date": "2026-01-16",
+            "amount": "600.00",
+            "vat_rate": "20%",
+            "vat_amount": "100.00",
+            "currency": "RUB",
+            "row_id": "advance-2",
+            "source_reference": "upload://advance-2",
+        },
+    ]
+
+
 @pytest.fixture
 def intake_scope() -> dict[str, object]:
     tenant = Tenant.objects.create(slug="batch-intake-normalization", name="Batch Intake Normalization")
@@ -94,6 +125,102 @@ def test_normalize_pool_batch_intake_builds_canonical_batch_from_schema_template
         "normalized_rows": 2,
         "total_amount_with_vat": Decimal("150.50"),
     }
+
+
+@pytest.mark.django_db
+def test_normalize_pool_batch_intake_builds_kvo18_advance_batch_from_public_schema_template(
+    intake_scope: dict[str, object],
+) -> None:
+    from apps.intercompany_pools.batch_intake_normalization import normalize_pool_batch_intake
+    from apps.intercompany_pools.kvo18_advance_vat_offset_intake import (
+        CASH_RECEIPT_ORDER_SLOT,
+        KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION,
+        build_kvo18_advance_vat_offset_intake_schema,
+    )
+    from apps.intercompany_pools.kvo18_advance_vat_offset_scheme import (
+        KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE,
+        KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    )
+
+    tenant = intake_scope["tenant"]
+    pool = intake_scope["pool"]
+    template = PoolSchemaTemplate.objects.create(
+        tenant=tenant,
+        code=KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+        name="KVO18 Advance VAT Offset",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema=build_kvo18_advance_vat_offset_intake_schema(),
+        metadata={"scheme_code": KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE},
+    )
+
+    result = normalize_pool_batch_intake(
+        pool=pool,
+        batch_kind=PoolBatchKind.RECEIPT,
+        source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+        schema_template=template,
+        json_payload={"rows": _kvo18_advance_rows()},
+        raw_payload_ref="files/kvo18-advance.json",
+        source_reference="kvo18-advance-upload",
+        source_metadata={"kvo18_stage_intent": CASH_RECEIPT_ORDER_SLOT},
+    )
+
+    kvo18_metadata = result.provenance.source_metadata["kvo18_advance_vat_offset"]
+    assert result.provenance.content_hash == kvo18_metadata["content_hash"]
+    assert result.provenance.schema_reference == {
+        "template_id": str(template.id),
+        "template_code": KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    }
+    assert result.normalization_summary["total_amount_with_vat"] == Decimal("1800.00")
+    assert result.normalization_summary["total_vat_amount"] == Decimal("300.00")
+    assert result.normalization_summary["kvo18_policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
+    assert [line.external_id for line in result.lines] == ["advance-1", "advance-2"]
+    assert [line.amount_with_vat for line in result.lines] == [Decimal("1200.00"), Decimal("600.00")]
+    assert kvo18_metadata["stage_intent"] == CASH_RECEIPT_ORDER_SLOT
+    assert kvo18_metadata["policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
+    assert kvo18_metadata["stages"][CASH_RECEIPT_ORDER_SLOT]["state"] == "ready"
+    assert kvo18_metadata["diagnostics"] == []
+
+
+@pytest.mark.django_db
+def test_normalize_pool_batch_intake_fails_closed_for_duplicate_kvo18_row_identity(
+    intake_scope: dict[str, object],
+) -> None:
+    from apps.intercompany_pools.batch_intake_normalization import normalize_pool_batch_intake
+    from apps.intercompany_pools.kvo18_advance_vat_offset_intake import build_kvo18_advance_vat_offset_intake_schema
+    from apps.intercompany_pools.kvo18_advance_vat_offset_scheme import (
+        KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE,
+        KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    )
+
+    tenant = intake_scope["tenant"]
+    pool = intake_scope["pool"]
+    template = PoolSchemaTemplate.objects.create(
+        tenant=tenant,
+        code=KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+        name="KVO18 Advance VAT Offset",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema=build_kvo18_advance_vat_offset_intake_schema(),
+        metadata={"scheme_code": KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE},
+    )
+    rows = _kvo18_advance_rows()
+    rows[1]["row_id"] = rows[0]["row_id"]
+
+    with pytest.raises(ValidationError, match="Duplicate KVO18 advance VAT offset source row_id"):
+        normalize_pool_batch_intake(
+            pool=pool,
+            batch_kind=PoolBatchKind.RECEIPT,
+            source_type=PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+            schema_template=template,
+            json_payload={"rows": rows},
+        )
 
 
 @pytest.mark.django_db

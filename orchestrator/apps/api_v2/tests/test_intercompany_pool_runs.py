@@ -4758,6 +4758,127 @@ def test_create_pool_batch_receipt_intake_persists_batch_settlement_and_linked_r
 
 
 @pytest.mark.django_db
+def test_create_pool_batch_receipt_intake_accepts_kvo18_advance_vat_offset_schema(
+    authenticated_client: APIClient,
+    user: User,
+    pool: OrganizationPool,
+) -> None:
+    from apps.intercompany_pools.kvo18_advance_vat_offset_intake import (
+        CASH_RECEIPT_ORDER_SLOT,
+        KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION,
+        build_kvo18_advance_vat_offset_intake_schema,
+    )
+    from apps.intercompany_pools.kvo18_advance_vat_offset_scheme import (
+        KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE,
+        KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    )
+
+    binding = _build_pool_workflow_binding_payload(
+        pool=pool,
+        workflow_definition_key="kvo18-advance-vat-offset",
+        workflow_revision=1,
+        direction=PoolRunDirection.TOP_DOWN,
+        mode=PoolRunMode.SAFE,
+        tags=["kvo18"],
+    )
+    binding = _prepare_pool_runtime_bindings(
+        tenant=pool.tenant,
+        pool=pool,
+        bindings=[binding],
+        period_start=date(2026, 1, 1),
+        actor=user,
+    )[0][0]
+    start_organization, _, _ = _create_batch_backed_top_down_scope(
+        tenant=pool.tenant,
+        pool=pool,
+    )
+    schema_template = PoolSchemaTemplate.objects.create(
+        tenant=pool.tenant,
+        code=KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+        name="KVO18 Advance VAT Offset",
+        format=PoolSchemaTemplateFormat.JSON,
+        is_public=True,
+        is_active=True,
+        schema=build_kvo18_advance_vat_offset_intake_schema(),
+        metadata={"scheme_code": KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE},
+    )
+
+    with patch(
+        "apps.api_v2.views.intercompany_pools.start_pool_run_workflow_execution",
+        side_effect=lambda *args, **kwargs: SimpleNamespace(run=kwargs["run"]),
+    ):
+        response = authenticated_client.post(
+            "/api/v2/pools/batches/",
+            {
+                "pool_id": str(pool.id),
+                "batch_kind": PoolBatchKind.RECEIPT,
+                "source_type": PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+                "schema_template_id": str(schema_template.id),
+                "pool_workflow_binding_id": binding["binding_id"],
+                "start_organization_id": str(start_organization.id),
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-31",
+                "source_reference": "kvo18-advance-upload",
+                "raw_payload_ref": "files/kvo18-advance.json",
+                "source_metadata": {"kvo18_stage_intent": CASH_RECEIPT_ORDER_SLOT},
+                "json_payload": {
+                    "rows": [
+                        {
+                            "counterparty_ref": "counterparty-001",
+                            "counterparty_name": "Buyer One",
+                            "contract_ref": "contract-001",
+                            "contract_name": "Advance Contract",
+                            "operation_date": "2026-01-15",
+                            "amount": "1200.00",
+                            "vat_rate": "20%",
+                            "vat_amount": "200.00",
+                            "currency": "RUB",
+                            "row_id": "advance-1",
+                        },
+                        {
+                            "counterparty_ref": "counterparty-001",
+                            "counterparty_name": "Buyer One",
+                            "contract_ref": "contract-001",
+                            "contract_name": "Advance Contract",
+                            "operation_date": "2026-01-16",
+                            "amount": "600.00",
+                            "vat_rate": "20%",
+                            "vat_amount": "100.00",
+                            "currency": "RUB",
+                            "row_id": "advance-2",
+                        },
+                    ],
+                },
+            },
+            format="json",
+        )
+
+    assert response.status_code == 201, response.json()
+    payload = response.json()
+    batch = PoolBatch.objects.get(id=payload["batch"]["id"])
+    run = PoolRun.objects.get(id=payload["run"]["id"])
+
+    kvo18_metadata = batch.source_metadata["kvo18_advance_vat_offset"]
+    assert batch.normalization_summary["total_amount_with_vat"] == "1800.00"
+    assert batch.normalization_summary["total_vat_amount"] == "300.00"
+    assert batch.normalization_summary["kvo18_policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
+    assert kvo18_metadata["policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
+    assert kvo18_metadata["stage_intent"] == CASH_RECEIPT_ORDER_SLOT
+    assert kvo18_metadata["rows"][0]["row_id"] == "advance-1"
+    assert run.run_input["kvo18_advance_vat_offset"] == {
+        "policy_revision": KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION,
+        "stage_intent": CASH_RECEIPT_ORDER_SLOT,
+        "content_hash": kvo18_metadata["content_hash"],
+        "document_policy_slots": [
+            "cash_receipt_order",
+            "advance_invoice_kvo01",
+            "advance_offset_kvo18",
+            "declaration_evidence",
+        ],
+    }
+
+
+@pytest.mark.django_db
 def test_create_pool_batch_receipt_intake_stays_available_when_factual_context_is_degraded(
     authenticated_client: APIClient,
     user: User,

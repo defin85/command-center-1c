@@ -19,6 +19,11 @@ def test_sync_pool_runtime_template_registry_creates_required_aliases() -> None:
     assert "pool.master_data_sync.finalize" in expected_aliases
     assert "pool.master_data_sync.launch" in expected_aliases
     assert "pool.master_data_bootstrap.collection.stage" in expected_aliases
+    assert "pool.kvo18_advance_vat_offset.normalize" in expected_aliases
+    assert "pool.kvo18_advance_vat_offset.cash_receipt_order" in expected_aliases
+    assert "pool.kvo18_advance_vat_offset.advance_invoice" in expected_aliases
+    assert "pool.kvo18_advance_vat_offset.offset" in expected_aliases
+    assert "pool.kvo18_advance_vat_offset.declaration_evidence" in expected_aliases
     assert result.created == len(expected_aliases)
     assert result.updated == 0
     assert result.unchanged == 0
