@@ -19,6 +19,16 @@ import {
   isKvo17PurchaseSplitSchemaTemplate,
   type Kvo17PurchaseSplitPreview,
 } from './kvo17PurchaseSplitPreview'
+import {
+  ADVANCE_INVOICE_KVO01_SLOT,
+  ADVANCE_OFFSET_KVO18_SLOT,
+  CASH_RECEIPT_ORDER_SLOT,
+  DECLARATION_EVIDENCE_SLOT,
+  buildKvo18AdvanceVatOffsetPreview,
+  isKvo18AdvanceVatOffsetSchemaTemplate,
+  type Kvo18AdvanceVatOffsetPreview,
+  type Kvo18StageSlot,
+} from './kvo18AdvanceVatOffsetPreview'
 
 
 const { Text } = Typography
@@ -236,6 +246,26 @@ export function PoolBatchIntakeDrawer({
       }
     }
   }, [selectedSchemaTemplate, sourcePayloadJson, t])
+  const kvo18PreviewState = useMemo(() => {
+    if (!isKvo18AdvanceVatOffsetSchemaTemplate(selectedSchemaTemplate)) {
+      return null
+    }
+    const rawPayloadJson = sourcePayloadJson?.trim() || ''
+    if (!rawPayloadJson) {
+      return { preview: null, error: t('runs.batchIntake.validation.sourcePayloadRequired') }
+    }
+    try {
+      return {
+        preview: buildKvo18AdvanceVatOffsetPreview(parseBatchPayloadJson(rawPayloadJson, t)),
+        error: null,
+      }
+    } catch (error) {
+      return {
+        preview: null,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }, [selectedSchemaTemplate, sourcePayloadJson, t])
 
   useEffect(() => {
     if (!open) {
@@ -327,7 +357,7 @@ export function PoolBatchIntakeDrawer({
       subtitle={t('runs.batchIntake.subtitle', { poolLabel })}
       submitText={t('runs.batchIntake.submit')}
       confirmLoading={submitting}
-      submitDisabled={Boolean(kvo17PreviewState?.error)}
+      submitDisabled={Boolean(kvo17PreviewState?.error || kvo18PreviewState?.error)}
       submitButtonTestId="pool-runs-batch-intake-submit"
       drawerTestId="pool-runs-batch-intake-drawer"
       width={880}
@@ -428,6 +458,13 @@ export function PoolBatchIntakeDrawer({
             <Kvo17PurchaseSplitPreviewPanel
               preview={kvo17PreviewState.preview}
               error={kvo17PreviewState.error}
+              t={t}
+            />
+          ) : null}
+          {kvo18PreviewState ? (
+            <Kvo18AdvanceVatOffsetPreviewPanel
+              preview={kvo18PreviewState.preview}
+              error={kvo18PreviewState.error}
               t={t}
             />
           ) : null}
@@ -533,6 +570,100 @@ function Kvo17PurchaseSplitPreviewPanel({
         />
       ) : (
         <Text type="secondary">{t('runs.batchIntake.kvo17Preview.noDiagnostics')}</Text>
+      )}
+    </Space>
+  )
+}
+
+function Kvo18AdvanceVatOffsetPreviewPanel({
+  preview,
+  error,
+  t,
+}: {
+  preview: Kvo18AdvanceVatOffsetPreview | null
+  error: string | null
+  t: PoolsTranslate
+}) {
+  if (error) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        data-testid="pool-runs-batch-intake-kvo18-preview-error"
+        message={t('runs.batchIntake.kvo18Preview.blockedTitle')}
+        description={error}
+      />
+    )
+  }
+  if (!preview) {
+    return null
+  }
+  const stageOrder: Kvo18StageSlot[] = [
+    CASH_RECEIPT_ORDER_SLOT,
+    ADVANCE_INVOICE_KVO01_SLOT,
+    ADVANCE_OFFSET_KVO18_SLOT,
+    DECLARATION_EVIDENCE_SLOT,
+  ]
+
+  return (
+    <Space direction="vertical" size="small" style={{ width: '100%' }} data-testid="pool-runs-batch-intake-kvo18-preview">
+      <Alert
+        type={preview.diagnostics.length > 0 ? 'warning' : 'success'}
+        showIcon
+        message={t('runs.batchIntake.kvo18Preview.title')}
+        description={t('runs.batchIntake.kvo18Preview.description')}
+      />
+      <Descriptions size="small" column={{ xs: 1, sm: 2 }}>
+        <Descriptions.Item label={t('runs.batchIntake.kvo18Preview.policyRevision')}>
+          <Text code>{preview.policyRevision}</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo18Preview.total')}>
+          <Text>{preview.totalAmount} {preview.currency} · VAT {preview.totalVatAmount}</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo18Preview.technicalState')}>
+          <Text>{preview.technicalRealizationPolicy.documentStateAfterOffset}</Text>
+        </Descriptions.Item>
+        <Descriptions.Item label={t('runs.batchIntake.kvo18Preview.evidence')}>
+          <Text>
+            {preview.evidenceRequirements.salesBookKvo01Required ? 'KVO 01' : ''}
+            {' / '}
+            {preview.evidenceRequirements.purchaseBookKvo18Required ? 'KVO 18' : ''}
+          </Text>
+        </Descriptions.Item>
+      </Descriptions>
+      <Space size={[8, 8]} wrap>
+        {stageOrder.map((slotKey) => {
+          const stage = preview.stages[slotKey]
+          return (
+            <Button
+              key={slotKey}
+              size="small"
+              type={stage.state === 'ready' ? 'primary' : 'default'}
+              disabled={stage.state !== 'ready'}
+              data-testid={`pool-runs-batch-intake-kvo18-stage-${slotKey}`}
+            >
+              {stage.label}
+            </Button>
+          )
+        })}
+      </Space>
+      <Tag color="purple" data-testid="pool-runs-batch-intake-kvo18-preview-summary">
+        {t('runs.batchIntake.kvo18Preview.summary', {
+          rows: preview.rowCount,
+          amount: preview.totalAmount,
+          vat: preview.totalVatAmount,
+        })}
+      </Tag>
+      {preview.diagnostics.length > 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          data-testid="pool-runs-batch-intake-kvo18-preview-diagnostics"
+          message={t('runs.batchIntake.kvo18Preview.diagnosticsTitle')}
+          description={preview.diagnostics.map((item) => item.detail).join(' ')}
+        />
+      ) : (
+        <Text type="secondary">{t('runs.batchIntake.kvo18Preview.noDiagnostics')}</Text>
       )}
     </Space>
   )

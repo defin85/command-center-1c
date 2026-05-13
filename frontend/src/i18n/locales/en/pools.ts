@@ -2084,6 +2084,18 @@ const pools = {
         diagnosticsTitle: 'Diagnostics',
         noDiagnostics: 'No duplicate-source diagnostics.',
       },
+      kvo18Preview: {
+        title: 'KVO18 advance VAT offset preview',
+        description: 'Review staged actions, technical realization policy, book evidence, and declaration readiness before publication.',
+        blockedTitle: 'KVO18 advance VAT offset preview is blocked',
+        policyRevision: 'Policy revision',
+        total: 'Advance total',
+        technicalState: 'Technical realization state',
+        evidence: 'Book evidence',
+        summary: 'rows {{rows}} · amount {{amount}} · VAT {{vat}}',
+        diagnosticsTitle: 'Diagnostics',
+        noDiagnostics: 'No row diagnostics.',
+      },
       messages: {
         failedToReadFile: 'Failed to read {{fileName}}',
         loadedJsonPayload: 'Loaded JSON payload from {{fileName}}',

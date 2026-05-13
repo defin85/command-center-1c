@@ -2084,6 +2084,18 @@ const pools = {
         diagnosticsTitle: 'Diagnostics',
         noDiagnostics: 'Duplicate-source diagnostics отсутствуют.',
       },
+      kvo18Preview: {
+        title: 'Preview зачета KVO18 по авансу',
+        description: 'Проверьте staged actions, policy технической реализации, book evidence и declaration readiness до публикации.',
+        blockedTitle: 'Preview зачета KVO18 заблокирован',
+        policyRevision: 'Revision policy',
+        total: 'Сумма авансов',
+        technicalState: 'Состояние технической реализации',
+        evidence: 'Book evidence',
+        summary: 'строк {{rows}} · сумма {{amount}} · НДС {{vat}}',
+        diagnosticsTitle: 'Diagnostics',
+        noDiagnostics: 'Row diagnostics отсутствуют.',
+      },
       messages: {
         failedToReadFile: 'Не удалось прочитать {{fileName}}',
         loadedJsonPayload: 'JSON payload загружен из {{fileName}}',
