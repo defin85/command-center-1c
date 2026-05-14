@@ -18,6 +18,7 @@ properties:
     type: string
     enum:
       - schema_template_upload
+      - kvo17_generated_purchase
       - integration
       - manual
   schema_template_id:

@@ -27,6 +27,11 @@ from .kvo17_purchase_split_intake import (
     build_kvo17_purchase_split_classifier_config,
     build_kvo17_purchase_split_intake_schema,
 )
+from .kvo17_generated_purchase_intake import (
+    KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+    KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
+    KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+)
 from .models import (
     BindingProfile,
     BindingProfileRevision,
@@ -78,6 +83,13 @@ def build_kvo17_purchase_split_scheme_metadata() -> dict[str, Any]:
             "preview_required": True,
             "audit_required": True,
             "original_supplier_remains_declaration_provenance": True,
+        },
+        "generated_purchase_mode": {
+            "supported": True,
+            "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+            "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
+            "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+            "requires_publication_readback": True,
         },
     }
 
@@ -574,6 +586,10 @@ def _ensure_binding_profile(
             "scheme_code": KVO17_PURCHASE_SPLIT_SCHEME_CODE,
             "classifier_revision": KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION,
             "binding_id": KVO17_PURCHASE_SPLIT_BINDING_ID,
+            "generated_purchase_supported": True,
+            "generated_purchase_source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+            "generated_purchase_request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
+            "generated_purchase_manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
         },
         "role_mapping": {
             "source_supplier": "topology:source_supplier",

@@ -1,0 +1,35 @@
+type: object
+additionalProperties: false
+properties:
+  period_start:
+    type: string
+    format: date
+  period_end:
+    type: string
+    format: date
+  seed:
+    type: string
+  currency:
+    type: string
+    default: RUB
+  vat_rate:
+    type: string
+    default: 20%
+  invoice_number_prefix:
+    type: string
+    default: KVO17
+  counterparties:
+    type: array
+    minItems: 1
+    items:
+      $ref: ./Kvo17GeneratedPurchaseCounterpartyPayload.yaml
+  amount_ranges:
+    type: array
+    minItems: 2
+    maxItems: 2
+    items:
+      $ref: ./Kvo17GeneratedPurchaseAmountRangePayload.yaml
+required:
+  - seed
+  - counterparties
+  - amount_ranges

@@ -1750,6 +1750,13 @@ def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> N
     total_targets = _parse_non_negative_int(publication_summary.get("total_targets"), default=0)
     succeeded_targets = _parse_non_negative_int(publication_summary.get("succeeded_targets"), default=0)
     failed_targets = _parse_non_negative_int(publication_summary.get("failed_targets"), default=0)
+    kvo17_verification = _project_kvo17_generated_purchase_verification_from_projection(
+        run=run,
+        execution=execution,
+        publication_summary=publication_summary,
+    )
+    if kvo17_verification is not None:
+        publication_summary = kvo17_verification["publication_summary"]
 
     update_fields: set[str] = {"updated_at"}
     if run.workflow_execution_id != execution.id:
@@ -1777,6 +1784,9 @@ def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> N
             target_status = PoolRun.STATUS_PARTIAL_SUCCESS
         elif succeeded_targets > 0:
             target_status = PoolRun.STATUS_PUBLISHED
+    if kvo17_verification is not None and kvo17_verification["blocked"]:
+        target_status = PoolRun.STATUS_FAILED
+        failure_message = str(kvo17_verification["failure_message"])
 
     if target_status in {
         PoolRun.STATUS_PUBLISHED,
@@ -1819,8 +1829,15 @@ def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> N
             PoolRun.STATUS_VALIDATED,
             PoolRun.STATUS_PUBLISHING,
         }:
-            run.mark_failed(error=failure_message, summary=publication_summary)
+            diagnostics = (
+                list(kvo17_verification["diagnostics"])
+                if kvo17_verification is not None and kvo17_verification["blocked"]
+                else None
+            )
+            run.mark_failed(error=failure_message, diagnostics=diagnostics, summary=publication_summary)
             update_fields.update({"status", "completed_at", "last_error", "publication_summary"})
+            if diagnostics is not None:
+                update_fields.add("diagnostics")
         elif run.status == PoolRun.STATUS_FAILED:
             run.publication_summary = publication_summary
             run.last_error = failure_message
@@ -1831,6 +1848,62 @@ def _sync_pool_run_terminal_state_from_publication_projection(*, execution) -> N
 
     if len(update_fields) > 1:
         run.save(update_fields=sorted(update_fields))
+
+
+def _project_kvo17_generated_purchase_verification_from_projection(
+    *,
+    run,
+    execution,
+    publication_summary: Mapping[str, object],
+) -> dict[str, object] | None:
+    from apps.intercompany_pools.kvo17_generated_purchase_publication_diagnostics import (
+        KVO17_GENERATED_PURCHASE_VERIFICATION_CONTEXT_KEY,
+        verify_kvo17_generated_purchase_publication,
+    )
+
+    publication_results = _extract_publication_result_payloads(execution.final_result or {})
+    execution_context = execution.input_context if isinstance(execution.input_context, dict) else {}
+    report = verify_kvo17_generated_purchase_publication(
+        run=run,
+        execution_context=execution_context,
+        publication_results=publication_results,
+    )
+    if str(report.get("status") or "").strip() == "not_applicable":
+        return None
+
+    updated_context = dict(execution_context)
+    existing_verification = updated_context.get(POOL_RUNTIME_VERIFICATION_CONTEXT_KEY)
+    verification = dict(existing_verification) if isinstance(existing_verification, Mapping) else {}
+    report_status = str(report.get("status") or "").strip().lower()
+    existing_status = str(verification.get("status") or "").strip().lower()
+    if report_status == "failed" or existing_status == "failed":
+        verification["status"] = "failed"
+    elif report_status == "passed":
+        verification["status"] = "passed"
+    else:
+        verification.setdefault("status", "not_verified")
+    if report_status in {"passed", "failed"}:
+        verification["summary"] = dict(report.get("summary") or {})
+    verification[KVO17_GENERATED_PURCHASE_VERIFICATION_CONTEXT_KEY] = report
+    updated_context[POOL_RUNTIME_VERIFICATION_CONTEXT_KEY] = verification
+
+    blocked = report_status == "failed"
+    if blocked:
+        updated_context["publication_step_state"] = PUBLICATION_STEP_STATE_STARTED
+    execution.input_context = updated_context
+
+    updated_summary = dict(publication_summary)
+    updated_summary[KVO17_GENERATED_PURCHASE_VERIFICATION_CONTEXT_KEY] = {
+        "status": report_status,
+        "summary": dict(report.get("summary") or {}),
+        "diagnostics_count": len(report.get("diagnostics") or []),
+    }
+    return {
+        "blocked": blocked,
+        "publication_summary": updated_summary,
+        "diagnostics": list(report.get("diagnostics") or []),
+        "failure_message": "KVO17_GENERATED_PURCHASE_READBACK_BLOCKED",
+    }
 
 
 def _sync_pool_batch_workflow_state_from_execution(*, execution) -> None:

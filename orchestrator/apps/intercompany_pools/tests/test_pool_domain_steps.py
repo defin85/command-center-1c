@@ -25,6 +25,10 @@ from apps.intercompany_pools.document_policy_contract import (
     POOL_DOCUMENT_POLICY_CHAIN_INVALID,
     POOL_DOCUMENT_POLICY_MAPPING_INVALID,
 )
+from apps.intercompany_pools.kvo18_advance_vat_offset_document_plan import (
+    build_kvo18_advance_vat_offset_compiled_policy_slots,
+)
+from apps.intercompany_pools.kvo17_generated_purchase_intake import KVO17_GENERATED_PURCHASE_METADATA_KEY
 from apps.intercompany_pools.master_data_dedupe import ingest_pool_master_data_source_record
 from apps.intercompany_pools.master_data_feature_flags import MasterDataGateConfigInvalidError
 from apps.intercompany_pools.models import (
@@ -190,6 +194,97 @@ def _build_slot_snapshot(
     }
 
 
+def _build_kvo18_runtime_context(
+    *,
+    stage_intent: str = "cash_receipt_order",
+    stage_overrides: dict[str, object] | None = None,
+) -> dict[str, object]:
+    stages: dict[str, object] = {
+        "cash_receipt_order": {
+            "slot_key": "cash_receipt_order",
+            "label": "Создать ПКО",
+            "state": "ready",
+            "prerequisites": [],
+            "produces": ["cash_receipt_order_ref"],
+        },
+        "advance_invoice_kvo01": {
+            "slot_key": "advance_invoice_kvo01",
+            "label": "Создать СФ на аванс",
+            "state": "blocked",
+            "prerequisites": ["cash_receipt_order"],
+            "produces": ["advance_invoice_ref", "sales_book_kvo01_evidence"],
+        },
+        "advance_offset_kvo18": {
+            "slot_key": "advance_offset_kvo18",
+            "label": "Сформировать зачет (КВО 18)",
+            "state": "blocked",
+            "prerequisites": ["advance_invoice_kvo01", "operator_preview_confirmation"],
+            "produces": [
+                "technical_realization_ref",
+                "technical_realization_final_state",
+                "purchase_book_kvo18_evidence",
+            ],
+        },
+        "declaration_evidence": {
+            "slot_key": "declaration_evidence",
+            "label": "Проверить декларацию",
+            "state": "blocked",
+            "prerequisites": ["advance_offset_kvo18"],
+            "produces": ["declaration_projection_kvo01_kvo18"],
+        },
+    }
+    if stage_overrides:
+        for slot_key, stage_patch in stage_overrides.items():
+            if isinstance(stage_patch, dict) and isinstance(stages.get(slot_key), dict):
+                stages[slot_key] = {**stages[slot_key], **stage_patch}
+
+    return {
+        "policy_revision": "kvo18_advance_vat_offset_policy.v1",
+        "stage_intent": stage_intent,
+        "content_hash": "a" * 64,
+        "document_policy_slots": [
+            "cash_receipt_order",
+            "advance_invoice_kvo01",
+            "advance_offset_kvo18",
+            "declaration_evidence",
+        ],
+        "stages": stages,
+        "technical_realization_policy": {
+            "required": True,
+            "amount_rule": "total_advance_amount",
+            "document_state_after_offset": "unposted_after_purchase_book_evidence",
+        },
+        "evidence_requirements": {
+            "sales_book_kvo01_required": True,
+            "purchase_book_kvo18_required": True,
+            "document_creation_alone_is_success": False,
+        },
+        "rows": [
+            {
+                "line_no": 1,
+                "row_id": "advance-1",
+                "row_fingerprint": "fp-advance-1",
+                "counterparty": {"ref": "counterparty-001", "name": "Buyer One"},
+                "contract": {"ref": "contract-001", "name": "Advance Contract"},
+                "operation_date": "2026-01-15",
+                "amount": "1200.00",
+                "vat_rate": "20%",
+                "vat_amount": "200.00",
+                "currency": "RUB",
+                "source_reference": "upload-1",
+                "source_document_number": "SRC-1",
+                "lineage": {
+                    "cash_receipt_order": {"required": True, "state": "pending"},
+                    "advance_invoice_kvo01": {"required": True, "state": "blocked"},
+                    "advance_offset_kvo18": {"required": True, "state": "blocked"},
+                    "declaration_evidence": {"required": True, "state": "blocked"},
+                },
+            },
+        ],
+        "diagnostics": [],
+    }
+
+
 @pytest.mark.django_db
 def test_execute_pool_runtime_step_records_kvo18_bounded_stage_context() -> None:
     run = _create_pool_run(
@@ -197,27 +292,27 @@ def test_execute_pool_runtime_step_records_kvo18_bounded_stage_context() -> None
         direction=PoolRunDirection.TOP_DOWN,
         run_input={
             "batch_id": str(uuid4()),
-            "start_organization_id": str(uuid4()),
-            "kvo18_advance_vat_offset": {
-                "policy_revision": "kvo18_advance_vat_offset_policy.v1",
-                "stage_intent": "cash_receipt_order",
-                "content_hash": "a" * 64,
-                "stages": {
-                    "cash_receipt_order": {
-                        "state": "ready",
-                        "prerequisites": [],
-                        "produces": ["cash_receipt_order_ref"],
-                    },
-                    "advance_invoice_kvo01": {
-                        "state": "blocked",
-                        "prerequisites": ["cash_receipt_order"],
-                        "produces": ["advance_invoice_ref"],
-                    },
-                },
-            },
+            "kvo18_advance_vat_offset": _build_kvo18_runtime_context(),
         },
     )
-    execution = _attach_execution(run=run, input_context={"pool_run_id": str(run.id)})
+    database = _create_database(tenant=run.tenant, suffix="kvo18-cash")
+    start_organization = Organization.objects.create(
+        tenant=run.tenant,
+        database=database,
+        name=f"KVO18 Start {uuid4().hex[:6]}",
+        inn=f"77{uuid4().hex[:10]}",
+    )
+    run.run_input["start_organization_id"] = str(start_organization.id)
+    run.save(update_fields=["run_input", "updated_at"])
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: (
+                build_kvo18_advance_vat_offset_compiled_policy_slots()
+            ),
+        },
+    )
 
     cash_result = execute_pool_runtime_step(
         operation_type="pool.kvo18_advance_vat_offset.cash_receipt_order",
@@ -236,9 +331,52 @@ def test_execute_pool_runtime_step_records_kvo18_bounded_stage_context() -> None
     assert cash_result["status"] == "ready"
     assert cash_result["stage_slot"] == "cash_receipt_order"
     assert cash_result["produces"] == ["cash_receipt_order_ref"]
+    publication_payload = cash_result["publication_payload"]["pool_runtime"]
+    assert publication_payload["kvo18_stage_slot"] == "cash_receipt_order"
+    assert publication_payload["documents_by_database"][str(database.id)][0]["СуммаДокумента"] == "1200.00"
+    assert publication_payload["document_chains_by_database"][str(database.id)][0]["documents"][0][
+        "document_role"
+    ] == "cash_receipt_order"
     assert invoice_result["status"] == "skipped"
     assert invoice_result["reason"] == "stage_intent_mismatch"
     assert persisted_context["kvo18_advance_vat_offset_stage_cash_receipt_order"]["status"] == "ready"
+    assert persisted_context["pool_runtime_publication_payload"] == cash_result["publication_payload"]
+
+
+@pytest.mark.django_db
+def test_execute_pool_runtime_step_fails_closed_when_kvo18_stage_slot_is_missing() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.SAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            "batch_id": str(uuid4()),
+            "kvo18_advance_vat_offset": _build_kvo18_runtime_context(
+                stage_intent="advance_offset_kvo18",
+                stage_overrides={"advance_offset_kvo18": {"state": "ready"}},
+            ),
+        },
+    )
+    slots = build_kvo18_advance_vat_offset_compiled_policy_slots()
+    slots.pop("advance_offset_kvo18")
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY: slots,
+        },
+    )
+
+    with pytest.raises(ValueError, match="KVO18_POLICY_SLOT_MISSING"):
+        execute_pool_runtime_step(
+            operation_type="pool.kvo18_advance_vat_offset.offset",
+            rendered_data={},
+            context={"pool_run_id": str(run.id)},
+            execution=execution,
+        )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert "pool_runtime_publication_payload" not in execution.input_context
+    assert "kvo18_advance_vat_offset_stage_advance_offset_kvo18" not in execution.input_context
 
 
 def _attach_active_topology(
@@ -479,6 +617,252 @@ def test_prepare_input_derives_starting_amount_from_batch_backed_top_down_run() 
     execution.refresh_from_db(fields=["input_context"])
     assert output["prepared_input"]["starting_amount"] == "125.50"
     assert execution.input_context["pool_runtime_prepared_input"]["starting_amount"] == "125.50"
+
+
+@pytest.mark.django_db
+def test_distribution_uses_kvo17_generated_document_plan_without_topology_branch_slots() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            KVO17_GENERATED_PURCHASE_METADATA_KEY: {
+                "content_hash": "manifest-hash",
+                "document_plan_version": "kvo17_generated_purchase_document_plan.v1",
+            }
+        },
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+    )
+    artifact = {
+        "version": DOCUMENT_PLAN_ARTIFACT_VERSION,
+        "run_id": str(run.id),
+        "distribution_artifact_ref": {
+            "version": "kvo17_generated_purchase_manifest.v1",
+            "topology_version_ref": "generated-topology",
+        },
+        "topology_version_ref": "generated-topology",
+        "policy_refs": [
+            {
+                "slot_key": "kvo17_generated_purchase_pair",
+                "edge_ref": {
+                    "parent_node_id": "kvo17-generated-source",
+                    "child_node_id": "organization-1",
+                },
+                "policy_version": "document_policy.v1",
+                "source": "kvo17_generated_purchase.single_edge_pair_policy",
+            }
+        ],
+        "targets": [
+            {
+                "database_id": "database-1",
+                "chains": [
+                    {
+                        "chain_id": "kvo17_generated_purchase_pair:supplier-001",
+                        "edge_ref": {
+                            "parent_node_id": "kvo17-generated-source",
+                            "child_node_id": "organization-1",
+                        },
+                        "policy_source": "kvo17_generated_purchase.single_edge_pair_policy",
+                        "policy_version": "document_policy.v1",
+                        "allocation": {"amount": "300.00"},
+                        "documents": [
+                            {
+                                "document_id": "kvo17_generated_small_kvo17_receipt",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "document_role": "purchase",
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-small",
+                                "field_mapping": {
+                                    "Number": "KVO17-1",
+                                    "Date": "2026-01-15T00:00:00",
+                                    "КодВидаОперации": "17",
+                                    "СуммаДокумента": "100.00",
+                                },
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                            },
+                            {
+                                "document_id": "kvo17_generated_large_kvo01_receipt",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "document_role": "purchase",
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-large",
+                                "field_mapping": {
+                                    "Number": "KVO17-1",
+                                    "Date": "2026-01-15T00:00:00",
+                                    "КодВидаОперации": "01",
+                                    "СуммаДокумента": "200.00",
+                                },
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        "compile_summary": {
+            "compiled_edges": 1,
+            "targets_count": 1,
+            "chains_count": 1,
+            "documents_count": 2,
+            "compiled_at": "2026-01-01T00:00:00+00:00",
+        },
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY: artifact,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.distribution_calculation.top_down",
+        rendered_data={"pool_runtime": {"step_id": "distribution_calculation"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    execution.refresh_from_db(fields=["input_context"])
+    assert output["distribution"]["edge_strategy"] == "single_edge_multi_document_chain"
+    assert output["distribution_artifact"]["coverage"]["is_full"] is True
+    assert output["distribution_artifact"]["balance"]["source_total"] == "300.00"
+    documents = output["publication_payload"]["pool_runtime"]["document_chains_by_database"]["database-1"][0][
+        "documents"
+    ]
+    assert [document["document_id"] for document in documents] == [
+        "kvo17_generated_small_kvo17_receipt",
+        "kvo17_generated_large_kvo01_receipt",
+    ]
+    assert execution.input_context["pool_runtime_distribution"]["status"] == "generated"
+
+
+@pytest.mark.django_db
+def test_kvo17_preview_prepares_publication_payload_for_atomic_publication() -> None:
+    run = _create_pool_run(
+        mode=PoolRunMode.UNSAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={
+            KVO17_GENERATED_PURCHASE_METADATA_KEY: {
+                "content_hash": "manifest-hash",
+                "document_plan_version": "kvo17_generated_purchase_document_plan.v1",
+                "document_plan": {
+                    "edge_strategy": {"mode": "single_edge_multi_document_chain"},
+                    "compile_summary": {
+                        "compiled_edges": 1,
+                        "targets_count": 1,
+                        "chains_count": 1,
+                        "documents_count": 2,
+                    },
+                },
+            }
+        },
+        period_start=date(2026, 1, 1),
+        period_end=date(2026, 1, 31),
+    )
+    artifact = {
+        "version": DOCUMENT_PLAN_ARTIFACT_VERSION,
+        "run_id": str(run.id),
+        "distribution_artifact_ref": {
+            "version": "kvo17_generated_purchase_manifest.v1",
+            "topology_version_ref": "generated-topology",
+        },
+        "topology_version_ref": "generated-topology",
+        "policy_refs": [
+            {
+                "slot_key": "kvo17_generated_purchase_pair",
+                "edge_ref": {
+                    "parent_node_id": "kvo17-generated-source",
+                    "child_node_id": "organization-1",
+                },
+                "policy_version": "document_policy.v1",
+                "source": "kvo17_generated_purchase.single_edge_pair_policy",
+            }
+        ],
+        "targets": [
+            {
+                "database_id": "database-1",
+                "chains": [
+                    {
+                        "chain_id": "kvo17_generated_purchase_pair:supplier-001",
+                        "edge_ref": {
+                            "parent_node_id": "kvo17-generated-source",
+                            "child_node_id": "organization-1",
+                        },
+                        "policy_source": "kvo17_generated_purchase.single_edge_pair_policy",
+                        "policy_version": "document_policy.v1",
+                        "allocation": {"amount": "300.00"},
+                        "documents": [
+                            {
+                                "document_id": "kvo17_generated_small_kvo17_receipt",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "document_role": "purchase",
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-small",
+                                "field_mapping": {
+                                    "Number": "KVO17-1",
+                                    "Date": "2026-01-15T00:00:00",
+                                    "КодВидаОперации": "17",
+                                    "СуммаДокумента": "100.00",
+                                },
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                            },
+                            {
+                                "document_id": "kvo17_generated_large_kvo01_receipt",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "document_role": "purchase",
+                                "invoice_mode": "optional",
+                                "idempotency_key": "doc-large",
+                                "field_mapping": {
+                                    "Number": "KVO17-1",
+                                    "Date": "2026-01-15T00:00:00",
+                                    "КодВидаОперации": "01",
+                                    "СуммаДокумента": "200.00",
+                                },
+                                "table_parts_mapping": {},
+                                "link_rules": {},
+                            },
+                        ],
+                    }
+                ],
+            }
+        ],
+        "compile_summary": {
+            "compiled_edges": 1,
+            "targets_count": 1,
+            "chains_count": 1,
+            "documents_count": 2,
+            "compiled_at": "2026-01-01T00:00:00+00:00",
+        },
+    }
+    execution = _attach_execution(
+        run=run,
+        input_context={
+            "pool_run_id": str(run.id),
+            POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY: artifact,
+        },
+    )
+
+    output = execute_pool_runtime_step(
+        operation_type="pool.kvo17_purchase_split.preview",
+        rendered_data={"pool_runtime": {"step_id": "kvo17_purchase_split.preview"}},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+
+    execution.refresh_from_db(fields=["input_context"])
+    publication_payload = execution.input_context["pool_runtime_publication_payload"]["pool_runtime"]
+    documents = publication_payload["document_chains_by_database"]["database-1"][0]["documents"]
+    assert output["publication_payload_prepared"] is True
+    assert output["target_database_count"] == 1
+    assert output["documents_count"] == 2
+    assert [document["document_id"] for document in documents] == [
+        "kvo17_generated_small_kvo17_receipt",
+        "kvo17_generated_large_kvo01_receipt",
+    ]
+    assert execution.input_context["pool_runtime_distribution"]["status"] == "generated"
 
 
 @pytest.mark.django_db

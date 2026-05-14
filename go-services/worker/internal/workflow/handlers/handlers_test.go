@@ -244,6 +244,90 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, "confirm_publication", captured.PublicationAuth.Source)
 	})
 
+	t.Run("publication node payload injects resolved link refs from previous publication results", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode(
+			"publication_odata__edge_parent_child__doc_invoice__publish_odata__deadbeefdeadbeef",
+			"Pool Publication Invoice",
+			"pool.publication_odata",
+		)
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		publicationPayload := map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":     "receipt",
+									"entity_name":     "Document_Receipt",
+									"idempotency_key": "receipt-key",
+									"payload":         map[string]interface{}{},
+								},
+								map[string]interface{}{
+									"document_id":     "invoice",
+									"entity_name":     "Document_Invoice",
+									"document_role":   "invoice",
+									"invoice_mode":    "required",
+									"idempotency_key": "invoice-key",
+									"link_to":         "receipt",
+									"field_mapping": map[string]interface{}{
+										"BaseDocument": "receipt.ref",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		execCtx = execCtx.Set("pool_runtime_publication_payload", publicationPayload)
+		execCtx = execCtx.SetNodeResult("receipt_publication", map[string]interface{}{
+			"status": "published",
+			"attempts": []map[string]interface{}{
+				{
+					"status": "success",
+					"response_summary": map[string]interface{}{
+						"successful_document_refs": map[string]interface{}{
+							"receipt-key": "receipt-ref-1",
+						},
+					},
+				},
+			},
+		})
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+
+		poolRuntime := captured.Payload["pool_runtime"].(map[string]interface{})
+		chainsByDatabase := poolRuntime["document_chains_by_database"].(map[string]interface{})
+		chains := chainsByDatabase["db-1"].([]interface{})
+		chain := chains[0].(map[string]interface{})
+		documents := chain["documents"].([]interface{})
+		invoice := documents[1].(map[string]interface{})
+		assert.Equal(t, map[string]interface{}{"receipt": "receipt-ref-1"}, invoice["resolved_link_refs"])
+
+		originalPoolRuntime := publicationPayload["pool_runtime"].(map[string]interface{})
+		originalChainsByDatabase := originalPoolRuntime["document_chains_by_database"].(map[string]interface{})
+		originalInvoice := originalChainsByDatabase["db-1"].([]interface{})[0].(map[string]interface{})["documents"].([]interface{})[1].(map[string]interface{})
+		assert.NotContains(t, originalInvoice, "resolved_link_refs")
+	})
+
 	t.Run("factual sync node payload falls back to execution context", func(t *testing.T) {
 		var captured *OperationRequest
 		mockExec := &mockOperationExecutor{

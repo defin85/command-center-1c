@@ -537,6 +537,11 @@ urlpatterns = [
         intercompany_pools.apply_pool_factual_review_action_view,
         name='pools-factual-review-actions',
     ),
+    path(
+        'pools/kvo17-generated-purchase/preview/',
+        intercompany_pools.preview_kvo17_generated_purchase,
+        name='pools-kvo17-generated-purchase-preview',
+    ),
     path('pools/batches/', intercompany_pools.list_or_create_pool_batches, name='pools-batches'),
     path('pools/runs/', intercompany_pools.create_pool_run, name='pools-run-create'),
     path('pools/runs/<uuid:run_id>/', intercompany_pools.get_pool_run, name='pools-run-get'),

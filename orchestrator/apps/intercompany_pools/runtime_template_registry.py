@@ -139,6 +139,13 @@ _POOL_RUNTIME_TEMPLATE_SPECS: tuple[PoolRuntimeTemplateSpec, ...] = (
         display_order=75,
     ),
     PoolRuntimeTemplateSpec(
+        alias="pool.kvo17_purchase_split.preview",
+        label="KVO17 Purchase Split Preview",
+        step_id="kvo17_purchase_split.preview",
+        description="System-managed KVO17 purchase split step: generated receipt preview and lineage summary.",
+        display_order=78,
+    ),
+    PoolRuntimeTemplateSpec(
         alias="pool.kvo18_advance_vat_offset.normalize",
         label="KVO18 Advance VAT Offset Normalize",
         step_id="kvo18_advance_vat_offset.normalize",

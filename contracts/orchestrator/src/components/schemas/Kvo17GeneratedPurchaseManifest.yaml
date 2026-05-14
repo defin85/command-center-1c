@@ -1,0 +1,72 @@
+type: object
+additionalProperties: false
+properties:
+  request_schema_version:
+    type: string
+  manifest_version:
+    type: string
+  period:
+    type: object
+    additionalProperties: false
+    properties:
+      start:
+        type: string
+        format: date
+      end:
+        type: string
+        format: date
+    required:
+      - start
+      - end
+  seed:
+    type: string
+  currency:
+    type: string
+  vat_rate:
+    type: string
+  invoice_number_prefix:
+    type: string
+  request_hash:
+    type: string
+  content_hash:
+    type: string
+  counterparties:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      properties:
+        ref:
+          type: string
+        name:
+          type: string
+        inn:
+          type: string
+      required:
+        - ref
+        - name
+  amount_ranges:
+    type: array
+    items:
+      $ref: ./Kvo17GeneratedPurchaseAmountRangePayload.yaml
+  rows:
+    type: array
+    items:
+      $ref: ./Kvo17GeneratedPurchaseManifestRow.yaml
+  summary:
+    type: object
+    additionalProperties: true
+required:
+  - request_schema_version
+  - manifest_version
+  - period
+  - seed
+  - currency
+  - vat_rate
+  - invoice_number_prefix
+  - request_hash
+  - content_hash
+  - counterparties
+  - amount_ranges
+  - rows
+  - summary

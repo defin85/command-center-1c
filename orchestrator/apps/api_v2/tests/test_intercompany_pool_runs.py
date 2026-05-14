@@ -4865,17 +4865,22 @@ def test_create_pool_batch_receipt_intake_accepts_kvo18_advance_vat_offset_schem
     assert kvo18_metadata["policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
     assert kvo18_metadata["stage_intent"] == CASH_RECEIPT_ORDER_SLOT
     assert kvo18_metadata["rows"][0]["row_id"] == "advance-1"
-    assert run.run_input["kvo18_advance_vat_offset"] == {
-        "policy_revision": KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION,
-        "stage_intent": CASH_RECEIPT_ORDER_SLOT,
-        "content_hash": kvo18_metadata["content_hash"],
-        "document_policy_slots": [
-            "cash_receipt_order",
-            "advance_invoice_kvo01",
-            "advance_offset_kvo18",
-            "declaration_evidence",
-        ],
-    }
+    run_kvo18_context = run.run_input["kvo18_advance_vat_offset"]
+    assert run_kvo18_context["policy_revision"] == KVO18_ADVANCE_VAT_OFFSET_POLICY_REVISION
+    assert run_kvo18_context["stage_intent"] == CASH_RECEIPT_ORDER_SLOT
+    assert run_kvo18_context["content_hash"] == kvo18_metadata["content_hash"]
+    assert run_kvo18_context["document_policy_slots"] == [
+        "cash_receipt_order",
+        "advance_invoice_kvo01",
+        "advance_offset_kvo18",
+        "declaration_evidence",
+    ]
+    assert run_kvo18_context["stages"]["cash_receipt_order"]["state"] == "ready"
+    assert run_kvo18_context["stages"]["advance_invoice_kvo01"]["state"] == "blocked"
+    assert run_kvo18_context["technical_realization_policy"]["required"] is True
+    assert run_kvo18_context["evidence_requirements"]["purchase_book_kvo18_required"] is True
+    assert run_kvo18_context["rows"][0]["row_id"] == "advance-1"
+    assert run_kvo18_context["rows"][0]["lineage"]["cash_receipt_order"]["state"] == "pending"
 
 
 @pytest.mark.django_db

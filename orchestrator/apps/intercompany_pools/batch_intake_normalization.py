@@ -20,7 +20,18 @@ from .kvo18_advance_vat_offset_scheme import (
     KVO18_ADVANCE_VAT_OFFSET_SCHEME_CODE,
     KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
 )
-from .models import OrganizationPool, PoolBatchKind, PoolBatchSourceType, PoolSchemaTemplate
+from .kvo17_generated_purchase_document_plan import (
+    KVO17_GENERATED_PURCHASE_DOCUMENT_PLAN_VERSION,
+    compile_kvo17_generated_purchase_document_plan,
+)
+from .kvo17_generated_purchase_intake import (
+    KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+    KVO17_GENERATED_PURCHASE_METADATA_KEY,
+    KVO17_GENERATED_PURCHASE_POLICY_SLOTS,
+    build_kvo17_generated_purchase_manifest,
+    validate_kvo17_generated_purchase_manifest_reuse,
+)
+from .models import OrganizationPool, PoolBatchKind, PoolBatchSourceType, PoolMasterParty, PoolSchemaTemplate
 
 KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY = "kvo18_advance_vat_offset"
 
@@ -315,6 +326,114 @@ def _normalize_kvo18_advance_vat_offset_schema_template_upload(
     )
 
 
+def _normalize_kvo17_generated_purchase(
+    *,
+    pool: OrganizationPool,
+    batch_kind: str,
+    source_type: str,
+    period_start: date,
+    period_end: date | None,
+    schema_template: PoolSchemaTemplate | None,
+    integration_reference: str | None,
+    json_payload: Any | None,
+    xlsx_bytes: bytes | None,
+    raw_payload_ref: str,
+    source_reference: str,
+    source_metadata: dict[str, Any],
+) -> CanonicalPoolBatchNormalizationResult:
+    del schema_template, integration_reference, xlsx_bytes
+    if batch_kind != PoolBatchKind.RECEIPT:
+        raise ValidationError("KVO17 generated purchase intake is available only for receipt batches.")
+    if not isinstance(json_payload, Mapping):
+        raise ValidationError("KVO17 generated purchase intake requires json_payload object.")
+    if period_end is None:
+        raise ValidationError("KVO17 generated purchase intake requires explicit period_end.")
+
+    request_payload = dict(json_payload)
+    request_payload.setdefault("period_start", period_start.isoformat())
+    request_payload.setdefault("period_end", period_end.isoformat())
+    available_counterparty_refs = set(
+        PoolMasterParty.objects.filter(
+            tenant=pool.tenant,
+            is_counterparty=True,
+        ).values_list("canonical_id", flat=True)
+    )
+    accepted_generated_metadata = source_metadata.get(KVO17_GENERATED_PURCHASE_METADATA_KEY)
+    if accepted_generated_metadata is not None and not isinstance(accepted_generated_metadata, Mapping):
+        raise ValidationError("KVO17 generated purchase accepted preview metadata must be an object.")
+    accepted_manifest = (
+        accepted_generated_metadata.get("accepted_manifest")
+        if isinstance(accepted_generated_metadata, Mapping)
+        else None
+    )
+    if accepted_manifest is not None and not isinstance(accepted_manifest, Mapping):
+        raise ValidationError("KVO17 generated purchase accepted_manifest must be an object.")
+    if accepted_manifest is not None:
+        manifest = validate_kvo17_generated_purchase_manifest_reuse(
+            request=request_payload,
+            accepted_manifest=accepted_manifest,
+            available_counterparty_refs=available_counterparty_refs,
+        )
+    else:
+        manifest = build_kvo17_generated_purchase_manifest(
+            request=request_payload,
+            available_counterparty_refs=available_counterparty_refs,
+        )
+    document_plan = compile_kvo17_generated_purchase_document_plan(manifest=manifest)
+    lines = [
+        CanonicalPoolBatchLine(
+            line_no=row.line_no,
+            organization_inn=row.counterparty_ref,
+            amount_with_vat=row.amount,
+            external_id=row.row_id,
+            vat_amount=row.vat_amount,
+        )
+        for row in manifest.rows
+    ]
+    generated_metadata = {
+        "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+        "document_plan_version": KVO17_GENERATED_PURCHASE_DOCUMENT_PLAN_VERSION,
+        "content_hash": manifest.content_hash,
+        "request_hash": manifest.request_hash,
+        "document_policy_slots": list(KVO17_GENERATED_PURCHASE_POLICY_SLOTS),
+        "manifest": manifest.as_dict(),
+        "document_plan": document_plan,
+        "diagnostics": [],
+        "readback_policy": document_plan["collapse_readback_policy"],
+        "accepted_preview": {
+            "required": accepted_manifest is not None,
+            "provided": isinstance(accepted_manifest, Mapping),
+            "request_hash": manifest.request_hash,
+            "content_hash": manifest.content_hash,
+        },
+    }
+    normalized_source_metadata = dict(source_metadata)
+    normalized_source_metadata[KVO17_GENERATED_PURCHASE_METADATA_KEY] = generated_metadata
+    provenance = CanonicalPoolBatchProvenance(
+        batch_kind=batch_kind,
+        source_type=source_type,
+        source_reference=source_reference,
+        raw_payload_ref=raw_payload_ref,
+        content_hash=manifest.content_hash,
+        source_metadata=normalized_source_metadata,
+        schema_reference=None,
+        integration_reference=None,
+    )
+    summary = manifest.normalization_summary()
+    return CanonicalPoolBatchNormalizationResult(
+        pool_id=str(pool.id),
+        period_start=period_start,
+        period_end=period_end,
+        provenance=provenance,
+        lines=lines,
+        normalization_summary={
+            **summary,
+            "kvo17_generated_manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+            "kvo17_generated_document_plan_version": KVO17_GENERATED_PURCHASE_DOCUMENT_PLAN_VERSION,
+        },
+    )
+
+
 def _is_kvo18_advance_vat_offset_template(template: PoolSchemaTemplate) -> bool:
     metadata = template.metadata if isinstance(template.metadata, Mapping) else {}
     schema = template.schema if isinstance(template.schema, Mapping) else {}
@@ -404,6 +523,10 @@ def _parse_optional_amount(
 register_pool_batch_intake_adapter(
     PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
     _normalize_schema_template_upload,
+)
+register_pool_batch_intake_adapter(
+    PoolBatchSourceType.KVO17_GENERATED_PURCHASE,
+    _normalize_kvo17_generated_purchase,
 )
 
 

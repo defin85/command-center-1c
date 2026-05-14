@@ -47,6 +47,12 @@ from .master_data_gate import (
     execute_master_data_resolve_upsert_gate,
     publication_payload_requires_master_data_resolution,
 )
+from .kvo18_advance_vat_offset_document_plan import (
+    compile_kvo18_advance_vat_offset_document_plan,
+)
+from .kvo18_advance_vat_offset_intake import KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS
+from .kvo18_advance_vat_offset_preview import Kvo18AdvanceVatOffsetPreview
+from .kvo17_generated_purchase_intake import KVO17_GENERATED_PURCHASE_METADATA_KEY
 from .models import Organization, PoolMasterParty, PoolRun, PoolRunDirection, PoolRunMode
 from .organization_party_binding_backfill import (
     REMEDIATION_REASON_AMBIGUOUS_MATCH,
@@ -54,6 +60,7 @@ from .organization_party_binding_backfill import (
     REMEDIATION_REASON_NO_MATCH,
 )
 from .runtime_distribution import (
+    DISTRIBUTION_ARTIFACT_VERSION,
     build_publication_payload_from_artifact,
     compute_distribution_runtime_state,
     load_runtime_topology_for_period,
@@ -80,6 +87,7 @@ _OP_MASTER_DATA_GATE = "pool.master_data_gate"
 _OP_PUBLICATION = "pool.publication_odata"
 _KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY = "kvo18_advance_vat_offset"
 _OP_KVO18_NORMALIZE = "pool.kvo18_advance_vat_offset.normalize"
+_OP_KVO17_PURCHASE_SPLIT_PREVIEW = "pool.kvo17_purchase_split.preview"
 _KVO18_STAGE_SLOT_BY_OPERATION = {
     "pool.kvo18_advance_vat_offset.cash_receipt_order": "cash_receipt_order",
     "pool.kvo18_advance_vat_offset.advance_invoice": "advance_invoice_kvo01",
@@ -92,6 +100,8 @@ POOL_DISTRIBUTION_BALANCE_MISMATCH = "POOL_DISTRIBUTION_BALANCE_MISMATCH"
 POOL_DISTRIBUTION_COVERAGE_GAP = "POOL_DISTRIBUTION_COVERAGE_GAP"
 POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED = "POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_REQUIRED"
 POOL_RUNTIME_READINESS_BLOCKERS_CONTEXT_KEY = "pool_runtime_readiness_blockers"
+KVO18_POLICY_SLOT_MISSING = "KVO18_POLICY_SLOT_MISSING"
+KVO18_STAGE_TARGET_DATABASE_MISSING = "KVO18_STAGE_TARGET_DATABASE_MISSING"
 
 
 def execute_pool_runtime_step(
@@ -140,6 +150,13 @@ def execute_pool_runtime_step(
             execution=execution,
             execution_context=execution_context,
             operation_type=operation_type,
+        )
+
+    if operation_type == _OP_KVO17_PURCHASE_SPLIT_PREVIEW:
+        return _execute_kvo17_purchase_split_preview_step(
+            run=run,
+            execution=execution,
+            execution_context=execution_context,
         )
 
     raise ValueError(f"POOL_RUNTIME_STEP_UNSUPPORTED: unsupported operation_type '{operation_type}'")
@@ -219,6 +236,106 @@ def _execute_prepare_input(
     }
 
 
+def _execute_kvo17_purchase_split_preview_step(
+    *,
+    run: PoolRun,
+    execution: Any,
+    execution_context: dict[str, Any],
+) -> dict[str, Any]:
+    run_input = _run_input(run)
+    kvo17_context = run_input.get(KVO17_GENERATED_PURCHASE_METADATA_KEY)
+    if isinstance(kvo17_context, Mapping):
+        distribution_result = _execute_kvo17_generated_distribution_if_available(
+            run=run,
+            execution=execution,
+            execution_context=execution_context,
+        )
+        if distribution_result is None:
+            raise ValueError(
+                "KVO17_GENERATED_DOCUMENT_PLAN_REQUIRED: "
+                "generated KVO17 preview requires pool_runtime_document_plan_artifact before publication"
+            )
+        publication_payload = distribution_result.get("publication_payload")
+        master_data_resolution: dict[str, Any] | None = None
+        preview_execution_context = {
+            **execution_context,
+            "pool_runtime_publication_payload": publication_payload,
+        }
+        if publication_payload_requires_master_data_resolution(
+            execution_context=preview_execution_context,
+        ):
+            gate_result = _execute_master_data_gate(
+                run=run,
+                execution=execution,
+                execution_context=preview_execution_context,
+            )
+            resolved_publication_payload = gate_result.get("publication_payload")
+            if isinstance(resolved_publication_payload, Mapping):
+                publication_payload = resolved_publication_payload
+            summary = gate_result.get("summary")
+            if isinstance(summary, Mapping):
+                master_data_resolution = dict(summary)
+        pool_runtime_payload = (
+            publication_payload.get("pool_runtime")
+            if isinstance(publication_payload, Mapping)
+            else {}
+        )
+        documents_by_database = (
+            pool_runtime_payload.get("documents_by_database")
+            if isinstance(pool_runtime_payload, Mapping)
+            else {}
+        )
+        target_database_count = (
+            len(documents_by_database)
+            if isinstance(documents_by_database, Mapping)
+            else 0
+        )
+        document_plan = (
+            dict(kvo17_context.get("document_plan"))
+            if isinstance(kvo17_context.get("document_plan"), Mapping)
+            else {}
+        )
+        compile_summary_raw = document_plan.get("compile_summary")
+        compile_summary = (
+            dict(compile_summary_raw)
+            if isinstance(compile_summary_raw, Mapping)
+            else {}
+        )
+        result = {
+            "step": "kvo17_purchase_split.preview",
+            "status": "ready",
+            "source_type": KVO17_GENERATED_PURCHASE_METADATA_KEY,
+            "pool_run_id": str(run.id),
+            "content_hash": str(kvo17_context.get("content_hash") or "").strip(),
+            "document_plan_version": str(kvo17_context.get("document_plan_version") or "").strip(),
+            "edge_strategy": dict(document_plan.get("edge_strategy") or {}),
+            "compile_summary": compile_summary,
+            "publication_payload_prepared": True,
+            "target_database_count": target_database_count,
+            "documents_count": int(
+                compile_summary.get("documents_count")
+                or sum(
+                    len(documents)
+                    for documents in documents_by_database.values()
+                    if isinstance(documents, list)
+                )
+            ),
+        }
+        if master_data_resolution is not None:
+            result["master_data_resolution"] = master_data_resolution
+    else:
+        result = {
+            "step": "kvo17_purchase_split.preview",
+            "status": "not_applicable",
+            "pool_run_id": str(run.id),
+        }
+    _update_execution_context(
+        execution=execution,
+        updates={"kvo17_purchase_split_preview": result},
+    )
+    return result
+
+
 def _execute_kvo18_advance_vat_offset_step(
     *,
     run: PoolRun,
@@ -226,8 +343,6 @@ def _execute_kvo18_advance_vat_offset_step(
     execution_context: dict[str, Any],
     operation_type: str,
 ) -> dict[str, Any]:
-    del execution_context
-
     run_input = _run_input(run)
     kvo18_context = run_input.get(_KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY)
     if not isinstance(kvo18_context, Mapping):
@@ -277,11 +392,403 @@ def _execute_kvo18_advance_vat_offset_step(
         "policy_revision": str(kvo18_context.get("policy_revision") or "").strip(),
         "content_hash": str(kvo18_context.get("content_hash") or "").strip(),
     }
+    updates: dict[str, Any] = {
+        f"kvo18_advance_vat_offset_stage_{stage_slot}": result,
+    }
+    if status == "ready":
+        publication_payload = _build_kvo18_stage_publication_payload(
+            run=run,
+            run_input=run_input,
+            execution_context=execution_context,
+            kvo18_context=kvo18_context,
+            stage_slot=stage_slot,
+        )
+        result["publication_payload"] = publication_payload
+        updates[f"kvo18_advance_vat_offset_stage_{stage_slot}"] = result
+        updates["pool_runtime_publication_payload"] = publication_payload
+
     _update_execution_context(
         execution=execution,
-        updates={f"kvo18_advance_vat_offset_stage_{stage_slot}": result},
+        updates=updates,
     )
     return result
+
+
+def _build_kvo18_stage_publication_payload(
+    *,
+    run: PoolRun,
+    run_input: Mapping[str, Any],
+    execution_context: Mapping[str, Any],
+    kvo18_context: Mapping[str, Any],
+    stage_slot: str,
+) -> dict[str, Any]:
+    policy_slots = validate_compiled_document_policy_slots_snapshot(
+        execution_context.get(POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY)
+    )
+    missing_slots = [
+        slot_key
+        for slot_key in KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS
+        if not isinstance(policy_slots, Mapping) or slot_key not in policy_slots
+    ]
+    if missing_slots:
+        raise ValueError(
+            f"{KVO18_POLICY_SLOT_MISSING}: KVO18 stage '{stage_slot}' requires compiled policy slots: "
+            + ", ".join(missing_slots)
+        )
+
+    preview = _build_kvo18_preview_from_context(kvo18_context=kvo18_context)
+    document_plan = compile_kvo18_advance_vat_offset_document_plan(
+        preview=preview,
+        compiled_policy_slots=policy_slots,
+    )
+    stage_plan_raw = document_plan.get("stages", {}).get(stage_slot)
+    if not isinstance(stage_plan_raw, Mapping):
+        raise ValueError(f"KVO18_STAGE_CONTEXT_MISSING: document plan stage '{stage_slot}' is missing")
+    stage_plan = dict(stage_plan_raw)
+    database_id = _resolve_kvo18_stage_database_id(
+        run=run,
+        run_input=run_input,
+        execution_context=execution_context,
+        stage_slot=stage_slot,
+    )
+    documents_by_database, document_chains_by_database, entity_name = _materialize_kvo18_stage_documents(
+        stage_plan=stage_plan,
+        document_plan=document_plan,
+        database_id=database_id,
+        rows=preview.rows,
+    )
+    return {
+        "pool_runtime": {
+            "entity_name": entity_name,
+            "documents_by_database": documents_by_database,
+            "document_chains_by_database": document_chains_by_database,
+            "kvo18_stage_slot": stage_slot,
+            "kvo18_stage_state": stage_plan.get("state"),
+            "kvo18_document_plan_artifact": document_plan,
+            "max_attempts": run_input.get("max_attempts"),
+            "retry_interval_seconds": run_input.get("retry_interval_seconds"),
+            "external_key_field": str(run_input.get("external_key_field") or "").strip(),
+        }
+    }
+
+
+def _build_kvo18_preview_from_context(
+    *,
+    kvo18_context: Mapping[str, Any],
+) -> Kvo18AdvanceVatOffsetPreview:
+    rows_raw = kvo18_context.get("rows")
+    rows = [dict(row) for row in rows_raw if isinstance(row, Mapping)] if isinstance(rows_raw, list) else []
+    if not rows:
+        raise ValueError("KVO18_RUNTIME_ROWS_MISSING: KVO18 stage publication requires normalized rows")
+    total_amount = Decimal("0.00")
+    total_vat_amount = Decimal("0.00")
+    for row in rows:
+        total_amount += _parse_decimal(row.get("amount")) or Decimal("0.00")
+        total_vat_amount += _parse_decimal(row.get("vat_amount")) or Decimal("0.00")
+    currency = str(rows[0].get("currency") or "RUB").strip() or "RUB"
+    stages_raw = kvo18_context.get("stages")
+    technical_policy_raw = kvo18_context.get("technical_realization_policy")
+    evidence_requirements_raw = kvo18_context.get("evidence_requirements")
+    diagnostics_raw = kvo18_context.get("diagnostics")
+    return Kvo18AdvanceVatOffsetPreview(
+        policy_revision=str(kvo18_context.get("policy_revision") or "").strip(),
+        total_amount=_decimal_to_string(total_amount) or "0.00",
+        total_vat_amount=_decimal_to_string(total_vat_amount) or "0.00",
+        currency=currency,
+        row_count=len(rows),
+        rows=rows,
+        stages=dict(stages_raw) if isinstance(stages_raw, Mapping) else {},
+        technical_realization_policy=(
+            dict(technical_policy_raw) if isinstance(technical_policy_raw, Mapping) else {}
+        ),
+        evidence_requirements=(
+            dict(evidence_requirements_raw) if isinstance(evidence_requirements_raw, Mapping) else {}
+        ),
+        diagnostics=(
+            [dict(item) for item in diagnostics_raw if isinstance(item, Mapping)]
+            if isinstance(diagnostics_raw, list)
+            else []
+        ),
+        content_hash=str(kvo18_context.get("content_hash") or "").strip(),
+    )
+
+
+def _resolve_kvo18_stage_database_id(
+    *,
+    run: PoolRun,
+    run_input: Mapping[str, Any],
+    execution_context: Mapping[str, Any],
+    stage_slot: str,
+) -> str:
+    document_plan = _resolve_persisted_document_plan_artifact(
+        execution_context=dict(execution_context)
+    )
+    if document_plan is not None:
+        database_id = _resolve_kvo18_database_id_from_document_plan(
+            document_plan=document_plan,
+            stage_slot=stage_slot,
+        )
+        if database_id:
+            return database_id
+
+    start_organization_id = str(run_input.get("start_organization_id") or "").strip()
+    if start_organization_id:
+        organization = (
+            Organization.objects.filter(
+                id=start_organization_id,
+                tenant_id=run.tenant_id,
+            )
+            .only("database_id")
+            .first()
+        )
+        if organization is not None and organization.database_id:
+            return str(organization.database_id)
+
+    raise ValueError(
+        f"{KVO18_STAGE_TARGET_DATABASE_MISSING}: KVO18 stage '{stage_slot}' requires a target database"
+    )
+
+
+def _resolve_kvo18_database_id_from_document_plan(
+    *,
+    document_plan: Mapping[str, Any],
+    stage_slot: str,
+) -> str:
+    policy_edge_refs = {
+        (
+            str(ref.get("edge_ref", {}).get("parent_node_id") or "").strip(),
+            str(ref.get("edge_ref", {}).get("child_node_id") or "").strip(),
+        )
+        for ref in document_plan.get("policy_refs", [])
+        if isinstance(ref, Mapping) and str(ref.get("slot_key") or "").strip() == stage_slot
+    }
+    targets = document_plan.get("targets")
+    if not isinstance(targets, list):
+        return ""
+    for target in targets:
+        if not isinstance(target, Mapping):
+            continue
+        database_id = str(target.get("database_id") or "").strip()
+        chains = target.get("chains")
+        if not database_id or not isinstance(chains, list):
+            continue
+        for chain in chains:
+            if not isinstance(chain, Mapping):
+                continue
+            edge_ref = chain.get("edge_ref")
+            edge_key = (
+                str(edge_ref.get("parent_node_id") or "").strip(),
+                str(edge_ref.get("child_node_id") or "").strip(),
+            ) if isinstance(edge_ref, Mapping) else ("", "")
+            if edge_key in policy_edge_refs:
+                return database_id
+    return ""
+
+
+def _materialize_kvo18_stage_documents(
+    *,
+    stage_plan: Mapping[str, Any],
+    document_plan: Mapping[str, Any],
+    database_id: str,
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[dict[str, Any]]], str]:
+    documents_by_database: dict[str, list[dict[str, Any]]] = {database_id: []}
+    document_chains_by_database: dict[str, list[dict[str, Any]]] = {database_id: []}
+    entity_name = ""
+    policy_version = _resolve_kvo18_stage_policy_version(
+        document_plan=document_plan,
+        stage_slot=str(stage_plan.get("slot_key") or "").strip(),
+    )
+    for document in list(stage_plan.get("documents") or []):
+        if not isinstance(document, Mapping):
+            continue
+        chain_documents: list[dict[str, Any]] = []
+        for row in rows:
+            payload = _materialize_kvo18_document_payload(document=document, row=row)
+            if not entity_name:
+                entity_name = str(document.get("entity_name") or "").strip()
+            documents_by_database[database_id].append(payload)
+            chain_documents.append(
+                {
+                    "document_id": str(document.get("document_id") or "").strip(),
+                    "entity_name": str(document.get("entity_name") or "").strip(),
+                    "document_role": str(document.get("document_role") or "").strip(),
+                    "idempotency_key": _build_kvo18_stage_document_idempotency_key(
+                        document_plan=document_plan,
+                        stage_slot=str(stage_plan.get("slot_key") or "").strip(),
+                        row=row,
+                        document=document,
+                    ),
+                    "invoice_mode": str(document.get("invoice_mode") or "").strip(),
+                    "field_mapping": dict(document.get("field_mapping") or {}),
+                    "table_parts_mapping": dict(document.get("table_parts_mapping") or {}),
+                    "link_rules": dict(document.get("link_rules") or {}),
+                    "payload": payload,
+                    "row_lineage": dict(row.get("lineage") or {}),
+                }
+            )
+        if chain_documents:
+            document_chains_by_database[database_id].append(
+                {
+                    "chain_id": str(document.get("chain_id") or "").strip(),
+                    "policy_source": str(stage_plan.get("document_policy_source") or "").strip(),
+                    "policy_version": policy_version,
+                    "allocation": {
+                        "amount": _decimal_to_string(
+                            sum(
+                                (_parse_decimal(row.get("amount")) or Decimal("0.00"))
+                                for row in rows
+                            )
+                        ),
+                    },
+                    "documents": chain_documents,
+                }
+            )
+    return documents_by_database, document_chains_by_database, entity_name
+
+
+def _materialize_kvo18_document_payload(
+    *,
+    document: Mapping[str, Any],
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    field_mapping = document.get("field_mapping")
+    if isinstance(field_mapping, Mapping):
+        for raw_field_name, raw_mapping in field_mapping.items():
+            field_name = str(raw_field_name or "").strip()
+            if not field_name:
+                continue
+            resolved_value, is_resolved = _resolve_kvo18_mapping_value(raw_mapping, row=row)
+            if is_resolved:
+                payload[field_name] = resolved_value
+    table_parts_mapping = document.get("table_parts_mapping")
+    if isinstance(table_parts_mapping, Mapping):
+        for raw_table_name, raw_rows in table_parts_mapping.items():
+            table_name = str(raw_table_name or "").strip()
+            if not table_name or not isinstance(raw_rows, list):
+                continue
+            compiled_rows: list[dict[str, Any]] = []
+            for raw_row in raw_rows:
+                if not isinstance(raw_row, Mapping):
+                    continue
+                compiled_row: dict[str, Any] = {}
+                for raw_column_name, raw_mapping in raw_row.items():
+                    column_name = str(raw_column_name or "").strip()
+                    if not column_name:
+                        continue
+                    resolved_value, is_resolved = _resolve_kvo18_mapping_value(raw_mapping, row=row)
+                    if is_resolved:
+                        compiled_row[column_name] = resolved_value
+                if compiled_row:
+                    compiled_rows.append(compiled_row)
+            if compiled_rows:
+                payload[table_name] = compiled_rows
+    return payload
+
+
+def _resolve_kvo18_mapping_value(
+    value: Any,
+    *,
+    row: Mapping[str, Any],
+) -> tuple[Any, bool]:
+    if isinstance(value, Mapping):
+        payload: dict[str, Any] = {}
+        for raw_key, raw_item in value.items():
+            key = str(raw_key or "").strip()
+            if not key:
+                continue
+            resolved_value, is_resolved = _resolve_kvo18_mapping_value(raw_item, row=row)
+            if is_resolved:
+                payload[key] = resolved_value
+        return payload, bool(payload)
+    if isinstance(value, list):
+        items: list[Any] = []
+        for raw_item in value:
+            resolved_value, is_resolved = _resolve_kvo18_mapping_value(raw_item, row=row)
+            if is_resolved:
+                items.append(resolved_value)
+        return items, bool(items)
+    if isinstance(value, str):
+        token = value.strip()
+        if token == "":
+            return "", True
+        if token.startswith("advance_row."):
+            return _resolve_kvo18_row_token(row=row, token=token.removeprefix("advance_row."))
+        if token == "policy.technical_realization.amount":
+            return str(row.get("amount") or "").strip(), True
+        if token.startswith(("cash_receipt_order.", "advance_invoice.", "advance_offset.", "declaration.")):
+            return None, False
+        return token, True
+    if value is None:
+        return None, False
+    return value, True
+
+
+def _resolve_kvo18_row_token(
+    *,
+    row: Mapping[str, Any],
+    token: str,
+) -> tuple[Any, bool]:
+    normalized_token = str(token or "").strip()
+    if not normalized_token:
+        return None, False
+    if normalized_token == "counterparty_ref":
+        counterparty = row.get("counterparty")
+        if isinstance(counterparty, Mapping):
+            value = str(counterparty.get("ref") or "").strip()
+            return value, bool(value)
+    if normalized_token == "contract_ref":
+        contract = row.get("contract")
+        if isinstance(contract, Mapping):
+            value = str(contract.get("ref") or "").strip()
+            return value, bool(value)
+    if normalized_token == "currency_ref":
+        value = str(row.get("currency") or "").strip()
+        return value, bool(value)
+    value = row.get(normalized_token)
+    if value is None:
+        return None, False
+    return value, True
+
+
+def _resolve_kvo18_stage_policy_version(
+    *,
+    document_plan: Mapping[str, Any],
+    stage_slot: str,
+) -> str:
+    policy_refs = document_plan.get("policy_refs")
+    if isinstance(policy_refs, list):
+        for policy_ref in policy_refs:
+            if not isinstance(policy_ref, Mapping):
+                continue
+            if str(policy_ref.get("slot_key") or "").strip() == stage_slot:
+                return str(policy_ref.get("policy_version") or "").strip()
+    return ""
+
+
+def _build_kvo18_stage_document_idempotency_key(
+    *,
+    document_plan: Mapping[str, Any],
+    stage_slot: str,
+    row: Mapping[str, Any],
+    document: Mapping[str, Any],
+) -> str:
+    idempotency = document_plan.get("idempotency")
+    lineage_ref = (
+        str(idempotency.get("lineage_revision_ref") or "").strip()
+        if isinstance(idempotency, Mapping)
+        else ""
+    )
+    return ":".join(
+        [
+            "kvo18-stage",
+            lineage_ref or str(document_plan.get("content_hash") or "").strip(),
+            stage_slot,
+            str(row.get("row_fingerprint") or row.get("row_id") or "").strip(),
+            str(document.get("document_id") or "").strip(),
+        ]
+    )
 
 
 def _execute_distribution_top_down(
@@ -498,6 +1005,14 @@ def _execute_distribution_calculation(
             f"run direction '{run.direction}' does not match operation direction '{expected_direction}'"
         )
 
+    generated_result = _execute_kvo17_generated_distribution_if_available(
+        run=run,
+        execution=execution,
+        execution_context=execution_context,
+    )
+    if generated_result is not None:
+        return generated_result
+
     runtime_state = compute_distribution_runtime_state(run=run, run_input=_run_input(run))
     summary_payload = runtime_state.get("summary")
     distribution_summary = dict(summary_payload) if isinstance(summary_payload, Mapping) else {}
@@ -537,6 +1052,145 @@ def _execute_distribution_calculation(
         "distribution_artifact": distribution_artifact,
         "publication_payload": publication_payload,
     }
+
+
+def _execute_kvo17_generated_distribution_if_available(
+    *,
+    run: PoolRun,
+    execution: Any,
+    execution_context: dict[str, Any],
+) -> dict[str, Any] | None:
+    run_input = _run_input(run)
+    if not isinstance(run_input.get(KVO17_GENERATED_PURCHASE_METADATA_KEY), Mapping):
+        return None
+    document_plan_artifact = _resolve_persisted_document_plan_artifact(
+        execution_context=execution_context
+    )
+    if document_plan_artifact is None:
+        return None
+
+    distribution_artifact = _build_kvo17_generated_distribution_artifact(
+        run=run,
+        document_plan_artifact=document_plan_artifact,
+    )
+    distribution_summary = {
+        "status": "generated",
+        "direction": run.direction,
+        "topology_version_ref": distribution_artifact["topology_version_ref"],
+        "source_total": distribution_artifact["balance"]["source_total"],
+        "distributed_total": distribution_artifact["balance"]["distributed_total"],
+        "coverage_full": True,
+        "edge_strategy": "single_edge_multi_document_chain",
+    }
+    publication_payload = build_publication_payload_from_document_plan_artifact(
+        artifact=document_plan_artifact,
+        run_input=run_input,
+    )
+    locked_retry_payload = _resolve_locked_retry_publication_payload(
+        execution_context=execution_context
+    )
+    if locked_retry_payload is not None:
+        publication_payload = locked_retry_payload
+
+    _update_execution_context(
+        execution=execution,
+        updates={
+            "pool_runtime_distribution": distribution_summary,
+            POOL_RUNTIME_DISTRIBUTION_ARTIFACT_CONTEXT_KEY: distribution_artifact,
+            "pool_runtime_publication_payload": publication_payload,
+        },
+    )
+    return {
+        "step": "distribution_calculation",
+        "pool_run_id": str(run.id),
+        "distribution": distribution_summary,
+        "distribution_artifact": distribution_artifact,
+        "publication_payload": publication_payload,
+    }
+
+
+def _build_kvo17_generated_distribution_artifact(
+    *,
+    run: PoolRun,
+    document_plan_artifact: Mapping[str, Any],
+) -> dict[str, Any]:
+    targets = document_plan_artifact.get("targets")
+    target = targets[0] if isinstance(targets, list) and targets else {}
+    chains = target.get("chains") if isinstance(target, Mapping) else []
+    database_id = str(target.get("database_id") or "").strip() if isinstance(target, Mapping) else ""
+    topology_ref = str(document_plan_artifact.get("topology_version_ref") or "").strip()
+
+    total_amount = Decimal("0.00")
+    edge_allocations: list[dict[str, Any]] = []
+    target_node_ids: set[str] = set()
+    if isinstance(chains, list):
+        for chain in chains:
+            if not isinstance(chain, Mapping):
+                continue
+            allocation = chain.get("allocation")
+            amount = _parse_decimal(allocation.get("amount") if isinstance(allocation, Mapping) else None)
+            amount = amount if amount is not None else Decimal("0.00")
+            total_amount += amount
+            edge_ref = chain.get("edge_ref") if isinstance(chain.get("edge_ref"), Mapping) else {}
+            parent_node_id = str(edge_ref.get("parent_node_id") or "").strip()
+            child_node_id = str(edge_ref.get("child_node_id") or "").strip()
+            if child_node_id:
+                target_node_ids.add(child_node_id)
+            edge_allocations.append(
+                {
+                    "parent_node_id": parent_node_id,
+                    "child_node_id": child_node_id,
+                    "amount": _decimal_to_string(amount),
+                    "weight": "1.00",
+                    "min_amount": "0.00",
+                    "max_amount": "0.00",
+                }
+            )
+
+    total_text = _decimal_to_string(total_amount)
+    node_totals = [
+        {
+            "node_id": node_id,
+            "organization_id": node_id,
+            "database_id": database_id,
+            "is_root": False,
+            "amount": total_text,
+        }
+        for node_id in sorted(target_node_ids)
+    ]
+    artifact = {
+        "version": DISTRIBUTION_ARTIFACT_VERSION,
+        "direction": run.direction,
+        "topology_version_ref": topology_ref,
+        "node_totals": node_totals,
+        "edge_allocations": edge_allocations,
+        "coverage": {
+            "publish_target_node_ids": sorted(target_node_ids),
+            "covered_target_node_ids": sorted(target_node_ids),
+            "missing_target_node_ids": [],
+            "is_full": True,
+        },
+        "balance": {
+            "source_total": total_text,
+            "distributed_total": total_text,
+            "delta": "0.00",
+            "tolerance": "0.00",
+            "is_balanced": True,
+        },
+        "diagnostics": [
+            {
+                "code": "kvo17_generated_single_edge_distribution",
+                "status": "info",
+                "detail": "Generated KVO17 publication uses manifest rows instead of topology branch slots.",
+            }
+        ],
+        "input_provenance": {
+            "source_type": KVO17_GENERATED_PURCHASE_METADATA_KEY,
+            "document_plan_artifact_version": str(document_plan_artifact.get("version") or "").strip(),
+        },
+    }
+    return validate_distribution_artifact_v1(artifact=artifact)
+
 
 def _execute_approval_gate(
     *,

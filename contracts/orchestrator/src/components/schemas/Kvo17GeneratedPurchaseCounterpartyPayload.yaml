@@ -1,0 +1,12 @@
+type: object
+additionalProperties: false
+properties:
+  counterparty_ref:
+    type: string
+  counterparty_name:
+    type: string
+  counterparty_inn:
+    type: string
+required:
+  - counterparty_ref
+  - counterparty_name

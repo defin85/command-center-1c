@@ -2038,6 +2038,7 @@ const pools = {
       submit: 'Create batch',
       fields: {
         batchKind: 'Batch kind',
+        sourceMode: 'Source mode',
         sourceReference: 'Source reference',
         rawPayloadReference: 'Raw payload reference',
         sourcePayloadJson: 'Source payload JSON',
@@ -2063,6 +2064,8 @@ const pools = {
       options: {
         receipt: 'receipt',
         sale: 'sale',
+        schemaTemplateUpload: 'Schema upload',
+        kvo17GeneratedPurchase: 'KVO17 generator',
       },
       actions: {
         loadPayloadFile: 'Load payload file',
@@ -2095,6 +2098,64 @@ const pools = {
         summary: 'rows {{rows}} · amount {{amount}} · VAT {{vat}}',
         diagnosticsTitle: 'Diagnostics',
         noDiagnostics: 'No row diagnostics.',
+      },
+      kvo17Generated: {
+        title: 'KVO17 generated purchases',
+        description: 'Generate two purchase receipts per counterparty from ranges, then create the linked safe run from the accepted manifest.',
+        counterparties: 'Counterparties',
+        ranges: {
+          small: 'Small range',
+          large: 'Large range',
+        },
+        fields: {
+          minAmount: 'Min',
+          maxAmount: 'Max',
+          seed: 'Seed',
+          invoicePrefix: 'Invoice prefix',
+        },
+        placeholders: {
+          counterparties: 'Select counterparties',
+        },
+        actions: {
+          preview: 'Preview manifest',
+          createRun: 'Create run',
+          regenerate: 'Regenerate seed',
+        },
+        validation: {
+          title: 'KVO17 generator is blocked',
+          poolRequired: 'Select a pool.',
+          periodRequired: 'Set period_start and period_end.',
+          bindingRequired: 'Select a compatible workflow binding.',
+          startOrganizationRequired: 'Select start organization.',
+          counterpartiesRequired: 'Select at least one counterparty.',
+          seedRequired: 'Seed is required.',
+          invoicePrefixRequired: 'Invoice prefix is required.',
+          kvoMustDiffer: 'The two ranges must use different KVO values.',
+          amountPositive: '{{range}} amounts must be positive.',
+          rangeBounds: '{{range}} max must be greater than or equal to min.',
+        },
+        bindingDiagnostics: {
+          bindingMissing: 'Compatible KVO17 binding is not selected.',
+          capabilityMissing: 'Selected binding does not declare generated purchase support.',
+          sourceTypeMismatch: 'Selected binding does not declare kvo17_generated_purchase source type.',
+          slotMissing: 'Selected binding must pin purchase_kvo01 and purchase_kvo17 slots.',
+          topologyNotReady: 'Selected binding topology compatibility is not ready.',
+        },
+        messages: {
+          previewFailed: 'Failed to preview KVO17 generated purchases.',
+          counterpartiesFailed: 'Failed to load counterparties.',
+          stalePreview: 'Generation parameters changed after preview. Preview the manifest again before creating the run.',
+        },
+        preview: {
+          title: 'Generated manifest accepted',
+          description: 'Dates, amounts, invoice identity, KVO assignment, and idempotency keys are fixed by this manifest.',
+          rows: 'Rows',
+          counterparties: 'Counterparties',
+          requestHash: 'Request hash',
+          contentHash: 'Content hash',
+          rangeSummary: '{{range}} · KVO {{kvo}} · {{min}}..{{max}} RUB',
+          invoiceIdentityNotice: 'Rows for one counterparty keep the same supplier invoice number/date while runtime identities remain distinct.',
+        },
       },
       messages: {
         failedToReadFile: 'Failed to read {{fileName}}',

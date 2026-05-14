@@ -33,6 +33,22 @@ class ODataDocumentAdapter:
 
     def fetch_document(self, *, entity_name: str, entity_id: str) -> requests.Response:
         document_url = f"{self._base_url}/{entity_name}({quote(str(entity_id or ''), safe='')})"
+        return self._get(document_url)
+
+    def fetch_document_table_part(
+        self,
+        *,
+        entity_name: str,
+        entity_id: str,
+        table_part_name: str,
+    ) -> requests.Response:
+        document_url = (
+            f"{self._base_url}/{entity_name}({quote(str(entity_id or ''), safe='')})/"
+            f"{quote(str(table_part_name or ''), safe='')}"
+        )
+        return self._get(document_url)
+
+    def _get(self, document_url: str) -> requests.Response:
         raw_credentials = f"{self._username}:{self._password}".encode("utf-8")
         basic_credentials = base64.b64encode(raw_credentials).decode("ascii")
         try:

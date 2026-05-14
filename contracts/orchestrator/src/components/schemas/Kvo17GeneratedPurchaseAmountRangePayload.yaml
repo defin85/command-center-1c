@@ -1,0 +1,19 @@
+type: object
+additionalProperties: false
+properties:
+  range_key:
+    type: string
+  min_amount:
+    type: string
+  max_amount:
+    type: string
+  kvo:
+    type: string
+    enum:
+      - '01'
+      - '17'
+required:
+  - range_key
+  - min_amount
+  - max_amount
+  - kvo

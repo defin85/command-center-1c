@@ -3309,6 +3309,7 @@ export function PoolRunsPage() {
                     schemaTemplates={schemaTemplates}
                     loadingSchemaTemplates={loadingSchemaTemplates}
                     workflowBindingOptions={receiptBatchWorkflowBindingOptions}
+                    workflowBindings={receiptBatchWorkflowBindings}
                     startOrganizationOptions={activeTopologyOrganizations}
                     initialValues={{
                       batchKind: 'receipt',

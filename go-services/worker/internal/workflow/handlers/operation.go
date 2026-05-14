@@ -158,6 +158,9 @@ func (h *OperationHandler) HandleNode(
 	if operationPayload == nil {
 		operationPayload = resolveOperationPayloadFromContext(config.OperationType, execCtx)
 	}
+	if config.OperationType == poolPublicationOperationType {
+		operationPayload = enrichPoolPublicationPayloadWithResolvedLinkRefs(operationPayload, execCtx)
+	}
 
 	// Build operation request
 	req := &OperationRequest{
@@ -413,6 +416,234 @@ func resolvePoolPublicationPayloadFromNodeResult(
 		return nil
 	}
 	return payload
+}
+
+func enrichPoolPublicationPayloadWithResolvedLinkRefs(
+	payload map[string]interface{},
+	execCtx *wfcontext.ExecutionContext,
+) map[string]interface{} {
+	if payload == nil || execCtx == nil {
+		return payload
+	}
+	successfulRefsByKey := collectSuccessfulPublicationDocumentRefs(execCtx)
+	if len(successfulRefsByKey) == 0 {
+		return payload
+	}
+
+	enriched := cloneJSONMap(payload)
+	poolRuntime := enriched
+	if nested, ok := enriched["pool_runtime"].(map[string]interface{}); ok {
+		poolRuntime = nested
+	}
+	chainsByDatabase, ok := poolRuntime["document_chains_by_database"].(map[string]interface{})
+	if !ok {
+		return payload
+	}
+
+	var changed bool
+	for _, rawChains := range chainsByDatabase {
+		chains, ok := rawChains.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, rawChain := range chains {
+			chain, ok := rawChain.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			rawDocuments, ok := chain["documents"].([]interface{})
+			if !ok {
+				continue
+			}
+			idempotencyKeyByDocumentID := make(map[string]string, len(rawDocuments))
+			for _, rawDocument := range rawDocuments {
+				document, ok := rawDocument.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				documentID := strings.TrimSpace(readContextString(document["document_id"]))
+				idempotencyKey := strings.TrimSpace(readContextString(document["idempotency_key"]))
+				if documentID != "" && idempotencyKey != "" {
+					idempotencyKeyByDocumentID[documentID] = idempotencyKey
+				}
+			}
+			for _, rawDocument := range rawDocuments {
+				document, ok := rawDocument.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for dependencyDocumentID := range collectPublicationDocumentDependencies(document) {
+					dependencyKey := idempotencyKeyByDocumentID[dependencyDocumentID]
+					if dependencyKey == "" {
+						continue
+					}
+					dependencyRef := strings.TrimSpace(successfulRefsByKey[dependencyKey])
+					if dependencyRef == "" {
+						continue
+					}
+					resolvedLinkRefs := readMutableInterfaceStringMap(document["resolved_link_refs"])
+					if strings.TrimSpace(readContextString(resolvedLinkRefs[dependencyDocumentID])) == dependencyRef {
+						continue
+					}
+					resolvedLinkRefs[dependencyDocumentID] = dependencyRef
+					document["resolved_link_refs"] = resolvedLinkRefs
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
+		return payload
+	}
+	return enriched
+}
+
+func collectSuccessfulPublicationDocumentRefs(
+	execCtx *wfcontext.ExecutionContext,
+) map[string]string {
+	snapshot := execCtx.ToMap()
+	nodeResults, ok := snapshot["node_results"].(map[string]interface{})
+	if !ok {
+		return map[string]string{}
+	}
+	refs := make(map[string]string)
+	for _, rawResult := range nodeResults {
+		result, ok := rawResult.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		collectSuccessfulPublicationDocumentRefsFromResult(result, refs)
+	}
+	return refs
+}
+
+func collectSuccessfulPublicationDocumentRefsFromResult(
+	result map[string]interface{},
+	refs map[string]string,
+) {
+	rawAttempts, ok := result["attempts"]
+	if !ok {
+		return
+	}
+	for _, rawAttempt := range readInterfaceSlice(rawAttempts) {
+		attempt, ok := rawAttempt.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		responseSummary, ok := attempt["response_summary"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		successfulRefs, ok := responseSummary["successful_document_refs"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for rawKey, rawRef := range successfulRefs {
+			documentKey := strings.TrimSpace(rawKey)
+			documentRef := strings.TrimSpace(readContextString(rawRef))
+			if documentKey == "" || documentRef == "" {
+				continue
+			}
+			refs[documentKey] = documentRef
+		}
+	}
+}
+
+func collectPublicationDocumentDependencies(document map[string]interface{}) map[string]struct{} {
+	dependencies := make(map[string]struct{})
+	if linkTo := strings.TrimSpace(readContextString(document["link_to"])); linkTo != "" {
+		dependencies[linkTo] = struct{}{}
+	}
+	if linkRules, ok := document["link_rules"].(map[string]interface{}); ok {
+		if dependsOn := strings.TrimSpace(readContextString(linkRules["depends_on"])); dependsOn != "" {
+			dependencies[dependsOn] = struct{}{}
+		}
+	}
+	collectRefTokenDependencies(document["field_mapping"], dependencies)
+	collectRefTokenDependencies(document["table_parts_mapping"], dependencies)
+	return dependencies
+}
+
+func collectRefTokenDependencies(value interface{}, dependencies map[string]struct{}) {
+	switch typed := value.(type) {
+	case string:
+		token := strings.TrimSpace(typed)
+		if !strings.HasSuffix(token, ".ref") || strings.HasPrefix(token, "master_data.") {
+			return
+		}
+		documentID := strings.TrimSpace(strings.TrimSuffix(token, ".ref"))
+		if documentID != "" {
+			dependencies[documentID] = struct{}{}
+		}
+	case map[string]interface{}:
+		for _, nested := range typed {
+			collectRefTokenDependencies(nested, dependencies)
+		}
+	case []interface{}:
+		for _, nested := range typed {
+			collectRefTokenDependencies(nested, dependencies)
+		}
+	}
+}
+
+func readMutableInterfaceStringMap(value interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+	switch raw := value.(type) {
+	case map[string]interface{}:
+		for rawKey, rawValue := range raw {
+			key := strings.TrimSpace(rawKey)
+			ref := strings.TrimSpace(readContextString(rawValue))
+			if key != "" && ref != "" {
+				result[key] = ref
+			}
+		}
+	case map[string]string:
+		for rawKey, rawValue := range raw {
+			key := strings.TrimSpace(rawKey)
+			ref := strings.TrimSpace(rawValue)
+			if key != "" && ref != "" {
+				result[key] = ref
+			}
+		}
+	}
+	return result
+}
+
+func readInterfaceSlice(value interface{}) []interface{} {
+	if typed, ok := value.([]interface{}); ok {
+		return typed
+	}
+	if typed, ok := value.([]map[string]interface{}); ok {
+		result := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, item)
+		}
+		return result
+	}
+	return nil
+}
+
+func cloneJSONMap(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return nil
+	}
+	raw, err := json.Marshal(src)
+	if err != nil {
+		dst := make(map[string]interface{}, len(src))
+		for key, value := range src {
+			dst[key] = value
+		}
+		return dst
+	}
+	var dst map[string]interface{}
+	if err := json.Unmarshal(raw, &dst); err != nil {
+		dst = make(map[string]interface{}, len(src))
+		for key, value := range src {
+			dst[key] = value
+		}
+	}
+	return dst
 }
 
 func getStepAttempt(execCtx *wfcontext.ExecutionContext, nodeID string) int {

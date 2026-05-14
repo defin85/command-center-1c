@@ -1,0 +1,21 @@
+type: object
+additionalProperties: false
+properties:
+  manifest:
+    $ref: ./Kvo17GeneratedPurchaseManifest.yaml
+  document_plan:
+    type: object
+    additionalProperties: true
+  diagnostics:
+    type: array
+    items: {}
+  request_hash:
+    type: string
+  content_hash:
+    type: string
+required:
+  - manifest
+  - document_plan
+  - diagnostics
+  - request_hash
+  - content_hash

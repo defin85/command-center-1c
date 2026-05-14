@@ -530,8 +530,8 @@ export type PoolRunReport = {
 }
 
 export type PoolBatchKind = 'receipt' | 'sale'
-export type PoolBatchSourceType = 'schema_template_upload' | 'integration' | 'manual'
-export type PoolBatchCreateSourceType = 'schema_template_upload'
+export type PoolBatchSourceType = 'schema_template_upload' | 'kvo17_generated_purchase' | 'integration' | 'manual'
+export type PoolBatchCreateSourceType = 'schema_template_upload' | 'kvo17_generated_purchase'
 export type PoolBatchSettlementStatus =
   | 'ingested'
   | 'distributed'
@@ -585,7 +585,6 @@ export type PoolBatch = {
 type PoolBatchCreatePayloadBase = {
   pool_id: string
   source_type: PoolBatchCreateSourceType
-  schema_template_id: string
   period_start: string
   period_end?: string | null
   source_reference?: string
@@ -593,13 +592,18 @@ type PoolBatchCreatePayloadBase = {
   source_metadata?: unknown
 }
 
-type PoolReceiptBatchCreatePayloadBase = PoolBatchCreatePayloadBase & {
+type PoolSchemaTemplateUploadCreatePayloadBase = PoolBatchCreatePayloadBase & {
+  source_type: 'schema_template_upload'
+  schema_template_id: string
+}
+
+type PoolReceiptBatchCreatePayloadBase = PoolSchemaTemplateUploadCreatePayloadBase & {
   batch_kind: 'receipt'
   pool_workflow_binding_id: string
   start_organization_id: string
 }
 
-type PoolSaleBatchCreatePayloadBase = PoolBatchCreatePayloadBase & {
+type PoolSaleBatchCreatePayloadBase = PoolSchemaTemplateUploadCreatePayloadBase & {
   batch_kind: 'sale'
 }
 
@@ -616,6 +620,108 @@ export type PoolBatchCreatePayload =
   | (PoolReceiptBatchCreatePayloadBase & PoolBatchCreateXlsxPayload)
   | (PoolSaleBatchCreatePayloadBase & PoolBatchCreateJsonPayload)
   | (PoolSaleBatchCreatePayloadBase & PoolBatchCreateXlsxPayload)
+  | {
+      pool_id: string
+      source_type: 'kvo17_generated_purchase'
+      batch_kind: 'receipt'
+      pool_workflow_binding_id: string
+      start_organization_id: string
+      period_start: string
+      period_end: string
+      source_reference?: string
+      raw_payload_ref?: string
+      source_metadata?: unknown
+      json_payload: Kvo17GeneratedPurchaseRequestPayload
+    }
+
+export type Kvo17GeneratedPurchaseKvo = '01' | '17'
+
+export type Kvo17GeneratedPurchaseCounterpartyPayload = {
+  counterparty_ref: string
+  counterparty_name: string
+  counterparty_inn?: string
+}
+
+export type Kvo17GeneratedPurchaseAmountRangePayload = {
+  range_key: string
+  min_amount: string
+  max_amount: string
+  kvo: Kvo17GeneratedPurchaseKvo
+}
+
+export type Kvo17GeneratedPurchaseRequestPayload = {
+  period_start?: string
+  period_end?: string
+  seed: string
+  currency?: string
+  vat_rate?: string
+  invoice_number_prefix?: string
+  counterparties: Kvo17GeneratedPurchaseCounterpartyPayload[]
+  amount_ranges: Kvo17GeneratedPurchaseAmountRangePayload[]
+}
+
+export type Kvo17GeneratedPurchasePreviewPayload = {
+  pool_id: string
+  pool_workflow_binding_id: string
+  period_start: string
+  period_end: string
+  json_payload: Kvo17GeneratedPurchaseRequestPayload
+}
+
+export type Kvo17GeneratedPurchaseManifestRow = {
+  line_no: number
+  counterparty_ref: string
+  counterparty_name: string
+  counterparty_inn: string
+  range_key: string
+  kvo: Kvo17GeneratedPurchaseKvo
+  amount: string
+  vat_rate: string
+  vat_amount: string
+  currency: string
+  source_document_number: string
+  source_document_date: string
+  row_id: string
+  row_fingerprint: string
+  idempotency_key: string
+}
+
+export type Kvo17GeneratedPurchaseManifest = {
+  request_schema_version: string
+  manifest_version: string
+  period: {
+    start: string
+    end: string
+  }
+  seed: string
+  currency: string
+  vat_rate: string
+  invoice_number_prefix: string
+  request_hash: string
+  content_hash: string
+  counterparties: Array<{
+    ref: string
+    name: string
+    inn: string
+  }>
+  amount_ranges: Kvo17GeneratedPurchaseAmountRangePayload[]
+  rows: Kvo17GeneratedPurchaseManifestRow[]
+  summary: Record<string, unknown> & {
+    selected_counterparties?: number
+    processed_rows?: number
+    total_amount?: string
+    total_vat_amount?: string
+    currency?: string
+  }
+}
+
+export type Kvo17GeneratedPurchasePreviewResponse = {
+  manifest: Kvo17GeneratedPurchaseManifest
+  document_plan: Record<string, unknown>
+  diagnostics: unknown[]
+  request_hash: string
+  content_hash: string
+}
 
 export type PoolBatchCreateResponse = {
   batch: PoolBatch
@@ -1214,6 +1320,17 @@ export async function createPoolBatch(
 ): Promise<PoolBatchCreateResponse> {
   const response = await apiClient.post<PoolBatchCreateResponse>(
     '/api/v2/pools/batches/',
+    payload,
+    { skipGlobalError: true }
+  )
+  return response.data
+}
+
+export async function previewKvo17GeneratedPurchase(
+  payload: Kvo17GeneratedPurchasePreviewPayload
+): Promise<Kvo17GeneratedPurchasePreviewResponse> {
+  const response = await apiClient.post<Kvo17GeneratedPurchasePreviewResponse>(
+    '/api/v2/pools/kvo17-generated-purchase/preview/',
     payload,
     { skipGlobalError: true }
   )

@@ -1314,6 +1314,126 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {str(db_first.id), str(db_second.id)},
         )
 
+    def test_update_workflow_status_completed_blocks_kvo17_generated_purchase_on_failed_readback(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"kvo17-readback-blocked-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/kvo17-readback.odata",
+            username="admin",
+            password="secret",
+        )
+        run.run_input = {
+            **(run.run_input or {}),
+            "kvo17_generated_purchase": {
+                "manifest": {
+                    "version": "kvo17_generated_purchase_manifest.v1",
+                    "rows": [],
+                }
+            },
+        }
+        run.save(update_fields=["run_input", "updated_at"])
+        execution.input_context = {
+            **(execution.input_context or {}),
+            POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY: {
+                "targets": [
+                    {
+                        "database_id": str(database.id),
+                        "chains": [],
+                    }
+                ]
+            },
+        }
+        execution.save(update_fields=["input_context"])
+
+        readback_report = {
+            "status": "failed",
+            "summary": {
+                "checked_targets": 1,
+                "verified_documents": 1,
+                "mismatches_count": 1,
+                "mismatches": [
+                    {
+                        "database_id": str(database.id),
+                        "entity_name": "Document_ПоступлениеТоваровУслуг",
+                        "document_idempotency_key": "row-1",
+                        "field_or_table_path": "response_summary.successful_document_refs",
+                        "kind": "KVO17_GENERATED_PURCHASE_COLLAPSED_DOCUMENTS",
+                    }
+                ],
+            },
+            "diagnostics": [
+                {
+                    "code": "KVO17_GENERATED_PURCHASE_COLLAPSED_DOCUMENTS",
+                    "severity": "error",
+                    "detail": "Generated KVO17 readback documents do not have two distinct refs.",
+                }
+            ],
+        }
+
+        with patch(
+            "apps.intercompany_pools.kvo17_generated_purchase_publication_diagnostics."
+            "verify_kvo17_generated_purchase_publication",
+            return_value=readback_report,
+        ):
+            response = self.client.post(
+                "/api/v2/internal/workflows/update-execution-status",
+                {
+                    "execution_id": str(execution.id),
+                    "status": "completed",
+                    "result": {
+                        "node_results": {
+                            "publication_odata__kvo17": {
+                                "step": "publication_odata",
+                                "pool_run_id": str(run.id),
+                                "status": "published",
+                                "entity_name": "Document_ПоступлениеТоваровУслуг",
+                                "target_databases": [str(database.id)],
+                                "documents_count_by_database": {str(database.id): 2},
+                                "attempts": [
+                                    {
+                                        "target_database": str(database.id),
+                                        "attempt_number": 1,
+                                        "status": "success",
+                                        "documents_count": 2,
+                                        "posted": True,
+                                        "response_summary": {
+                                            "posted": True,
+                                            "successful_document_refs": {
+                                                "row-1": "same-ref",
+                                                "row-2": "same-ref",
+                                            },
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        run = PoolRun.objects.get(id=run.id)
+        self.assertEqual(run.status, PoolRun.STATUS_FAILED)
+        self.assertEqual(run.last_error, "KVO17_GENERATED_PURCHASE_READBACK_BLOCKED")
+        self.assertEqual(run.diagnostics, readback_report["diagnostics"])
+        self.assertEqual(
+            run.publication_summary["kvo17_generated_purchase"]["status"],
+            "failed",
+        )
+
+        execution.refresh_from_db(fields=["input_context"])
+        verification = execution.input_context["pool_runtime_verification"]
+        self.assertEqual(verification["status"], "failed")
+        self.assertEqual(verification["summary"], readback_report["summary"])
+        self.assertEqual(
+            verification["kvo17_generated_purchase"],
+            readback_report,
+        )
+        self.assertEqual(execution.input_context["publication_step_state"], "started")
+
     def test_update_workflow_status_completed_projects_sale_batch_publication_attempts(self):
         tenant, batch, execution, _ = self._create_pool_batch_publication_fixture()
         db_success = Database.objects.create(

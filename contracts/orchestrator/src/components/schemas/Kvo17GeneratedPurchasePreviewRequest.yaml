@@ -1,0 +1,22 @@
+type: object
+additionalProperties: false
+properties:
+  pool_id:
+    type: string
+    format: uuid
+  pool_workflow_binding_id:
+    type: string
+  period_start:
+    type: string
+    format: date
+  period_end:
+    type: string
+    format: date
+  json_payload:
+    $ref: ./Kvo17GeneratedPurchaseRequestPayload.yaml
+required:
+  - pool_id
+  - pool_workflow_binding_id
+  - period_start
+  - period_end
+  - json_payload

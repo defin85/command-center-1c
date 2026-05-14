@@ -670,6 +670,58 @@ func TestODataPublicationTransport_ExecutePublicationOData_UsesResolvedLinkRefsF
 	assert.Equal(t, "sale-ref-1", service.createPayloads[0]["BaseDocument"])
 }
 
+func TestODataPublicationTransport_ExecutePublicationOData_UsesNativeStringResolvedLinkRefs(t *testing.T) {
+	fetcher := &mockPublicationCredentialsFetcher{
+		cred: &credentials.DatabaseCredentials{
+			DatabaseID: "db-1",
+			ODataURL:   "http://localhost/odata/standard.odata",
+			Username:   "admin",
+			Password:   "secret",
+		},
+	}
+	service := &mockPublicationODataService{}
+	transport := NewODataPublicationTransport(fetcher, service, zap.NewNop(), PublicationTransportConfig{})
+
+	out, err := transport.ExecutePublicationOData(context.Background(), &handlers.OperationRequest{
+		OperationType:   "pool.publication_odata",
+		PoolRunID:       "run-chain-native-ref",
+		StepAttempt:     1,
+		PublicationAuth: publicationAuthActorForTests(),
+		Payload: map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"document_chains_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{
+							"chain_id": "sale_chain",
+							"documents": []interface{}{
+								map[string]interface{}{
+									"document_id":  "invoice",
+									"entity_name":  "Document_Invoice",
+									"invoice_mode": "required",
+									"link_to":      "sale",
+									"field_mapping": map[string]interface{}{
+										"BaseDocument": "sale.ref",
+									},
+									"resolved_link_refs": map[string]string{
+										"sale": "sale-ref-1",
+									},
+									"payload": map[string]interface{}{},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	assert.Equal(t, "published", out["status"])
+	require.Len(t, service.createPayloads, 1)
+	assert.Equal(t, "sale-ref-1", service.createPayloads[0]["BaseDocument"])
+}
+
 func TestODataPublicationTransport_ExecutePublicationOData_UsesResolvedMasterDataRefs(t *testing.T) {
 	fetcher := &mockPublicationCredentialsFetcher{
 		cred: &credentials.DatabaseCredentials{

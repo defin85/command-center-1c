@@ -17,6 +17,21 @@ from apps.intercompany_pools.document_plan_artifact_contract import (
     POOL_RUNTIME_DOCUMENT_POLICY_SOURCE_CONTEXT_KEY,
 )
 from apps.intercompany_pools.document_policy_contract import DOCUMENT_POLICY_VERSION
+from apps.intercompany_pools.kvo18_advance_vat_offset_intake import (
+    ADVANCE_INVOICE_KVO01_SLOT,
+    ADVANCE_OFFSET_KVO18_SLOT,
+    CASH_RECEIPT_ORDER_SLOT,
+    DECLARATION_EVIDENCE_SLOT,
+    KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS,
+    normalize_kvo18_advance_vat_offset_batch,
+)
+from apps.intercompany_pools.kvo18_advance_vat_offset_preview import (
+    build_kvo18_advance_vat_offset_preview,
+)
+from apps.intercompany_pools.kvo18_advance_vat_offset_scheme import (
+    KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    ensure_kvo18_advance_vat_offset_scheme_assets,
+)
 from apps.intercompany_pools.master_data_artifact_contract import (
     MASTER_DATA_BINDING_ARTIFACT_VERSION,
     MASTER_DATA_GATE_MODE_RESOLVE_UPSERT,
@@ -24,7 +39,6 @@ from apps.intercompany_pools.master_data_artifact_contract import (
 )
 from apps.intercompany_pools.runtime_projection_contract import (
     POOL_RUNTIME_PROJECTION_CONTEXT_KEY,
-    POOL_RUNTIME_PROJECTION_VERSION,
 )
 from apps.intercompany_pools.models import (
     Organization,
@@ -200,6 +214,146 @@ def _attach_pool_target_database(
         metadata={"document_policy_key": "document_policy"},
     )
     return database
+
+
+def _attach_kvo18_runtime_topology(
+    *,
+    tenant: Tenant,
+    pool: OrganizationPool,
+    period_start: date,
+) -> tuple[list[Database], Organization]:
+    cash_database = Database.objects.create(
+        tenant=tenant,
+        name=f"kvo18-runtime-cash-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="kvo18-user",
+        password="kvo18-pass",
+    )
+    invoice_database = Database.objects.create(
+        tenant=tenant,
+        name=f"kvo18-runtime-invoice-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="kvo18-user",
+        password="kvo18-pass",
+    )
+    offset_database = Database.objects.create(
+        tenant=tenant,
+        name=f"kvo18-runtime-offset-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="kvo18-user",
+        password="kvo18-pass",
+    )
+    evidence_database = Database.objects.create(
+        tenant=tenant,
+        name=f"kvo18-runtime-evidence-db-{uuid4().hex[:8]}",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="kvo18-user",
+        password="kvo18-pass",
+    )
+    cash_org = Organization.objects.create(
+        tenant=tenant,
+        database=cash_database,
+        name=f"KVO18 Cash {uuid4().hex[:6]}",
+        inn=f"72{uuid4().hex[:10]}",
+    )
+    invoice_org = Organization.objects.create(
+        tenant=tenant,
+        database=invoice_database,
+        name=f"KVO18 Invoice {uuid4().hex[:6]}",
+        inn=f"73{uuid4().hex[:10]}",
+    )
+    offset_org = Organization.objects.create(
+        tenant=tenant,
+        database=offset_database,
+        name=f"KVO18 Offset {uuid4().hex[:6]}",
+        inn=f"74{uuid4().hex[:10]}",
+    )
+    evidence_org = Organization.objects.create(
+        tenant=tenant,
+        database=evidence_database,
+        name=f"KVO18 Evidence {uuid4().hex[:6]}",
+        inn=f"75{uuid4().hex[:10]}",
+    )
+    cash_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=cash_org,
+        effective_from=period_start,
+        is_root=True,
+    )
+    invoice_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=invoice_org,
+        effective_from=period_start,
+    )
+    offset_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=offset_org,
+        effective_from=period_start,
+    )
+    evidence_node = PoolNodeVersion.objects.create(
+        pool=pool,
+        organization=evidence_org,
+        effective_from=period_start,
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=cash_node,
+        child_node=invoice_node,
+        effective_from=period_start,
+        metadata={"document_policy_key": ADVANCE_INVOICE_KVO01_SLOT},
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=invoice_node,
+        child_node=offset_node,
+        effective_from=period_start,
+        metadata={"document_policy_key": ADVANCE_OFFSET_KVO18_SLOT},
+    )
+    PoolEdgeVersion.objects.create(
+        pool=pool,
+        parent_node=offset_node,
+        child_node=evidence_node,
+        effective_from=period_start,
+        metadata={"document_policy_key": DECLARATION_EVIDENCE_SLOT},
+    )
+    return [cash_database, invoice_database, offset_database, evidence_database], cash_org
+
+
+def _build_kvo18_runtime_context(*, stage_intent: str = CASH_RECEIPT_ORDER_SLOT) -> dict[str, object]:
+    batch = normalize_kvo18_advance_vat_offset_batch(
+        json_payload={
+            "rows": [
+                {
+                    "counterparty_ref": "counterparty-001",
+                    "counterparty_name": "Buyer One",
+                    "contract_ref": "contract-001",
+                    "contract_name": "Advance Contract",
+                    "operation_date": "2026-01-15",
+                    "amount": "1200.00",
+                    "vat_rate": "20%",
+                    "vat_amount": "200.00",
+                    "currency": "RUB",
+                    "row_id": "advance-1",
+                }
+            ]
+        }
+    )
+    preview = build_kvo18_advance_vat_offset_preview(batch=batch)
+    return {
+        "policy_revision": preview.policy_revision,
+        "content_hash": preview.content_hash,
+        "document_policy_slots": list(KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS),
+        "stage_intent": stage_intent,
+        "stages": preview.as_dict()["stages"],
+        "technical_realization_policy": preview.technical_realization_policy,
+        "evidence_requirements": preview.evidence_requirements,
+        "rows": preview.rows,
+        "diagnostics": preview.diagnostics,
+    }
 
 
 def _build_document_policy_decision_payload(*, decision_table_id: str) -> dict[str, object]:
@@ -828,6 +982,98 @@ def test_start_pool_run_workflow_execution_accepts_batch_backed_top_down_run_wit
 
     assert execution.input_context[POOL_RUNTIME_DOCUMENT_PLAN_ARTIFACT_CONTEXT_KEY]["version"] == "document_plan_artifact.v1"
     assert execution.input_context[POOL_RUNTIME_PROJECTION_CONTEXT_KEY]["compile_summary"]["compiled_targets_count"] == 1
+
+
+@pytest.mark.django_db
+def test_start_pool_run_workflow_execution_preserves_kvo18_context_for_stage_runtime() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"kvo18-runtime-{uuid4().hex[:8]}",
+        name="KVO18 Runtime",
+    )
+    pool = OrganizationPool.objects.create(
+        tenant=tenant,
+        code=f"kvo18-runtime-{uuid4().hex[:6]}",
+        name="KVO18 Runtime",
+    )
+    assets = ensure_kvo18_advance_vat_offset_scheme_assets(
+        tenant=tenant,
+        actor_username="pool-runtime-test",
+    )
+    schema_template = PoolSchemaTemplate.objects.get(
+        tenant=tenant,
+        code=KVO18_ADVANCE_VAT_OFFSET_SCHEMA_TEMPLATE_CODE,
+    )
+    databases, start_organization = _attach_kvo18_runtime_topology(
+        tenant=tenant,
+        pool=pool,
+        period_start=date(2026, 1, 1),
+    )
+    for database in databases:
+        _ensure_service_mapping(database=database)
+    binding, _ = upsert_pool_workflow_binding_attachment(
+        pool=pool,
+        workflow_binding={
+            "binding_profile_revision_id": assets["binding_profile"]["latest_revision_id"],
+            "selector": {
+                "direction": PoolRunDirection.TOP_DOWN,
+                "mode": PoolRunMode.SAFE,
+                "tags": ["kvo18"],
+            },
+            "effective_from": "2026-01-01",
+            "status": "active",
+        },
+        actor_username="pool-runtime-test",
+    )
+    run = PoolRun.objects.create(
+        tenant=tenant,
+        pool=pool,
+        mode=PoolRunMode.SAFE,
+        direction=PoolRunDirection.TOP_DOWN,
+        period_start=date(2026, 1, 1),
+        schema_template=schema_template,
+        run_input={
+            "starting_amount": "1200.00",
+            "batch_id": str(uuid4()),
+            "start_organization_id": str(start_organization.id),
+            "kvo18_advance_vat_offset": _build_kvo18_runtime_context(),
+        },
+    )
+
+    with patch(
+        "apps.intercompany_pools.workflow_runtime.OperationsService.enqueue_workflow_execution",
+        return_value=EnqueueResult(
+            success=True,
+            operation_id="workflow-op-kvo18",
+            status="queued",
+            error=None,
+            error_code=None,
+        ),
+    ):
+        result = start_pool_run_workflow_execution(
+            run=run,
+            workflow_binding=binding,
+        )
+
+    execution = WorkflowExecution.objects.get(id=result.execution_id)
+    aliases = [step["alias"] for step in execution.execution_plan["operation_bindings"]]
+    compiled_slots = execution.input_context[POOL_RUNTIME_COMPILED_DOCUMENT_POLICY_SLOTS_CONTEXT_KEY]
+    run_input = execution.input_context["run_input"]
+
+    assert "pool.kvo18_advance_vat_offset.cash_receipt_order" in aliases
+    assert set(compiled_slots) == set(KVO18_ADVANCE_VAT_OFFSET_POLICY_SLOTS)
+    assert run_input["kvo18_advance_vat_offset"]["stages"][CASH_RECEIPT_ORDER_SLOT]["state"] == "ready"
+    assert run_input["kvo18_advance_vat_offset"]["rows"][0]["row_id"] == "advance-1"
+
+    cash_result = execute_pool_runtime_step(
+        operation_type="pool.kvo18_advance_vat_offset.cash_receipt_order",
+        rendered_data={},
+        context={"pool_run_id": str(run.id)},
+        execution=execution,
+    )
+    publication_payload = cash_result["publication_payload"]["pool_runtime"]
+
+    assert publication_payload["kvo18_stage_slot"] == CASH_RECEIPT_ORDER_SLOT
+    assert publication_payload["documents_by_database"][str(databases[0].id)][0]["СуммаДокумента"] == "1200.00"
 
 
 @pytest.mark.django_db(transaction=True)

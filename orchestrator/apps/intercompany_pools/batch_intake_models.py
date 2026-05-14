@@ -19,6 +19,7 @@ class PoolBatchKind(models.TextChoices):
 
 class PoolBatchSourceType(models.TextChoices):
     SCHEMA_TEMPLATE_UPLOAD = "schema_template_upload", "Schema Template Upload"
+    KVO17_GENERATED_PURCHASE = "kvo17_generated_purchase", "KVO17 Generated Purchase"
     INTEGRATION = "integration", "Integration"
     MANUAL = "manual", "Manual"
 

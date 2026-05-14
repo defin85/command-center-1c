@@ -7,6 +7,11 @@ from .kvo17_purchase_split_intake import (
     PURCHASE_KVO01_SLOT,
     PURCHASE_KVO17_SLOT,
 )
+from .kvo17_generated_purchase_intake import (
+    KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+    KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
+    KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+)
 from .kvo17_purchase_split_scheme import (
     KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE,
     KVO17_PURCHASE_SPLIT_POLICY_SLOTS,
@@ -75,6 +80,29 @@ def _build_operator_scheme_read_model(
             "source_document_identity": True,
             "source_supplier_provenance": True,
         },
+        "generated_purchase_mode": _build_generated_purchase_mode(parameters=parameters),
+    }
+
+
+def _build_generated_purchase_mode(*, parameters: Mapping[str, Any]) -> dict[str, Any]:
+    supported = bool(parameters.get("generated_purchase_supported"))
+    source_type = str(parameters.get("generated_purchase_source_type") or "").strip()
+    available = supported and source_type == KVO17_GENERATED_PURCHASE_SOURCE_TYPE
+    return {
+        "available": available,
+        "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+        "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
+        "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+        "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+        "blocking_diagnostics": []
+        if available
+        else [
+            {
+                "code": "KVO17_GENERATED_PURCHASE_CAPABILITY_MISSING",
+                "severity": "error",
+                "detail": "Selected KVO17 binding does not declare generated purchase support.",
+            }
+        ],
     }
 
 

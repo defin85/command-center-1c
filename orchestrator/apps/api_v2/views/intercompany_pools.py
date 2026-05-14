@@ -118,6 +118,14 @@ from apps.intercompany_pools.batch_intake_normalization import (
     KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY,
     normalize_pool_batch_intake,
 )
+from apps.intercompany_pools.kvo17_generated_purchase_intake import (
+    KVO17_GENERATED_PURCHASE_METADATA_KEY,
+    KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+    build_kvo17_generated_purchase_manifest,
+)
+from apps.intercompany_pools.kvo17_generated_purchase_document_plan import (
+    compile_kvo17_generated_purchase_document_plan,
+)
 from apps.intercompany_pools.factual_review_queue import (
     FACTUAL_REVIEW_ACTION_ATTRIBUTE,
     FACTUAL_REVIEW_ACTION_RECONCILE,
@@ -233,6 +241,7 @@ _POOL_WORKFLOW_BINDING_VALIDATION_CODES = {
     "POOL_WORKFLOW_BINDING_PROFILE_REFS_MISSING",
     EXECUTION_PACK_TEMPLATE_INCOMPATIBLE,
 }
+KVO17_GENERATED_PURCHASE_BINDING_UNSUPPORTED = "KVO17_GENERATED_PURCHASE_BINDING_UNSUPPORTED"
 POOL_PROJECTION_HARDENING_CUTOFF_KEY = "pools.projection.publication_hardening_cutoff_utc"
 POOL_PUBLICATION_STEP_INCOMPLETE_CODE = "POOL_PUBLICATION_STEP_INCOMPLETE"
 MASTER_DATA_GATE_STATUS_COMPLETED = "completed"
@@ -3033,13 +3042,112 @@ def _build_batch_backed_top_down_run_input(
         else None
     )
     if isinstance(kvo18_metadata, Mapping):
-        run_input[KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY] = {
-            "policy_revision": str(kvo18_metadata.get("policy_revision") or "").strip(),
-            "stage_intent": str(kvo18_metadata.get("stage_intent") or "").strip(),
-            "content_hash": str(kvo18_metadata.get("content_hash") or "").strip(),
-            "document_policy_slots": list(kvo18_metadata.get("document_policy_slots") or []),
-        }
+        kvo18_context: dict[str, Any] = {}
+        for key in (
+            "policy_revision",
+            "stage_intent",
+            "content_hash",
+            "document_policy_slots",
+            "stages",
+            "technical_realization_policy",
+            "evidence_requirements",
+            "rows",
+            "diagnostics",
+        ):
+            if key in kvo18_metadata:
+                value = kvo18_metadata[key]
+                if key in {"policy_revision", "stage_intent", "content_hash"}:
+                    value = str(value or "").strip()
+                elif key == "document_policy_slots":
+                    value = list(value or [])
+                kvo18_context[key] = value
+        run_input[KVO18_ADVANCE_VAT_OFFSET_METADATA_KEY] = kvo18_context
+    kvo17_generated_metadata = (
+        source_metadata.get(KVO17_GENERATED_PURCHASE_METADATA_KEY)
+        if isinstance(source_metadata, Mapping)
+        else None
+    )
+    if isinstance(kvo17_generated_metadata, Mapping):
+        kvo17_context: dict[str, Any] = {}
+        for key in (
+            "manifest_version",
+            "document_plan_version",
+            "content_hash",
+            "request_hash",
+            "document_policy_slots",
+            "manifest",
+            "document_plan",
+            "diagnostics",
+            "readback_policy",
+        ):
+            if key in kvo17_generated_metadata:
+                value = kvo17_generated_metadata[key]
+                if key in {"manifest_version", "document_plan_version", "content_hash", "request_hash"}:
+                    value = str(value or "").strip()
+                elif key == "document_policy_slots":
+                    value = list(value or [])
+                kvo17_context[key] = value
+        run_input[KVO17_GENERATED_PURCHASE_METADATA_KEY] = kvo17_context
     return run_input
+
+
+def _validate_kvo17_generated_purchase_binding(
+    *,
+    workflow_binding: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    resolved_profile = workflow_binding.get("resolved_profile")
+    if not isinstance(resolved_profile, Mapping):
+        return {
+            "code": "KVO17_GENERATED_PURCHASE_PROFILE_MISSING",
+            "severity": "error",
+            "detail": "KVO17 generated purchase requires a resolved binding profile.",
+        }
+    parameters = dict(resolved_profile.get("parameters") or {})
+    if not bool(parameters.get("generated_purchase_supported")):
+        return {
+            "code": "KVO17_GENERATED_PURCHASE_CAPABILITY_MISSING",
+            "severity": "error",
+            "binding_id": str(workflow_binding.get("binding_id") or "").strip(),
+            "detail": "Selected workflow binding does not declare KVO17 generated purchase support.",
+        }
+    source_type = str(parameters.get("generated_purchase_source_type") or "").strip()
+    if source_type != KVO17_GENERATED_PURCHASE_SOURCE_TYPE:
+        return {
+            "code": "KVO17_GENERATED_PURCHASE_SOURCE_TYPE_MISMATCH",
+            "severity": "error",
+            "binding_id": str(workflow_binding.get("binding_id") or "").strip(),
+            "expected_source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+            "actual_source_type": source_type,
+            "detail": "Selected workflow binding declares incompatible KVO17 generated purchase source type.",
+        }
+    decisions = list(resolved_profile.get("decisions") or [])
+    slot_keys = {
+        str(decision.get("slot_key") or "").strip()
+        for decision in decisions
+        if isinstance(decision, Mapping)
+    }
+    missing_slots = [
+        slot_key
+        for slot_key in ("purchase_kvo01", "purchase_kvo17")
+        if slot_key not in slot_keys
+    ]
+    if missing_slots:
+        return {
+            "code": "KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING",
+            "severity": "error",
+            "binding_id": str(workflow_binding.get("binding_id") or "").strip(),
+            "missing_slots": missing_slots,
+            "detail": "Selected workflow binding is missing KVO17 generated purchase document-policy slots.",
+        }
+    topology_summary = dict(resolved_profile.get("topology_template_compatibility") or {})
+    if topology_summary and not bool(topology_summary.get("topology_aware_ready")):
+        return {
+            "code": "KVO17_GENERATED_PURCHASE_TOPOLOGY_INCOMPATIBLE",
+            "severity": "error",
+            "binding_id": str(workflow_binding.get("binding_id") or "").strip(),
+            "detail": "Selected workflow binding is not topology-aware ready for KVO17 generated purchase.",
+        }
+    return None
 
 
 def _serialize_organization_pool(pool: OrganizationPool) -> dict[str, Any]:
@@ -3514,7 +3622,12 @@ class PoolSaleClosingStartResponseSerializer(serializers.Serializer):
 class PoolBatchCreateRequestSerializer(serializers.Serializer):
     pool_id = serializers.UUIDField()
     batch_kind = serializers.ChoiceField(choices=PoolBatchKind.values)
-    source_type = serializers.ChoiceField(choices=(PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,))
+    source_type = serializers.ChoiceField(
+        choices=(
+            PoolBatchSourceType.SCHEMA_TEMPLATE_UPLOAD,
+            PoolBatchSourceType.KVO17_GENERATED_PURCHASE,
+        )
+    )
     schema_template_id = serializers.UUIDField(required=False, allow_null=True)
     pool_workflow_binding_id = serializers.CharField(required=False, allow_blank=False)
     start_organization_id = serializers.UUIDField(required=False, allow_null=True)
@@ -3547,6 +3660,16 @@ class PoolBatchCreateRequestSerializer(serializers.Serializer):
             if not has_json_payload and not has_xlsx_payload:
                 raise serializers.ValidationError(
                     {"json_payload": "schema_template_upload intake requires json_payload or xlsx_base64."}
+                )
+        if source_type == PoolBatchSourceType.KVO17_GENERATED_PURCHASE:
+            attrs["schema_template_id"] = None
+            if "json_payload" not in attrs:
+                raise serializers.ValidationError(
+                    {"json_payload": "kvo17_generated_purchase intake requires json_payload."}
+                )
+            if attrs.get("xlsx_base64"):
+                raise serializers.ValidationError(
+                    {"xlsx_base64": "kvo17_generated_purchase intake accepts only json_payload."}
                 )
         if batch_kind == PoolBatchKind.RECEIPT:
             if not str(attrs.get("pool_workflow_binding_id") or "").strip():
@@ -3598,6 +3721,43 @@ class PoolBatchCreateSaleJsonRequestSchemaSerializer(PoolBatchCreateRequestSchem
 class PoolBatchCreateSaleXlsxRequestSchemaSerializer(PoolBatchCreateRequestSchemaBaseSerializer):
     batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.SALE,))
     xlsx_base64 = serializers.CharField(allow_blank=False)
+
+
+class PoolBatchCreateReceiptKvo17GeneratedRequestSchemaSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    batch_kind = serializers.ChoiceField(choices=(PoolBatchKind.RECEIPT,))
+    source_type = serializers.ChoiceField(choices=(PoolBatchSourceType.KVO17_GENERATED_PURCHASE,))
+    pool_workflow_binding_id = serializers.CharField(allow_blank=False)
+    start_organization_id = serializers.UUIDField()
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    source_reference = serializers.CharField(required=False, allow_blank=True, default="")
+    raw_payload_ref = serializers.CharField(required=False, allow_blank=True, default="")
+    source_metadata = serializers.JSONField(required=False, default=dict)
+    json_payload = serializers.JSONField()
+
+
+class Kvo17GeneratedPurchasePreviewRequestSerializer(serializers.Serializer):
+    pool_id = serializers.UUIDField()
+    pool_workflow_binding_id = serializers.CharField(allow_blank=False)
+    period_start = serializers.DateField()
+    period_end = serializers.DateField()
+    json_payload = serializers.JSONField()
+
+    def validate(self, attrs):
+        if not isinstance(attrs.get("json_payload"), Mapping):
+            raise serializers.ValidationError(
+                {"json_payload": "KVO17 generated purchase preview requires json_payload object."}
+            )
+        return attrs
+
+
+class Kvo17GeneratedPurchasePreviewResponseSerializer(serializers.Serializer):
+    manifest = serializers.JSONField()
+    document_plan = serializers.JSONField()
+    diagnostics = serializers.JSONField()
+    request_hash = serializers.CharField()
+    content_hash = serializers.CharField()
 
 
 class PoolBatchCreateResponseSerializer(serializers.Serializer):
@@ -6103,6 +6263,131 @@ def get_pool_run_report(request, run_id: UUID):
 
 @extend_schema(
     tags=["v2"],
+    operation_id="v2_pools_kvo17_generated_purchase_preview",
+    summary="Preview deterministic KVO17 generated purchase manifest",
+    request=Kvo17GeneratedPurchasePreviewRequestSerializer,
+    responses={
+        200: Kvo17GeneratedPurchasePreviewResponseSerializer,
+        (400, "application/problem+json"): ProblemDetailsErrorSerializer,
+        401: OpenApiResponse(description="Unauthorized"),
+        (404, "application/problem+json"): ProblemDetailsErrorSerializer,
+    },
+    methods=["POST"],
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def preview_kvo17_generated_purchase(request):
+    tenant_id = _resolve_tenant_id(request)
+    if not tenant_id:
+        return _problem(
+            code="TENANT_CONTEXT_REQUIRED",
+            title="Tenant Context Required",
+            detail="X-CC1C-Tenant-ID is required.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = Kvo17GeneratedPurchasePreviewRequestSerializer(data=request.data or {})
+    if not serializer.is_valid():
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=str(serializer.errors),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    data = serializer.validated_data
+    pool = OrganizationPool.objects.filter(id=data["pool_id"], tenant_id=tenant_id).first()
+    if pool is None:
+        return _problem(
+            code="POOL_NOT_FOUND",
+            title="Pool Not Found",
+            detail="Organization pool not found in current tenant context.",
+            status_code=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        resolved_workflow_binding = resolve_pool_workflow_binding_for_run(
+            raw_bindings=list_attached_pool_workflow_bindings(pool=pool),
+            requested_binding_id=str(data.get("pool_workflow_binding_id") or "").strip() or None,
+            direction=PoolRunDirection.TOP_DOWN,
+            mode=PoolRunMode.SAFE,
+            period_start=data["period_start"],
+        )
+    except PoolWorkflowBindingStoreError as exc:
+        error_code, detail = _resolve_pool_workflow_binding_validation_error(exc)
+        return _problem(
+            code=error_code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=detail,
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+    except PoolWorkflowBindingResolutionError as exc:
+        return _problem(
+            code=exc.code,
+            title="Pool Workflow Binding Resolution Failed",
+            detail=str(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=exc.errors,
+        )
+    if resolved_workflow_binding is None:
+        return _problem(
+            code="POOL_WORKFLOW_BINDING_NOT_RESOLVED",
+            title="Pool Workflow Binding Resolution Failed",
+            detail="No pool workflow bindings are configured for this pool.",
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=[],
+        )
+
+    workflow_binding_payload = resolved_workflow_binding.model_dump(mode="json", exclude_none=True)
+    binding_diagnostic = _validate_kvo17_generated_purchase_binding(
+        workflow_binding=workflow_binding_payload,
+    )
+    if binding_diagnostic is not None:
+        return _problem(
+            code=KVO17_GENERATED_PURCHASE_BINDING_UNSUPPORTED,
+            title="KVO17 Generated Purchase Binding Unsupported",
+            detail=binding_diagnostic["detail"],
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            errors=[binding_diagnostic],
+        )
+
+    try:
+        request_payload = dict(data["json_payload"])
+        request_payload.setdefault("period_start", data["period_start"].isoformat())
+        request_payload.setdefault("period_end", data["period_end"].isoformat())
+        available_counterparty_refs = set(
+            PoolMasterParty.objects.filter(
+                tenant_id=tenant_id,
+                is_counterparty=True,
+            ).values_list("canonical_id", flat=True)
+        )
+        manifest = build_kvo17_generated_purchase_manifest(
+            request=request_payload,
+            available_counterparty_refs=available_counterparty_refs,
+        )
+        document_plan = compile_kvo17_generated_purchase_document_plan(manifest=manifest)
+    except (DjangoValidationError, ValueError) as exc:
+        return _problem(
+            code="VALIDATION_ERROR",
+            title="Validation Error",
+            detail=_validation_message(exc),
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        {
+            "manifest": manifest.as_dict(),
+            "document_plan": document_plan,
+            "diagnostics": [],
+            "request_hash": manifest.request_hash,
+            "content_hash": manifest.content_hash,
+        },
+        status=http_status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["v2"],
     operation_id="v2_pools_batches_list",
     summary="List pool batches",
     responses={
@@ -6121,6 +6406,7 @@ def get_pool_run_report(request, run_id: UUID):
         serializers=[
             PoolBatchCreateReceiptJsonRequestSchemaSerializer,
             PoolBatchCreateReceiptXlsxRequestSchemaSerializer,
+            PoolBatchCreateReceiptKvo17GeneratedRequestSchemaSerializer,
             PoolBatchCreateSaleJsonRequestSchemaSerializer,
             PoolBatchCreateSaleXlsxRequestSchemaSerializer,
         ],
@@ -6276,6 +6562,18 @@ def list_or_create_pool_batches(request):
                 errors=[],
             )
         resolved_workflow_binding_payload = resolved_workflow_binding.model_dump(mode="json", exclude_none=True)
+        if data["source_type"] == PoolBatchSourceType.KVO17_GENERATED_PURCHASE:
+            binding_diagnostic = _validate_kvo17_generated_purchase_binding(
+                workflow_binding=resolved_workflow_binding_payload,
+            )
+            if binding_diagnostic is not None:
+                return _problem(
+                    code=KVO17_GENERATED_PURCHASE_BINDING_UNSUPPORTED,
+                    title="KVO17 Generated Purchase Binding Unsupported",
+                    detail=binding_diagnostic["detail"],
+                    status_code=http_status.HTTP_400_BAD_REQUEST,
+                    errors=[binding_diagnostic],
+                )
 
     run_record = None
     runtime_result = None

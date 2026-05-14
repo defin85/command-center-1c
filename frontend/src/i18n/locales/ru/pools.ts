@@ -2038,6 +2038,7 @@ const pools = {
       submit: 'Создать batch',
       fields: {
         batchKind: 'Batch kind',
+        sourceMode: 'Режим источника',
         sourceReference: 'Source reference',
         rawPayloadReference: 'Raw payload reference',
         sourcePayloadJson: 'Source payload JSON',
@@ -2063,6 +2064,8 @@ const pools = {
       options: {
         receipt: 'receipt',
         sale: 'sale',
+        schemaTemplateUpload: 'Загрузка схемы',
+        kvo17GeneratedPurchase: 'Генератор КВО17',
       },
       actions: {
         loadPayloadFile: 'Загрузить payload file',
@@ -2095,6 +2098,64 @@ const pools = {
         summary: 'строк {{rows}} · сумма {{amount}} · НДС {{vat}}',
         diagnosticsTitle: 'Diagnostics',
         noDiagnostics: 'Row diagnostics отсутствуют.',
+      },
+      kvo17Generated: {
+        title: 'Генерация поступлений КВО17',
+        description: 'Создайте по два поступления на контрагента из диапазонов, затем запустите safe run из принятого manifest.',
+        counterparties: 'Контрагенты',
+        ranges: {
+          small: 'Малый диапазон',
+          large: 'Большой диапазон',
+        },
+        fields: {
+          minAmount: 'Мин',
+          maxAmount: 'Макс',
+          seed: 'Seed',
+          invoicePrefix: 'Префикс счета-фактуры',
+        },
+        placeholders: {
+          counterparties: 'Выберите контрагентов',
+        },
+        actions: {
+          preview: 'Preview manifest',
+          createRun: 'Создать run',
+          regenerate: 'Сгенерировать seed',
+        },
+        validation: {
+          title: 'Генератор КВО17 заблокирован',
+          poolRequired: 'Выберите пул.',
+          periodRequired: 'Укажите period_start и period_end.',
+          bindingRequired: 'Выберите совместимый workflow binding.',
+          startOrganizationRequired: 'Выберите стартовую организацию.',
+          counterpartiesRequired: 'Выберите хотя бы одного контрагента.',
+          seedRequired: 'Seed обязателен.',
+          invoicePrefixRequired: 'Префикс счета-фактуры обязателен.',
+          kvoMustDiffer: 'Два диапазона должны использовать разные значения КВО.',
+          amountPositive: '{{range}} должен иметь положительные суммы.',
+          rangeBounds: '{{range}}: max должен быть больше или равен min.',
+        },
+        bindingDiagnostics: {
+          bindingMissing: 'Не выбран совместимый binding КВО17.',
+          capabilityMissing: 'Выбранный binding не объявляет поддержку generated purchase.',
+          sourceTypeMismatch: 'Выбранный binding не объявляет source type kvo17_generated_purchase.',
+          slotMissing: 'Выбранный binding должен закреплять purchase_kvo01 и purchase_kvo17 slots.',
+          topologyNotReady: 'Topology compatibility выбранного binding не готова.',
+        },
+        messages: {
+          previewFailed: 'Не удалось построить preview генератора КВО17.',
+          counterpartiesFailed: 'Не удалось загрузить контрагентов.',
+          stalePreview: 'Параметры генерации изменились после preview. Сначала постройте manifest заново.',
+        },
+        preview: {
+          title: 'Generated manifest принят',
+          description: 'Даты, суммы, invoice identity, КВО и idempotency keys зафиксированы этим manifest.',
+          rows: 'Строк',
+          counterparties: 'Контрагентов',
+          requestHash: 'Request hash',
+          contentHash: 'Content hash',
+          rangeSummary: '{{range}} · КВО {{kvo}} · {{min}}..{{max}} RUB',
+          invoiceIdentityNotice: 'Строки одного контрагента сохраняют одинаковые номер/дату счета-фактуры, но runtime identities остаются разными.',
+        },
       },
       messages: {
         failedToReadFile: 'Не удалось прочитать {{fileName}}',

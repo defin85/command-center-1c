@@ -32,3 +32,10 @@
 - [x] 5.2 Publish KVO 18 staged workflow aliases through the pool runtime template registry and route them through pool-domain runtime execution.
 - [x] 5.3 Bind ready KVO 18 UI staged controls to bounded stage submit metadata and block submit/stage actions on blocking diagnostics.
 - [x] 5.4 Re-run focused backend/frontend gates plus strict OpenSpec validation for the blocker closure.
+
+## 6. Finish-To-100 Runtime Closure
+
+- [x] 6.1 Preserve full KVO 18 runtime context (`stages`, row lineage, technical realization policy, evidence requirements, diagnostics) from public schema-template intake into the linked run input.
+- [x] 6.2 Materialize ready KVO 18 stage aliases into bounded stage publication payloads from compiled policy slots and normalized rows.
+- [x] 6.3 Fail closed when a ready KVO 18 stage is missing a mandatory compiled policy slot, with no stage payload persisted.
+- [x] 6.4 Prove the real KVO 18 workflow start path preserves runtime context and compiled slots before stage execution.

@@ -1227,23 +1227,34 @@ func readOptionalObject(value interface{}) map[string]interface{} {
 }
 
 func readOptionalStringMap(value interface{}) map[string]string {
-	obj, ok := value.(map[string]interface{})
-	if !ok {
+	switch obj := value.(type) {
+	case map[string]interface{}:
+		out := make(map[string]string, len(obj))
+		for rawKey, rawValue := range obj {
+			key := strings.TrimSpace(rawKey)
+			if key == "" {
+				continue
+			}
+			ref := strings.TrimSpace(fmt.Sprintf("%v", rawValue))
+			if ref == "" {
+				continue
+			}
+			out[key] = ref
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(obj))
+		for rawKey, rawValue := range obj {
+			key := strings.TrimSpace(rawKey)
+			ref := strings.TrimSpace(rawValue)
+			if key != "" && ref != "" {
+				out[key] = ref
+			}
+		}
+		return out
+	default:
 		return map[string]string{}
 	}
-	out := make(map[string]string, len(obj))
-	for rawKey, rawValue := range obj {
-		key := strings.TrimSpace(rawKey)
-		if key == "" {
-			continue
-		}
-		ref := strings.TrimSpace(fmt.Sprintf("%v", rawValue))
-		if ref == "" {
-			continue
-		}
-		out[key] = ref
-	}
-	return out
 }
 
 func normalizeInvoiceMode(raw string) (string, error) {

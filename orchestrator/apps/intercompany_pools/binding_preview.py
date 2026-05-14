@@ -23,7 +23,13 @@ from .document_policy_contract import (
     validate_document_policy_v1,
 )
 from .distribution_artifact_contract import validate_distribution_artifact_v1
-from .models import BindingProfileRevision, OrganizationPool, PoolRun, PoolSchemaTemplate
+from .kvo17_generated_purchase_document_plan import (
+    KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
+    compile_kvo17_generated_purchase_publication_artifact,
+    parse_kvo17_generated_purchase_manifest_payload,
+)
+from .kvo17_generated_purchase_intake import KVO17_GENERATED_PURCHASE_METADATA_KEY
+from .models import BindingProfileRevision, Organization, OrganizationPool, PoolRun, PoolSchemaTemplate
 from .runtime_run_input import build_runtime_run_input
 from .run_input_sanitizer import sanitize_run_input_for_runtime_contract
 from .runtime_distribution import compute_distribution_runtime_state, load_runtime_topology_for_period
@@ -223,18 +229,42 @@ def build_pool_workflow_binding_runtime_bundle(
         period_end=period_end,
         run_input=runtime_run_input,
     )
-    document_plan_artifact = compile_document_plan_artifact_v1(
-        run=preview_run,
-        distribution_artifact=distribution_artifact,
-        topology=topology,
-        compiled_document_policy_slots=compiled_document_policy_slots,
-        compiled_document_policy=compiled_document_policy,
-        document_policy_source=document_policy_source,
-    )
-    slot_coverage_summary = _build_slot_coverage_summary(
-        topology=topology,
-        compiled_document_policy_slots=compiled_document_policy_slots,
-    )
+    kvo17_generated_context = _resolve_kvo17_generated_context(run_input=runtime_run_input)
+    if kvo17_generated_context is not None:
+        target_database_id, target_organization_id, target_party_canonical_id = _resolve_kvo17_generated_target(
+            run=preview_run,
+            runtime_run_input=runtime_run_input,
+            topology=topology,
+        )
+        document_plan_artifact = compile_kvo17_generated_purchase_publication_artifact(
+            run=preview_run,
+            manifest=parse_kvo17_generated_purchase_manifest_payload(
+                payload=kvo17_generated_context["manifest"]
+            ),
+            target_database_id=target_database_id,
+            target_organization_id=target_organization_id,
+            topology_version_ref=str(distribution_artifact.get("topology_version_ref") or ""),
+            compiled_policy_slots=compiled_document_policy_slots,
+            target_party_canonical_id=target_party_canonical_id,
+        )
+        slot_coverage_summary = _build_generated_purchase_slot_coverage_summary(
+            target_database_id=target_database_id,
+            target_organization_id=target_organization_id,
+            compiled_document_policy_slots=compiled_document_policy_slots,
+        )
+    else:
+        document_plan_artifact = compile_document_plan_artifact_v1(
+            run=preview_run,
+            distribution_artifact=distribution_artifact,
+            topology=topology,
+            compiled_document_policy_slots=compiled_document_policy_slots,
+            compiled_document_policy=compiled_document_policy,
+            document_policy_source=document_policy_source,
+        )
+        slot_coverage_summary = _build_slot_coverage_summary(
+            topology=topology,
+            compiled_document_policy_slots=compiled_document_policy_slots,
+        )
     plan = compile_pool_execution_plan(
         schema_template=schema_template,
         run_context=PoolWorkflowRunContext(
@@ -268,6 +298,121 @@ def build_pool_workflow_binding_runtime_bundle(
         "plan": plan,
         "runtime_projection": runtime_projection,
         "run_input": runtime_run_input,
+    }
+
+
+def _resolve_kvo17_generated_context(*, run_input: Mapping[str, Any]) -> dict[str, Any] | None:
+    context = run_input.get(KVO17_GENERATED_PURCHASE_METADATA_KEY)
+    if not isinstance(context, Mapping):
+        return None
+    manifest = context.get("manifest")
+    if not isinstance(manifest, Mapping):
+        raise ValueError(
+            "KVO17_GENERATED_PURCHASE_MANIFEST_MISSING: "
+            "generated purchase runtime context must contain manifest"
+        )
+    return {
+        **dict(context),
+        "manifest": dict(manifest),
+    }
+
+
+def _resolve_kvo17_generated_target(
+    *,
+    run: PoolRun,
+    runtime_run_input: Mapping[str, Any],
+    topology: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    start_organization_id = str(runtime_run_input.get("start_organization_id") or "").strip()
+    if start_organization_id:
+        start_organization = (
+            Organization.objects.select_related("database", "master_party")
+            .filter(id=start_organization_id, tenant_id=run.tenant_id)
+            .first()
+        )
+        if start_organization is not None and start_organization.database_id:
+            return (
+                str(start_organization.database_id),
+                str(start_organization.id),
+                str(getattr(start_organization.master_party, "canonical_id", "") or ""),
+            )
+
+    node_models = topology.get("node_models") if isinstance(topology, Mapping) else None
+    publish_target_node_ids = topology.get("publish_target_node_ids") if isinstance(topology, Mapping) else None
+    target_candidates: list[Organization] = []
+    if isinstance(node_models, Mapping) and isinstance(publish_target_node_ids, list):
+        for raw_node_id in publish_target_node_ids:
+            node = node_models.get(str(raw_node_id or "").strip())
+            organization = getattr(node, "organization", None)
+            if isinstance(organization, Organization) and organization.database_id:
+                target_candidates.append(organization)
+    if len(target_candidates) == 1:
+        organization = target_candidates[0]
+        return (
+            str(organization.database_id),
+            str(organization.id),
+            str(getattr(organization.master_party, "canonical_id", "") or ""),
+        )
+
+    database_candidates: list[Organization] = []
+    if isinstance(node_models, Mapping):
+        for node in node_models.values():
+            organization = getattr(node, "organization", None)
+            if isinstance(organization, Organization) and organization.database_id:
+                database_candidates.append(organization)
+    if len(database_candidates) == 1:
+        organization = database_candidates[0]
+        return (
+            str(organization.database_id),
+            str(organization.id),
+            str(getattr(organization.master_party, "canonical_id", "") or ""),
+        )
+
+    raise ValueError(
+        "KVO17_GENERATED_PURCHASE_TARGET_DATABASE_MISSING: "
+        "generated purchase requires one unambiguous target Organization.database"
+    )
+
+
+def _build_generated_purchase_slot_coverage_summary(
+    *,
+    target_database_id: str,
+    target_organization_id: str,
+    compiled_document_policy_slots: Mapping[str, Any],
+) -> dict[str, Any]:
+    source_slots = [
+        slot_key
+        for slot_key in ("purchase_kvo01", "purchase_kvo17")
+        if isinstance(compiled_document_policy_slots.get(slot_key), Mapping)
+    ]
+    detail = (
+        "Generated KVO17 publication uses one target edge with two receipt documents; "
+        f"source slots: {', '.join(source_slots) or '<none>'}."
+    )
+    return {
+        "total_edges": 1,
+        "counts": {
+            "resolved": 1,
+            "missing_selector": 0,
+            "missing_slot": 0,
+            "ambiguous_slot": 0,
+            "ambiguous_context": 0,
+            "unavailable_context": 0,
+        },
+        "items": [
+            {
+                "edge_id": f"kvo17_generated_purchase:{target_database_id}",
+                "edge_label": f"KVO17 generated purchase -> {target_organization_id}",
+                "slot_key": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
+                "source_slot_keys": source_slots,
+                "coverage": {
+                    "code": None,
+                    "status": "resolved",
+                    "label": "Resolved",
+                    "detail": detail,
+                },
+            }
+        ],
     }
 
 

@@ -1,0 +1,52 @@
+type: object
+additionalProperties: false
+properties:
+  line_no:
+    type: integer
+  counterparty_ref:
+    type: string
+  counterparty_name:
+    type: string
+  counterparty_inn:
+    type: string
+  range_key:
+    type: string
+  kvo:
+    type: string
+    enum:
+      - '01'
+      - '17'
+  amount:
+    type: string
+  vat_rate:
+    type: string
+  vat_amount:
+    type: string
+  currency:
+    type: string
+  source_document_number:
+    type: string
+  source_document_date:
+    type: string
+    format: date
+  row_id:
+    type: string
+  row_fingerprint:
+    type: string
+  idempotency_key:
+    type: string
+required:
+  - line_no
+  - counterparty_ref
+  - counterparty_name
+  - range_key
+  - kvo
+  - amount
+  - vat_rate
+  - vat_amount
+  - currency
+  - source_document_number
+  - source_document_date
+  - row_id
+  - row_fingerprint
+  - idempotency_key

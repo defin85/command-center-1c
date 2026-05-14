@@ -4,10 +4,16 @@ import { UploadOutlined } from '@ant-design/icons'
 
 import {
   createPoolBatch,
+  listMasterDataParties,
+  previewKvo17GeneratedPurchase,
+  type Kvo17GeneratedPurchasePreviewResponse,
+  type Kvo17GeneratedPurchaseRequestPayload,
   type PoolBatchCreatePayload,
   type PoolBatchCreateResponse,
   type PoolBatchKind,
+  type PoolMasterParty,
   type PoolSchemaTemplate,
+  type PoolWorkflowBinding,
 } from '../../api/intercompanyPools'
 import { DrawerFormShell } from '../../components/platform/DrawerFormShell'
 import { usePoolsTranslation } from '../../i18n'
@@ -29,6 +35,13 @@ import {
   type Kvo18AdvanceVatOffsetPreview,
   type Kvo18StageSlot,
 } from './kvo18AdvanceVatOffsetPreview'
+import { Kvo17GeneratedPurchaseIntake, type Kvo17GeneratedPurchaseCounterpartyOption } from './kvo17GeneratedPurchaseIntake'
+import {
+  KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+  SCHEMA_TEMPLATE_UPLOAD_SOURCE_TYPE,
+  type PoolBatchIntakeSourceMode,
+  resolveKvo17GeneratedPurchaseBindingCapability,
+} from './schemeIntake/PoolIntakeSchemeRegistry'
 
 
 const { Text } = Typography
@@ -41,6 +54,7 @@ type SelectOption = {
 
 type BatchIntakeFormValues = {
   batch_kind: PoolBatchKind
+  source_mode?: PoolBatchIntakeSourceMode
   period_start: string
   period_end?: string
   schema_template_id?: string
@@ -67,6 +81,7 @@ type PoolBatchIntakeDrawerProps = {
   schemaTemplates: PoolSchemaTemplate[]
   loadingSchemaTemplates: boolean
   workflowBindingOptions: SelectOption[]
+  workflowBindings?: PoolWorkflowBinding[]
   startOrganizationOptions: SelectOption[]
   initialValues: {
     batchKind: PoolBatchKind
@@ -228,6 +243,7 @@ export function PoolBatchIntakeDrawer({
   schemaTemplates,
   loadingSchemaTemplates,
   workflowBindingOptions,
+  workflowBindings = [],
   startOrganizationOptions,
   initialValues,
   onClose,
@@ -238,9 +254,16 @@ export function PoolBatchIntakeDrawer({
   const [form] = Form.useForm<BatchIntakeFormValues>()
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [counterparties, setCounterparties] = useState<PoolMasterParty[]>([])
+  const [loadingCounterparties, setLoadingCounterparties] = useState(false)
   const batchKind = Form.useWatch('batch_kind', form) ?? initialValues.batchKind
+  const sourceMode = Form.useWatch('source_mode', form) ?? SCHEMA_TEMPLATE_UPLOAD_SOURCE_TYPE
   const uploadedFileName = Form.useWatch('uploaded_file_name', form)
   const selectedSchemaTemplateId = Form.useWatch('schema_template_id', form)
+  const selectedWorkflowBindingId = Form.useWatch('pool_workflow_binding_id', form)
+  const periodStart = Form.useWatch('period_start', form) ?? initialValues.periodStart
+  const periodEnd = Form.useWatch('period_end', form) ?? (initialValues.periodEnd ?? '')
+  const selectedStartOrganizationId = Form.useWatch('start_organization_id', form) ?? (initialValues.startOrganizationId ?? '')
   const sourcePayloadJson = Form.useWatch('source_payload_json', form)
   const selectedSchemaTemplate = useMemo(
     () => schemaTemplates.find((item) => item.id === selectedSchemaTemplateId) ?? null,
@@ -287,6 +310,34 @@ export function PoolBatchIntakeDrawer({
     }
   }, [selectedSchemaTemplate, sourcePayloadJson, t])
   const kvo18HasBlockingDiagnostics = Boolean(kvo18PreviewState?.preview?.diagnostics.length)
+  const isGeneratedPurchaseMode = batchKind === 'receipt' && sourceMode === KVO17_GENERATED_PURCHASE_SOURCE_TYPE
+  const selectedWorkflowBinding = useMemo(
+    () => workflowBindings.find((binding) => binding.binding_id === selectedWorkflowBindingId) ?? null,
+    [selectedWorkflowBindingId, workflowBindings],
+  )
+  const generatedPurchaseBindingCapability = useMemo(
+    () => resolveKvo17GeneratedPurchaseBindingCapability(selectedWorkflowBinding),
+    [selectedWorkflowBinding],
+  )
+  const compatibleGeneratedPurchaseBinding = useMemo(
+    () => workflowBindings.find((binding) => resolveKvo17GeneratedPurchaseBindingCapability(binding).available) ?? null,
+    [workflowBindings],
+  )
+  const generatedPurchaseSourceModeAvailable = (
+    generatedPurchaseBindingCapability.available || compatibleGeneratedPurchaseBinding !== null
+  )
+  const counterpartyOptions = useMemo<Kvo17GeneratedPurchaseCounterpartyOption[]>(
+    () => counterparties.map((counterparty) => ({
+      value: counterparty.canonical_id,
+      label: `${counterparty.name}${counterparty.inn ? ` · ${counterparty.inn}` : ''}`,
+      counterparty: {
+        counterparty_ref: counterparty.canonical_id,
+        counterparty_name: counterparty.name,
+        counterparty_inn: counterparty.inn,
+      },
+    })),
+    [counterparties],
+  )
 
   useEffect(() => {
     if (!open) {
@@ -294,6 +345,7 @@ export function PoolBatchIntakeDrawer({
     }
     form.setFieldsValue({
       batch_kind: initialValues.batchKind,
+      source_mode: SCHEMA_TEMPLATE_UPLOAD_SOURCE_TYPE,
       period_start: initialValues.periodStart,
       period_end: initialValues.periodEnd ?? '',
       pool_workflow_binding_id: initialValues.poolWorkflowBindingId ?? undefined,
@@ -306,6 +358,49 @@ export function PoolBatchIntakeDrawer({
     })
     setSubmitError(null)
   }, [form, initialValues, open])
+
+  useEffect(() => {
+    if (!open || !isGeneratedPurchaseMode) {
+      return
+    }
+    if (!generatedPurchaseBindingCapability.available && compatibleGeneratedPurchaseBinding) {
+      form.setFields([
+        {
+          name: 'pool_workflow_binding_id',
+          value: compatibleGeneratedPurchaseBinding.binding_id,
+        },
+      ])
+    }
+    let cancelled = false
+    setLoadingCounterparties(true)
+    listMasterDataParties({ role: 'counterparty', limit: 200, offset: 0 })
+      .then((response) => {
+        if (!cancelled) {
+          setCounterparties(response.parties)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const resolved = resolveApiError(error, t('runs.batchIntake.kvo17Generated.messages.counterpartiesFailed'))
+          setSubmitError(resolved.message)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCounterparties(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    compatibleGeneratedPurchaseBinding,
+    form,
+    generatedPurchaseBindingCapability.available,
+    isGeneratedPurchaseMode,
+    open,
+    t,
+  ])
 
   const handleUploadFile = async (file: File) => {
     if (file.name.toLowerCase().endsWith('.json')) {
@@ -369,11 +464,113 @@ export function PoolBatchIntakeDrawer({
     }
   }
 
+  const handleGeneratedPreview = async (
+    requestPayload: Kvo17GeneratedPurchaseRequestPayload,
+  ): Promise<Kvo17GeneratedPurchasePreviewResponse> => {
+    if (!poolId) {
+      throw new Error(t('runs.batchIntake.messages.selectPoolBeforeCreate'))
+    }
+    const values = await form.validateFields([
+      'period_start',
+      'period_end',
+      'pool_workflow_binding_id',
+    ])
+    const periodEndValue = values.period_end?.trim() || ''
+    if (!periodEndValue) {
+      throw new Error(t('runs.batchIntake.kvo17Generated.validation.periodRequired'))
+    }
+    return previewKvo17GeneratedPurchase({
+      pool_id: poolId,
+      pool_workflow_binding_id: requireTrimmedValue(
+        values.pool_workflow_binding_id,
+        'pool_workflow_binding_id',
+        t,
+      ),
+      period_start: values.period_start,
+      period_end: periodEndValue,
+      json_payload: requestPayload,
+    })
+  }
+
+  const handleGeneratedCreate = async (
+    requestPayload: Kvo17GeneratedPurchaseRequestPayload,
+    preview: Kvo17GeneratedPurchasePreviewResponse,
+  ) => {
+    if (!poolId) {
+      throw new Error(t('runs.batchIntake.messages.selectPoolBeforeCreate'))
+    }
+    let values: BatchIntakeFormValues
+    try {
+      values = await form.validateFields([
+        'period_start',
+        'period_end',
+        'pool_workflow_binding_id',
+        'start_organization_id',
+        'source_reference',
+        'raw_payload_ref',
+      ])
+    } catch {
+      return
+    }
+    const periodEndValue = values.period_end?.trim() || ''
+    if (!periodEndValue) {
+      throw new Error(t('runs.batchIntake.kvo17Generated.validation.periodRequired'))
+    }
+
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      const payload: PoolBatchCreatePayload = {
+        pool_id: poolId,
+        source_type: KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+        batch_kind: 'receipt',
+        pool_workflow_binding_id: requireTrimmedValue(
+          values.pool_workflow_binding_id,
+          'pool_workflow_binding_id',
+          t,
+        ),
+        start_organization_id: requireTrimmedValue(
+          values.start_organization_id,
+          'start_organization_id',
+          t,
+        ),
+        period_start: values.period_start,
+        period_end: periodEndValue,
+        source_reference: values.source_reference?.trim() || `kvo17-generated-${preview.content_hash.slice(0, 12)}`,
+        raw_payload_ref: values.raw_payload_ref?.trim() || '',
+        source_metadata: {
+          kvo17_generated_purchase: {
+            accepted_manifest: preview.manifest,
+            accepted_request_hash: preview.request_hash,
+            accepted_content_hash: preview.content_hash,
+          },
+        },
+        json_payload: requestPayload,
+      }
+      const response = await createPoolBatch(payload)
+      await onCreated(response, {
+        batchKind: 'receipt',
+        periodStart: values.period_start,
+        periodEnd: periodEndValue,
+        poolWorkflowBindingId: values.pool_workflow_binding_id?.trim() || null,
+        startOrganizationId: values.start_organization_id?.trim() || null,
+      })
+      message.success(t('runs.batchIntake.messages.receiptAccepted'))
+      onClose()
+    } catch (error) {
+      const resolved = resolveApiError(error, t('runs.batchIntake.messages.failedToCreate'))
+      setSubmitError(resolved.message)
+      throw error
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <DrawerFormShell
       open={open}
       onClose={onClose}
-      onSubmit={() => handleSubmit()}
+      onSubmit={isGeneratedPurchaseMode ? undefined : () => handleSubmit()}
       title={t('runs.batchIntake.title')}
       subtitle={t('runs.batchIntake.subtitle', { poolLabel })}
       submitText={t('runs.batchIntake.submit')}
@@ -405,6 +602,25 @@ export function PoolBatchIntakeDrawer({
               <Radio.Button value="sale">{t('runs.batchIntake.options.sale')}</Radio.Button>
             </Radio.Group>
           </Form.Item>
+          {batchKind === 'receipt' ? (
+            <Form.Item name="source_mode" label={t('runs.batchIntake.fields.sourceMode')} rules={[{ required: true }]}>
+              <Radio.Group
+                data-testid="pool-runs-batch-intake-source-mode"
+                optionType="button"
+                buttonStyle="solid"
+              >
+                <Radio.Button value={SCHEMA_TEMPLATE_UPLOAD_SOURCE_TYPE}>
+                  {t('runs.batchIntake.options.schemaTemplateUpload')}
+                </Radio.Button>
+                <Radio.Button
+                  value={KVO17_GENERATED_PURCHASE_SOURCE_TYPE}
+                  disabled={!generatedPurchaseSourceModeAvailable}
+                >
+                  {t('runs.batchIntake.options.kvo17GeneratedPurchase')}
+                </Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+          ) : null}
           <Space size={12} wrap style={{ width: '100%' }}>
             <Form.Item
               name="period_start"
@@ -418,21 +634,23 @@ export function PoolBatchIntakeDrawer({
               <Input type="date" />
             </Form.Item>
           </Space>
-          <Form.Item
-            name="schema_template_id"
-            label={t('runs.create.fields.schemaTemplate')}
-            rules={[{ required: true, message: t('runs.batchIntake.validation.schemaTemplateRequired') }]}
-          >
-            <Select
-              data-testid="pool-runs-batch-intake-schema-template"
-              loading={loadingSchemaTemplates}
-              options={schemaTemplates.map((item) => ({
-                value: item.id,
-                label: `${item.code} - ${item.name}`,
-              }))}
-              placeholder={t('runs.batchIntake.placeholders.selectSchemaTemplate')}
-            />
-          </Form.Item>
+          {!isGeneratedPurchaseMode ? (
+            <Form.Item
+              name="schema_template_id"
+              label={t('runs.create.fields.schemaTemplate')}
+              rules={[{ required: true, message: t('runs.batchIntake.validation.schemaTemplateRequired') }]}
+            >
+              <Select
+                data-testid="pool-runs-batch-intake-schema-template"
+                loading={loadingSchemaTemplates}
+                options={schemaTemplates.map((item) => ({
+                  value: item.id,
+                  label: `${item.code} - ${item.name}`,
+                }))}
+                placeholder={t('runs.batchIntake.placeholders.selectSchemaTemplate')}
+              />
+            </Form.Item>
+          ) : null}
           {batchKind === 'receipt' ? (
             <Space direction="vertical" size={0} style={{ width: '100%' }}>
               <Form.Item
@@ -465,24 +683,40 @@ export function PoolBatchIntakeDrawer({
           <Form.Item name="raw_payload_ref" label={t('runs.batchIntake.fields.rawPayloadReference')}>
             <Input placeholder={t('runs.batchIntake.placeholders.rawPayloadReference')} />
           </Form.Item>
-          <Form.Item
-            name="source_payload_json"
-            label={t('runs.batchIntake.fields.sourcePayloadJson')}
-            extra={t('runs.batchIntake.fields.sourcePayloadExtra')}
-          >
-            <TextArea
-              data-testid="pool-runs-batch-intake-source-payload"
-              autoSize={{ minRows: 6, maxRows: 14 }}
+          {isGeneratedPurchaseMode ? (
+            <Kvo17GeneratedPurchaseIntake
+              poolId={poolId}
+              periodStart={periodStart}
+              periodEnd={periodEnd}
+              poolWorkflowBindingId={selectedWorkflowBindingId ?? ''}
+              startOrganizationId={selectedStartOrganizationId}
+              bindingCapability={generatedPurchaseBindingCapability}
+              counterpartyOptions={counterpartyOptions}
+              loadingCounterparties={loadingCounterparties}
+              submitting={submitting}
+              onPreview={handleGeneratedPreview}
+              onCreate={handleGeneratedCreate}
             />
-          </Form.Item>
-          {kvo17PreviewState ? (
+          ) : (
+            <>
+              <Form.Item
+                name="source_payload_json"
+                label={t('runs.batchIntake.fields.sourcePayloadJson')}
+                extra={t('runs.batchIntake.fields.sourcePayloadExtra')}
+              >
+                <TextArea
+                  data-testid="pool-runs-batch-intake-source-payload"
+                  autoSize={{ minRows: 6, maxRows: 14 }}
+                />
+              </Form.Item>
+              {kvo17PreviewState ? (
             <Kvo17PurchaseSplitPreviewPanel
               preview={kvo17PreviewState.preview}
               error={kvo17PreviewState.error}
               t={t}
             />
-          ) : null}
-          {kvo18PreviewState ? (
+              ) : null}
+              {kvo18PreviewState ? (
             <Kvo18AdvanceVatOffsetPreviewPanel
               preview={kvo18PreviewState.preview}
               error={kvo18PreviewState.error}
@@ -495,27 +729,29 @@ export function PoolBatchIntakeDrawer({
                 })
               }}
             />
-          ) : null}
-          <Form.Item name="xlsx_base64" hidden>
-            <Input />
-          </Form.Item>
-          <Form.Item name="uploaded_file_name" hidden>
-            <Input />
-          </Form.Item>
-          <Space direction="vertical" size={8} style={{ width: '100%' }}>
-            <Upload
-              accept=".json,.xlsx,.xls,.csv"
-              maxCount={1}
-              showUploadList={false}
-              beforeUpload={(file) => {
-                void handleUploadFile(file)
-                return false
-              }}
-            >
-              <Button icon={<UploadOutlined />}>{t('runs.batchIntake.actions.loadPayloadFile')}</Button>
-            </Upload>
-            {uploadedFileName ? <Text type="secondary">{t('runs.batchIntake.fields.loadedFile', { fileName: uploadedFileName })}</Text> : null}
-          </Space>
+              ) : null}
+              <Form.Item name="xlsx_base64" hidden>
+                <Input />
+              </Form.Item>
+              <Form.Item name="uploaded_file_name" hidden>
+                <Input />
+              </Form.Item>
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <Upload
+                  accept=".json,.xlsx,.xls,.csv"
+                  maxCount={1}
+                  showUploadList={false}
+                  beforeUpload={(file) => {
+                    void handleUploadFile(file)
+                    return false
+                  }}
+                >
+                  <Button icon={<UploadOutlined />}>{t('runs.batchIntake.actions.loadPayloadFile')}</Button>
+                </Upload>
+                {uploadedFileName ? <Text type="secondary">{t('runs.batchIntake.fields.loadedFile', { fileName: uploadedFileName })}</Text> : null}
+              </Space>
+            </>
+          )}
         </Form>
       </Space>
     </DrawerFormShell>

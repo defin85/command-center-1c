@@ -185,6 +185,7 @@ var OrchestratorRoutes = []RouteDefinition{
 	{Method: "POST", Path: "/pools/organizations/upsert/", OperationID: "v2_pools_organizations_upsert"},
 	{Method: "GET", Path: "/pools/batches/", OperationID: "v2_pools_batches_list"},
 	{Method: "POST", Path: "/pools/batches/", OperationID: "v2_pools_batches_create"},
+	{Method: "POST", Path: "/pools/kvo17-generated-purchase/preview/", OperationID: "v2_pools_kvo17_generated_purchase_preview"},
 	{Method: "GET", Path: "/pools/factual/overview/", OperationID: "v2_pools_factual_overview"},
 	{Method: "GET", Path: "/pools/factual/workspace/", OperationID: "v2_pools_factual_workspace"},
 	{Method: "POST", Path: "/pools/factual/refresh/", OperationID: "v2_pools_factual_refresh"},
