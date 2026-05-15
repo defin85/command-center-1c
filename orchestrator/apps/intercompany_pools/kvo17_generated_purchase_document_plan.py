@@ -36,10 +36,13 @@ _PURCHASE_RECEIPT_ENTITY_NAME = "Document_ПоступлениеТоваровУ
 _PURCHASE_INVOICE_ENTITY_NAME = "Document_СчетФактураПолученный"
 _PURCHASE_INVOICE_KIND = "НаПоступление"
 _PURCHASE_INVOICE_BASE_DOCUMENT_TYPE = "StandardODATA.Document_ПоступлениеТоваровУслуг"
-_DEFAULT_PURCHASE_OPERATION = "ПокупкаКомиссия"
+_DEFAULT_PURCHASE_OPERATION = "Услуги"
 _DEFAULT_RUB_CURRENCY_REF = "171b30af-54e8-11e9-80ee-0050569f2e9f"
 _DEFAULT_PURCHASE_COUNTERPARTY_ACCOUNT_REF = "020635ce-54e8-11e9-80ee-0050569f2e9f"
 _DEFAULT_PURCHASE_ADVANCE_ACCOUNT_REF = "020635cf-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_VAT_ACCOUNT_REF = "02063586-54e8-11e9-80ee-0050569f2e9f"
 _DEFAULT_PURCHASE_WAREHOUSE_REF = "62953111-54e8-11e9-80ee-0050569f2e9f"
 _DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID = "osnovnoy"
 _DEFAULT_PURCHASE_ITEM_CANONICAL_ID = "packing-service"
@@ -533,6 +536,9 @@ def _compile_publication_receipt_document(
                     "Сумма": str(row.amount),
                     "СтавкаНДС": _normalize_vat_rate(row.vat_rate),
                     "СуммаНДС": str(row.vat_amount),
+                    "СчетЗатрат_Key": _DEFAULT_PURCHASE_COST_ACCOUNT_REF,
+                    "СчетЗатратНУ_Key": _DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF,
+                    "СчетУчетаНДС_Key": _DEFAULT_PURCHASE_VAT_ACCOUNT_REF,
                     "ИдентификаторСтроки": row.row_id,
                 }
             ]

@@ -318,13 +318,19 @@ def test_kvo17_generated_purchase_publication_artifact_uses_one_edge_with_two_do
             fields = document["field_mapping"]
             service_row = document["table_parts_mapping"]["Услуги"][0]
             assert "КодВидаОперации" not in fields
+            assert fields["ВидОперации"] == "Услуги"
             assert fields["Организация_Key"] == "master_data.party.target-party.organization.ref"
             assert fields["Контрагент_Key"].startswith("master_data.party.supplier-")
             assert fields["ДоговорКонтрагента_Key"].startswith("master_data.contract.osnovnoy.supplier-")
+            assert fields["СчетУчетаРасчетовСКонтрагентом_Key"] == "020635ce-54e8-11e9-80ee-0050569f2e9f"
+            assert fields["СчетУчетаРасчетовПоАвансам_Key"] == "020635cf-54e8-11e9-80ee-0050569f2e9f"
             assert fields["УдалитьДатаВходящегоСчетаФактуры"] == fields["Date"]
             assert service_row["LineNumber"] == "1"
             assert service_row["Номенклатура_Key"] == "master_data.item.packing-service.ref"
             assert service_row["СтавкаНДС"] == "НДС20"
+            assert service_row["СчетЗатрат_Key"] == "02063686-54e8-11e9-80ee-0050569f2e9f"
+            assert service_row["СчетЗатратНУ_Key"] == "02063686-54e8-11e9-80ee-0050569f2e9f"
+            assert service_row["СчетУчетаНДС_Key"] == "02063586-54e8-11e9-80ee-0050569f2e9f"
         for document in invoice_documents:
             fields = document["field_mapping"]
             assert document["invoice_mode"] == "required"
