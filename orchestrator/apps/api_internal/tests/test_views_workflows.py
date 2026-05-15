@@ -1314,6 +1314,71 @@ class WorkflowInternalEndpointsV2Tests(InternalAPIV2BaseTestCase):
             {str(db_first.id), str(db_second.id)},
         )
 
+    def test_update_workflow_status_completed_deduplicates_duplicate_atomic_publication_rows(self):
+        tenant, run, execution, _ = self._create_pool_runtime_fixture()
+        database = Database.objects.create(
+            tenant=tenant,
+            name=f"projection-atomic-dedupe-{uuid4().hex[:8]}",
+            host="localhost",
+            odata_url="http://localhost/odata/atomic-dedupe.odata",
+            username="admin",
+            password="secret",
+        )
+        publication_result = {
+            "step": "publication_odata",
+            "pool_run_id": str(run.id),
+            "status": "published",
+            "entity_name": "Document_ПоступлениеТоваровУслуг",
+            "documents_targets": 1,
+            "succeeded_targets": 1,
+            "failed_targets": 0,
+            "max_attempts": 1,
+            "target_databases": [str(database.id)],
+            "documents_count_by_database": {str(database.id): 1},
+            "attempts": [
+                {
+                    "target_database": str(database.id),
+                    "attempt_number": 1,
+                    "status": "success",
+                    "documents_count": 1,
+                    "posted": True,
+                    "request_summary": {
+                        "documents_count": 1,
+                        "document_idempotency_keys": ["doc-key-1"],
+                    },
+                    "response_summary": {
+                        "posted": True,
+                        "successful_document_idempotency_keys": ["doc-key-1"],
+                        "successful_document_refs": {"doc-key-1": "ref-1"},
+                    },
+                }
+            ],
+        }
+
+        response = self.client.post(
+            "/api/v2/internal/workflows/update-execution-status",
+            {
+                "execution_id": str(execution.id),
+                "status": "completed",
+                "result": {
+                    "node_results": {
+                        "publication_odata__chain_1": publication_result,
+                    },
+                    "nodes": {
+                        "publication_odata__duplicate_shape": {
+                            "output": publication_result,
+                        },
+                    },
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        projected_attempts = list(PoolPublicationAttempt.objects.filter(run=run))
+        self.assertEqual(len(projected_attempts), 1)
+        self.assertEqual(projected_attempts[0].response_summary["successful_document_refs"], {"doc-key-1": "ref-1"})
+
     def test_update_workflow_status_completed_blocks_kvo17_generated_purchase_on_failed_readback(self):
         tenant, run, execution, _ = self._create_pool_runtime_fixture()
         database = Database.objects.create(

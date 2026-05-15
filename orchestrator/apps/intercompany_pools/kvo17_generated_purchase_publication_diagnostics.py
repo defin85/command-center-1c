@@ -752,7 +752,7 @@ def _build_preflight_report(
             )
         )
 
-    unresolved_token_paths = _collect_master_data_token_paths(
+    unresolved_token_paths = _collect_unresolved_publication_master_data_token_paths(
         execution_context.get("pool_runtime_publication_payload")
     )
     if unresolved_token_paths:
@@ -1000,7 +1000,108 @@ def _canonical_ref(raw_ref: Any) -> str:
     return text.strip().lower()
 
 
-def _collect_master_data_token_paths(payload: Any) -> list[str]:
+def _collect_unresolved_publication_master_data_token_paths(payload: Any) -> list[str]:
+    if not isinstance(payload, Mapping):
+        return _collect_master_data_token_paths(payload)
+
+    pool_runtime = payload.get("pool_runtime")
+    if not isinstance(pool_runtime, Mapping):
+        return _collect_master_data_token_paths(payload)
+
+    paths: list[str] = []
+    chains_by_database = pool_runtime.get("document_chains_by_database")
+    if isinstance(chains_by_database, Mapping):
+        for raw_database_id, chains in chains_by_database.items():
+            database_id = str(raw_database_id or "").strip()
+            if not database_id or not isinstance(chains, list):
+                continue
+            for chain_index, chain in enumerate(chains):
+                if not isinstance(chain, Mapping):
+                    continue
+                documents = chain.get("documents")
+                if not isinstance(documents, list):
+                    continue
+                for document_index, document in enumerate(documents):
+                    if not isinstance(document, Mapping):
+                        continue
+                    document_path = (
+                        "pool_runtime.document_chains_by_database."
+                        f"{database_id}[{chain_index}].documents[{document_index}]"
+                    )
+                    resolved_by_token = _string_mapping(document.get("resolved_master_data_refs"))
+                    resolved_by_path = _string_mapping(document.get("resolved_master_data_refs_by_path"))
+                    paths.extend(
+                        _collect_unresolved_master_data_mapping_token_paths(
+                            document.get("field_mapping"),
+                            mapping_path="field_mapping",
+                            diagnostic_path=f"{document_path}.field_mapping",
+                            resolved_by_token=resolved_by_token,
+                            resolved_by_path=resolved_by_path,
+                        )
+                    )
+                    paths.extend(
+                        _collect_unresolved_master_data_mapping_token_paths(
+                            document.get("table_parts_mapping"),
+                            mapping_path="table_parts_mapping",
+                            diagnostic_path=f"{document_path}.table_parts_mapping",
+                            resolved_by_token=resolved_by_token,
+                            resolved_by_path=resolved_by_path,
+                        )
+                    )
+
+    if "documents_by_database" in pool_runtime:
+        paths.extend(
+            _collect_master_data_token_paths(
+                pool_runtime.get("documents_by_database"),
+                root_path="pool_runtime.documents_by_database",
+            )
+        )
+    return paths
+
+
+def _collect_unresolved_master_data_mapping_token_paths(
+    payload: Any,
+    *,
+    mapping_path: str,
+    diagnostic_path: str,
+    resolved_by_token: Mapping[str, str],
+    resolved_by_path: Mapping[str, str],
+) -> list[str]:
+    paths: list[str] = []
+
+    def _walk(value: Any, current_mapping_path: str, current_diagnostic_path: str) -> None:
+        if isinstance(value, str):
+            token = value.strip()
+            if (
+                token.startswith("master_data.")
+                and token.endswith(".ref")
+                and not str(resolved_by_path.get(current_mapping_path) or "").strip()
+                and not str(resolved_by_token.get(token) or "").strip()
+            ):
+                paths.append(current_diagnostic_path)
+            return
+        if isinstance(value, Mapping):
+            for raw_key, nested in value.items():
+                key = str(raw_key or "").strip()
+                if not key:
+                    continue
+                nested_mapping_path = f"{current_mapping_path}.{key}" if current_mapping_path else key
+                nested_diagnostic_path = f"{current_diagnostic_path}.{key}" if current_diagnostic_path else key
+                _walk(nested, nested_mapping_path, nested_diagnostic_path)
+            return
+        if isinstance(value, list):
+            for index, nested in enumerate(value):
+                _walk(
+                    nested,
+                    f"{current_mapping_path}[{index}]",
+                    f"{current_diagnostic_path}[{index}]",
+                )
+
+    _walk(payload, mapping_path, diagnostic_path)
+    return paths
+
+
+def _collect_master_data_token_paths(payload: Any, *, root_path: str = "") -> list[str]:
     paths: list[str] = []
 
     def _walk(value: Any, path: str) -> None:
@@ -1017,8 +1118,18 @@ def _collect_master_data_token_paths(payload: Any) -> list[str]:
             for index, nested in enumerate(value):
                 _walk(nested, f"{path}[{index}]")
 
-    _walk(payload, "")
+    _walk(payload, root_path)
     return paths
+
+
+def _string_mapping(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key or "").strip(): str(item or "").strip()
+        for key, item in value.items()
+        if str(key or "").strip() and str(item or "").strip()
+    }
 
 
 def _diagnostic(

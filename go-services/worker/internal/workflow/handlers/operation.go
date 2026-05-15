@@ -160,6 +160,21 @@ func (h *OperationHandler) HandleNode(
 	}
 	if config.OperationType == poolPublicationOperationType {
 		operationPayload = enrichPoolPublicationPayloadWithResolvedLinkRefs(operationPayload, execCtx)
+		if skip, skipOutput := shouldSkipSafePublicationBeforeApproval(execCtx); skip {
+			h.logger.Info("Skipping safe pool publication before confirm-publication",
+				zap.String("node_id", node.ID),
+				zap.String("operation_type", config.OperationType),
+				zap.Any("approval_state", skipOutput["approval_state"]),
+				zap.Any("publication_step_state", skipOutput["publication_step_state"]))
+			return &executor.NodeResult{
+				NodeID:      node.ID,
+				Status:      executor.NodeStatusSkipped,
+				Output:      skipOutput,
+				StartedAt:   startTime,
+				CompletedAt: time.Now(),
+				Duration:    time.Since(startTime),
+			}, nil
+		}
 	}
 
 	// Build operation request
@@ -661,6 +676,47 @@ func getStepAttempt(execCtx *wfcontext.ExecutionContext, nodeID string) int {
 	return 1
 }
 
+func shouldSkipSafePublicationBeforeApproval(execCtx *wfcontext.ExecutionContext) (bool, map[string]interface{}) {
+	if execCtx == nil {
+		return false, nil
+	}
+	rawApprovalRequired, exists := execCtx.Get("approval_required")
+	if !exists {
+		return false, nil
+	}
+	approvalRequired, ok := readContextBool(rawApprovalRequired)
+	if !ok || !approvalRequired {
+		return false, nil
+	}
+
+	approvalState := strings.ToLower(strings.TrimSpace(readExecutionContextString(execCtx, "approval_state")))
+	approvedAt := strings.TrimSpace(readExecutionContextString(execCtx, "approved_at"))
+	publicationConfirmedAt := strings.TrimSpace(readExecutionContextString(execCtx, "publication_confirmed_at"))
+	publicationStepState := strings.ToLower(strings.TrimSpace(readExecutionContextString(execCtx, "publication_step_state")))
+	publicationAuth := extractPublicationAuth(execCtx)
+	publicationAuthSource := ""
+	if publicationAuth != nil {
+		publicationAuthSource = strings.ToLower(strings.TrimSpace(publicationAuth.Source))
+	}
+
+	if approvalState == "approved" || approvedAt != "" || publicationConfirmedAt != "" {
+		return false, nil
+	}
+	if publicationAuthSource == "confirm_publication" || publicationAuthSource == "retry_publication" {
+		return false, nil
+	}
+
+	return true, map[string]interface{}{
+		"execution_skipped":       true,
+		"operation_type":          poolPublicationOperationType,
+		"reason":                  "safe publication is waiting for confirm-publication",
+		"approval_required":       approvalRequired,
+		"approval_state":          approvalState,
+		"publication_step_state":  publicationStepState,
+		"publication_auth_source": publicationAuthSource,
+	}
+}
+
 func extractPublicationAuth(execCtx *wfcontext.ExecutionContext) *PublicationAuth {
 	if execCtx == nil {
 		return nil
@@ -684,6 +740,39 @@ func extractPublicationAuth(execCtx *wfcontext.ExecutionContext) *PublicationAut
 		ActorUsername: actorUsername,
 		Source:        source,
 	}
+}
+
+func readExecutionContextString(execCtx *wfcontext.ExecutionContext, key string) string {
+	if execCtx == nil {
+		return ""
+	}
+	value, ok := execCtx.Get(key)
+	if !ok {
+		return ""
+	}
+	return readContextString(value)
+}
+
+func readContextBool(value interface{}) (bool, bool) {
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(v))
+		switch normalized {
+		case "true", "1", "yes", "y":
+			return true, true
+		case "false", "0", "no", "n", "":
+			return false, true
+		}
+	case int:
+		return v != 0, true
+	case int64:
+		return v != 0, true
+	case float64:
+		return v != 0, true
+	}
+	return false, false
 }
 
 func readContextString(value interface{}) string {

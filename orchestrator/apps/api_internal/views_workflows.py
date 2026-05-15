@@ -908,6 +908,38 @@ def _build_publication_projection_identity(
     return f"{WORKFLOW_PROJECTION_IDENTITY_PREFIX}:{execution_id}:{digest}"
 
 
+def _build_publication_attempt_row_fingerprint(row: Mapping[str, object]) -> str:
+    request_summary = row.get("request_summary") if isinstance(row.get("request_summary"), Mapping) else {}
+    response_summary = row.get("response_summary") if isinstance(row.get("response_summary"), Mapping) else {}
+    document_keys = _collect_attempt_document_idempotency_keys(
+        request_summary=request_summary,
+        response_summary=response_summary,
+    )
+    successful_refs = response_summary.get("successful_document_refs")
+    if not isinstance(successful_refs, Mapping):
+        successful_refs = {}
+    normalized_refs = {
+        str(key or "").strip(): str(value or "").strip()
+        for key, value in successful_refs.items()
+        if str(key or "").strip() and str(value or "").strip()
+    }
+    if not document_keys and not normalized_refs:
+        return ""
+
+    payload = {
+        "target_database": str(row.get("target_database") or "").strip(),
+        "attempt_number": _parse_positive_int(row.get("attempt_number"), default=1),
+        "status": str(row.get("status") or "").strip().lower(),
+        "entity_name": str(row.get("entity_name") or "").strip(),
+        "document_keys": sorted(document_keys),
+        "successful_refs": dict(sorted(normalized_refs.items())),
+        "error_code": str(row.get("error_code") or "").strip(),
+        "http_status": row.get("http_status"),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _project_pool_publication_attempts_from_result(*, execution, result_payload: object) -> None:
     from apps.databases.models import Database
     from apps.intercompany_pools.models import (
@@ -1076,6 +1108,8 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
     if attempt_rows:
         projected_attempt_rows: list[dict[str, object]] = []
         projection_identities_by_database: dict[str, set[str]] = {}
+        seen_projection_identities: set[str] = set()
+        seen_attempt_fingerprints: set[str] = set()
         for row in attempt_rows:
             database_id = str(row.get("target_database") or "").strip()
             if not database_id:
@@ -1088,6 +1122,16 @@ def _project_pool_publication_attempts_from_result(*, execution, result_payload:
                 projection_key=projection_key,
                 projection_attempt_key=projection_attempt_key,
             )
+            if projection_identity in seen_projection_identities:
+                continue
+            seen_projection_identities.add(projection_identity)
+
+            attempt_fingerprint = _build_publication_attempt_row_fingerprint(row)
+            if attempt_fingerprint:
+                if attempt_fingerprint in seen_attempt_fingerprints:
+                    continue
+                seen_attempt_fingerprints.add(attempt_fingerprint)
+
             projected_row = dict(row)
             projected_row["_projection_identity"] = projection_identity
             projected_attempt_rows.append(projected_row)

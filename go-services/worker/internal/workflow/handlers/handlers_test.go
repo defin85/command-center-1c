@@ -244,6 +244,93 @@ func TestOperationHandler(t *testing.T) {
 		assert.Equal(t, "confirm_publication", captured.PublicationAuth.Source)
 	})
 
+	t.Run("safe publication waits for confirm-publication before executing", func(t *testing.T) {
+		called := false
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				called = true
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Publication", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		execCtx = execCtx.Set("approval_required", true)
+		execCtx = execCtx.Set("approval_state", "awaiting_approval")
+		execCtx = execCtx.Set("approved_at", nil)
+		execCtx = execCtx.Set("publication_step_state", "not_enqueued")
+		execCtx = execCtx.Set("publication_auth", map[string]interface{}{
+			"strategy":       "actor",
+			"actor_username": "alice",
+			"source":         "run_create",
+		})
+		execCtx = execCtx.Set("pool_runtime_publication_payload", map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		})
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusSkipped, result.Status)
+		assert.False(t, called)
+		require.NotNil(t, result.Output)
+		output := result.Output.(map[string]interface{})
+		assert.True(t, output["execution_skipped"].(bool))
+		assert.Equal(t, "safe publication is waiting for confirm-publication", output["reason"])
+		assert.Equal(t, "awaiting_approval", output["approval_state"])
+	})
+
+	t.Run("safe publication executes after confirm-publication", func(t *testing.T) {
+		var captured *OperationRequest
+		mockExec := &mockOperationExecutor{
+			executeFunc: func(ctx context.Context, req *OperationRequest) (map[string]interface{}, error) {
+				captured = req
+				return map[string]interface{}{"status": "success"}, nil
+			},
+		}
+
+		deps := NewHandlerDependencies(zap.NewNop()).
+			WithOperationExecutor(mockExec)
+		handler := NewOperationHandler(deps)
+
+		node := models.NewOperationNode("op1", "Pool Publication", "pool.publication_odata")
+		execCtx := wfcontext.NewExecutionContext("exec-1", "workflow-1")
+		execCtx = execCtx.Set("approval_required", true)
+		execCtx = execCtx.Set("approval_state", "approved")
+		execCtx = execCtx.Set("approved_at", "2026-05-15T10:00:00Z")
+		execCtx = execCtx.Set("publication_step_state", "queued")
+		execCtx = execCtx.Set("publication_auth", map[string]interface{}{
+			"strategy":       "actor",
+			"actor_username": "alice",
+			"source":         "confirm_publication",
+		})
+		execCtx = execCtx.Set("pool_runtime_publication_payload", map[string]interface{}{
+			"pool_runtime": map[string]interface{}{
+				"documents_by_database": map[string]interface{}{
+					"db-1": []interface{}{
+						map[string]interface{}{"Amount": "100.00"},
+					},
+				},
+			},
+		})
+
+		result, err := handler.HandleNode(context.Background(), node, execCtx)
+		require.NoError(t, err)
+		assert.Equal(t, executor.NodeStatusCompleted, result.Status)
+		require.NotNil(t, captured)
+		require.NotNil(t, captured.PublicationAuth)
+		assert.Equal(t, "confirm_publication", captured.PublicationAuth.Source)
+	})
+
 	t.Run("publication node payload injects resolved link refs from previous publication results", func(t *testing.T) {
 		var captured *OperationRequest
 		mockExec := &mockOperationExecutor{

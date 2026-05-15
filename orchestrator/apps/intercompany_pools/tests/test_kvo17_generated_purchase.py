@@ -29,8 +29,10 @@ from apps.intercompany_pools.kvo17_generated_purchase_intake import (
     validate_kvo17_generated_purchase_manifest_reuse,
 )
 from apps.intercompany_pools.kvo17_generated_purchase_publication_diagnostics import (
+    KVO17_GENERATED_PURCHASE_MASTER_DATA_UNRESOLVED,
     KVO17_GENERATED_PURCHASE_COLLAPSED_DOCUMENTS,
     KVO17_GENERATED_PURCHASE_INVOICE_LINK_MISMATCH,
+    _build_preflight_report,
     verify_kvo17_generated_purchase_readback,
 )
 from apps.intercompany_pools.models import (
@@ -571,6 +573,118 @@ def test_kvo17_generated_purchase_readback_blocks_invoice_link_mismatch() -> Non
         diagnostic["code"]
         for diagnostic in result["diagnostics"]
     }
+
+
+def test_kvo17_generated_purchase_preflight_accepts_resolved_master_data_tokens_in_plan_artifacts() -> None:
+    manifest = build_kvo17_generated_purchase_manifest(
+        request=_request_payload(),
+        available_counterparty_refs={"supplier-001", "supplier-002"},
+    )
+    token = "master_data.party.supplier-001.counterparty.ref"
+    execution_context = {
+        "pool_runtime_master_data_gate": {"status": "completed", "bindings_count": 1, "targets_count": 1},
+        "pool_runtime_publication_payload": {
+            "pool_runtime": {
+                "document_plan_artifact": {
+                    "targets": [
+                        {
+                            "chains": [
+                                {
+                                    "documents": [
+                                        {
+                                            "field_mapping": {
+                                                "Контрагент_Key": token,
+                                            }
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "document_chains_by_database": {
+                    "database-1": [
+                        {
+                            "documents": [
+                                {
+                                    "field_mapping": {
+                                        "Контрагент_Key": token,
+                                    },
+                                    "table_parts_mapping": {},
+                                    "resolved_master_data_refs": {
+                                        token: "counterparty-ref-1",
+                                    },
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "documents_by_database": {
+                    "database-1": [{"Amount": "100.00"}],
+                },
+            }
+        },
+    }
+
+    result = _build_preflight_report(
+        manifest=manifest,
+        execution_context=execution_context,
+        target_database_ids=["database-1"],
+        successful_refs={"database-1": {}},
+    )
+
+    assert result["status"] == "passed"
+    assert KVO17_GENERATED_PURCHASE_MASTER_DATA_UNRESOLVED not in {
+        diagnostic["code"]
+        for diagnostic in result["diagnostics"]
+    }
+
+
+def test_kvo17_generated_purchase_preflight_blocks_unresolved_publication_master_data_tokens() -> None:
+    manifest = build_kvo17_generated_purchase_manifest(
+        request=_request_payload(),
+        available_counterparty_refs={"supplier-001", "supplier-002"},
+    )
+    token = "master_data.party.supplier-001.counterparty.ref"
+    execution_context = {
+        "pool_runtime_master_data_gate": {"status": "completed", "bindings_count": 0, "targets_count": 1},
+        "pool_runtime_publication_payload": {
+            "pool_runtime": {
+                "document_chains_by_database": {
+                    "database-1": [
+                        {
+                            "documents": [
+                                {
+                                    "field_mapping": {
+                                        "Контрагент_Key": token,
+                                    },
+                                    "table_parts_mapping": {},
+                                }
+                            ]
+                        }
+                    ]
+                },
+            }
+        },
+    }
+
+    result = _build_preflight_report(
+        manifest=manifest,
+        execution_context=execution_context,
+        target_database_ids=["database-1"],
+        successful_refs={"database-1": {}},
+    )
+
+    assert result["status"] == "failed"
+    unresolved_diagnostics = [
+        diagnostic
+        for diagnostic in result["diagnostics"]
+        if diagnostic["code"] == KVO17_GENERATED_PURCHASE_MASTER_DATA_UNRESOLVED
+    ]
+    assert unresolved_diagnostics
+    assert unresolved_diagnostics[0]["unresolved_token_paths"] == [
+        "pool_runtime.document_chains_by_database.database-1[0].documents[0].field_mapping.Контрагент_Key"
+    ]
 
 
 @pytest.mark.django_db
