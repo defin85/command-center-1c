@@ -661,7 +661,7 @@ def validate_document_policy_references(
                                 )
 
             link_to = str(raw_document.get("link_to") or "").strip()
-            if link_to and link_to not in document_ids:
+            if link_to and link_to not in document_ids and not _is_runtime_document_link_token(link_to):
                 errors.append(
                     {
                         "code": ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
@@ -672,7 +672,11 @@ def validate_document_policy_references(
             link_rules = raw_document.get("link_rules")
             if isinstance(link_rules, Mapping):
                 depends_on = str(link_rules.get("depends_on") or "").strip()
-                if depends_on and depends_on not in document_ids:
+                if (
+                    depends_on
+                    and depends_on not in document_ids
+                    and not _is_runtime_document_link_token(depends_on)
+                ):
                     errors.append(
                         {
                             "code": ERROR_CODE_POOL_METADATA_REFERENCE_INVALID,
@@ -690,6 +694,10 @@ def validate_document_policy_references(
             )
             errors.extend(token_errors)
     return errors
+
+
+def _is_runtime_document_link_token(value: str) -> bool:
+    return str(value or "").strip().startswith("allocation.")
 
 
 def collect_document_policy_document_token_context(

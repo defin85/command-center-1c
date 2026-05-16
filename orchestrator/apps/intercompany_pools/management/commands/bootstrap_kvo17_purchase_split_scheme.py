@@ -6,9 +6,11 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from apps.databases.models import Database
 from apps.intercompany_pools.kvo17_purchase_split_scheme import (
     ensure_kvo17_purchase_split_scheme_assets,
 )
+from apps.intercompany_pools.metadata_catalog import MetadataCatalogError
 from apps.tenancy.models import Tenant
 
 
@@ -25,6 +27,11 @@ class Command(BaseCommand):
             default="",
             help="Actor username recorded in scheme asset audit fields.",
         )
+        parser.add_argument(
+            "--database-id",
+            default="",
+            help="Optional target database used to stamp KVO17 document-policy revisions with metadata context.",
+        )
         parser.add_argument("--dry-run", action="store_true", help="Evaluate bootstrap plan and roll back changes.")
         parser.add_argument("--json", action="store_true", help="Print machine-readable JSON result.")
 
@@ -40,6 +47,12 @@ class Command(BaseCommand):
         actor = None
         if actor_username:
             actor = get_user_model().objects.filter(username=actor_username).first()
+        database_id = str(options.get("database_id") or "").strip()
+        target_database = None
+        if database_id:
+            target_database = Database.objects.filter(id=database_id, tenant=tenant).first()
+            if target_database is None:
+                raise CommandError(f"Database '{database_id}' not found for tenant '{tenant.slug}'.")
 
         try:
             with transaction.atomic():
@@ -47,6 +60,7 @@ class Command(BaseCommand):
                     tenant=tenant,
                     actor_username=actor_username,
                     created_by=actor,
+                    target_database=target_database,
                 )
                 payload["dry_run"] = dry_run
                 payload["tenant"] = {"id": str(tenant.id), "slug": tenant.slug}
@@ -59,5 +73,7 @@ class Command(BaseCommand):
                     self.stdout.write(f"dry_run: {dry_run}")
                 if dry_run:
                     transaction.set_rollback(True)
+        except MetadataCatalogError as exc:
+            raise CommandError(exc.detail) from exc
         except ValueError as exc:
             raise CommandError(str(exc)) from exc

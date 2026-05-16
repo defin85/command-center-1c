@@ -23,29 +23,18 @@ from .kvo17_generated_purchase_intake import (
     Kvo17GeneratedPurchaseRow,
 )
 from .kvo17_purchase_split_intake import PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT
-from .kvo17_purchase_split_scheme import build_kvo17_purchase_split_document_policy
+from .kvo17_purchase_split_scheme import (
+    KVO17_GENERATED_PURCHASE_PAIR_SLOT,
+    build_kvo17_generated_purchase_pair_document_policy,
+    build_kvo17_purchase_split_document_policy,
+)
 from .models import PoolRun
 
 
 KVO17_GENERATED_PURCHASE_DOCUMENT_PLAN_VERSION = "kvo17_generated_purchase_document_plan.v1"
-KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT = "kvo17_generated_purchase_pair"
+KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT = KVO17_GENERATED_PURCHASE_PAIR_SLOT
 KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE = "kvo17_generated_purchase.single_edge_pair_policy"
-
-_ZERO_GUID = "00000000-0000-0000-0000-000000000000"
-_PURCHASE_RECEIPT_ENTITY_NAME = "Document_ПоступлениеТоваровУслуг"
-_PURCHASE_INVOICE_ENTITY_NAME = "Document_СчетФактураПолученный"
-_PURCHASE_INVOICE_KIND = "НаПоступление"
-_PURCHASE_INVOICE_BASE_DOCUMENT_TYPE = "StandardODATA.Document_ПоступлениеТоваровУслуг"
-_DEFAULT_PURCHASE_OPERATION = "Услуги"
-_DEFAULT_RUB_CURRENCY_REF = "171b30af-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_COUNTERPARTY_ACCOUNT_REF = "020635ce-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_ADVANCE_ACCOUNT_REF = "020635cf-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_VAT_ACCOUNT_REF = "02063586-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_WAREHOUSE_REF = "62953111-54e8-11e9-80ee-0050569f2e9f"
-_DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID = "osnovnoy"
-_DEFAULT_PURCHASE_ITEM_CANONICAL_ID = "packing-service"
+KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING = "KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING"
 
 
 def build_kvo17_generated_purchase_compiled_policy_slots() -> dict[str, dict[str, Any]]:
@@ -170,6 +159,9 @@ def compile_kvo17_generated_purchase_publication_artifact(
         str(target_party_canonical_id or "").strip()
         or _normalize_master_data_canonical_id(organization_id)
     )
+    policy_slot = _resolve_generated_publication_policy_slot(
+        compiled_policy_slots=compiled_policy_slots
+    )
 
     edge_ref = {
         "parent_node_id": f"kvo17-generated-source:{manifest.content_hash[:16]}",
@@ -182,6 +174,7 @@ def compile_kvo17_generated_purchase_publication_artifact(
             edge_ref=edge_ref,
             target_organization_id=organization_id,
             target_party_canonical_id=organization_party_canonical_id,
+            policy_slot=policy_slot,
         )
         for _counterparty_ref, rows in sorted(manifest.rows_by_counterparty().items())
     ]
@@ -198,7 +191,7 @@ def compile_kvo17_generated_purchase_publication_artifact(
                 "slot_key": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
                 "edge_ref": edge_ref,
                 "policy_version": DOCUMENT_POLICY_VERSION,
-                "source": _build_single_edge_policy_source(compiled_policy_slots=compiled_policy_slots),
+                "source": policy_slot["document_policy_source"],
             }
         ],
         "targets": [
@@ -432,6 +425,7 @@ def _compile_publication_chain(
     edge_ref: Mapping[str, str],
     target_organization_id: str,
     target_party_canonical_id: str,
+    policy_slot: Mapping[str, Any],
 ) -> dict[str, Any]:
     ordered_rows = sorted(rows, key=lambda item: item.range_key)
     if len(ordered_rows) != 2:
@@ -440,6 +434,11 @@ def _compile_publication_chain(
             f"counterparty '{ordered_rows[0].counterparty_ref if ordered_rows else '<empty>'}' "
             "must have exactly two generated rows"
         )
+    policy = policy_slot["document_policy"]
+    chain_template, receipt_template, invoice_template = _publication_policy_templates(
+        policy=policy
+    )
+    policy_metadata = dict(policy.get("metadata") or {})
     counterparty_ref = ordered_rows[0].counterparty_ref
     amount = sum((row.amount for row in ordered_rows), Decimal("0.00")).quantize(Decimal("0.01"))
     documents: list[dict[str, Any]] = []
@@ -449,6 +448,8 @@ def _compile_publication_chain(
             row=row,
             target_organization_id=target_organization_id,
             target_party_canonical_id=target_party_canonical_id,
+            document_template=receipt_template,
+            policy_metadata=policy_metadata,
         )
         invoice_document = _compile_publication_invoice_document(
             run=run,
@@ -456,18 +457,21 @@ def _compile_publication_chain(
             receipt_document_id=receipt_document["document_id"],
             target_organization_id=target_organization_id,
             target_party_canonical_id=target_party_canonical_id,
+            document_template=invoice_template,
+            policy_metadata=policy_metadata,
         )
         documents.extend((receipt_document, invoice_document))
     return {
         "chain_id": f"kvo17_generated_purchase_pair:{counterparty_ref}",
         "edge_ref": dict(edge_ref),
-        "policy_source": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE,
+        "policy_source": policy_slot["document_policy_source"],
         "policy_version": DOCUMENT_POLICY_VERSION,
         "allocation": {
             "amount": str(amount),
             "counterparty_ref": counterparty_ref,
             "source_document_number": ordered_rows[0].source_document_number,
             "source_document_date": ordered_rows[0].source_document_date.isoformat(),
+            "policy_chain_id": chain_template["chain_id"],
         },
         "documents": documents,
     }
@@ -479,79 +483,38 @@ def _compile_publication_receipt_document(
     row: Kvo17GeneratedPurchaseRow,
     target_organization_id: str,
     target_party_canonical_id: str,
+    document_template: Mapping[str, Any],
+    policy_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     document_id = _build_purchase_receipt_document_id(row=row)
-    batch_id = str((run.run_input or {}).get("batch_id") or "").strip()
-    counterparty_canonical_id = _normalize_master_data_canonical_id(row.counterparty_ref)
-    invoice_date = _serialize_odata_date(row.source_document_date)
-    document_number = _build_unique_purchase_document_number(row=row)
-    traceability = None
-    if batch_id and target_organization_id:
-        traceability = build_ccpool_document_traceability(
-            pool_id=str(run.pool_id),
-            run_id=str(run.id),
-            batch_id=batch_id,
-            organization_id=target_organization_id,
-            period_start=run.period_start,
-            document_role="purchase",
-            direction=run.direction,
-            batch_kind="receipt",
-        )
-    document = {
-        "document_id": document_id,
-        "entity_name": _PURCHASE_RECEIPT_ENTITY_NAME,
-        "document_role": "purchase",
-        "invoice_mode": "optional",
-        "idempotency_key": row.idempotency_key,
-        "field_mapping": {
-            "ВидОперации": _DEFAULT_PURCHASE_OPERATION,
-            "Date": invoice_date,
-            "Number": document_number,
-            "Организация_Key": f"master_data.party.{target_party_canonical_id}.organization.ref",
-            "ПодразделениеОрганизации_Key": _ZERO_GUID,
-            "Склад_Key": _DEFAULT_PURCHASE_WAREHOUSE_REF,
-            "Контрагент_Key": f"master_data.party.{counterparty_canonical_id}.counterparty.ref",
-            "ДоговорКонтрагента_Key": (
-                f"master_data.contract.{_DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID}."
-                f"{counterparty_canonical_id}.ref"
-            ),
-            "ВалютаДокумента_Key": _DEFAULT_RUB_CURRENCY_REF,
-            "СуммаДокумента": str(row.amount),
-            "СуммаВключаетНДС": True,
-            "СчетУчетаРасчетовСКонтрагентом_Key": _DEFAULT_PURCHASE_COUNTERPARTY_ACCOUNT_REF,
-            "СчетУчетаРасчетовПоАвансам_Key": _DEFAULT_PURCHASE_ADVANCE_ACCOUNT_REF,
-            "Ответственный_Key": _ZERO_GUID,
-            "УдалитьКодВидаОперации": row.kvo,
-            "УдалитьНомерВходящегоСчетаФактуры": row.source_document_number,
-            "УдалитьДатаВходящегоСчетаФактуры": invoice_date,
-        },
-        "table_parts_mapping": {
-            "Услуги": [
-                {
-                    "LineNumber": "1",
-                    "Номенклатура_Key": f"master_data.item.{_DEFAULT_PURCHASE_ITEM_CANONICAL_ID}.ref",
-                    "Содержание": f"Услуги поставщика {row.counterparty_name or row.counterparty_ref}",
-                    "Количество": 1,
-                    "Цена": str(row.amount),
-                    "Сумма": str(row.amount),
-                    "СтавкаНДС": _normalize_vat_rate(row.vat_rate),
-                    "СуммаНДС": str(row.vat_amount),
-                    "СчетЗатрат_Key": _DEFAULT_PURCHASE_COST_ACCOUNT_REF,
-                    "СчетЗатратНУ_Key": _DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF,
-                    "СчетУчетаНДС_Key": _DEFAULT_PURCHASE_VAT_ACCOUNT_REF,
-                    "ИдентификаторСтроки": row.row_id,
-                }
-            ]
-        },
-        "link_rules": {},
-        "generated_purchase_lineage": row.as_dict(),
-        "runtime_document_identity": {
-            "idempotency_key": row.idempotency_key,
-            "runtime_document_key": f"{row.row_id}|{row.row_fingerprint[:16]}",
-            "range_key": row.range_key,
-            "kvo": row.kvo,
-        },
-    }
+    context = _build_publication_mapping_context(
+        row=row,
+        document_number=_build_unique_purchase_document_number(row=row),
+        target_party_canonical_id=target_party_canonical_id,
+        policy_metadata=policy_metadata,
+    )
+    document = _compile_publication_document_from_policy(
+        document_template=document_template,
+        document_id=document_id,
+        idempotency_key=row.idempotency_key,
+        context=context,
+    )
+    document.update(
+        {
+            "generated_purchase_lineage": row.as_dict(),
+            "runtime_document_identity": {
+                "idempotency_key": row.idempotency_key,
+                "runtime_document_key": f"{row.row_id}|{row.row_fingerprint[:16]}",
+                "range_key": row.range_key,
+                "kvo": row.kvo,
+            },
+        }
+    )
+    traceability = _build_publication_traceability(
+        run=run,
+        target_organization_id=target_organization_id,
+        document_role=document["document_role"],
+    )
     if traceability is not None:
         document["traceability"] = traceability
     return document
@@ -564,79 +527,220 @@ def _compile_publication_invoice_document(
     receipt_document_id: str,
     target_organization_id: str,
     target_party_canonical_id: str,
+    document_template: Mapping[str, Any],
+    policy_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     document_id = f"{receipt_document_id}_invoice"
-    batch_id = str((run.run_input or {}).get("batch_id") or "").strip()
-    counterparty_canonical_id = _normalize_master_data_canonical_id(row.counterparty_ref)
-    invoice_date = _serialize_odata_date(row.source_document_date)
-    document_number = _build_unique_purchase_invoice_document_number(row=row)
-    traceability = None
-    if batch_id and target_organization_id:
-        traceability = build_ccpool_document_traceability(
-            pool_id=str(run.pool_id),
-            run_id=str(run.id),
-            batch_id=batch_id,
-            organization_id=target_organization_id,
-            period_start=run.period_start,
-            document_role="purchase",
-            direction=run.direction,
-            batch_kind="receipt",
-        )
-    document = {
-        "document_id": document_id,
-        "entity_name": _PURCHASE_INVOICE_ENTITY_NAME,
-        "document_role": "invoice",
-        "invoice_mode": "required",
-        "idempotency_key": f"{row.idempotency_key}:invoice",
-        "link_to": receipt_document_id,
-        "field_mapping": {
-            "Date": invoice_date,
-            "Number": document_number,
-            "Организация_Key": f"master_data.party.{target_party_canonical_id}.organization.ref",
-            "ВидСчетаФактуры": _PURCHASE_INVOICE_KIND,
-            "Контрагент_Key": f"master_data.party.{counterparty_canonical_id}.counterparty.ref",
-            "ДоговорКонтрагента_Key": (
-                f"master_data.contract.{_DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID}."
-                f"{counterparty_canonical_id}.ref"
-            ),
-            "НомерВходящегоДокумента": row.source_document_number,
-            "ДатаВходящегоДокумента": invoice_date,
-            "Исправление": False,
-            "СчетФактураБезНДС": False,
-            "КодСпособаПолучения": 1,
-            "КодВидаОперации": row.kvo,
-            "СуммаДокумента": str(row.amount),
-            "СуммаНДСДокумента": str(row.vat_amount),
-            "ВалютаДокумента_Key": _DEFAULT_RUB_CURRENCY_REF,
-            "Ответственный_Key": _ZERO_GUID,
-            "РучнаяКорректировка": False,
-            "СформированПриВводеНачальныхОстатковНДС": False,
-            "БланкСтрогойОтчетности": False,
-            "ПредставлениеНомера": row.source_document_number,
-            "НДСПредъявленКВычету": False,
-        },
-        "table_parts_mapping": {
-            "ДокументыОснования": [
-                {
-                    "LineNumber": "1",
-                    "ДокументОснование": f"{receipt_document_id}.ref",
-                    "ДокументОснование_Type": _PURCHASE_INVOICE_BASE_DOCUMENT_TYPE,
-                }
-            ]
-        },
-        "link_rules": {"depends_on": receipt_document_id},
-        "generated_purchase_lineage": row.as_dict(),
-        "runtime_document_identity": {
-            "idempotency_key": f"{row.idempotency_key}:invoice",
-            "runtime_document_key": f"{row.row_id}|{row.row_fingerprint[:16]}|invoice",
-            "range_key": row.range_key,
-            "kvo": row.kvo,
-            "linked_receipt_document_id": receipt_document_id,
-        },
-    }
+    context = _build_publication_mapping_context(
+        row=row,
+        document_number=_build_unique_purchase_invoice_document_number(row=row),
+        target_party_canonical_id=target_party_canonical_id,
+        policy_metadata=policy_metadata,
+        receipt_document_id=receipt_document_id,
+    )
+    document = _compile_publication_document_from_policy(
+        document_template=document_template,
+        document_id=document_id,
+        idempotency_key=f"{row.idempotency_key}:invoice",
+        context=context,
+    )
+    document.update(
+        {
+            "generated_purchase_lineage": row.as_dict(),
+            "runtime_document_identity": {
+                "idempotency_key": f"{row.idempotency_key}:invoice",
+                "runtime_document_key": f"{row.row_id}|{row.row_fingerprint[:16]}|invoice",
+                "range_key": row.range_key,
+                "kvo": row.kvo,
+                "linked_receipt_document_id": receipt_document_id,
+            },
+        }
+    )
+    traceability = _build_publication_traceability(
+        run=run,
+        target_organization_id=target_organization_id,
+        document_role=document["document_role"],
+    )
     if traceability is not None:
         document["traceability"] = traceability
     return document
+
+
+def _resolve_generated_publication_policy_slot(
+    *,
+    compiled_policy_slots: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if compiled_policy_slots is None:
+        fallback_slot = {
+            "decision_table_id": f"kvo17_purchase_split_{KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT}_policy",
+            "decision_revision": 1,
+            "document_policy_source": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE,
+            "document_policy": build_kvo17_generated_purchase_pair_document_policy(),
+        }
+        return validate_compiled_document_policy_slots_snapshot(
+            {KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT: fallback_slot}
+        )[KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT]
+
+    slots = validate_compiled_document_policy_slots_snapshot(compiled_policy_slots)
+    if slots is None or KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT not in slots:
+        raise ValueError(
+            f"{KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING}: "
+            f"generated purchase publication requires slot '{KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT}'"
+        )
+    return slots[KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT]
+
+
+def _publication_policy_templates(
+    *,
+    policy: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    for raw_chain in list(policy.get("chains") or []):
+        if not isinstance(raw_chain, Mapping):
+            continue
+        chain = dict(raw_chain)
+        documents = [
+            dict(document)
+            for document in list(chain.get("documents") or [])
+            if isinstance(document, Mapping)
+        ]
+        receipt = next(
+            (
+                document
+                for document in documents
+                if str(document.get("document_role") or "").strip() == "purchase"
+            ),
+            None,
+        )
+        invoice = next(
+            (
+                document
+                for document in documents
+                if str(document.get("document_role") or "").strip() == "invoice"
+            ),
+            None,
+        )
+        if receipt is not None and invoice is not None:
+            return chain, receipt, invoice
+    raise ValueError(
+        "KVO17_GENERATED_PURCHASE_POLICY_INVALID: generated purchase policy requires "
+        "purchase and invoice documents in one chain"
+    )
+
+
+def _compile_publication_document_from_policy(
+    *,
+    document_template: Mapping[str, Any],
+    document_id: str,
+    idempotency_key: str,
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    document = {
+        "document_id": document_id,
+        "entity_name": str(document_template.get("entity_name") or "").strip(),
+        "document_role": str(document_template.get("document_role") or "").strip(),
+        "invoice_mode": str(document_template.get("invoice_mode") or "").strip(),
+        "idempotency_key": idempotency_key,
+        "field_mapping": _materialize_policy_mapping(
+            document_template.get("field_mapping"),
+            context=context,
+        ),
+        "table_parts_mapping": _materialize_policy_mapping(
+            document_template.get("table_parts_mapping"),
+            context=context,
+        ),
+        "link_rules": _materialize_policy_mapping(
+            document_template.get("link_rules"),
+            context=context,
+        ),
+    }
+    link_to = _materialize_policy_value(document_template.get("link_to"), context=context)
+    if link_to is not None:
+        document["link_to"] = str(link_to)
+    return document
+
+
+def _build_publication_mapping_context(
+    *,
+    row: Kvo17GeneratedPurchaseRow,
+    document_number: str,
+    target_party_canonical_id: str,
+    policy_metadata: Mapping[str, Any],
+    receipt_document_id: str = "",
+) -> dict[str, Any]:
+    defaults = (
+        dict(policy_metadata.get("materialization_defaults"))
+        if isinstance(policy_metadata.get("materialization_defaults"), Mapping)
+        else {}
+    )
+    contract_canonical_id = str(defaults.get("contract_canonical_id") or "osnovnoy").strip()
+    item_canonical_id = str(defaults.get("item_canonical_id") or "packing-service").strip()
+    counterparty_canonical_id = _normalize_master_data_canonical_id(row.counterparty_ref)
+    return {
+        "amount": str(row.amount),
+        "contract_key": f"master_data.contract.{contract_canonical_id}.{counterparty_canonical_id}.ref",
+        "counterparty_key": f"master_data.party.{counterparty_canonical_id}.counterparty.ref",
+        "document_date": _serialize_odata_date(row.source_document_date),
+        "document_number": document_number,
+        "item_key": f"master_data.item.{item_canonical_id}.ref",
+        "kvo": row.kvo,
+        "receipt_document_id": receipt_document_id,
+        "receipt_document_ref": f"{receipt_document_id}.ref" if receipt_document_id else "",
+        "row_id": row.row_id,
+        "service_content": f"Услуги поставщика {row.counterparty_name or row.counterparty_ref}",
+        "source_document_number": row.source_document_number,
+        "target_organization_key": f"master_data.party.{target_party_canonical_id}.organization.ref",
+        "vat_amount": str(row.vat_amount),
+        "vat_rate": _normalize_vat_rate(row.vat_rate),
+    }
+
+
+def _build_publication_traceability(
+    *,
+    run: PoolRun,
+    target_organization_id: str,
+    document_role: str,
+) -> dict[str, Any] | None:
+    batch_id = str((run.run_input or {}).get("batch_id") or "").strip()
+    if not batch_id or not target_organization_id:
+        return None
+    return build_ccpool_document_traceability(
+        pool_id=str(run.pool_id),
+        run_id=str(run.id),
+        batch_id=batch_id,
+        organization_id=target_organization_id,
+        period_start=run.period_start,
+        document_role=document_role,
+        direction=run.direction,
+        batch_kind="receipt",
+    )
+
+
+def _materialize_policy_mapping(value: Any, *, context: Mapping[str, Any]) -> dict[str, Any]:
+    materialized = _materialize_policy_value(value, context=context)
+    return dict(materialized) if isinstance(materialized, Mapping) else {}
+
+
+def _materialize_policy_value(value: Any, *, context: Mapping[str, Any]) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(raw_key): _materialize_policy_value(raw_item, context=context)
+            for raw_key, raw_item in value.items()
+            if str(raw_key)
+        }
+    if isinstance(value, list):
+        return [
+            _materialize_policy_value(item, context=context)
+            for item in value
+        ]
+    if isinstance(value, str):
+        token = value.strip()
+        if not token.startswith("allocation."):
+            return value
+        lookup_key = token.removeprefix("allocation.").strip()
+        if not lookup_key:
+            return value
+        return context.get(lookup_key, value)
+    return value
 
 
 def _build_lineage(
@@ -697,21 +801,6 @@ def _sum_target_amounts(*, targets: list[dict[str, Any]]) -> str:
         if isinstance(row, Mapping):
             total += Decimal(str(row.get("amount") or "0.00"))
     return str(total.quantize(Decimal("0.01")))
-
-
-def _build_single_edge_policy_source(*, compiled_policy_slots: Mapping[str, Any] | None) -> str:
-    slots = validate_compiled_document_policy_slots_snapshot(compiled_policy_slots)
-    if not slots:
-        return KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE
-    sources = [
-        str(slots[slot_key].get("document_policy_source") or "").strip()
-        for slot_key in KVO17_GENERATED_PURCHASE_POLICY_SLOTS
-        if slot_key in slots
-    ]
-    sources = [source for source in sources if source]
-    if not sources:
-        return KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE
-    return f"{KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SOURCE}:{'|'.join(sources)}"
 
 
 def _require_mapping(value: Any, *, field_name: str) -> dict[str, Any]:

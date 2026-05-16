@@ -19,7 +19,11 @@ export type SchemeIntakeBindingCapability = {
   diagnostics: SchemeIntakeBindingDiagnosticCode[]
 }
 
-const KVO17_GENERATED_PURCHASE_REQUIRED_SLOTS = new Set(['purchase_kvo01', 'purchase_kvo17'])
+const KVO17_GENERATED_PURCHASE_REQUIRED_SLOTS = new Set([
+  'purchase_kvo01',
+  'purchase_kvo17',
+  'kvo17_generated_purchase_pair',
+])
 
 export function resolveKvo17GeneratedPurchaseBindingCapability(
   binding: PoolWorkflowBinding | null | undefined,

@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Any
+from typing import Any, Mapping
 
 from django.db import transaction
 
-from apps.templates.workflow.decision_tables import create_decision_table_revision
+from apps.databases.models import Database
+from apps.templates.workflow.decision_tables import (
+    build_decision_table_metadata_context,
+    build_decision_table_source_provenance,
+    create_decision_table_revision,
+)
 from apps.templates.workflow.models import DecisionTable, WorkflowTemplate, WorkflowType
 from apps.templates.workflow.schema import DAGStructure
 from apps.tenancy.models import Tenant
@@ -35,9 +40,15 @@ from .kvo17_generated_purchase_intake import (
 from .models import (
     BindingProfile,
     BindingProfileRevision,
+    PoolODataMetadataCatalogSnapshot,
     PoolSchemaTemplate,
     PoolSchemaTemplateFormat,
     TopologyTemplate,
+)
+from .metadata_catalog import (
+    build_metadata_catalog_api_payload,
+    read_existing_metadata_catalog_snapshot,
+    validate_document_policy_references,
 )
 from .topology_template_store import (
     create_topology_template,
@@ -57,9 +68,25 @@ KVO17_PURCHASE_SPLIT_WORKFLOW_TEMPLATE_NAME = "KVO17 Purchase Split Publication 
 KVO17_PURCHASE_SPLIT_EFFECTIVE_FROM = date(2026, 1, 1)
 KVO17_PURCHASE_SPLIT_BINDING_ID = "kvo17_purchase_split"
 KVO17_PURCHASE_SPLIT_POLICY_SLOTS = (PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT)
+KVO17_GENERATED_PURCHASE_PAIR_SLOT = "kvo17_generated_purchase_pair"
+KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS = (
+    *KVO17_PURCHASE_SPLIT_POLICY_SLOTS,
+    KVO17_GENERATED_PURCHASE_PAIR_SLOT,
+)
 
 _DOCUMENT_ENTITY_NAME = "Document_ПоступлениеТоваровУслуг"
+_PURCHASE_INVOICE_ENTITY_NAME = "Document_СчетФактураПолученный"
+_PURCHASE_INVOICE_BASE_DOCUMENT_TYPE = "StandardODATA.Document_ПоступлениеТоваровУслуг"
 _ZERO_GUID = "00000000-0000-0000-0000-000000000000"
+_DEFAULT_RUB_CURRENCY_REF = "171b30af-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_COUNTERPARTY_ACCOUNT_REF = "020635ce-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_ADVANCE_ACCOUNT_REF = "020635cf-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF = "02063686-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_VAT_ACCOUNT_REF = "02063586-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_WAREHOUSE_REF = "62953111-54e8-11e9-80ee-0050569f2e9f"
+_DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID = "osnovnoy"
+_DEFAULT_PURCHASE_ITEM_CANONICAL_ID = "packing-service"
 
 
 def build_kvo17_purchase_split_scheme_metadata() -> dict[str, Any]:
@@ -71,6 +98,7 @@ def build_kvo17_purchase_split_scheme_metadata() -> dict[str, Any]:
         "topology_template_code": KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE,
         "schema_template_code": KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE,
         "document_policy_slots": list(KVO17_PURCHASE_SPLIT_POLICY_SLOTS),
+        "binding_policy_slots": list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS),
         "classifier": build_kvo17_purchase_split_classifier_config(),
         "required_source_provenance": {
             "source_supplier_identity": True,
@@ -89,6 +117,7 @@ def build_kvo17_purchase_split_scheme_metadata() -> dict[str, Any]:
             "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
             "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
             "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+            "publication_policy_slot": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
             "requires_publication_readback": True,
         },
     }
@@ -216,7 +245,7 @@ def build_kvo17_purchase_split_document_policy(*, slot_key: str) -> dict[str, An
                             "field_mapping": {
                                 "Date": "source_document.date",
                                 "Number": "source_document.number",
-                                "КодВидаОперации": kvo_code,
+                                "УдалитьКодВидаОперации": kvo_code,
                                 "Организация_Key": "master_data.party.edge.child.organization.ref",
                                 "Контрагент_Key": "source_supplier.ref",
                                 "ДоговорКонтрагента_Key": "source_supplier.contract_ref",
@@ -254,6 +283,123 @@ def build_kvo17_purchase_split_document_policy(*, slot_key: str) -> dict[str, An
                     "preview_required": True,
                     "audit_required": True,
                     "silent_supplier_mutation_allowed": False,
+                },
+            },
+        }
+    )
+
+
+def build_kvo17_generated_purchase_pair_document_policy() -> dict[str, Any]:
+    return validate_document_policy_v1(
+        policy={
+            "version": DOCUMENT_POLICY_VERSION,
+            "chains": [
+                {
+                    "chain_id": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
+                    "metadata": {
+                        "scheme_code": KVO17_PURCHASE_SPLIT_SCHEME_CODE,
+                        "slot_key": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
+                        "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+                        "edge_strategy": "single_edge_multi_document_chain",
+                    },
+                    "documents": [
+                        {
+                            "document_id": "generated_purchase_receipt",
+                            "entity_name": _DOCUMENT_ENTITY_NAME,
+                            "document_role": "purchase",
+                            "invoice_mode": "optional",
+                            "field_mapping": {
+                                "ВидОперации": "Услуги",
+                                "Date": "allocation.document_date",
+                                "Number": "allocation.document_number",
+                                "Организация_Key": "allocation.target_organization_key",
+                                "ПодразделениеОрганизации_Key": _ZERO_GUID,
+                                "Склад_Key": _DEFAULT_PURCHASE_WAREHOUSE_REF,
+                                "Контрагент_Key": "allocation.counterparty_key",
+                                "ДоговорКонтрагента_Key": "allocation.contract_key",
+                                "ВалютаДокумента_Key": _DEFAULT_RUB_CURRENCY_REF,
+                                "СуммаДокумента": "allocation.amount",
+                                "СуммаВключаетНДС": True,
+                                "СчетУчетаРасчетовСКонтрагентом_Key": (
+                                    _DEFAULT_PURCHASE_COUNTERPARTY_ACCOUNT_REF
+                                ),
+                                "СчетУчетаРасчетовПоАвансам_Key": _DEFAULT_PURCHASE_ADVANCE_ACCOUNT_REF,
+                                "Ответственный_Key": _ZERO_GUID,
+                                "УдалитьКодВидаОперации": "allocation.kvo",
+                                "УдалитьНомерВходящегоСчетаФактуры": "allocation.source_document_number",
+                                "УдалитьДатаВходящегоСчетаФактуры": "allocation.document_date",
+                            },
+                            "table_parts_mapping": {
+                                "Услуги": [
+                                    {
+                                        "LineNumber": "1",
+                                        "Номенклатура_Key": "allocation.item_key",
+                                        "Содержание": "allocation.service_content",
+                                        "Количество": 1,
+                                        "Цена": "allocation.amount",
+                                        "Сумма": "allocation.amount",
+                                        "СтавкаНДС": "allocation.vat_rate",
+                                        "СуммаНДС": "allocation.vat_amount",
+                                        "СчетЗатрат_Key": _DEFAULT_PURCHASE_COST_ACCOUNT_REF,
+                                        "СчетЗатратНУ_Key": _DEFAULT_PURCHASE_TAX_COST_ACCOUNT_REF,
+                                        "СчетУчетаНДС_Key": _DEFAULT_PURCHASE_VAT_ACCOUNT_REF,
+                                        "ИдентификаторСтроки": "allocation.row_id",
+                                    }
+                                ]
+                            },
+                            "link_rules": {},
+                        },
+                        {
+                            "document_id": "generated_purchase_invoice",
+                            "entity_name": _PURCHASE_INVOICE_ENTITY_NAME,
+                            "document_role": "invoice",
+                            "invoice_mode": "required",
+                            "link_to": "allocation.receipt_document_id",
+                            "field_mapping": {
+                                "Date": "allocation.document_date",
+                                "Number": "allocation.document_number",
+                                "Организация_Key": "allocation.target_organization_key",
+                                "ВидСчетаФактуры": "НаПоступление",
+                                "Контрагент_Key": "allocation.counterparty_key",
+                                "ДоговорКонтрагента_Key": "allocation.contract_key",
+                                "НомерВходящегоДокумента": "allocation.source_document_number",
+                                "ДатаВходящегоДокумента": "allocation.document_date",
+                                "Исправление": False,
+                                "СчетФактураБезНДС": False,
+                                "КодСпособаПолучения": 1,
+                                "КодВидаОперации": "allocation.kvo",
+                                "СуммаДокумента": "allocation.amount",
+                                "СуммаНДСДокумента": "allocation.vat_amount",
+                                "ВалютаДокумента_Key": _DEFAULT_RUB_CURRENCY_REF,
+                                "Ответственный_Key": _ZERO_GUID,
+                                "РучнаяКорректировка": False,
+                                "СформированПриВводеНачальныхОстатковНДС": False,
+                                "БланкСтрогойОтчетности": False,
+                                "ПредставлениеНомера": "allocation.source_document_number",
+                                "НДСПредъявленКВычету": False,
+                            },
+                            "table_parts_mapping": {
+                                "ДокументыОснования": [
+                                    {
+                                        "LineNumber": "1",
+                                        "ДокументОснование": "allocation.receipt_document_ref",
+                                        "ДокументОснование_Type": _PURCHASE_INVOICE_BASE_DOCUMENT_TYPE,
+                                    }
+                                ]
+                            },
+                            "link_rules": {"depends_on": "allocation.receipt_document_id"},
+                        },
+                    ],
+                }
+            ],
+            "metadata": {
+                "scheme_code": KVO17_PURCHASE_SPLIT_SCHEME_CODE,
+                "slot_key": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
+                "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
+                "edge_strategy": "single_edge_multi_document_chain",
+                "materialization_defaults": {
+                    "contract_canonical_id": _DEFAULT_PURCHASE_CONTRACT_CANONICAL_ID,
+                    "item_canonical_id": _DEFAULT_PURCHASE_ITEM_CANONICAL_ID,
                 },
             },
         }
@@ -336,6 +482,7 @@ def ensure_kvo17_purchase_split_scheme_assets(
     tenant: Tenant,
     actor_username: str = "",
     created_by=None,
+    target_database: Database | None = None,
 ) -> dict[str, Any]:
     with transaction.atomic():
         schema_template, schema_state = _ensure_schema_template(tenant=tenant)
@@ -344,12 +491,20 @@ def ensure_kvo17_purchase_split_scheme_assets(
             actor_username=actor_username,
         )
         workflow_template = ensure_kvo17_purchase_split_workflow_template(created_by=created_by)
+        decision_metadata_context, decision_metadata_snapshot = _resolve_decision_metadata_context(
+            tenant=tenant,
+            actor_username=actor_username,
+            target_database=target_database,
+        )
         decision_refs = []
         decision_states = {}
-        for slot_key in KVO17_PURCHASE_SPLIT_POLICY_SLOTS:
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS:
             decision, decision_state = _ensure_document_policy_decision(
                 slot_key=slot_key,
                 created_by=created_by,
+                metadata_context=decision_metadata_context,
+                metadata_snapshot=decision_metadata_snapshot,
+                source_database=target_database,
             )
             decision_refs.append(
                 {
@@ -369,7 +524,7 @@ def ensure_kvo17_purchase_split_scheme_assets(
         )
 
     latest_revision = profile["latest_revision"]
-    return {
+    payload = {
         "scheme": build_kvo17_purchase_split_scheme_metadata(),
         "schema_template": {
             "id": str(schema_template.id),
@@ -393,7 +548,11 @@ def ensure_kvo17_purchase_split_scheme_assets(
                 "decision_revision": decision_ref["decision_revision"],
                 "state": decision_states[slot_key],
             }
-            for slot_key, decision_ref in zip(KVO17_PURCHASE_SPLIT_POLICY_SLOTS, decision_refs, strict=True)
+            for slot_key, decision_ref in zip(
+                KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS,
+                decision_refs,
+                strict=True,
+            )
         },
         "binding_profile": {
             "id": profile["binding_profile_id"],
@@ -406,6 +565,41 @@ def ensure_kvo17_purchase_split_scheme_assets(
             "topology_template_compatibility": latest_revision["topology_template_compatibility"],
         },
     }
+    if target_database is not None:
+        payload["target_database"] = {
+            "id": str(target_database.id),
+            "name": target_database.name,
+            "base_name": target_database.base_name,
+        }
+        payload["decision_metadata_context"] = dict(decision_metadata_context or {})
+    return payload
+
+
+def _resolve_decision_metadata_context(
+    *,
+    tenant: Tenant,
+    actor_username: str,
+    target_database: Database | None,
+) -> tuple[dict[str, Any] | None, PoolODataMetadataCatalogSnapshot | None]:
+    if target_database is None:
+        return None, None
+
+    snapshot, source, resolution, profile = read_existing_metadata_catalog_snapshot(
+        tenant_id=str(tenant.id),
+        database=target_database,
+        requested_by_username=actor_username,
+    )
+    payload = build_metadata_catalog_api_payload(
+        database=target_database,
+        snapshot=snapshot,
+        source=source,
+        resolution=resolution,
+        profile=profile,
+    )
+    metadata_context = build_decision_table_metadata_context(metadata_context=payload)
+    if metadata_context is None:
+        raise ValueError("KVO17 decision metadata context could not be resolved for target database.")
+    return dict(metadata_context), snapshot
 
 
 def _ensure_schema_template(*, tenant: Tenant) -> tuple[PoolSchemaTemplate, str]:
@@ -507,22 +701,45 @@ def _ensure_topology_template(
     return template, template_state
 
 
-def _ensure_document_policy_decision(*, slot_key: str, created_by=None):
+def _ensure_document_policy_decision(
+    *,
+    slot_key: str,
+    created_by=None,
+    metadata_context: Mapping[str, Any] | None = None,
+    metadata_snapshot: PoolODataMetadataCatalogSnapshot | None = None,
+    source_database: Database | None = None,
+):
     decision_table_id = f"kvo17_purchase_split_{slot_key}_policy"
-    existing = (
-        DecisionTable.objects.filter(
-            decision_table_id=decision_table_id,
-            version_number=1,
+    if slot_key == KVO17_GENERATED_PURCHASE_PAIR_SLOT:
+        policy = build_kvo17_generated_purchase_pair_document_policy()
+        name = "KVO17 generated purchase pair document policy"
+        description = "Single-edge receipt and invoice policy for KVO17 generated purchases."
+    else:
+        policy = build_kvo17_purchase_split_document_policy(slot_key=slot_key)
+        name = f"KVO17 purchase split {slot_key} document policy"
+        description = f"Document policy slot {slot_key} for {KVO17_PURCHASE_SPLIT_SCHEME_CODE}."
+    if metadata_snapshot is not None:
+        reference_errors = validate_document_policy_references(
+            policy=policy,
+            snapshot=metadata_snapshot,
+            path_prefix=f"document_policy_decisions.{slot_key}",
         )
-        .order_by("-created_at")
-        .first()
-    )
-    policy = build_kvo17_purchase_split_document_policy(slot_key=slot_key)
+        if reference_errors:
+            first_error = reference_errors[0]
+            raise ValueError(
+                str(first_error.get("detail") or "KVO17 document policy references are invalid.")
+            )
+    source_provenance = {
+        "kind": "checked_in_scheme_database_seed" if source_database is not None else "checked_in_scheme_seed",
+        "source_path": "orchestrator/apps/intercompany_pools/kvo17_purchase_split_scheme.py",
+    }
+    if source_database is not None:
+        source_provenance["child_database_id"] = str(source_database.id)
     contract = {
         "decision_table_id": decision_table_id,
         "decision_key": "document_policy",
-        "name": f"KVO17 purchase split {slot_key} document policy",
-        "description": f"Document policy slot {slot_key} for {KVO17_PURCHASE_SPLIT_SCHEME_CODE}.",
+        "name": name,
+        "description": description,
         "inputs": [],
         "outputs": [{"name": "document_policy", "value_type": "json", "required": True}],
         "rules": [
@@ -533,31 +750,64 @@ def _ensure_document_policy_decision(*, slot_key: str, created_by=None):
                 "outputs": {"document_policy": policy},
             }
         ],
-        "source_provenance": {
-            "kind": "checked_in_scheme_seed",
-            "source_path": "orchestrator/apps/intercompany_pools/kvo17_purchase_split_scheme.py",
-        },
+        "source_provenance": source_provenance,
     }
-    if existing is not None:
+    if metadata_context is not None:
+        contract["metadata_context"] = dict(metadata_context)
+
+    latest = (
+        DecisionTable.objects.filter(
+            decision_table_id=decision_table_id,
+        )
+        .order_by("-version_number")
+        .first()
+    )
+    if latest is not None:
         current_contract = {
-            "inputs": list(existing.inputs or []),
-            "outputs": list(existing.outputs or []),
-            "rules": list(existing.rules or []),
+            "inputs": list(latest.inputs or []),
+            "outputs": list(latest.outputs or []),
+            "rules": list(latest.rules or []),
         }
         desired_contract = {
             "inputs": contract["inputs"],
             "outputs": contract["outputs"],
             "rules": contract["rules"],
         }
-        if _canonical_json(current_contract) == _canonical_json(desired_contract):
-            return existing, "unchanged"
-        latest = (
-            DecisionTable.objects.filter(
-                decision_table_id=decision_table_id,
+        if metadata_context is None and _canonical_json(current_contract) == _canonical_json(desired_contract):
+            return latest, "unchanged"
+
+        current_revision = {
+            **current_contract,
+            "metadata_context": build_decision_table_metadata_context(
+                metadata_context=latest.metadata_context
+                if isinstance(latest.metadata_context, Mapping)
+                else None
             )
-            .order_by("-version_number")
-            .first()
-        )
+            or {},
+            "source_provenance": build_decision_table_source_provenance(
+                source_provenance=latest.source_provenance
+                if isinstance(latest.source_provenance, Mapping)
+                else None
+            )
+            or {},
+        }
+        desired_revision = {
+            **desired_contract,
+            "metadata_context": build_decision_table_metadata_context(
+                metadata_context=contract.get("metadata_context")
+                if isinstance(contract.get("metadata_context"), Mapping)
+                else None
+            )
+            or {},
+            "source_provenance": build_decision_table_source_provenance(
+                source_provenance=contract.get("source_provenance")
+                if isinstance(contract.get("source_provenance"), Mapping)
+                else None
+            )
+            or {},
+        }
+        if _canonical_json(current_revision) == _canonical_json(desired_revision):
+            return latest, "unchanged"
         return (
             create_decision_table_revision(
                 contract=contract,
@@ -676,13 +926,16 @@ def _canonical_json(value: Any) -> str:
 __all__ = [
     "KVO17_PURCHASE_SPLIT_BINDING_ID",
     "KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE",
+    "KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS",
     "KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION",
+    "KVO17_GENERATED_PURCHASE_PAIR_SLOT",
     "KVO17_PURCHASE_SPLIT_POLICY_SLOTS",
     "KVO17_PURCHASE_SPLIT_SCHEME_CODE",
     "KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE",
     "KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE",
     "PURCHASE_KVO01_SLOT",
     "PURCHASE_KVO17_SLOT",
+    "build_kvo17_generated_purchase_pair_document_policy",
     "build_kvo17_purchase_split_document_policy",
     "build_kvo17_purchase_split_scheme_metadata",
     "build_kvo17_purchase_split_schema_template_payload",

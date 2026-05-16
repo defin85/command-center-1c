@@ -10,6 +10,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 
+from apps.databases.models import Database, InfobaseUserMapping
 from apps.intercompany_pools.kvo17_purchase_split_intake import (
     KVO17_PURCHASE_SPLIT_INTAKE_SCHEMA_VERSION,
     KVO17_PURCHASE_SPLIT_REQUIRED_INTAKE_FIELDS,
@@ -21,8 +22,10 @@ from apps.intercompany_pools.kvo17_purchase_split_intake import (
     validate_kvo17_purchase_split_classifier_config,
 )
 from apps.intercompany_pools.kvo17_purchase_split_scheme import (
+    KVO17_GENERATED_PURCHASE_PAIR_SLOT,
     KVO17_PURCHASE_SPLIT_BINDING_ID,
     KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE,
+    KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS,
     KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION,
     KVO17_PURCHASE_SPLIT_POLICY_SLOTS,
     KVO17_PURCHASE_SPLIT_SCHEME_CODE,
@@ -30,6 +33,7 @@ from apps.intercompany_pools.kvo17_purchase_split_scheme import (
     KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE,
     PURCHASE_KVO01_SLOT,
     PURCHASE_KVO17_SLOT,
+    build_kvo17_generated_purchase_pair_document_policy,
     build_kvo17_purchase_split_document_policy,
     build_kvo17_purchase_split_scheme_metadata,
     build_kvo17_purchase_split_topology_template_payload,
@@ -53,6 +57,9 @@ from apps.intercompany_pools.models import (
     BindingProfile,
     BindingProfileRevision,
     OrganizationPool,
+    PoolODataMetadataCatalogScopeResolution,
+    PoolODataMetadataCatalogSnapshot,
+    PoolODataMetadataCatalogSnapshotSource,
     PoolSchemaTemplate,
     TopologyTemplate,
 )
@@ -63,7 +70,171 @@ from apps.intercompany_pools.workflow_binding_attachments_store import (
     upsert_pool_workflow_binding_attachment,
 )
 from apps.templates.workflow.models import DecisionTable
+from apps.templates.workflow.decision_tables import assess_decision_table_metadata_compatibility
 from apps.tenancy.models import Tenant
+
+
+def _create_kvo17_metadata_database(*, tenant: Tenant) -> Database:
+    database = Database.objects.create(
+        tenant=tenant,
+        name=f"kvo17-meta-db-{uuid4().hex[:8]}",
+        base_name="kvo17-meta-base",
+        host="localhost",
+        odata_url="http://localhost/odata/standard.odata",
+        username="admin",
+        password="secret",
+    )
+    metadata = dict(database.metadata or {})
+    metadata["business_configuration_profile"] = {
+        "config_name": "Бухгалтерия предприятия, редакция 3.0",
+        "config_root_name": "БухгалтерияПредприятия",
+        "config_version": "3.0.194.14",
+        "config_vendor": 'Фирма "1С"',
+        "config_generation_id": "kvo17-test-generation",
+        "config_name_source": "test",
+        "verification_status": "verified",
+        "verified_at": "2026-05-15T00:00:00+00:00",
+    }
+    database.metadata = metadata
+    database.save(update_fields=["metadata", "updated_at"])
+    InfobaseUserMapping.objects.create(
+        database=database,
+        user=None,
+        ib_username="svc-user",
+        ib_password="svc-pass",
+        is_service=True,
+    )
+    return database
+
+
+def _field(name: str, field_type: str = "Edm.String") -> dict[str, object]:
+    return {"name": name, "type": field_type, "nullable": True}
+
+
+def _table_part(name: str, row_fields: list[str]) -> dict[str, object]:
+    return {
+        "name": name,
+        "row_fields": [_field(row_field) for row_field in row_fields],
+    }
+
+
+def _create_kvo17_metadata_snapshot(*, tenant: Tenant, database: Database) -> PoolODataMetadataCatalogSnapshot:
+    profile = dict(database.metadata.get("business_configuration_profile") or {})
+    receipt_fields = [
+        "Date",
+        "Number",
+        "Организация_Key",
+        "Контрагент_Key",
+        "ДоговорКонтрагента_Key",
+        "ВалютаДокумента_Key",
+        "СуммаДокумента",
+        "СуммаВключаетНДС",
+        "Ответственный_Key",
+        "ВидОперации",
+        "ПодразделениеОрганизации_Key",
+        "Склад_Key",
+        "СчетУчетаРасчетовСКонтрагентом_Key",
+        "СчетУчетаРасчетовПоАвансам_Key",
+        "УдалитьКодВидаОперации",
+        "УдалитьНомерВходящегоСчетаФактуры",
+        "УдалитьДатаВходящегоСчетаФактуры",
+    ]
+    invoice_fields = [
+        "Date",
+        "Number",
+        "Организация_Key",
+        "ВидСчетаФактуры",
+        "Контрагент_Key",
+        "ДоговорКонтрагента_Key",
+        "НомерВходящегоДокумента",
+        "ДатаВходящегоДокумента",
+        "Исправление",
+        "СчетФактураБезНДС",
+        "КодСпособаПолучения",
+        "КодВидаОперации",
+        "СуммаДокумента",
+        "СуммаНДСДокумента",
+        "ВалютаДокумента_Key",
+        "Ответственный_Key",
+        "РучнаяКорректировка",
+        "СформированПриВводеНачальныхОстатковНДС",
+        "БланкСтрогойОтчетности",
+        "ПредставлениеНомера",
+        "НДСПредъявленКВычету",
+    ]
+    snapshot = PoolODataMetadataCatalogSnapshot.objects.create(
+        tenant=tenant,
+        database=database,
+        config_name=str(profile["config_name"]),
+        config_version=str(profile["config_version"]),
+        extensions_fingerprint="",
+        metadata_hash="b" * 64,
+        catalog_version=f"v1:kvo17-{uuid4().hex[:12]}",
+        payload={
+            "documents": [
+                {
+                    "entity_name": "Document_ПоступлениеТоваровУслуг",
+                    "display_name": "Поступление товаров и услуг",
+                    "fields": [_field(name) for name in receipt_fields],
+                    "table_parts": [
+                        _table_part(
+                            "Товары",
+                            [
+                                "LineNumber",
+                                "ИдентификаторСтроки",
+                                "Номенклатура_Key",
+                                "Количество",
+                                "Цена",
+                                "Сумма",
+                                "СтавкаНДС",
+                                "СуммаНДС",
+                            ],
+                        ),
+                        _table_part(
+                            "Услуги",
+                            [
+                                "LineNumber",
+                                "Номенклатура_Key",
+                                "Содержание",
+                                "Количество",
+                                "Цена",
+                                "Сумма",
+                                "СтавкаНДС",
+                                "СуммаНДС",
+                                "СчетЗатрат_Key",
+                                "СчетЗатратНУ_Key",
+                                "СчетУчетаНДС_Key",
+                                "ИдентификаторСтроки",
+                            ],
+                        ),
+                    ],
+                },
+                {
+                    "entity_name": "Document_СчетФактураПолученный",
+                    "display_name": "Счет-фактура полученный",
+                    "fields": [_field(name) for name in invoice_fields],
+                    "table_parts": [
+                        _table_part(
+                            "ДокументыОснования",
+                            ["LineNumber", "ДокументОснование", "ДокументОснование_Type"],
+                        )
+                    ],
+                },
+            ]
+        },
+        source=PoolODataMetadataCatalogSnapshotSource.LIVE_REFRESH,
+        is_current=True,
+    )
+    PoolODataMetadataCatalogScopeResolution.objects.create(
+        tenant=tenant,
+        database=database,
+        snapshot=snapshot,
+        config_name=str(profile["config_name"]),
+        config_version=str(profile["config_version"]),
+        extensions_fingerprint="",
+        confirmed_at=snapshot.fetched_at,
+    )
+    return snapshot
 
 
 def test_kvo17_purchase_split_scheme_metadata_names_required_slots_and_classifier() -> None:
@@ -74,6 +245,7 @@ def test_kvo17_purchase_split_scheme_metadata_names_required_slots_and_classifie
     assert metadata["binding_profile_code"] == KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE
     assert metadata["schema_template_code"] == KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE
     assert metadata["document_policy_slots"] == [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT]
+    assert metadata["binding_policy_slots"] == list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS)
     assert metadata["classifier"]["revision"] == KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION
     assert metadata["classifier"]["currency"] == "RUB"
     assert metadata["classifier"]["threshold_amount"] == "100.00"
@@ -690,6 +862,7 @@ def test_kvo17_purchase_split_operator_selection_exposes_ready_pinned_binding() 
                 "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
                 "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
                 "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+                "publication_policy_slot": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
                 "blocking_diagnostics": [],
             },
         }
@@ -760,11 +933,31 @@ def test_kvo17_purchase_split_document_policies_are_valid_and_preserve_provenanc
         document = chain["documents"][0]
         assert chain["metadata"]["source_document_identity"]["preserve_original"] is True
         assert chain["metadata"]["source_supplier_provenance"]["declaration_provenance"] is True
-        assert document["field_mapping"]["КодВидаОперации"] == expected_kvo
+        assert document["field_mapping"]["УдалитьКодВидаОперации"] == expected_kvo
         assert document["field_mapping"]["Date"] == "source_document.date"
         assert document["field_mapping"]["Number"] == "source_document.number"
         assert document["field_mapping"]["Контрагент_Key"] == "source_supplier.ref"
         assert document["field_mapping"]["Организация_Key"] == "master_data.party.edge.child.organization.ref"
+
+
+def test_kvo17_generated_purchase_pair_policy_contains_receipt_and_invoice_chain() -> None:
+    policy = build_kvo17_generated_purchase_pair_document_policy()
+
+    assert policy["version"] == "document_policy.v1"
+    assert policy["metadata"]["slot_key"] == KVO17_GENERATED_PURCHASE_PAIR_SLOT
+    chain = policy["chains"][0]
+    assert chain["chain_id"] == KVO17_GENERATED_PURCHASE_PAIR_SLOT
+    assert [document["document_role"] for document in chain["documents"]] == ["purchase", "invoice"]
+    receipt, invoice = chain["documents"]
+    assert receipt["field_mapping"]["ВидОперации"] == "Услуги"
+    assert receipt["field_mapping"]["СчетУчетаРасчетовСКонтрагентом_Key"] == (
+        "020635ce-54e8-11e9-80ee-0050569f2e9f"
+    )
+    assert receipt["table_parts_mapping"]["Услуги"][0]["СчетУчетаНДС_Key"] == (
+        "02063586-54e8-11e9-80ee-0050569f2e9f"
+    )
+    assert invoice["invoice_mode"] == "required"
+    assert invoice["link_to"] == "allocation.receipt_document_id"
 
 
 @pytest.mark.django_db
@@ -782,17 +975,18 @@ def test_ensure_kvo17_purchase_split_scheme_assets_persists_execution_pack_and_t
     assert payload["schema_template"]["code"] == KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE
     assert payload["topology_template"]["code"] == KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE
     assert payload["binding_profile"]["code"] == KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE
-    assert payload["binding_profile"]["decision_slots"] == list(KVO17_PURCHASE_SPLIT_POLICY_SLOTS)
+    assert payload["binding_profile"]["decision_slots"] == list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS)
     assert payload["binding_profile"]["metadata"]["scheme_code"] == KVO17_PURCHASE_SPLIT_SCHEME_CODE
     assert payload["binding_profile"]["topology_template_compatibility"] == {
         "status": "compatible",
         "topology_aware_ready": True,
-        "covered_slot_keys": list(KVO17_PURCHASE_SPLIT_POLICY_SLOTS),
+        "covered_slot_keys": list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS),
         "diagnostics": [],
     }
 
     schema_template = PoolSchemaTemplate.objects.get(tenant=tenant, code=KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE)
     assert schema_template.metadata["document_policy_slots"] == list(KVO17_PURCHASE_SPLIT_POLICY_SLOTS)
+    assert schema_template.metadata["binding_policy_slots"] == list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS)
     assert TopologyTemplate.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE).count() == 1
     assert BindingProfile.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE).count() == 1
     assert {
@@ -802,6 +996,15 @@ def test_ensure_kvo17_purchase_split_scheme_assets_persists_execution_pack_and_t
         ).rules[0]["outputs"]["document_policy"]["metadata"]["kvo"]
         for slot_key in KVO17_PURCHASE_SPLIT_POLICY_SLOTS
     } == {"01", "17"}
+    generated_policy = DecisionTable.objects.get(
+        decision_table_id=f"kvo17_purchase_split_{KVO17_GENERATED_PURCHASE_PAIR_SLOT}_policy",
+        version_number=1,
+    ).rules[0]["outputs"]["document_policy"]
+    assert generated_policy["metadata"]["slot_key"] == KVO17_GENERATED_PURCHASE_PAIR_SLOT
+    assert [
+        document["document_role"]
+        for document in generated_policy["chains"][0]["documents"]
+    ] == ["purchase", "invoice"]
 
     reapplied = ensure_kvo17_purchase_split_scheme_assets(
         tenant=tenant,
@@ -817,11 +1020,109 @@ def test_ensure_kvo17_purchase_split_scheme_assets_persists_execution_pack_and_t
 
 
 @pytest.mark.django_db
+def test_ensure_kvo17_purchase_split_scheme_assets_revises_decisions_for_database_metadata_context() -> None:
+    tenant = Tenant.objects.create(
+        slug=f"kvo17-scheme-db-{uuid4().hex[:8]}",
+        name="KVO17 Scheme Database",
+    )
+    database = _create_kvo17_metadata_database(tenant=tenant)
+    snapshot = _create_kvo17_metadata_snapshot(tenant=tenant, database=database)
+
+    seed_payload = ensure_kvo17_purchase_split_scheme_assets(
+        tenant=tenant,
+        actor_username="architect",
+    )
+
+    assert {
+        slot_key: item["decision_revision"]
+        for slot_key, item in seed_payload["document_policy_decisions"].items()
+    } == {
+        slot_key: 1
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    }
+    assert all(
+        DecisionTable.objects.get(
+            decision_table_id=f"kvo17_purchase_split_{slot_key}_policy",
+            version_number=1,
+        ).metadata_context == {}
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    )
+
+    database_payload = ensure_kvo17_purchase_split_scheme_assets(
+        tenant=tenant,
+        actor_username="architect",
+        target_database=database,
+    )
+
+    assert database_payload["decision_metadata_context"]["database_id"] == str(database.id)
+    assert database_payload["decision_metadata_context"]["snapshot_id"] == str(snapshot.id)
+    assert database_payload["decision_metadata_context"]["config_version"] == "3.0.194.14"
+    assert {
+        slot_key: item["decision_revision"]
+        for slot_key, item in database_payload["document_policy_decisions"].items()
+    } == {
+        slot_key: 2
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    }
+    assert database_payload["binding_profile"]["state"] == "revised"
+
+    profile_revision = BindingProfileRevision.objects.get(
+        binding_profile_revision_id=database_payload["binding_profile"]["latest_revision_id"],
+    )
+    assert {
+        item["slot_key"]: item["decision_revision"]
+        for item in profile_revision.decisions
+    } == {
+        slot_key: 2
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    }
+    for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS:
+        decision = DecisionTable.objects.get(
+            decision_table_id=f"kvo17_purchase_split_{slot_key}_policy",
+            version_number=2,
+        )
+        assert decision.metadata_context["snapshot_id"] == str(snapshot.id)
+        assert decision.source_provenance["child_database_id"] == str(database.id)
+        compatibility = assess_decision_table_metadata_compatibility(
+            decision_table=decision,
+            metadata_context=database_payload["decision_metadata_context"],
+        )
+        assert compatibility == {
+            "status": "compatible",
+            "reason": None,
+            "is_compatible": True,
+        }
+
+    reapplied = ensure_kvo17_purchase_split_scheme_assets(
+        tenant=tenant,
+        actor_username="architect",
+        target_database=database,
+    )
+
+    assert reapplied["binding_profile"]["state"] == "unchanged"
+    assert {
+        slot_key: item["state"]
+        for slot_key, item in reapplied["document_policy_decisions"].items()
+    } == {
+        slot_key: "unchanged"
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    }
+    assert {
+        DecisionTable.objects.filter(
+            decision_table_id=f"kvo17_purchase_split_{slot_key}_policy",
+        ).count()
+        for slot_key in KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS
+    } == {2}
+
+
+@pytest.mark.django_db
 def test_bootstrap_kvo17_purchase_split_scheme_dry_run_reports_plan_without_persisting() -> None:
     tenant = Tenant.objects.create(
         slug=f"kvo17-scheme-dry-{uuid4().hex[:8]}",
         name="KVO17 Scheme Dry Run",
     )
+    database = _create_kvo17_metadata_database(tenant=tenant)
+    snapshot = _create_kvo17_metadata_snapshot(tenant=tenant, database=database)
 
     out = io.StringIO()
     call_command(
@@ -830,6 +1131,8 @@ def test_bootstrap_kvo17_purchase_split_scheme_dry_run_reports_plan_without_pers
         tenant.slug,
         "--actor-username",
         "architect",
+        "--database-id",
+        str(database.id),
         "--dry-run",
         "--json",
         stdout=out,
@@ -838,8 +1141,10 @@ def test_bootstrap_kvo17_purchase_split_scheme_dry_run_reports_plan_without_pers
 
     assert payload["dry_run"] is True
     assert payload["tenant"]["slug"] == tenant.slug
+    assert payload["target_database"]["id"] == str(database.id)
+    assert payload["decision_metadata_context"]["snapshot_id"] == str(snapshot.id)
     assert payload["binding_profile"]["code"] == KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE
-    assert payload["binding_profile"]["decision_slots"] == list(KVO17_PURCHASE_SPLIT_POLICY_SLOTS)
+    assert payload["binding_profile"]["decision_slots"] == list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS)
     assert not PoolSchemaTemplate.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE).exists()
     assert not TopologyTemplate.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE).exists()
     assert not BindingProfile.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE).exists()

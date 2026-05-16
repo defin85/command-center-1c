@@ -382,11 +382,15 @@ def _build_generated_purchase_slot_coverage_summary(
 ) -> dict[str, Any]:
     source_slots = [
         slot_key
-        for slot_key in ("purchase_kvo01", "purchase_kvo17")
+        for slot_key in (
+            "purchase_kvo01",
+            "purchase_kvo17",
+            KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
+        )
         if isinstance(compiled_document_policy_slots.get(slot_key), Mapping)
     ]
     detail = (
-        "Generated KVO17 publication uses one target edge with two receipt documents; "
+        "Generated KVO17 publication uses one target edge with receipt and invoice chains; "
         f"source slots: {', '.join(source_slots) or '<none>'}."
     )
     return {

@@ -51,7 +51,11 @@ from apps.intercompany_pools.models import (
     PoolSchemaTemplateFormat,
 )
 from apps.intercompany_pools.binding_preview import build_pool_workflow_binding_runtime_bundle
-from apps.intercompany_pools.kvo17_purchase_split_scheme import ensure_kvo17_purchase_split_scheme_assets
+from apps.intercompany_pools.document_policy_contract import validate_document_policy_v1
+from apps.intercompany_pools.kvo17_purchase_split_scheme import (
+    build_kvo17_generated_purchase_pair_document_policy,
+    ensure_kvo17_purchase_split_scheme_assets,
+)
 from apps.intercompany_pools.runtime_template_registry import sync_pool_runtime_template_registry
 from apps.intercompany_pools.workflow_binding_attachments_store import upsert_pool_workflow_binding_attachment
 from apps.tenancy.models import Tenant, TenantMember
@@ -356,6 +360,86 @@ def test_kvo17_generated_purchase_publication_artifact_uses_one_edge_with_two_do
     payload_chains = publication_payload["pool_runtime"]["document_chains_by_database"]["database-1"]
     assert len(payload_chains) == 2
     assert all(len(chain["documents"]) == 4 for chain in payload_chains)
+
+
+def test_kvo17_generated_purchase_publication_materializes_compiled_pair_policy() -> None:
+    manifest = build_kvo17_generated_purchase_manifest(
+        request=_request_payload(),
+        available_counterparty_refs={"supplier-001", "supplier-002"},
+    )
+    policy = build_kvo17_generated_purchase_pair_document_policy()
+    policy["chains"][0]["documents"][0]["field_mapping"]["ВидОперации"] = "ПокупкаКомиссия"
+    policy = validate_document_policy_v1(policy=policy)
+    run = SimpleNamespace(
+        id="run-1",
+        pool_id="pool-1",
+        period_start=date(2026, 1, 1),
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"batch_id": "batch-1"},
+    )
+
+    artifact = compile_kvo17_generated_purchase_publication_artifact(
+        run=run,
+        manifest=manifest,
+        target_database_id="database-1",
+        target_organization_id="organization-1",
+        topology_version_ref="topology-v1",
+        target_party_canonical_id="target-party",
+        compiled_policy_slots={
+            KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT: {
+                "decision_table_id": "custom_generated_pair_policy",
+                "decision_revision": 3,
+                "document_policy_source": "workflow_binding.decision_table:custom_generated_pair_policy:v3",
+                "document_policy": policy,
+            }
+        },
+    )
+
+    receipt_documents = [
+        document
+        for chain in artifact["targets"][0]["chains"]
+        for document in chain["documents"]
+        if document["document_role"] == "purchase"
+    ]
+    assert artifact["policy_refs"][0]["source"] == (
+        "workflow_binding.decision_table:custom_generated_pair_policy:v3"
+    )
+    assert {document["field_mapping"]["ВидОперации"] for document in receipt_documents} == {
+        "ПокупкаКомиссия"
+    }
+
+
+def test_kvo17_generated_purchase_publication_requires_compiled_pair_policy_slot() -> None:
+    manifest = build_kvo17_generated_purchase_manifest(
+        request=_request_payload(),
+        available_counterparty_refs={"supplier-001", "supplier-002"},
+    )
+    run = SimpleNamespace(
+        id="run-1",
+        pool_id="pool-1",
+        period_start=date(2026, 1, 1),
+        direction=PoolRunDirection.TOP_DOWN,
+        run_input={"batch_id": "batch-1"},
+    )
+
+    with pytest.raises(ValueError, match="KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING"):
+        compile_kvo17_generated_purchase_publication_artifact(
+            run=run,
+            manifest=manifest,
+            target_database_id="database-1",
+            target_organization_id="organization-1",
+            topology_version_ref="topology-v1",
+            compiled_policy_slots={
+                "purchase_kvo01": {
+                    "decision_table_id": "kvo17_purchase_split_purchase_kvo01_policy",
+                    "decision_revision": 1,
+                    "document_policy_source": (
+                        "workflow_binding.decision_table:kvo17_purchase_split_purchase_kvo01_policy:v1"
+                    ),
+                    "document_policy": build_kvo17_generated_purchase_pair_document_policy(),
+                }
+            },
+        )
 
 
 @pytest.mark.django_db
