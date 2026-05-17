@@ -4,8 +4,6 @@ from typing import Any, Mapping
 
 from .kvo17_purchase_split_intake import (
     KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION,
-    PURCHASE_KVO01_SLOT,
-    PURCHASE_KVO17_SLOT,
 )
 from .kvo17_generated_purchase_intake import (
     KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
@@ -16,7 +14,6 @@ from .kvo17_purchase_split_scheme import (
     KVO17_GENERATED_PURCHASE_PAIR_SLOT,
     KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE,
     KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS,
-    KVO17_PURCHASE_SPLIT_POLICY_SLOTS,
     KVO17_PURCHASE_SPLIT_SCHEME_CODE,
     KVO17_PURCHASE_SPLIT_SCHEMA_TEMPLATE_CODE,
     build_kvo17_purchase_split_scheme_metadata,
@@ -74,7 +71,7 @@ def _build_operator_scheme_read_model(
         "binding_profile_revision_id": binding["binding_profile_revision_id"],
         "binding_profile_revision_number": binding["binding_profile_revision_number"],
         "classifier_revision": KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION,
-        "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+        "document_policy_slots": list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS),
         "source_requirements": dict(scheme_metadata["required_source_provenance"]),
         "preview_capabilities": {
             "branch_totals": True,
@@ -95,7 +92,7 @@ def _build_generated_purchase_mode(*, parameters: Mapping[str, Any]) -> dict[str
         "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
         "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
         "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
-        "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+        "document_policy_slots": [KVO17_GENERATED_PURCHASE_PAIR_SLOT],
         "publication_policy_slot": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
         "blocking_diagnostics": []
         if available

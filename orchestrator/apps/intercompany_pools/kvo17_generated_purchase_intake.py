@@ -14,8 +14,6 @@ from .batch_intake_parsers import parse_pool_schema_template_amount
 from .kvo17_purchase_split_intake import (
     KVO17_PURCHASE_SPLIT_ALLOWED_KVO_OVERRIDES,
     KVO17_PURCHASE_SPLIT_DEFAULT_CURRENCY,
-    PURCHASE_KVO01_SLOT,
-    PURCHASE_KVO17_SLOT,
 )
 
 
@@ -26,7 +24,8 @@ KVO17_GENERATED_PURCHASE_SOURCE_TYPE = "kvo17_generated_purchase"
 KVO17_GENERATED_PURCHASE_DEFAULT_VAT_RATE = "20%"
 KVO17_GENERATED_PURCHASE_DEFAULT_INVOICE_PREFIX = "KVO17"
 KVO17_GENERATED_PURCHASE_DEFAULT_RANGE_KEYS = ("small", "large")
-KVO17_GENERATED_PURCHASE_POLICY_SLOTS = (PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT)
+KVO17_GENERATED_PURCHASE_POLICY_SLOT = "kvo17_generated_purchase_pair"
+KVO17_GENERATED_PURCHASE_POLICY_SLOTS = (KVO17_GENERATED_PURCHASE_POLICY_SLOT,)
 
 
 @dataclass(frozen=True)
@@ -217,10 +216,7 @@ def build_kvo17_generated_purchase_request_schema() -> dict[str, Any]:
             "kvo": {
                 "supported": list(KVO17_PURCHASE_SPLIT_ALLOWED_KVO_OVERRIDES),
                 "ranges_must_use_distinct_kvo": True,
-                "slots": {
-                    "01": PURCHASE_KVO01_SLOT,
-                    "17": PURCHASE_KVO17_SLOT,
-                },
+                "document_policy_slot": KVO17_GENERATED_PURCHASE_POLICY_SLOT,
             },
             "randomization": {
                 "deterministic_from_seed": True,
@@ -699,6 +695,7 @@ __all__ = [
     "KVO17_GENERATED_PURCHASE_DEFAULT_RANGE_KEYS",
     "KVO17_GENERATED_PURCHASE_MANIFEST_VERSION",
     "KVO17_GENERATED_PURCHASE_METADATA_KEY",
+    "KVO17_GENERATED_PURCHASE_POLICY_SLOT",
     "KVO17_GENERATED_PURCHASE_POLICY_SLOTS",
     "KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION",
     "KVO17_GENERATED_PURCHASE_SOURCE_TYPE",

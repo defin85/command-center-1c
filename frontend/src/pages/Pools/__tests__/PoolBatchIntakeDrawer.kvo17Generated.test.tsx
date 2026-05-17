@@ -66,18 +66,6 @@ const compatibleBinding = {
     },
     decisions: [
       {
-        decision_table_id: 'decision-kvo01',
-        decision_key: 'purchase-kvo01',
-        decision_revision: 1,
-        slot_key: 'purchase_kvo01',
-      },
-      {
-        decision_table_id: 'decision-kvo17',
-        decision_key: 'purchase-kvo17',
-        decision_revision: 1,
-        slot_key: 'purchase_kvo17',
-      },
-      {
         decision_table_id: 'decision-generated-pair',
         decision_key: 'document_policy',
         decision_revision: 1,
@@ -87,7 +75,7 @@ const compatibleBinding = {
     topology_template_compatibility: {
       status: 'compatible',
       topology_aware_ready: true,
-      covered_slot_keys: ['purchase_kvo01', 'purchase_kvo17', 'kvo17_generated_purchase_pair'],
+      covered_slot_keys: ['kvo17_generated_purchase_pair'],
       diagnostics: [],
     },
   },

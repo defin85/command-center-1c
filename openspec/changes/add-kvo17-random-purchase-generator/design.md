@@ -6,8 +6,8 @@ The key runtime uncertainty is 1C behavior. When a user creates two receipt docu
 
 ## Locked Decisions
 
-- The existing KVO17 split classifier and policy slots remain valid reusable source-policy pieces: `purchase_kvo01` and `purchase_kvo17`.
-- Generated purchase publication MUST NOT require two topology branch slots when both generated receipts target the same `Organization.database`; it materializes one publication edge/chain with two receipt documents.
+- The uploaded KVO17 split classifier can remain as a legacy intake helper, but generated KVO17 publication uses one dedicated document-policy slot: `kvo17_generated_purchase_pair`.
+- Generated purchase publication MUST NOT require two topology branch slots when both generated receipts target the same `Organization.database`; it materializes one publication edge/chain with receipt and invoice documents.
 - The generated mode is a new source mode for KVO17, not a silent replacement for uploaded source-registry intake.
 - One selected counterparty produces exactly two generated purchase documents: one per configured amount range.
 - The two documents for a counterparty share supplier invoice number and supplier invoice date.
@@ -37,7 +37,7 @@ The generated supplier invoice number/date is source identity for declaration an
 
 ### One-Edge Document Materialization
 
-The generated mode compiles a standard `document_plan_artifact.v1` directly from the accepted manifest. For each selected counterparty, the artifact uses one target database edge and one chain containing two purchase receipt documents. The two existing KVO17 policy slots stay visible as policy source lineage, but the topology graph does not need to model `purchase_kvo01` and `purchase_kvo17` as two separate child nodes when the target database is physically the same.
+The generated mode compiles a standard `document_plan_artifact.v1` directly from the accepted manifest. For each selected counterparty, the artifact uses one target database edge and one chain containing two purchase receipt documents and two linked received invoice documents. The generated policy lineage points at `kvo17_generated_purchase_pair`; the topology graph does not model `purchase_kvo01` and `purchase_kvo17` as two separate child nodes when the target database is physically the same.
 
 This reuses the already-supported document-policy shape where one decision/chain can emit multiple documents for one edge, and avoids inventing parallel graph edges solely to separate KVO values.
 

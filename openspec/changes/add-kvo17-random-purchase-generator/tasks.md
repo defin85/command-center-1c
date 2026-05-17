@@ -7,7 +7,7 @@
 
 ## 2. Runtime and Publication
 
-- [x] 2.1 Wire generated manifests into the existing KVO17 `purchase_kvo01` / `purchase_kvo17` document-policy slots.
+- [x] 2.1 Wire generated manifests into the generated KVO17 `kvo17_generated_purchase_pair` document-policy slot.
 - [x] 2.2 Preserve shared supplier invoice number/date while generating distinct runtime document identities and idempotency keys.
 - [x] 2.3 Add preflight/readback diagnostics for existing duplicate invoice identity and target master-data resolution.
 - [x] 2.4 Prove live 1C/OData publication behavior for two generated receipts with the same invoice number/date and different KVO.

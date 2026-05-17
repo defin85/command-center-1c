@@ -843,7 +843,7 @@ def test_kvo17_purchase_split_operator_selection_exposes_ready_pinned_binding() 
             "binding_profile_revision_id": assets["binding_profile"]["latest_revision_id"],
             "binding_profile_revision_number": 1,
             "classifier_revision": KVO17_PURCHASE_SPLIT_CLASSIFIER_REVISION,
-            "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+            "document_policy_slots": [KVO17_GENERATED_PURCHASE_PAIR_SLOT],
             "source_requirements": {
                 "source_supplier_identity": True,
                 "source_document_number": True,
@@ -861,7 +861,7 @@ def test_kvo17_purchase_split_operator_selection_exposes_ready_pinned_binding() 
                 "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
                 "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
                 "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
-                "document_policy_slots": [PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT],
+                "document_policy_slots": [KVO17_GENERATED_PURCHASE_PAIR_SLOT],
                 "publication_policy_slot": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
                 "blocking_diagnostics": [],
             },
@@ -989,13 +989,12 @@ def test_ensure_kvo17_purchase_split_scheme_assets_persists_execution_pack_and_t
     assert schema_template.metadata["binding_policy_slots"] == list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS)
     assert TopologyTemplate.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_TOPOLOGY_TEMPLATE_CODE).count() == 1
     assert BindingProfile.objects.filter(tenant=tenant, code=KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE).count() == 1
-    assert {
-        DecisionTable.objects.get(
-            decision_table_id=f"kvo17_purchase_split_{slot_key}_policy",
-            version_number=1,
-        ).rules[0]["outputs"]["document_policy"]["metadata"]["kvo"]
-        for slot_key in KVO17_PURCHASE_SPLIT_POLICY_SLOTS
-    } == {"01", "17"}
+    assert not DecisionTable.objects.filter(
+        decision_table_id__in=[
+            f"kvo17_purchase_split_{slot_key}_policy"
+            for slot_key in KVO17_PURCHASE_SPLIT_POLICY_SLOTS
+        ],
+    ).exists()
     generated_policy = DecisionTable.objects.get(
         decision_table_id=f"kvo17_purchase_split_{KVO17_GENERATED_PURCHASE_PAIR_SLOT}_policy",
         version_number=1,

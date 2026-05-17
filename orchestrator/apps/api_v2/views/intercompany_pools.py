@@ -124,6 +124,7 @@ from apps.intercompany_pools.kvo17_generated_purchase_intake import (
     build_kvo17_generated_purchase_manifest,
 )
 from apps.intercompany_pools.kvo17_generated_purchase_document_plan import (
+    KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
     compile_kvo17_generated_purchase_document_plan,
 )
 from apps.intercompany_pools.factual_review_queue import (
@@ -3128,7 +3129,7 @@ def _validate_kvo17_generated_purchase_binding(
     }
     missing_slots = [
         slot_key
-        for slot_key in ("purchase_kvo01", "purchase_kvo17")
+        for slot_key in (KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,)
         if slot_key not in slot_keys
     ]
     if missing_slots:
@@ -3137,7 +3138,7 @@ def _validate_kvo17_generated_purchase_binding(
             "severity": "error",
             "binding_id": str(workflow_binding.get("binding_id") or "").strip(),
             "missing_slots": missing_slots,
-            "detail": "Selected workflow binding is missing KVO17 generated purchase document-policy slots.",
+            "detail": "Selected workflow binding is missing the KVO17 generated purchase document-policy slot.",
         }
     topology_summary = dict(resolved_profile.get("topology_template_compatibility") or {})
     if topology_summary and not bool(topology_summary.get("topology_aware_ready")):

@@ -227,16 +227,17 @@ def test_kvo17_generated_purchase_document_plan_creates_two_targets_per_counterp
         "documents_per_counterparty": 2,
         "publication_documents_per_counterparty": 4,
         "slot_key": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
-        "source_slots": ["purchase_kvo01", "purchase_kvo17"],
     }
     assert artifact["compile_summary"]["invoice_documents_count"] == 4
     assert artifact["compile_summary"]["publication_documents_count"] == 8
     assert artifact["compile_summary"]["chains_count"] == 2
-    assert artifact["branches"]["purchase_kvo01"]["row_count"] == 2
-    assert artifact["branches"]["purchase_kvo17"]["row_count"] == 2
+    assert "branches" not in artifact
     assert len(artifact["counterparty_chains"]) == 2
     assert all(chain["documents_count"] == 2 for chain in artifact["counterparty_chains"])
     assert all(chain["shared_invoice_identity"] is True for chain in artifact["counterparty_chains"])
+    assert {target["slot_key"] for target in artifact["targets"]} == {
+        KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
+    }
     for counterparty_ref, rows in manifest.rows_by_counterparty().items():
         targets = [
             target

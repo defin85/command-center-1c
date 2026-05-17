@@ -2138,7 +2138,7 @@ const pools = {
           bindingMissing: 'Не выбран совместимый binding КВО17.',
           capabilityMissing: 'Выбранный binding не объявляет поддержку generated purchase.',
           sourceTypeMismatch: 'Выбранный binding не объявляет source type kvo17_generated_purchase.',
-          slotMissing: 'Выбранный binding должен закреплять purchase_kvo01 и purchase_kvo17 slots.',
+          slotMissing: 'Выбранный binding должен закреплять kvo17_generated_purchase_pair slot.',
           topologyNotReady: 'Topology compatibility выбранного binding не готова.',
         },
         messages: {

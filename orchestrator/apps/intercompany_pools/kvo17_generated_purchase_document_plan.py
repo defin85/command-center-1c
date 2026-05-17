@@ -16,17 +16,16 @@ from .document_plan_artifact_contract import (
 from .document_policy_contract import DOCUMENT_POLICY_VERSION
 from .kvo17_generated_purchase_intake import (
     KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+    KVO17_GENERATED_PURCHASE_POLICY_SLOT,
     KVO17_GENERATED_PURCHASE_POLICY_SLOTS,
     Kvo17GeneratedPurchaseAmountRange,
     Kvo17GeneratedPurchaseCounterparty,
     Kvo17GeneratedPurchaseManifest,
     Kvo17GeneratedPurchaseRow,
 )
-from .kvo17_purchase_split_intake import PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT
 from .kvo17_purchase_split_scheme import (
     KVO17_GENERATED_PURCHASE_PAIR_SLOT,
     build_kvo17_generated_purchase_pair_document_policy,
-    build_kvo17_purchase_split_document_policy,
 )
 from .models import PoolRun
 
@@ -39,15 +38,15 @@ KVO17_GENERATED_PURCHASE_POLICY_SLOT_MISSING = "KVO17_GENERATED_PURCHASE_POLICY_
 
 def build_kvo17_generated_purchase_compiled_policy_slots() -> dict[str, dict[str, Any]]:
     slots = {
-        slot_key: {
-            "decision_table_id": f"kvo17_generated_purchase_{slot_key}_policy",
+        KVO17_GENERATED_PURCHASE_POLICY_SLOT: {
+            "decision_table_id": f"kvo17_purchase_split_{KVO17_GENERATED_PURCHASE_POLICY_SLOT}_policy",
             "decision_revision": 1,
             "document_policy_source": (
-                f"workflow_binding.decision_table:kvo17_generated_purchase_{slot_key}_policy:v1"
+                "workflow_binding.decision_table:"
+                f"kvo17_purchase_split_{KVO17_GENERATED_PURCHASE_POLICY_SLOT}_policy:v1"
             ),
-            "document_policy": build_kvo17_purchase_split_document_policy(slot_key=slot_key),
+            "document_policy": build_kvo17_generated_purchase_pair_document_policy(),
         }
-        for slot_key in KVO17_GENERATED_PURCHASE_POLICY_SLOTS
     }
     return validate_compiled_document_policy_slots_snapshot(slots) or {}
 
@@ -77,14 +76,10 @@ def compile_kvo17_generated_purchase_document_plan(
     targets = [
         _compile_target(
             row=row,
-            policy_slot=policy_slots[_slot_for_kvo(row.kvo)],
+            policy_slot=policy_slots[KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT],
         )
         for row in manifest.rows
     ]
-    branches = {
-        slot_key: _compile_branch(slot_key=slot_key, targets=targets, policy_slot=policy_slots[slot_key])
-        for slot_key in KVO17_GENERATED_PURCHASE_POLICY_SLOTS
-    }
     counterparty_chains = _compile_counterparty_chains(targets=targets)
     return {
         "version": KVO17_GENERATED_PURCHASE_DOCUMENT_PLAN_VERSION,
@@ -103,7 +98,6 @@ def compile_kvo17_generated_purchase_document_plan(
             for slot_key in KVO17_GENERATED_PURCHASE_POLICY_SLOTS
         ],
         "targets": targets,
-        "branches": branches,
         "counterparty_chains": counterparty_chains,
         "edge_strategy": {
             "mode": "single_edge_multi_document_chain",
@@ -111,7 +105,6 @@ def compile_kvo17_generated_purchase_document_plan(
             "documents_per_counterparty": 2,
             "publication_documents_per_counterparty": 4,
             "slot_key": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
-            "source_slots": list(KVO17_GENERATED_PURCHASE_POLICY_SLOTS),
         },
         "lineage": _build_lineage(manifest=manifest, targets=targets),
         "collapse_readback_policy": {
@@ -131,7 +124,6 @@ def compile_kvo17_generated_purchase_document_plan(
             "invoice_documents_count": len(targets),
             "publication_documents_count": len(targets) * 2,
             "chains_count": len(counterparty_chains),
-            "branches_count": len(branches),
         },
     }
 
@@ -301,8 +293,7 @@ def _compile_target(
 ) -> dict[str, Any]:
     policy = policy_slot["document_policy"]
     policy_metadata = dict(policy.get("metadata") or {})
-    chain, document = _first_policy_document(policy=policy)
-    slot_key = _slot_for_kvo(row.kvo)
+    chain, receipt_document, invoice_document = _publication_policy_templates(policy=policy)
     shared_invoice_pair_key = "|".join(
         (
             row.counterparty_ref,
@@ -312,13 +303,15 @@ def _compile_target(
     )
     return {
         "target_id": row.idempotency_key,
-        "slot_key": slot_key,
+        "slot_key": KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT,
         "kvo": row.kvo,
         "chain_id": chain.get("chain_id"),
-        "document_id": document.get("document_id"),
-        "entity_name": document.get("entity_name"),
-        "document_role": document.get("document_role"),
-        "invoice_mode": document.get("invoice_mode"),
+        "document_id": receipt_document.get("document_id"),
+        "entity_name": receipt_document.get("entity_name"),
+        "document_role": receipt_document.get("document_role"),
+        "invoice_document_id": invoice_document.get("document_id"),
+        "invoice_entity_name": invoice_document.get("entity_name"),
+        "invoice_mode": invoice_document.get("invoice_mode"),
         "source_document_identity": {
             "number": row.source_document_number,
             "date": row.source_document_date.isoformat(),
@@ -333,9 +326,9 @@ def _compile_target(
             "runtime_document_key": f"{row.row_id}|{row.row_fingerprint[:16]}",
             "shared_invoice_pair_key": shared_invoice_pair_key,
         },
-        "field_mapping": dict(document.get("field_mapping") or {}),
-        "table_parts_mapping": dict(document.get("table_parts_mapping") or {}),
-        "link_rules": dict(document.get("link_rules") or {}),
+        "field_mapping": dict(receipt_document.get("field_mapping") or {}),
+        "table_parts_mapping": dict(receipt_document.get("table_parts_mapping") or {}),
+        "link_rules": dict(receipt_document.get("link_rules") or {}),
         "technical_identity_workaround": {
             **dict(policy_metadata.get("technical_identity_workaround") or {}),
             "visible_in_generated_plan": True,
@@ -355,30 +348,6 @@ def _compile_target(
             "supplier_role": "generated_source_supplier",
         },
         "row": row.as_dict(),
-    }
-
-
-def _compile_branch(
-    *,
-    slot_key: str,
-    targets: list[dict[str, Any]],
-    policy_slot: Mapping[str, Any],
-) -> dict[str, Any]:
-    branch_targets = [
-        target
-        for target in targets
-        if str(target.get("slot_key") or "").strip() == slot_key
-    ]
-    return {
-        "slot_key": slot_key,
-        "kvo": "01" if slot_key == PURCHASE_KVO01_SLOT else "17",
-        "decision_table_id": policy_slot["decision_table_id"],
-        "decision_revision": policy_slot["decision_revision"],
-        "document_policy_source": policy_slot["document_policy_source"],
-        "row_count": len(branch_targets),
-        "documents_count": len(branch_targets),
-        "total_amount": _sum_target_amounts(targets=branch_targets),
-        "targets": branch_targets,
     }
 
 
@@ -766,41 +735,13 @@ def _build_lineage(
             )
         ],
         "target_ids": [str(target.get("target_id") or "") for target in targets],
-        "policy_slots": list(KVO17_GENERATED_PURCHASE_POLICY_SLOTS),
+        "policy_slots": [KVO17_GENERATED_PURCHASE_SINGLE_EDGE_SLOT],
         "edge_strategy": "single_edge_multi_document_chain",
         "requires_parallel_topology_slots": False,
         "collapse_readback_required": True,
         "purchase_invoice_document_required": True,
         "silent_invoice_identity_mutation_allowed": False,
     }
-
-
-def _first_policy_document(*, policy: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    for raw_chain in list(policy.get("chains") or []):
-        if not isinstance(raw_chain, Mapping):
-            continue
-        chain = dict(raw_chain)
-        for raw_document in list(chain.get("documents") or []):
-            if isinstance(raw_document, Mapping):
-                return chain, dict(raw_document)
-    raise ValueError("KVO17 generated purchase policy slot has no document target.")
-
-
-def _slot_for_kvo(kvo: str) -> str:
-    if kvo == "01":
-        return PURCHASE_KVO01_SLOT
-    if kvo == "17":
-        return PURCHASE_KVO17_SLOT
-    raise ValueError(f"Unsupported KVO17 generated purchase KVO '{kvo}'.")
-
-
-def _sum_target_amounts(*, targets: list[dict[str, Any]]) -> str:
-    total = Decimal("0.00")
-    for target in targets:
-        row = target.get("row")
-        if isinstance(row, Mapping):
-            total += Decimal(str(row.get("amount") or "0.00"))
-    return str(total.quantize(Decimal("0.01")))
 
 
 def _require_mapping(value: Any, *, field_name: str) -> dict[str, Any]:

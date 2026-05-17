@@ -34,6 +34,7 @@ from .kvo17_purchase_split_intake import (
 )
 from .kvo17_generated_purchase_intake import (
     KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+    KVO17_GENERATED_PURCHASE_POLICY_SLOT,
     KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
     KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
 )
@@ -68,11 +69,8 @@ KVO17_PURCHASE_SPLIT_WORKFLOW_TEMPLATE_NAME = "KVO17 Purchase Split Publication 
 KVO17_PURCHASE_SPLIT_EFFECTIVE_FROM = date(2026, 1, 1)
 KVO17_PURCHASE_SPLIT_BINDING_ID = "kvo17_purchase_split"
 KVO17_PURCHASE_SPLIT_POLICY_SLOTS = (PURCHASE_KVO01_SLOT, PURCHASE_KVO17_SLOT)
-KVO17_GENERATED_PURCHASE_PAIR_SLOT = "kvo17_generated_purchase_pair"
-KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS = (
-    *KVO17_PURCHASE_SPLIT_POLICY_SLOTS,
-    KVO17_GENERATED_PURCHASE_PAIR_SLOT,
-)
+KVO17_GENERATED_PURCHASE_PAIR_SLOT = KVO17_GENERATED_PURCHASE_POLICY_SLOT
+KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS = (KVO17_GENERATED_PURCHASE_PAIR_SLOT,)
 
 _DOCUMENT_ENTITY_NAME = "Document_ПоступлениеТоваровУслуг"
 _PURCHASE_INVOICE_ENTITY_NAME = "Document_СчетФактураПолученный"
@@ -117,6 +115,7 @@ def build_kvo17_purchase_split_scheme_metadata() -> dict[str, Any]:
             "source_type": KVO17_GENERATED_PURCHASE_SOURCE_TYPE,
             "request_schema_version": KVO17_GENERATED_PURCHASE_REQUEST_SCHEMA_VERSION,
             "manifest_version": KVO17_GENERATED_PURCHASE_MANIFEST_VERSION,
+            "document_policy_slots": list(KVO17_PURCHASE_SPLIT_BINDING_POLICY_SLOTS),
             "publication_policy_slot": KVO17_GENERATED_PURCHASE_PAIR_SLOT,
             "requires_publication_readback": True,
         },
@@ -422,15 +421,15 @@ def ensure_kvo17_purchase_split_workflow_template(*, created_by=None) -> Workflo
                 "template_id": "pool.kvo17_purchase_split.preview",
             },
             {
-                "id": "publish_purchase_branches",
-                "name": "Publish KVO 01/17 purchase branches",
+                "id": "publish_generated_purchase_pair",
+                "name": "Publish generated KVO17 purchase pair",
                 "type": "operation",
                 "template_id": "pool.publication_odata",
             },
         ],
         "edges": [
             {"from": "normalize_source", "to": "split_preview"},
-            {"from": "split_preview", "to": "publish_purchase_branches"},
+            {"from": "split_preview", "to": "publish_generated_purchase_pair"},
         ],
     }
     template = (
@@ -448,7 +447,7 @@ def ensure_kvo17_purchase_split_workflow_template(*, created_by=None) -> Workflo
         ):
             return template
         template.workflow_type = WorkflowType.SEQUENTIAL
-        template.description = "System workflow for KVO17 supplier purchase split publication."
+        template.description = "System workflow for generated KVO17 purchase publication."
         template.dag_structure = target_dag
         template.is_valid = True
         template.is_active = True
@@ -466,7 +465,7 @@ def ensure_kvo17_purchase_split_workflow_template(*, created_by=None) -> Workflo
 
     return WorkflowTemplate.objects.create(
         name=KVO17_PURCHASE_SPLIT_WORKFLOW_TEMPLATE_NAME,
-        description="System workflow for KVO17 supplier purchase split publication.",
+        description="System workflow for generated KVO17 purchase publication.",
         workflow_type=WorkflowType.SEQUENTIAL,
         dag_structure=target_dag,
         config={"timeout_seconds": 86400, "max_retries": 0},
@@ -843,8 +842,7 @@ def _ensure_binding_profile(
         },
         "role_mapping": {
             "source_supplier": "topology:source_supplier",
-            "purchase_kvo01": f"topology:{PURCHASE_KVO01_SLOT}",
-            "purchase_kvo17": f"topology:{PURCHASE_KVO17_SLOT}",
+            "kvo17_generated_purchase_pair": f"policy:{KVO17_GENERATED_PURCHASE_PAIR_SLOT}",
         },
         "metadata": build_kvo17_purchase_split_scheme_metadata(),
     }
@@ -858,8 +856,8 @@ def _ensure_binding_profile(
                 tenant=tenant,
                 binding_profile={
                     "code": KVO17_PURCHASE_SPLIT_BINDING_PROFILE_CODE,
-                    "name": "KVO17 Purchase Split Publication",
-                    "description": "Reusable execution pack for KVO17 supplier purchase split publication.",
+                    "name": "KVO17 Generated Purchase Publication",
+                    "description": "Reusable execution pack for generated KVO17 purchase publication.",
                     "revision": revision,
                 },
                 actor_username=actor_username,
