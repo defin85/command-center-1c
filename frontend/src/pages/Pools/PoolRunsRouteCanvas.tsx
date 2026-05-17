@@ -243,6 +243,7 @@ const READINESS_CHECK_ORDER: PoolRunReadinessCheck['code'][] = [
 ]
 
 const DEFAULT_STAGE: PoolRunsStage = 'create'
+const SAFE_RUN_PREPUBLISH_REFRESH_INTERVAL_MS = 5000
 
 const getDefaultGraphDate = () => new Date().toISOString().slice(0, 10)
 
@@ -1974,6 +1975,33 @@ export function PoolRunsPage() {
   useEffect(() => {
     void loadReport()
   }, [loadReport])
+
+  useEffect(() => {
+    if (activeStageTab !== 'safe' || !selectedRunId) {
+      return
+    }
+
+    void loadRuns({ preferredRunId: selectedRunId, force: true })
+    void loadReport({ force: true })
+  }, [activeStageTab, loadReport, loadRuns, selectedRunId])
+
+  useEffect(() => {
+    if (
+      activeStageTab !== 'safe'
+      || !selectedRunId
+      || runDetails?.mode !== 'safe'
+      || runDetails.approval_state !== 'preparing'
+    ) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadRuns({ preferredRunId: selectedRunId, force: true })
+      void loadReport({ force: true })
+    }, SAFE_RUN_PREPUBLISH_REFRESH_INTERVAL_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [activeStageTab, loadReport, loadRuns, runDetails?.approval_state, runDetails?.mode, selectedRunId])
 
   useEffect(() => {
     const pendingRouteSync = pendingRouteSyncRef.current

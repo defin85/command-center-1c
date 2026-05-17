@@ -1332,6 +1332,41 @@ function registerPoolRunsOperationsStageTests() {
     expect(screen.getByTestId('pool-runs-safe-abort')).toBeEnabled()
   }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
 
+  it('refreshes stale pre-publish state when Safe Actions opens', async () => {
+    const preparingRun = buildRun({
+      status_reason: 'preparing',
+      approval_state: 'preparing',
+      publication_step_state: 'not_enqueued',
+      publication_confirmed_at: null,
+    })
+    const readyRun = buildRun({
+      status_reason: 'awaiting_approval',
+      approval_state: 'awaiting_approval',
+      publication_step_state: 'not_enqueued',
+      publication_confirmed_at: null,
+      updated_at: '2026-01-01T00:05:00Z',
+    })
+    const refreshedReport = deferred<PoolRunReport>()
+
+    mockListPoolRuns.mockResolvedValue([preparingRun])
+    mockGetPoolRunReport.mockReset()
+    mockGetPoolRunReport
+      .mockResolvedValueOnce(buildReport(preparingRun))
+      .mockImplementation(() => refreshedReport.promise)
+
+    renderPage('/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=11111111-1111-1111-1111-111111111111&stage=inspect&detail=1')
+
+    await openRunsStage('Safe Actions')
+    expect(await screen.findByText('Pre-publish is still running')).toBeInTheDocument()
+    expect(screen.getByTestId('pool-runs-safe-confirm')).toBeDisabled()
+
+    await waitFor(() => expect(mockGetPoolRunReport).toHaveBeenCalledTimes(2))
+    refreshedReport.resolve(buildReport(readyRun))
+
+    await waitFor(() => expect(screen.getByTestId('pool-runs-safe-confirm')).toBeEnabled())
+    expect(screen.queryByText('Pre-publish is still running')).not.toBeInTheDocument()
+  }, HEAVY_ROUTE_TEST_TIMEOUT_MS)
+
   it('keeps factual monitoring controls out of the run-local execution canvas', async () => {
     renderPage('/pools/runs?pool=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb&run=11111111-1111-1111-1111-111111111111&stage=inspect&detail=1')
 
