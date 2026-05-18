@@ -57,6 +57,15 @@ class DeployServerConfigContractTests(unittest.TestCase):
         self.assertIn("targets: ['localhost:9192']", prometheus_text)
         self.assertNotIn("targets: ['localhost:9092']", prometheus_text)
 
+    def test_deploy_native_packages_ibcmd_catalog_fallback(self) -> None:
+        workflow_text = (ROOT / ".github/workflows/deploy-native.yml").read_text(encoding="utf-8")
+
+        self.assertIn("release/generated/its", workflow_text)
+        self.assertIn(
+            "cp generated/its/ibcmd.json release/generated/its/ibcmd.json",
+            workflow_text,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

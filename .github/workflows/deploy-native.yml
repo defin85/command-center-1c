@@ -94,9 +94,10 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf release
-          mkdir -p release/bin release/frontend/dist release/infrastructure
+          mkdir -p release/bin release/frontend/dist release/generated/its release/infrastructure
           cp bin/cc1c-api-gateway release/bin/
           cp bin/cc1c-worker release/bin/
+          cp generated/its/ibcmd.json release/generated/its/ibcmd.json
           rsync -a --delete \
             --exclude '.venv' \
             --exclude '__pycache__' \
